@@ -205,7 +205,7 @@ Two uses worth wiring up:
 | `neo4j_operator_cluster_replicas_total` | Gauge | `cluster_name`, `namespace`, `role` (`desired`/`ready`) | Server counts: `desired` = `spec.topology.servers`, `ready` = StatefulSet ready replicas (set when the cluster reaches `Ready`) |
 | `neo4j_operator_cluster_phase` | Gauge | `cluster_name`, `namespace`, `phase` | `1` for the current phase, `0` for all others (phases: `Pending`, `Forming`, `Ready`, `Failed`, `Degraded`, `Upgrading`) |
 | `neo4j_operator_split_brain_detected_total` | Counter | `cluster_name`, `namespace` | Total split-brain detection events |
-| `neo4j_operator_server_health` | Gauge | `cluster_name`, `namespace`, `server_name`, `server_address`, `k8s_cluster` | `1` = Enabled+Available; `0` = degraded. `k8s_cluster` is empty unless the operator runs with `--kubernetes-cluster-name` (Helm `kubernetesClusterName`) — see [Multi-cluster](multi_cluster.md) |
+| `neo4j_operator_server_health` | Gauge | `cluster_name`, `namespace`, `server_name`, `server_address`, `k8s_cluster` | `1` = Enabled+Available; `0` = degraded. Collected once the cluster has formed, including while a server is down; a down server keeps the last address it reported, and a server the cluster no longer lists has its series removed. `k8s_cluster` is empty unless the operator runs with `--kubernetes-cluster-name` (Helm `kubernetesClusterName`) — see [Multi-cluster](multi_cluster.md) |
 
 > **Which metrics are populated.** Every metric listed here is registered, but a family
 > exports a series only once a controller has recorded it. A row marked *registered, not
@@ -393,7 +393,7 @@ This means the operator could not reach the cluster via Bolt. Common causes:
 
 | Cause | Check |
 |---|---|
-| Cluster not yet `Ready` | Diagnostics only run when `status.phase=Ready`; check cluster phase |
+| Cluster has not formed yet | Diagnostics run once the cluster has formed (been `Ready` at least once), and keep running while it is degraded; check the cluster phase |
 | Auth secret missing or wrong | Check `spec.auth.adminSecret`; verify the secret exists |
 | Network policy blocking Bolt | Verify the operator pod can reach port 7687 of the cluster service |
 | Cluster overloaded | The Bolt client uses a 10s timeout; check Neo4j pod resource usage |

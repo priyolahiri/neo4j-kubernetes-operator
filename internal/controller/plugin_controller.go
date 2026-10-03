@@ -399,7 +399,9 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 		Name:      plugin.Spec.ClusterRef,
 		Namespace: plugin.Namespace,
 	}, cluster); err == nil {
-		isReady := cluster.Status.Phase == "Ready"
+		// Ready only, not Degraded: installing a plugin rolls every server,
+		// which on a cluster already short of one could cost it its majority.
+		isReady := cluster.Status.Phase == "Ready" && serversUnavailableSince(cluster) == nil
 		return &DeploymentInfo{
 			Object:    cluster,
 			Type:      "cluster",

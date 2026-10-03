@@ -41,6 +41,7 @@ func TestConditionGuidanceCoversEveryConditionType(t *testing.T) {
 		controller.ConditionTypeOIDCProviderConfigured,
 		controller.ConditionTypeAuthRuleVersionTooOld,
 		controller.ConditionTypeClusterNotReady,
+		controller.ConditionTypeClusterFormed,
 	}
 
 	for _, ct := range all {

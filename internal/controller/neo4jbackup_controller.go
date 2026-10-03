@@ -1930,8 +1930,10 @@ func (r *Neo4jBackupReconciler) isStandaloneTarget(ctx context.Context, backup *
 	return false, nil, fmt.Errorf("target %q not found in namespace %q", name, targetNamespace)
 }
 
+// isClusterReady includes a Degraded cluster: one that is serving with a
+// majority of its servers is exactly when a backup matters (#444).
 func (r *Neo4jBackupReconciler) isClusterReady(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	return cluster.Status.Phase == neo4jv1beta1.PhaseReady
+	return clusterAcceptsWork(cluster)
 }
 
 func (r *Neo4jBackupReconciler) cleanupBackupJobs(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) error {

@@ -66,11 +66,20 @@ var conditionGuidance = map[string]guidance{
 	},
 	controller.ConditionTypeDegraded: {
 		problemWhenTrue: true,
-		meaning:         "the resource is running but something is wrong.",
-		action:          "Read the condition message, then `kubectl neo4j support-bundle` if it is not obvious.",
+		meaning: "the resource is running but something is wrong. On a Neo4jEnterpriseCluster: one or more " +
+			"servers that had joined the cluster are unavailable, while a majority keeps it serving.",
+		action: "Read the condition message — on a cluster it names the servers that are down. A cluster stays " +
+			"Ready with this True for a grace period (--server-unavailable-grace, default 5m), so a pod restart " +
+			"shows here briefly and clears itself; past it the phase turns Degraded. " +
+			"`kubectl neo4j diagnose <Kind>/<name>` names the pod-level cause; `kubectl neo4j support-bundle` if it is not obvious.",
+	},
+	controller.ConditionTypeClusterFormed: {
+		meaning: "the cluster has formed at least once. It stays True for the life of the cluster.",
+		action: "Nothing to do. From here on a missing server is an outage, reported through the Degraded " +
+			"condition and phase, not as Forming — unless a majority of servers is gone.",
 	},
 	controller.ConditionTypeServersHealthy: {
-		meaning: "every server reported Enabled and Available by SHOW SERVERS.",
+		meaning: "every server reported Enabled and Available by SHOW SERVERS. Collected once the cluster has formed, including while it is degraded.",
 		action:  "When false, the message names the unhealthy servers. Check their pod logs for OOMKilled (exit 137) — Enterprise needs at least 1.5Gi.",
 	},
 	controller.ConditionTypeDatabasesHealthy: {
@@ -188,8 +197,12 @@ var phaseGuidance = map[string]guidance{
 		action:  "status.message names the field. `kubectl neo4j validate -f <file>` reports the same thing before you apply, and reports every error at once.",
 	},
 	neo4jv1beta1.PhaseDegraded: {
-		meaning: "the resource is serving but not at full health — typically some servers or databases are unavailable.",
-		action:  "Run `kubectl neo4j diagnose <Kind>/<name>`: the cause is usually one pod (OOMKilled at exit 137, unschedulable, or crash-looping) rather than the cluster as a whole.",
+		meaning: "the resource is serving but not at full health. On a Neo4jEnterpriseCluster: a majority of " +
+			"servers is serving, but one or more have been unavailable for longer than the grace period " +
+			"(--server-unavailable-grace, default 5m). Users, roles, databases and backups keep reconciling against it.",
+		action: "Run `kubectl neo4j diagnose <Kind>/<name>`: the cause is usually one pod (OOMKilled at exit 137, " +
+			"unschedulable, or crash-looping) rather than the cluster as a whole. The Degraded condition names the " +
+			"missing servers. Image upgrades and plugin installs wait until every server is back.",
 	},
 	neo4jv1beta1.PhaseSuspended: {
 		meaning: "reconciliation is deliberately paused for this resource.",
@@ -208,8 +221,14 @@ var phaseGuidance = map[string]guidance{
 		action:  "Wait. If it does not advance, `kubectl neo4j diagnose` reports the Kubernetes-level cause.",
 	},
 	neo4jv1beta1.PhaseForming: {
-		meaning: "the servers are up and discovering each other, but the cluster has not formed a quorum yet.",
-		action:  "Normal for the first two to three minutes. If it persists, check discovery: every server must resolve the others on port 6000, and SHOW SERVERS should list them all.",
+		meaning: "the cluster does not have its servers together: it is forming for the first time, rolling its " +
+			"servers to a new template, or scaling up — or, once formed, it has lost a majority of its servers. " +
+			"A formed cluster missing fewer servers than that stays Ready, then turns Degraded.",
+		action: "Normal for the first two to three minutes, and while a rollout or scale-up runs. On first formation, " +
+			"if it persists, check discovery: every server must resolve the others on port 6000, and SHOW SERVERS " +
+			"should list them all. On a cluster that had formed (condition ClusterFormed), the ClusterQuorumLost " +
+			"event and the Degraded condition name the missing servers. A rollout that never finishes is usually a " +
+			"server that cannot start: `kubectl neo4j diagnose <Kind>/<name>`.",
 	},
 	neo4jv1beta1.PhaseInstalling: {
 		meaning: "the plugin is being placed on the servers, which usually restarts pods.",
@@ -289,6 +308,17 @@ var reasonGuidance = map[string]guidance{
 			"(learn mode re-learns once one goes away), delete and recreate the Neo4jRole, or run the " +
 			"operator with --privilege-normalisation=probe (Helm privilegeNormalisation: probe), which " +
 			"attributes every row exactly.",
+	},
+	controller.ConditionReasonDegraded: {
+		meaning: "the cluster's Ready condition is False because its phase is Degraded: it is serving with a " +
+			"majority of its servers, one or more of them unavailable for longer than the grace period.",
+		action: "See the Degraded phase. Resources that depend on the cluster keep reconciling; " +
+			"`kubectl wait --for=condition=Ready` and Flux health checks report it as not ready until every server is back.",
+	},
+	controller.ConditionReasonServersUnavailable: {
+		meaning: "one or more servers that had joined the cluster are not Available in SHOW SERVERS.",
+		action: "The condition's message names them; its lastTransitionTime is when the shortfall began, and the " +
+			"grace period runs from it. `kubectl neo4j diagnose <Kind>/<name>` for the pod-level cause.",
 	},
 	controller.ReasonGraphPrivilegeOnComposite: {
 		meaning: "a privilege names a composite database as a GRAPH, which Neo4j accepts and " +

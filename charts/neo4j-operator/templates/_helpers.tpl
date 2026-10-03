@@ -209,5 +209,8 @@ Get container args based on configuration
 {{- with .Values.privilegeNormalisation }}
 - --privilege-normalisation={{ . }}
 {{- end }}
+{{- with .Values.serverUnavailableGrace }}
+- --server-unavailable-grace={{ . }}
+{{- end }}
 
 {{- end }}

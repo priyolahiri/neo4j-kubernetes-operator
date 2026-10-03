@@ -87,7 +87,7 @@ func TestPhaseToConditionStatus_SuspendedIsFalseButNotAFailure(t *testing.T) {
 	assert.NotEqual(t, ConditionReasonFailed, reason)
 
 	// The genuine failures keep their reason.
-	for _, p := range []string{neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError, neo4jv1beta1.PhaseDegraded} {
+	for _, p := range []string{neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError} {
 		_, r := PhaseToConditionStatus(p)
 		assert.Equal(t, ConditionReasonFailed, r, "phase %q", p)
 	}
@@ -114,7 +114,9 @@ func TestPhaseToConditionStatus_Table(t *testing.T) {
 		{neo4jv1beta1.PhaseInstalled, metav1.ConditionTrue, ConditionReasonReady},
 		{neo4jv1beta1.PhaseCompleted, metav1.ConditionTrue, ConditionReasonBackupSucceeded},
 		{neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, ConditionReasonFailed},
-		{neo4jv1beta1.PhaseDegraded, metav1.ConditionFalse, ConditionReasonFailed},
+		// Degraded is a serving cluster short of a server (#444), not a
+		// reconcile that failed.
+		{neo4jv1beta1.PhaseDegraded, metav1.ConditionFalse, ConditionReasonDegraded},
 		// Suspension is deliberate, so the reason must not say "ReconciliationFailed"
 		// — but the status stays False: a suspended backup is not Ready to run.
 		{neo4jv1beta1.PhaseSuspended, metav1.ConditionFalse, ConditionReasonSuspended},

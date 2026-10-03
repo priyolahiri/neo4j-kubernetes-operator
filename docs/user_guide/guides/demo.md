@@ -203,7 +203,7 @@ Neo4j cluster formation requires all pods to discover each other. In Kind, this 
 The APOC plugin requires a rolling restart of all cluster pods. Each pod restarts sequentially to maintain availability. Allow 2-3 minutes for a 3-node cluster.
 
 ### Diagnostics section shows empty
-Diagnostics are collected by default whenever the cluster is Ready. They may take 30-60 seconds to appear after cluster formation. If still empty, check that `spec.monitoring.enabled` is not explicitly set to `false`.
+Diagnostics are collected by default once the cluster has formed, including while a server is down. They may take 30-60 seconds to appear after cluster formation. If still empty, check that `spec.monitoring.enabled` is not explicitly set to `false`.
 
 ### cypher-shell connection refused
 Neo4j's bolt listener starts after the pod readiness probe passes. Wait 10-15 seconds after pod Ready before connecting. The demo includes appropriate delays.

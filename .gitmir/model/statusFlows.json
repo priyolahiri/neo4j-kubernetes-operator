@@ -4,7 +4,7 @@
     "name": "Neo4jEnterpriseCluster Phase Lifecycle",
     "entityId": "ent-neo4jenterprisecluster",
     "fieldName": "status.phase",
-    "description": "The top-level lifecycle phase the cluster reconciler drives the CR through, from first-reconcile Initializing to a verified Ready cluster, with Expanding and upgrade-driven Paused/Failed excursions along the way.",
+    "description": "The top-level lifecycle phase the cluster reconciler drives the CR through, from first-reconcile Initializing to a verified Ready cluster, with Expanding, Degraded and upgrade-driven Paused/Failed excursions along the way.",
     "moduleId": "mod-cluster",
     "states": [
       {
@@ -15,7 +15,7 @@
       {
         "key": "Forming",
         "name": "Forming",
-        "description": "Server StatefulSet applied; waiting for Bolt connectivity, a split-brain-free SHOW SERVERS quorum, and for the StatefulSet rollout to fully settle."
+        "description": "Not every server is together: first formation (waiting for Bolt connectivity, a split-brain-free SHOW SERVERS quorum and a settled StatefulSet), a template rollout or scale-up, a split-brain, or a formed cluster that has lost a majority of its servers."
       },
       {
         "key": "Expanding",
@@ -25,7 +25,12 @@
       {
         "key": "Ready",
         "name": "Ready",
-        "description": "Cluster formation is verified, the StatefulSet is fully rolled to the current template, and status.endpoints/status.replicas reflect the live serving cluster."
+        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period."
+      },
+      {
+        "key": "Degraded",
+        "name": "Degraded",
+        "description": "Formed and serving with a majority of its servers, but one or more have been unavailable for longer than --server-unavailable-grace (default 5m). Ready condition False (ClusterDegraded); dependents keep reconciling; upgrades and plugin installs wait."
       },
       {
         "key": "Paused",
@@ -120,6 +125,44 @@
         "to": "Forming",
         "label": "corrected spec re-validates",
         "condition": "the underlying validation/resource error is resolved on a later reconcile"
+      },
+      {
+        "from": "Ready",
+        "to": "Degraded",
+        "label": "a server stayed unavailable past the grace period",
+        "condition": "ClusterFormed, no template rollout, more than half the servers Enabled+Available, and the Degraded condition True for at least the grace period",
+        "effects": [
+          {
+            "kind": "update",
+            "entityId": "ent-neo4jenterprisecluster",
+            "fieldName": "status.ready",
+            "description": "Set false; the Ready condition goes False with reason ClusterDegraded and a ClusterDegraded Warning is emitted once."
+          }
+        ]
+      },
+      {
+        "from": "Degraded",
+        "to": "Ready",
+        "label": "every server available again",
+        "condition": "verifyNeo4jClusterFormation reports the expected Enabled+Available servers AND serverStatefulSetFullyRolled is true; the Degraded condition goes False"
+      },
+      {
+        "from": "Ready",
+        "to": "Forming",
+        "label": "a majority of servers lost, or a template rollout started",
+        "condition": "half or fewer servers available (ClusterQuorumLost Warning), or the server StatefulSet's revisions differ"
+      },
+      {
+        "from": "Degraded",
+        "to": "Forming",
+        "label": "a majority of servers lost, or a template rollout started",
+        "condition": "half or fewer servers available (ClusterQuorumLost Warning), or the server StatefulSet's revisions differ"
+      },
+      {
+        "from": "Forming",
+        "to": "Degraded",
+        "label": "a majority back on a formed cluster, still short past the grace period",
+        "condition": "ClusterFormed True, no rollout, more than half the servers available, and the Degraded condition True for at least the grace period"
       }
     ]
   },

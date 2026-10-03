@@ -27,7 +27,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 
 | Reason | Type | Description |
 |---|---|---|
-| `ClusterFormationStarted` | Normal | Cluster formation has begun (first time entering Forming phase) |
+| `ClusterFormationStarted` | Normal | Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it) |
 | `ClusterFormationFailed` | Warning | Cluster formation verification failed |
 | `ClusterReady` | Normal | Cluster has reached Ready phase |
 | `ValidationFailed` | Warning | Cluster spec validation failed |
@@ -40,6 +40,8 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `ServerRoleValidationFailed` | Warning | Server role hint validation failed |
 | `RouteAPINotFound` | Warning | OpenShift Route API not available in cluster |
 | `MCPApocMissing` | Warning | MCP server requires APOC plugin which is not installed |
+| `ClusterDegraded` | Warning | A formed cluster has been short of one or more servers for longer than the grace period (`--server-unavailable-grace`, default 5m) and its phase is now `Degraded`. It is still serving with a majority; dependents keep reconciling. Emitted once per transition |
+| `ClusterQuorumLost` | Warning | A formed cluster has half or fewer of its servers available. Its phase is `Forming` and dependents pause until a majority is back. Emitted once per transition (an operator restart during the outage may repeat it once) |
 | `ConnectivityDegraded` | Warning | The operator has failed to reach the cluster's Bolt endpoint for a sustained streak: at least 10 consecutive reconciles spanning at least 5 minutes, so a cluster that is still forming does not raise it. Emitted once per streak, with the last error and any pod issues |
 | `ReconcileFailed` | Warning | Reconciliation loop encountered an unrecoverable error |
 

@@ -115,8 +115,9 @@ func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4
 	// Split-brain can only occur in a cluster that was previously healthy.
 	// During initial formation the cluster has never been Ready, so divergent
 	// server views are expected — skip detection and return None so the caller
-	// proceeds with its normal server-count health check.
-	if cluster.Status.Phase != "Ready" {
+	// proceeds with its normal server-count health check. A Degraded cluster
+	// has formed, so it is checked like a Ready one (#444).
+	if cluster.Status.Phase != neo4jv1beta1.PhaseReady && cluster.Status.Phase != neo4jv1beta1.PhaseDegraded {
 		logger.Info("Cluster not yet Ready, skipping split-brain detection to allow initial formation",
 			"cluster", cluster.Name,
 			"phase", cluster.Status.Phase)

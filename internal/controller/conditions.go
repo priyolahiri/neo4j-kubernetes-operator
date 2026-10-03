@@ -22,6 +22,12 @@ const (
 	// ConditionTypeDatabasesHealthy indicates all expected user databases are online.
 	ConditionTypeDatabasesHealthy = "DatabasesHealthy"
 
+	// ConditionTypeClusterFormed records that a Neo4jEnterpriseCluster has
+	// formed at least once. Never set back to False: from then on a missing
+	// server is an outage, reported through ConditionTypeDegraded, not
+	// formation (#444).
+	ConditionTypeClusterFormed = "ClusterFormed"
+
 	// ConditionTypeServersPendingDrain indicates the cluster still has Neo4j
 	// servers registered beyond spec.topology.servers (i.e. a scale-down whose
 	// removed servers have not yet been deallocated + dropped). True means
@@ -39,8 +45,13 @@ const (
 
 // Reason constants for the Ready condition across all CRDs.
 const (
-	ConditionReasonReady           = "ClusterReady"
-	ConditionReasonForming         = "ClusterForming"
+	ConditionReasonReady   = "ClusterReady"
+	ConditionReasonForming = "ClusterForming"
+	// ConditionReasonDegraded — phase Degraded: the cluster is serving with
+	// a majority of its servers, but has been short of one or more for
+	// longer than the grace period. Not ReconciliationFailed: nothing failed
+	// to reconcile.
+	ConditionReasonDegraded        = "ClusterDegraded"
 	ConditionReasonFailed          = "ReconciliationFailed"
 	ConditionReasonUpgrading       = "UpgradeInProgress"
 	ConditionReasonPending         = "Pending"
@@ -68,9 +79,14 @@ const (
 	ConditionReasonAllDatabasesOnline     = "AllDatabasesOnline"
 	ConditionReasonDatabaseOffline        = "DatabaseOffline"
 	ConditionReasonDiagnosticsUnavailable = "DiagnosticsUnavailable"
-	ConditionReasonServersPendingDrain    = "ServersPendingDrain"
-	ConditionReasonNoServersPendingDrain  = "NoServersPendingDrain"
-	ConditionReasonScaleDownBlocked       = "ScaleDownBlocked"
+	// ConditionReasonServersUnavailable / ConditionReasonAllServersAvailable
+	// are the Degraded condition's reasons on a formed cluster (#444).
+	ConditionReasonServersUnavailable    = "ServersUnavailable"
+	ConditionReasonAllServersAvailable   = "AllServersAvailable"
+	ConditionReasonFormationComplete     = "FormationComplete"
+	ConditionReasonServersPendingDrain   = "ServersPendingDrain"
+	ConditionReasonNoServersPendingDrain = "NoServersPendingDrain"
+	ConditionReasonScaleDownBlocked      = "ScaleDownBlocked"
 	// ConditionReasonScaleDownDeferredByUpgrade — a topology shrink was
 	// requested while a rolling upgrade is mid-flight; the drain starts
 	// after the upgrade completes (#173/#174 mutual exclusion).
@@ -138,8 +154,9 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 		// Declared state, not a fault: False (not Ready to run) with a reason
 		// that says so, instead of the ReconciliationFailed a real failure gets.
 		return metav1.ConditionFalse, ConditionReasonSuspended
-	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseDegraded,
-		neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError:
+	case neo4jv1beta1.PhaseDegraded:
+		return metav1.ConditionFalse, ConditionReasonDegraded
+	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError:
 		return metav1.ConditionFalse, ConditionReasonFailed
 	case neo4jv1beta1.PhaseUpgrading:
 		return metav1.ConditionUnknown, ConditionReasonUpgrading

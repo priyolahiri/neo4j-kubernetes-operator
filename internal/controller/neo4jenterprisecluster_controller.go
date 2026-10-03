@@ -68,6 +68,10 @@ type Neo4jEnterpriseClusterReconciler struct {
 	Validator          *validation.ClusterValidator
 	ConfigMapManager   *ConfigMapManager
 	SplitBrainDetector *SplitBrainDetector
+	// ServerUnavailableGrace is how long a formed cluster may run short of a
+	// server before its phase turns Degraded (#444); zero uses
+	// DefaultServerUnavailableGrace. Set from --server-unavailable-grace.
+	ServerUnavailableGrace time.Duration
 	// fleetFailures dedupes the AuraFleetManagementFailed event so a
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
@@ -84,6 +88,12 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// outage is distinguishable from a transient blip in logs and events
 	// (#263 forensics). Cleared on the first successful connection.
 	connectivityFailures sync.Map
+	// availabilityAnnounced records, per cluster (key ns/name), which
+	// availability transition — Degraded or QuorumLost — has had its Warning
+	// event, so a reconcile that reads the cluster from a cache that has not
+	// seen the new phase yet does not announce it twice (#444). Cleared when
+	// every server is available again.
+	availabilityAnnounced sync.Map
 }
 
 // connectivityFailureStreak records when a cluster's Bolt connectivity first
@@ -670,11 +680,13 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
-	// Collect live diagnostics when cluster is Ready.
+	// Collect live diagnostics once the cluster has formed — including while it
+	// is short of a server, which is when ServersHealthy and the server_health
+	// metric matter most (#444). Before formation there is nothing to report.
 	// Diagnostics are collected by default (monitoring nil or monitoring.enabled=true).
 	// Only skipped when monitoring is explicitly disabled.
 	monitoringDisabled := cluster.Spec.Monitoring != nil && !cluster.Spec.Monitoring.Enabled
-	if !monitoringDisabled && cluster.Status.Phase == "Ready" {
+	if !monitoringDisabled && clusterHasFormed(cluster) {
 		neo4jDiagClient, diagClientErr := r.createNeo4jClient(ctx, cluster)
 		if diagClientErr != nil {
 			logger.V(1).Info("Skipping diagnostics collection: could not create Neo4j client", "error", diagClientErr)
@@ -690,7 +702,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// Plugin management is now handled by the separate Neo4jPlugin CRD and controller
 
 	// Verify Neo4j cluster formation before marking as Ready
-	clusterFormed, formationMessage, err := r.verifyNeo4jClusterFormation(ctx, cluster)
+	formation, err := r.verifyNeo4jClusterFormation(ctx, cluster)
 	if err != nil {
 		logger.Error(err, "Failed to verify cluster formation")
 		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterFormationFailed,
@@ -699,22 +711,28 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	if !clusterFormed {
-		if cluster.Status.Phase != "Forming" {
-			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterFormationStarted,
-				"Neo4j cluster formation started")
-		}
-		_ = r.updateClusterStatus(ctx, cluster, "Forming", formationMessage)
+	// Not every server is available. A cluster that has formed and is still
+	// serving stays Ready (then turns Degraded); anything else is Forming.
+	if !formation.formed {
+		r.reconcileServerShortfall(ctx, cluster, formation, formation.message)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
 	// Never declare Ready while the server StatefulSet is mid-rollout: a
 	// half-rolled (possibly mixed-version) cluster that answers Bolt is
-	// converging, not Ready (#262).
+	// converging, not Ready (#262). Outside a rollout this is a pod whose
+	// readiness probe lags Neo4j after a restart, which the shortfall
+	// assessment treats like any other missing server.
 	if rolled, detail := r.serverStatefulSetFullyRolled(ctx, cluster); !rolled {
-		_ = r.updateClusterStatus(ctx, cluster, "Forming", "Waiting for server StatefulSet rollout to complete: "+detail)
+		r.reconcileServerShortfall(ctx, cluster, formation, "Waiting for every server pod to be updated and ready: "+detail)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
+
+	formedConditions := []metav1.Condition{
+		clusterFormedCondition(),
+		allServersAvailableCondition(cluster.Spec.Topology.Servers),
+	}
+	r.availabilityAnnounced.Delete(cluster.Namespace + "/" + cluster.Name)
 
 	// Update status to "Ready" only if cluster formation is verified
 	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
@@ -728,9 +746,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// above), so spec.image.tag IS the running version.
 	var statusChanged bool
 	if cluster.Status.Version == "" {
-		statusChanged = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", cluster.Spec.Image.Tag)
+		statusChanged = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", cluster.Spec.Image.Tag, formedConditions...)
 	} else {
-		statusChanged = r.updateClusterStatus(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready")
+		statusChanged = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", "", formedConditions...)
 	}
 
 	// Scale-down draining (server cordon→deallocate→drop) is driven earlier in
@@ -766,6 +784,8 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	// rather than adding a second one — a stuck Aura API must not block deletion.
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, cluster)
 	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
+	r.availabilityAnnounced.Delete(clusterKey(cluster))
+	forgetServerAddresses(cluster)
 
 	// Clean up PVCs if retention policy is Delete (default behavior)
 	retentionPolicy := cluster.Spec.Storage.RetentionPolicy
@@ -1464,7 +1484,12 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 // be stale from an earlier status write in the same reconcile (the rolling-
 // upgrade completion path did exactly that, so the bare follow-up
 // Status().Update conflicted and the version bump was silently dropped — #207).
-func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message, version string) bool {
+//
+// extra conditions (ClusterFormed, Degraded) are upserted in the same write.
+// They force a write when they differ but do not count towards the returned
+// "changed", which callers read as "the phase, message or Ready condition
+// moved" and announce with an event.
+func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message, version string, extra ...metav1.Condition) bool {
 	logger := log.FromContext(ctx)
 	statusChanged := false
 
@@ -1495,8 +1520,16 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 			}
 		}
 
+		extraNeedsUpdate := false
+		for _, want := range extra {
+			if have := findCondition(latest.Status.Conditions, want.Type); have == nil ||
+				have.Status != want.Status || have.Reason != want.Reason || have.Message != want.Message {
+				extraNeedsUpdate = true
+			}
+		}
+
 		// If neither status nor condition needs update, skip entirely
-		if !statusNeedsUpdate && !conditionNeedsUpdate {
+		if !statusNeedsUpdate && !conditionNeedsUpdate && !extraNeedsUpdate {
 			logger.V(1).Info("Status and condition already correct, skipping update",
 				"phase", phase, "message", message)
 			statusChanged = false
@@ -1539,6 +1572,9 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 
 		// Update Ready condition using standard helper
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
+		for _, c := range extra {
+			SetNamedCondition(&latest.Status.Conditions, c.Type, latest.Generation, c.Status, c.Reason, c.Message)
+		}
 
 		// Record Prometheus phase metric on every phase transition
 		clusterM := metrics.NewClusterMetrics(cluster.Name, cluster.Namespace)
@@ -1557,7 +1593,7 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 			clusterM.RecordClusterHealth(false)
 		}
 
-		statusChanged = true
+		statusChanged = statusNeedsUpdate || conditionNeedsUpdate
 		return r.Status().Update(ctx, latest)
 	}
 
@@ -1846,8 +1882,11 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateUnstructuredResource(ct
 
 // isUpgradeRequired checks if an image upgrade is needed
 func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	// Skip upgrade check if cluster is not ready
-	if cluster.Status.Phase != "Ready" {
+	// Skip upgrade check if cluster is not ready — including a cluster that
+	// is still Ready while a server is down (#444): rolling the others then
+	// could cost it its majority. holdImageDriftUntilReady keeps the image
+	// change held until every server is back.
+	if cluster.Status.Phase != "Ready" || serversUnavailableSince(cluster) != nil {
 		return false
 	}
 
@@ -1989,14 +2028,27 @@ func (r *Neo4jEnterpriseClusterReconciler) createNeo4jClient(ctx context.Context
 	return neo4jClient, nil
 }
 
+// formationCheck is the result of verifyNeo4jClusterFormation.
+type formationCheck struct {
+	formed  bool
+	message string
+	// servers is SHOW SERVERS as seen through the client Service by the
+	// connectivity test; nil when Neo4j could not be reached. It is what a
+	// cluster that is not fully formed is assessed on (#444).
+	servers []neo4jclient.ServerInfo
+	// splitBrain is set when the shortfall is a detected split-brain, which
+	// stays Forming rather than being treated as a missing server.
+	splitBrain bool
+}
+
 // verifyNeo4jClusterFormation checks if Neo4j cluster formation is complete and detects split-brain scenarios
-func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, string, error) {
+func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (formationCheck, error) {
 	logger := log.FromContext(ctx)
 
 	// Skip verification for single-server clusters (always formed)
 	expectedServers := int(cluster.Spec.Topology.Servers)
 	if expectedServers == 1 {
-		return true, "Single server cluster - formation complete", nil
+		return formationCheck{formed: true, message: "Single server cluster - formation complete"}, nil
 	}
 
 	// First, check if Neo4j is ready to accept connections using legacy check
@@ -2004,11 +2056,13 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 	canConnect := false
 	var connectError error
 	var testError error
+	var servers []neo4jclient.ServerInfo
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err == nil {
 		// Test the connection by trying to get server list
-		_, testErr := neo4jClient.GetServerList(ctx)
+		list, testErr := neo4jClient.GetServerList(ctx)
 		neo4jClient.Close()
+		servers = list
 		if testErr == nil {
 			canConnect = true
 		} else {
@@ -2049,9 +2103,14 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		if podIssues != "" {
 			// Surface it on the CR too — this is the string `kubectl describe`
 			// and `kubectl get` show, and it is where a user looks first.
-			return false, "Waiting for Neo4j to accept connections; " + podIssues, nil
+			return formationCheck{message: "Waiting for Neo4j to accept connections; " + podIssues}, nil
 		}
-		return false, "Waiting for Neo4j to accept connections", nil
+		return formationCheck{message: "Waiting for Neo4j to accept connections"}, nil
+	}
+	if servers == nil {
+		// Connected, and SHOW SERVERS returned no rows: an empty list, not
+		// "could not query".
+		servers = []neo4jclient.ServerInfo{}
 	}
 	r.clearConnectivityFailures(ctx, cluster)
 
@@ -2070,7 +2129,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		isFormed, message, legacyErr := r.legacyClusterFormationCheck(ctx, cluster, expectedServers)
 		logger.Info("Legacy cluster formation check result",
 			"isFormed", isFormed, "message", message, "error", legacyErr)
-		return isFormed, message, legacyErr
+		return formationCheck{formed: isFormed, message: message, servers: servers}, legacyErr
 	}
 
 	logger.Info("Split-brain analysis results",
@@ -2098,23 +2157,23 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 				logger.Error(repairErr, "Failed to repair split-brain automatically")
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonSplitBrainRepairFailed,
 					"Automatic split-brain repair failed: %v", repairErr)
-				return false, fmt.Sprintf("Split-brain repair failed: %v", repairErr), nil
+				return formationCheck{message: fmt.Sprintf("Split-brain repair failed: %v", repairErr), servers: servers, splitBrain: true}, nil
 			}
 
 			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonSplitBrainRepaired,
 				"Split-brain automatically repaired by restarting orphaned pods")
 
 			// After repair, cluster needs time to reform
-			return false, "Split-brain repaired, waiting for cluster reformation", nil
+			return formationCheck{message: "Split-brain repaired, waiting for cluster reformation", servers: servers, splitBrain: true}, nil
 		}
 
 		// For other repair actions, report but don't auto-repair
-		return false, splitBrainMsg, nil
+		return formationCheck{message: splitBrainMsg, servers: servers, splitBrain: true}, nil
 	}
 
 	// If no split-brain, check if cluster formation is complete
 	if analysis.RepairAction == RepairActionWaitForming {
-		return false, analysis.ErrorMessage, nil
+		return formationCheck{message: analysis.ErrorMessage, servers: servers}, nil
 	}
 
 	// Verify we have the expected number of servers across all views
@@ -2127,10 +2186,9 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		}
 
 		if availableServers >= expectedServers {
-			return true, fmt.Sprintf("Cluster formation complete: %d/%d servers available", availableServers, expectedServers), nil
-		} else {
-			return false, fmt.Sprintf("Cluster forming: %d/%d servers available", availableServers, expectedServers), nil
+			return formationCheck{formed: true, message: fmt.Sprintf("Cluster formation complete: %d/%d servers available", availableServers, expectedServers), servers: servers}, nil
 		}
+		return formationCheck{message: fmt.Sprintf("Cluster forming: %d/%d servers available", availableServers, expectedServers), servers: servers}, nil
 	}
 
 	// Fall back to legacy cluster formation check if split-brain analysis was inconclusive
@@ -2138,7 +2196,74 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 	isFormed, message, legacyErr := r.legacyClusterFormationCheck(ctx, cluster, expectedServers)
 	logger.Info("Final legacy cluster formation check result",
 		"isFormed", isFormed, "message", message, "error", legacyErr)
-	return isFormed, message, legacyErr
+	return formationCheck{formed: isFormed, message: message, servers: servers}, legacyErr
+}
+
+// reconcileServerShortfall sets the status of a cluster that is not fully
+// formed: not every server is available, or the server StatefulSet is not
+// fully rolled. detail says which, and is carried into the messages (#444).
+func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, formation formationCheck, detail string) {
+	formed := clusterHasFormed(cluster)
+	in := shortfallInput{
+		Formed:           formed,
+		SplitBrain:       formation.splitBrain,
+		Servers:          withKnownAddresses(cluster, formation.servers),
+		Expected:         int(cluster.Spec.Topology.Servers),
+		UnavailableSince: serversUnavailableSince(cluster),
+		Now:              time.Now(),
+		Grace:            r.serverUnavailableGrace(),
+	}
+	if formed {
+		in.RolloutInFlight = r.serverRolloutInFlight(ctx, cluster)
+	}
+	a := assessServerShortfall(in)
+	log.FromContext(ctx).V(1).Info("Cluster is not fully formed",
+		"verdict", a.Verdict, "detail", detail, "available", a.Available, "expected", a.Expected,
+		"formedBefore", formed, "rolloutInFlight", in.RolloutInFlight, "splitBrain", in.SplitBrain)
+
+	// Neo4j can still list every server as Available for a few seconds after
+	// a pod goes, or before a restarted pod passes its readiness probe; then
+	// the pod-level detail is the better description.
+	shortfall := a.summary()
+	if len(a.Unavailable) == 0 {
+		shortfall = detail
+	}
+	degradedMsg := a.summary() + ". " + detail
+	switch a.Verdict {
+	case verdictQuorumLost:
+		if r.firstAnnouncement(cluster, a.Verdict, false) {
+			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterQuorumLost,
+				"Neo4j cluster has lost a majority of its servers (%s); resources that depend on it pause until a majority is back", shortfall)
+		}
+		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseForming,
+			"Waiting for a majority of servers: "+shortfall, "",
+			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
+
+	case verdictWithinGrace:
+		// Still serving: the phase, the Ready condition and every dependent
+		// carry on. Only the Degraded condition and ServersHealthy say so.
+		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseReady,
+			"Neo4j cluster is serving. "+shortfall, "",
+			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
+
+	case verdictDegraded:
+		if r.firstAnnouncement(cluster, a.Verdict, cluster.Status.Phase == neo4jv1beta1.PhaseDegraded) {
+			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterDegraded,
+				"Neo4j cluster has been short of servers for longer than %s: %s", in.Grace, shortfall)
+		}
+		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseDegraded,
+			fmt.Sprintf("Neo4j cluster is serving but degraded for longer than %s. %s", in.Grace, shortfall), "",
+			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
+
+	default:
+		// First formation, a rollout or scale-up, a split-brain, or nothing
+		// measurable. "Formation started" is only true the first time.
+		if !formed && cluster.Status.Phase != neo4jv1beta1.PhaseForming {
+			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterFormationStarted,
+				"Neo4j cluster formation started")
+		}
+		_ = r.updateClusterStatus(ctx, cluster, neo4jv1beta1.PhaseForming, detail)
+	}
 }
 
 // reportSplitBrainDetected emits the SplitBrainDetected Warning event, counts
@@ -2405,6 +2530,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 
 	// Collect server list
 	servers, serverErr := neo4jClient.GetServerList(ctx)
+	servers = withKnownAddresses(cluster, servers)
 	if serverErr != nil {
 		logger.Error(serverErr, "Failed to collect SHOW SERVERS")
 		diagnostics.CollectionError = fmt.Sprintf("SHOW SERVERS failed: %v", serverErr)
@@ -3099,7 +3225,7 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	key := cluster.Namespace + "/" + cluster.Name
 	if prev, _ := r.deferredUpgradeTargets.Load(key); prev != desiredImage {
 		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "UpgradeDeferred",
-			"Image change to %s deferred until the cluster is Ready; the rolling-upgrade state machine will perform it", desiredImage)
+			"Image change to %s deferred until the cluster is Ready with every server available; the rolling-upgrade state machine will perform it", desiredImage)
 		r.deferredUpgradeTargets.Store(key, desiredImage)
 	}
 	cluster.Spec.Image.Repo = currentImage[:idx]
