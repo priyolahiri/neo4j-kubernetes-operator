@@ -633,6 +633,7 @@ make deploy-prod
 - Builds `neo4j-operator:dev` image locally
 - Auto-detects and loads to available Kind cluster
 - Deploys to `neo4j-operator-dev` namespace
+- Restarts an operator that was already running, then waits for the rollout. The tag never changes, so without the restart an unchanged manifest leaves the old pod — and the old binary — running
 **Example**:
 ```bash
 make deploy-dev-local
@@ -649,6 +650,7 @@ make deploy-dev-local
 - Builds `neo4j-operator:latest` image locally
 - Auto-detects and loads to available Kind cluster
 - Deploys to production namespace
+- Restarts an operator that was already running, then waits for the rollout (see `deploy-dev-local`)
 **Example**:
 ```bash
 make deploy-prod-local

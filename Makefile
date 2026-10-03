@@ -563,6 +563,25 @@ deploy-dev: deploy-dev-local ## Deploy controller with development configuration
 .PHONY: deploy-prod
 deploy-prod: deploy-prod-local ## Deploy controller with production configuration (uses local image by default).
 
+# deploy-local-overlay applies a kustomize overlay that runs a locally built,
+# kind-loaded image, and makes sure the operator pod actually runs it.
+#
+# The local tags are fixed (neo4j-operator:dev, :latest, :integration-test), so
+# a rebuilt image changes nothing the Deployment can see: `kubectl apply` of an
+# unchanged manifest is a no-op and the running pod keeps the old binary —
+# silently, since every command succeeds. A Deployment that already existed is
+# therefore restarted; one the apply just created is already on the new image.
+# $(1) = overlay directory, $(2) = namespace.
+define deploy-local-overlay
+	@existed=$$($(KUBECTL) get deployment/neo4j-operator-controller-manager -n $(2) -o name 2>/dev/null); \
+	$(KUSTOMIZE) build $(1) | $(KUBECTL) apply -f - && \
+	if [ -n "$$existed" ]; then \
+		echo "Restarting the operator so it runs the image just loaded..."; \
+		$(KUBECTL) rollout restart deployment/neo4j-operator-controller-manager -n $(2); \
+	fi && \
+	$(KUBECTL) rollout status deployment/neo4j-operator-controller-manager -n $(2) --timeout=120s
+endef
+
 .PHONY: deploy-dev-local
 deploy-dev-local: manifests kustomize docker-build ## Build and deploy controller with local dev image to Kind cluster.
 	@echo "Building local dev image..."
@@ -581,7 +600,7 @@ deploy-dev-local: manifests kustomize docker-build ## Build and deploy controlle
 		exit 1; \
 	fi
 	@echo "Deploying to dev namespace with local image..."
-	$(KUSTOMIZE) build config/overlays/dev | $(KUBECTL) apply -f -
+	$(call deploy-local-overlay,config/overlays/dev,neo4j-operator-dev)
 
 .PHONY: deploy-prod-local
 deploy-prod-local: manifests kustomize ## Build and deploy controller with local prod image to Kind cluster.
@@ -601,7 +620,7 @@ deploy-prod-local: manifests kustomize ## Build and deploy controller with local
 		exit 1; \
 	fi
 	@echo "Deploying to prod namespace with local image..."
-	$(KUSTOMIZE) build config/overlays/prod | $(KUBECTL) apply -f -
+	$(call deploy-local-overlay,config/overlays/prod,neo4j-operator-system)
 
 .PHONY: deploy-dev-registry
 deploy-dev-registry: manifests kustomize check-rbac ## Deploy controller with development configuration using registry image.
