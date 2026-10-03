@@ -6120,7 +6120,7 @@ cluster reaches <code>Ready</code> — see <a href="../neo4jrestore/"><code>Neo4
 <tr>
 <td><code>size</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> Storage size (e.g., <code>"10Gi"</code>), an integer with an optional <code>Ki</code>/<code>Mi</code>/<code>Gi</code>/<code>Ti</code> or <code>M</code>/<code>G</code>/<code>T</code> suffix. Capital <code>K</code> is refused: it is not a Kubernetes quantity suffix (use <code>Ki</code>, or lowercase <code>k</code>). Can be increased after creation — the operator automatically expands PVCs and recreates the StatefulSet with zero downtime. <strong>Cannot be decreased</strong> (PVC shrink is not supported by Kubernetes). Requires the StorageClass to have <code>allowVolumeExpansion: true</code>.</td>
+<td><strong>Required.</strong> Storage size (e.g., <code>"10Gi"</code>). Must be a valid Kubernetes quantity greater than zero, the same rule as a standalone: <code>"1.5Gi"</code> is fine; <code>"0"</code>, <code>"fifty"</code>, <code>"10 Gi"</code> and a capital <code>K</code> suffix (<code>"5K"</code>, not a Kubernetes suffix — use <code>Ki</code>, or lowercase <code>k</code>) are refused by validation. Can be increased after creation — the operator automatically expands PVCs and recreates the StatefulSet with zero downtime. <strong>Cannot be decreased</strong> (PVC shrink is not supported by Kubernetes). Requires the StorageClass to have <code>allowVolumeExpansion: true</code>.</td>
 </tr>
 <tr>
 <td><code>retentionPolicy</code></td>

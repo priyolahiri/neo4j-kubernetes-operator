@@ -700,6 +700,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v117x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.17.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.17.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New warnings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-no-action-needed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New, no action needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3980,6 +4041,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v117x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.17.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.17.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-warnings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New warnings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-no-action-needed_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New, no action needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4167,6 +4289,101 @@ upgrade restarts nothing. See the
   change it after creation. Editing or removing the boolean itself is accepted
   but has no effect on an existing instance, which only reads it at creation.</li>
 </ul>
+<h2 id="upgrading-from-v117x">Upgrading from v1.17.x<a class="headerlink" href="#upgrading-from-v117x" title="Anchor link to this section">&para;</a></h2>
+<p>Apply the new release's CRDs before upgrading the operator, as always (step 1
+<a href="#upgrading-between-future-releases">below</a>). Nothing fails without them, but
+<code>status.upgradeStatus.phaseStartTime</code> is new: on the old CRDs the API server
+drops it, and <code>neo4j_operator_upgrade_duration_seconds</code> records nothing until
+the CRDs are applied.</p>
+<h3 id="behaviour-changes">Behaviour changes<a class="headerlink" href="#behaviour-changes" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>Scheduled backups report <code>Ready=True</code></strong> (reason <code>BackupScheduled</code>). A
+  <code>Neo4jBackup</code> with a <code>schedule</code> used to stay <code>Ready=Unknown</code> for its whole
+  life, so <code>kubectl wait --for=condition=Ready</code> never returned. A suspended one
+  now reports <code>Ready=False</code> with reason <code>Suspended</code> instead of
+  <code>ReconciliationFailed</code>.</li>
+<li><strong>If you use the <a href="../../gitops/">ArgoCD health checks</a>, re-apply
+  <code>docs/gitops/argocd-health-checks.yaml</code>.</strong> In the copy published with v1.17.0,
+  a scheduled or suspended <code>Neo4jBackup</code> stayed <code>Progressing</code> forever, which
+  holds up any sync wave behind it. Both now report <code>Healthy</code>.</li>
+<li><strong><code>Neo4jDatabase.spec.defaultCypherLanguage</code> is honoured on every create
+  path, and gated on the server version.</strong> On CalVer, a database created with no
+  <code>topology</code> and no <code>seedURI</code> used to ignore the field and get the server
+  default; it now gets the language you set. Existing databases keep theirs,
+  because a database's language is fixed when it is created. On the 5.26 LTS,
+  <code>"25"</code> now fails validation with a message naming the field (it used to fail
+  at <code>CREATE DATABASE</code> with a syntax error), and <code>"5"</code> is accepted and the clause
+  left out, since every database there runs Cypher 5. <code>Neo4jCompositeDatabase</code> follows the same rule.</li>
+<li><strong>A standalone ignores <code>Neo4jDatabase.spec.topology</code></strong>, as the docs always
+  said: the operator no longer sends a <code>TOPOLOGY</code> clause to a standalone, and
+  <code>primaries: 0</code> there is a warning instead of an error.</li>
+<li><strong>Sizes are checked before they reach Kubernetes.</strong> A cluster and a standalone
+  now accept the same <code>spec.storage.size</code>: any Kubernetes quantity greater than
+  zero, so <code>1.5Gi</code> works on a cluster and <code>0</code> is refused on both. A malformed
+  size (<code>fifty</code>, <code>10 Gi</code>, or <code>5K</code>, since a capital K is not a Kubernetes suffix)
+  used to pass validation and crash the operator; the CR now goes <code>Failed</code> with
+  a message naming the field. <code>Neo4jBackup.spec.storage.pvc.size</code> is checked
+  the same way. Every value that is newly refused either crashed the operator
+  or could hold no data.</li>
+<li><strong>A dotted <code>Neo4jCompositeDatabase.spec.name</code> is refused when you apply.</strong> It
+  always failed at reconcile; the schema now says so up front.</li>
+<li><strong>Auth provider names follow the Neo4j manual.</strong> <code>plugin-&lt;name&gt;</code>, for an auth
+  plugin or an add-on such as Kerberos, is now accepted in
+  <code>spec.auth.authenticationProviders</code> and <code>authorizationProviders</code>; it used to
+  be refused. <code>oidc</code> without a provider name, <code>kerberos</code>, <code>jwt</code>, <code>saml</code> and
+  <code>custom</code> are not values Neo4j documents: they still validate, and now raise a
+  <code>ValidationWarning</code> event that names what to use instead. See
+  <a href="../security/#multi-provider-support">Multi-provider support</a>.</li>
+</ul>
+<h3 id="new-warnings">New warnings<a class="headerlink" href="#new-warnings" title="Anchor link to this section">&para;</a></h3>
+<p>A field the schema accepts but nothing in the operator acts on now raises a
+<code>ValidationWarning</code> event when you set it: <code>… is accepted but has no effect
+today: &lt;what to do instead&gt;</code>. The warnings never block a reconcile. They cover:</p>
+<ul>
+<li><code>Neo4jPlugin</code>: <code>spec.resources</code>, <code>spec.source.registry</code> (and its <code>tls</code>),
+  <code>spec.security.securityPolicy</code>;</li>
+<li>clusters and standalones: <code>spec.tls.certificateSecret</code>; standalones only:
+  <code>spec.tls.strictPeerValidation: false</code>;</li>
+<li>clusters: <code>spec.topology.placement.nodeSelector</code> and <code>.requiredDuringScheduling</code>;</li>
+<li><code>Neo4jDatabase</code>: <code>spec.initialData.source</code> (other than <code>cypher</code>),
+  <code>.configMapRef</code>, <code>.secretRef</code> and <code>.storage</code>;</li>
+<li><code>Neo4jBackup</code> and <code>Neo4jRestore</code> cloud storage: <code>identity.serviceAccount</code>, and
+  <code>identity.autoCreate.enabled: false</code>;</li>
+<li><code>AuraInstance</code>: <code>spec.connectionSecretFormat: custom</code>.</li>
+</ul>
+<h3 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Removed:</strong> twelve families that were registered but that no code ever
+recorded. Each was a vector with no observations, so none ever exported a
+series and no dashboard or alert loses data; you can delete panels built on
+them. <code>neo4j_operator_</code> followed by: <code>backup_size_bytes</code>,
+<code>cypher_execution_duration_seconds</code>, <code>cypher_executions_total</code>,
+<code>disaster_recovery_status</code>, <code>failover_total</code>, <code>replication_lag_seconds</code>,
+<code>manual_scaler_enabled</code>, <code>primary_count</code>, <code>secondary_count</code>,
+<code>scale_events_total</code>, <code>scaling_validation_total</code>, <code>security_operations_total</code>.</p>
+<p><strong>New or now populated:</strong></p>
+<ul>
+<li><code>neo4j_operator_replica_lag_transactions</code> and
+  <code>neo4j_operator_replica_promotions_total</code> for cross-cluster replication (see
+  <a href="../guides/monitoring/#cross-cluster-replication-metrics">Cross-cluster replication metrics</a>).
+  The lag series is removed when it can no longer be trusted (the replica is
+  gone or promoted, or its lag cannot be read) instead of holding its last value.</li>
+<li><code>neo4j_operator_upgrade_duration_seconds</code> is now recorded, once per ended
+  rolling-upgrade phase.</li>
+</ul>
+<h3 id="new-no-action-needed_1">New, no action needed<a class="headerlink" href="#new-no-action-needed_1" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><code>status.upgradeStatus.phaseStartTime</code> on clusters.</li>
+<li><code>Neo4jShardedDatabase</code> status now fills <code>creationTime</code>, <code>graphShard</code>,
+  <code>propertyShards</code> and <code>virtualDatabase</code>; <code>Neo4jPlugin</code> status fills
+  <code>installedVersion</code> and <code>installationTime</code>. They were in the schema but empty.</li>
+<li><code>ConnectivityDegraded</code> (a Warning on the cluster) now needs ten consecutive
+  connectivity failures <strong>spanning at least five minutes</strong>, not ten alone. A
+  new cluster no longer raises it while it forms; if you alert on this event,
+  expect it no earlier than five minutes into a real outage.</li>
+<li>A failed Aura Fleet Management token registration raises an
+  <code>AuraFleetManagementFailed</code> Warning event, once per distinct failure message.
+  It almost never fired before.</li>
+</ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
 <ol>
@@ -4175,7 +4392,7 @@ upgrade restarts nothing. See the
    bundle for the version you are upgrading to (replace the tag):</li>
 </ol>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.17.0/neo4j-kubernetes-operator.yaml
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.18.0/neo4j-kubernetes-operator.yaml
 </span></code></pre></div>
 <ol>
 <li><strong>Upgrade the operator</strong> via Helm:</li>

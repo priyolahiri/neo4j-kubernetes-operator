@@ -4407,7 +4407,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td><strong>Upgrade from the previous release</strong> (run FIRST, before building from <code>main</code>)</td>
-<td>Install the previous release (<code>ghcr.io/priyolahiri/neo4j-kubernetes-operator:&lt;previous tag&gt;</code>), then create a standalone and a <code>Neo4jRole</code> with a few privileges under it. Then deploy <code>main</code> <strong>without applying its CRDs</strong>: every <code>Neo4jRole</code> goes <code>Failed</code> with <code>the installed Neo4jRole CRD predates this operator</code>, and <code>SHOW ROLE … PRIVILEGES</code> is unchanged (nothing granted, nothing revoked). Apply the CRDs: the role goes <code>Ready</code> with <code>PrivilegesSynced=Unknown</code>/<code>UnattributedPrivileges</code> listing every pre-existing row, <strong>none revoked</strong>. The standalone records <code>status.effectiveCypherLanguage=CYPHER_5</code>, its <code>neo4j.conf</code> is <strong>byte-identical</strong> to the old operator's (diff the ConfigMap) and the pod <strong>did not restart</strong>. Remove one unattributed row by hand → it is re-learned and attributed. Then tear down and continue from a clean <code>main</code> install</td>
+<td>Install the previous release (<code>ghcr.io/priyolahiri/neo4j-kubernetes-operator:&lt;previous tag&gt;</code>), then create a standalone and a <code>Neo4jRole</code> with a few privileges under it. Then deploy <code>main</code> <strong>without applying its CRDs</strong>, and then apply them. What the old CRDs do depends on the release: from v1.16 every <code>Neo4jRole</code> went <code>Failed</code> with <code>the installed Neo4jRole CRD predates this operator</code> (learn mode's status fields did not exist yet) and, once the CRDs were applied, <code>Ready</code> with <code>PrivilegesSynced=Unknown</code>/<code>UnattributedPrivileges</code> listing every pre-existing row; from v1.17 nothing fails at all. Either way <code>SHOW ROLE … PRIVILEGES</code> is <strong>unchanged</strong> at every step (nothing granted, nothing revoked), the standalone records <code>status.effectiveCypherLanguage=CYPHER_5</code>, its <code>neo4j.conf</code> is <strong>byte-identical</strong> to the old operator's (diff the ConfigMap), the StatefulSet's generation is unchanged and the pod <strong>did not restart</strong>. Remove one row by hand → it is restored (and, if it was unattributed, attributed). Also create a scheduled <code>Neo4jBackup</code> under the old release: from v1.18 it reads <code>Ready=True</code>/<code>BackupScheduled</code> as soon as <code>main</code> runs, where v1.17 left it <code>Ready=Unknown</code> forever. Then tear down and continue from a clean <code>main</code> install</td>
 </tr>
 <tr>
 <td>Privileges match Neo4j's <strong>stored form</strong></td>
@@ -4451,7 +4451,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Operator build metadata</td>
-<td>scrape the operator's <code>/metrics</code> (<code>kubectl port-forward -n &lt;operator-ns&gt; deploy/&lt;operator-deploy&gt; 8082:8082</code> on the dev overlay, which serves plain HTTP in <code>--mode=dev</code>; production mode serves <code>:8080</code>, over HTTPS with a bearer token when <code>metrics.secure</code> is on) and find <code>neo4j_operator_build_info</code>: exactly one series, value <code>1</code>, with <code>version</code>, <code>vcs_ref</code>, <code>build_date</code> and <code>go_version</code> labels. <code>vcs_ref</code> must equal <code>git rev-parse --short HEAD</code> of the tree you built (a <code>make deploy-dev-local</code> build stamps <code>version</code> with the Makefile placeholder <code>0.0.1</code>; only a release image carries a release version). A <code>vcs_ref</code> of <code>unknown</code> or a stale SHA means you are running an image that is not the tree under test</td>
+<td>scrape the operator's <code>/metrics</code> (<code>kubectl port-forward -n &lt;operator-ns&gt; deploy/&lt;operator-deploy&gt; 8443:8443</code>, then <code>curl http://localhost:8443/metrics</code>: the dev overlay binds <code>:8443</code> and serves it as <strong>plain HTTP</strong> in <code>--mode=dev</code>, despite the <code>--metrics-secure=true</code> in its args — nothing listens on 8082, which this row named until 2026-10-02; production mode serves HTTPS with a bearer token when <code>metrics.secure</code> is on) and find <code>neo4j_operator_build_info</code>: exactly one series, value <code>1</code>, with <code>version</code>, <code>vcs_ref</code>, <code>build_date</code> and <code>go_version</code> labels. <code>vcs_ref</code> must equal <code>git rev-parse --short HEAD</code> of the tree you built (a <code>make deploy-dev-local</code> build stamps <code>version</code> with the Makefile placeholder <code>0.0.1</code>; only a release image carries a release version). A <code>vcs_ref</code> of <code>unknown</code> or a stale SHA means you are running an image that is not the tree under test</td>
 </tr>
 <tr>
 <td><code>system</code> is not restorable</td>
@@ -4471,7 +4471,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Composite: where a constituent is reachable from</td>
-<td>from a session <strong>on the composite</strong> (<code>cypher-shell -d cineasts</code>), <code>USE cineasts.latest MATCH (n) RETURN count(n)</code> succeeds and <code>RETURN graph.names()</code> lists the constituents. From the default database the same <code>USE</code> is refused with <code>42N04</code> — <strong>and following that error's own advice to "connect to <code>cineasts.latest</code> directly" fails with <code>22N51</code></strong>. Both halves matter: the guide tells users to ignore the server's suggestion, so a release that changed this would make the docs wrong</td>
+<td>from a session <strong>on the composite</strong> (<code>cypher-shell -d cineasts</code>), <code>USE cineasts.latest MATCH (n) RETURN count(n)</code> succeeds and <code>RETURN graph.names()</code> lists the constituents. From the default database the same <code>USE</code> is refused with <code>42N04</code> — <strong>and following that error's own advice to "connect to <code>cineasts.latest</code> directly" fails with <code>22N51</code></strong>. Both halves matter: the guide tells users to ignore the server's suggestion, so a release that changed this would make the docs wrong. <code>cypher-shell</code> prints the messages without the GQL codes, so match on the text: <em>"…only allowed when connected to it"</em> for the first, <em>"Unable to get a routing table for database 'latest'…"</em> for the second (5.26.0, 2026-10-02)</td>
 </tr>
 <tr>
 <td>Composite: the ordering trap is guarded</td>
@@ -4628,6 +4628,10 @@ cluster (~2Gi each):</p>
 <tr>
 <td>Sharded family language</td>
 <td>The operator's <code>CREATE</code> (operator log, <code>Executing sharded database creation</code>) carries <code>SET DEFAULT LANGUAGE CYPHER 25</code> <strong>exactly once</strong>; the parent and every shard report <code>CYPHER 25</code></td>
+</tr>
+<tr>
+<td>Shard status (v1.18+)</td>
+<td><code>status.creationTime</code>, <code>graphShard</code>, <code>propertyShards</code> (one per shard, with its index) and <code>virtualDatabase</code> are populated, and agree with <code>SHOW DATABASES</code>: within ~15s of <code>Ready</code> every shard reads <code>state: online</code>, <code>ready: true</code>. On the v1.18.0 walk the graph shard read <code>starting</code> for minutes after the family was online, because the status was written once, right after <code>CREATE</code>, and not re-read before the five-minute periodic reconcile</td>
 </tr>
 <tr>
 <td><strong>Upgrading a sharding cluster</strong> from the previous release</td>
@@ -4840,7 +4844,7 @@ Parts A/B.</p>
 </tr>
 <tr>
 <td>Replica is read-only</td>
-<td>a write via <code>cypher-shell</code> fails; the same query with <code>--access-mode=read</code> succeeds</td>
+<td>a write via <code>cypher-shell</code> fails; the same query with <code>--access-mode=read</code> succeeds. Two traps: the replica is a database <strong>named after the CR</strong> (<code>foo-replica</code>) when <code>spec.name</code> is unset, which is what <code>export replica-database</code> emits, so <code>-d foo</code> hits a database that does not exist; and run the write <strong>on the server hosting it</strong> (<code>SHOW DATABASE … YIELD address</code>), where it fails with <code>08N08</code> <em>database is read only</em>. Routed from another server, Neo4j reports the same refusal as a transient <code>08N17</code>/<code>50N16</code> remote-execution error</td>
 </tr>
 <tr>
 <td>Alias pre-staged against a replica</td>
@@ -4848,7 +4852,7 @@ Parts A/B.</p>
 </tr>
 <tr>
 <td>Promotion</td>
-<td><code>Neo4jReplicaPromotion</code> → <code>Completed</code>; <code>status.observedLagTxIds</code> recorded; <code>SHOW DATABASES</code> now shows a standard read-write type</td>
+<td><code>Neo4jReplicaPromotion</code> → <code>Completed</code>; <code>SHOW DATABASES</code> now shows a standard read-write type. <code>status.observedLagTxIds</code> is set only when there was lag to make permanent: at zero lag it is absent by design and the message says <em>"0 transactions of lag were made permanent"</em></td>
 </tr>
 <tr>
 <td>Alias survives promotion</td>
@@ -4860,7 +4864,11 @@ Parts A/B.</p>
 </tr>
 <tr>
 <td>Out-of-band promotion is safe</td>
-<td>on a second replica, promote by hand at a <code>cypher-shell</code>, then let the operator reconcile → it goes <code>Promoted</code> with a <code>ReplicaPromotionDetected</code> event ("promotion detected (out-of-band)") rather than "correcting" the drift by dropping the database</td>
+<td>on a second replica, promote by hand at a <code>cypher-shell</code>, then let the operator reconcile → it goes <code>Promoted</code> with a <code>ReplicaPromotionDetected</code> event ("promotion detected (out-of-band)") rather than "correcting" the drift by dropping the database. Promote with <code>CYPHER 25 CALL dbms.promoteReplicaDatabase('&lt;name&gt;', {})</code> on <code>system</code> — the procedure takes an options map as its second argument, and calling it with the name alone fails <code>42I13</code></td>
+</tr>
+<tr>
+<td>Replica metrics (v1.18+)</td>
+<td>run the operator with <code>--kubernetes-cluster-name=&lt;name&gt;</code> and scrape <code>/metrics</code> throughout Part B: <code>neo4j_operator_replica_lag_transactions{namespace, cluster_name, replica, database, k8s_cluster}</code> is present while a replica is <code>Replicating</code> (value = transactions behind, <code>0</code> here) with <code>k8s_cluster</code> set, and is <strong>removed</strong> — not frozen at its last value — when the replica is promoted by CR, promoted out of band, or its CR is deleted. <code>neo4j_operator_replica_promotions_total{…, result="success"}</code> counts the CR-driven promotion only, once; the out-of-band one does not increment it. A vector with no observations exports nothing, so the counter is absent until the first promotion. Repeat the lag check in Part E for network mode</td>
 </tr>
 </tbody>
 </table>
@@ -5189,6 +5197,15 @@ the first walk. The scripted steps already do.</p>
 <td style="text-align: center;">✅ backup mode + network mode mechanism (same-cluster) + the full proxy path across two Kind clusters with TLS on (<code>make ccdr-lb</code>, Part E)</td>
 </tr>
 <tr>
+<td>Replica metrics (lag gauge, promotion counter, <code>k8s_cluster</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (backup mode and network mode)</td>
+</tr>
+<tr>
 <td>Database aliases</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
@@ -5306,6 +5323,12 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><strong>v1.18.0 release verification</strong></td>
+<td>2026-10-02</td>
+<td>✅ Phases 0-3 and Phase 5 (Parts A, B, E) pass on <code>7d04d6c</code>; Phase 4 <strong>not run</strong> (the Aura key needs rotating first; nothing under <code>internal/aura/</code> changed beyond a no-effect warning); Parts C and D are covered by the extended suite. <strong>Five defects fixed in #443, two doc fixes and six stale or incomplete rows here corrected in #442</strong></td>
+<td><strong>Upgrade from v1.17.0</strong> (operator <code>0eceac4</code>): with <code>main</code> on the v1.17.0 CRDs and then on its own, the role kept its 5 stored rows with no new <code>PrivilegesApplied</code>, the standalone kept <code>CYPHER_5</code>, a byte-identical ConfigMap, StatefulSet generation 1 and the same pod UID with 0 restarts, and a hand-revoked row came back as <code>1 added / 0 revoked</code>. A scheduled backup created under v1.17.0 (<code>Ready=Unknown/Pending</code>) read <code>Ready=True/BackupScheduled</code> the moment <code>main</code> ran. The sharding cluster created under v1.17.0 kept its template hash, generation 1, ConfigMap and all three pod UIDs, and re-derived <code>CYPHER_25</code> after the stamp was cleared with the operator stopped. <strong>First live scrape of the replica metrics</strong> (new in #437/#438): <code>neo4j_operator_replica_lag_transactions</code> present while replicating with <code>k8s_cluster</code> set from <code>--kubernetes-cluster-name</code> (<code>journey-dev</code>, and <code>neo4j-dr</code> on the Part E downstream for network mode), and removed on a CR promotion, an out-of-band promotion and a CR delete; <code>replica_promotions_total{result="success"}</code> = 1 for the CR promotion only. <strong>v1.18 behaviour verified live:</strong> New <code>ValidationWarning</code>s fire (<code>kerberos</code> as a provider, with <code>plugin-Neo4j-Kerberos</code> accepted silently); a standalone <code>storage.size</code> of <code>1.5Gi</code> accepted; <code>status --problems</code> lists an <code>Invalid</code> backup; support bundle carries <code>errors.txt</code> and zero hits for four real secret values; <code>Neo4jPlugin</code> status fills <code>installedVersion</code>/<code>installationTime</code>; composites were walked on both lines (5.26 and a Cypher 25 CalVer cluster). <code>status.upgradeStatus.phaseStartTime</code> and <code>upgrade_duration_seconds</code> were <strong>not</strong> exercised: no rolling version upgrade on this walk. <strong>Fixed in code (#443):</strong> (1) every new standalone emitted a <code>ReconcileFailed</code> warning on its first reconcile (a cache race reading back the StatefulSet it had just created), which <code>diagnose</code> then reported — since the initial commit; (2) <code>status.graphShard.state</code> read <code>starting</code> for minutes after the sharded family was online; (3) the database's <code>PrivilegeTargetDropped</code> event came twice with the role names in different orders; (4) <code>diagnose</code> counted a just-replaced pod in <code>2/3 pods ready</code> but named it nowhere while it was <code>PodInitializing</code>; (5) <code>make ccdr-e2e-up</code> built the operator with a bare <code>docker build</code>, so both Part E operators reported <code>vcs_ref="unknown"</code>. <strong>Docs fixed:</strong> the backup tutorial's step 5 (an online restore into a new database) cannot be followed on a standalone, which Getting Started recommends — it fails asking for <code>stopCluster: true</code>, and the guide only said so after step 6; and three places said an <code>allDatabases</code> backup excludes <code>system</code>, when the backup captures it and only the restore skips it. <strong>Rows corrected here:</strong> build-info (the dev overlay serves plain HTTP on <code>:8443</code>, not <code>:8082</code>), the upgrade row (release-neutral, plus the scheduled-backup check), composite reachability (<code>cypher-shell</code> prints no GQL codes), replica read-only (the database is named after the CR; a write routed from a non-hosting server fails transiently with <code>08N17</code>), promotion (<code>observedLagTxIds</code> is absent at zero lag), the out-of-band promote call (it takes an options map); new rows for shard status and replica metrics. <strong>Observed on the walk, fixed after it (#445):</strong> <code>ConnectivityDegraded</code> fired during normal formation of a new cluster (ten failures in its first 91 seconds), so <code>diagnose</code> showed a minutes-old ⚠ on a healthy one — it now also needs five minutes; <code>export replica-database</code> emitted an empty <code>status: {}</code>; the published examples pinned <code>5.26.0-enterprise</code> (the first LTS patch) and the sharding examples <code>2026.06</code> against the <code>2026.08.1</code> anchor — now <code>5.26-enterprise</code> or the anchor, with a guard test so the drift cannot return. <strong>Filed, not fixed:</strong> a single server pod restart flips a formed cluster to <code>Forming</code> (#444, a status-model decision). <strong>Not ours:</strong> <code>cypher-shell</code> cannot verify a cert-manager server over <code>neo4j+s://</code> from inside the pod (<code>kubectl neo4j cypher</code> works around it).</td>
+</tr>
 <tr>
 <td><strong>v1.17.0 release verification</strong></td>
 <td>2026-09-30</td>
