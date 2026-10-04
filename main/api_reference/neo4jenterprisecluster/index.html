@@ -3223,6 +3223,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#server-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server availability
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -5470,6 +5481,17 @@
     <span class="md-ellipsis">
       
         Conditions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server-availability" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server availability
       
     </span>
   </a>
@@ -7984,7 +8006,7 @@ for details.</p>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Cluster phase: <code>"Initializing"</code>, <code>"Forming"</code>, <code>"Ready"</code>, <code>"Expanding"</code> (storage expansion in progress), <code>"Paused"</code> (upgrade paused after a failure), <code>"Failed"</code></td>
+<td>Cluster phase: <code>"Initializing"</code>, <code>"Forming"</code>, <code>"Ready"</code>, <code>"Degraded"</code> (formed and serving with a majority of its servers, one or more unavailable for longer than the grace period — see <a href="#server-availability">Server availability</a>), <code>"Expanding"</code> (storage expansion in progress), <code>"Paused"</code> (upgrade paused after a failure), <code>"Failed"</code></td>
 </tr>
 <tr>
 <td><code>ready</code></td>
@@ -7999,7 +8021,7 @@ for details.</p>
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td>Cluster conditions (e.g. <code>Ready</code>, <code>ServersHealthy</code>, <code>DatabasesHealthy</code>, <code>ServersPendingDrain</code>) — see <a href="#conditions">Conditions</a></td>
+<td>Cluster conditions (e.g. <code>Ready</code>, <code>Degraded</code>, <code>ClusterFormed</code>, <code>ServersHealthy</code>, <code>DatabasesHealthy</code>, <code>ServersPendingDrain</code>) — see <a href="#conditions">Conditions</a></td>
 </tr>
 <tr>
 <td><code>replicas</code></td>
@@ -8463,16 +8485,28 @@ visible via <code>kubectl get svc</code>.</p>
 </thead>
 <tbody>
 <tr>
+<td><code>Degraded</code></td>
+<td>The cluster has formed and one or more of its servers is unavailable (reason <code>ServersUnavailable</code>; the message names them). Its <code>lastTransitionTime</code> is when the shortfall began</td>
+<td>Every server is available (reason <code>AllServersAvailable</code>)</td>
+<td>n/a — absent until the cluster first forms</td>
+</tr>
+<tr>
+<td><code>ClusterFormed</code></td>
+<td>The cluster has formed at least once. Never set back to <code>False</code></td>
+<td>n/a</td>
+<td>n/a — absent until the cluster first forms</td>
+</tr>
+<tr>
 <td><code>ServersHealthy</code></td>
 <td>All servers are <code>state=Enabled</code> <strong>and</strong> <code>health=Available</code></td>
 <td>Any server is Cordoned, Deallocating, or Unavailable</td>
-<td>Diagnostics cannot be collected (cluster not Ready or Bolt unreachable)</td>
+<td>Diagnostics cannot be collected (cluster not formed yet, or Bolt unreachable)</td>
 </tr>
 <tr>
 <td><code>DatabasesHealthy</code></td>
 <td>All user databases have <code>status=online</code></td>
 <td>Any database has <code>requestedStatus=online</code> but <code>status≠online</code></td>
-<td>Diagnostics cannot be collected (cluster not Ready or Bolt unreachable)</td>
+<td>Diagnostics cannot be collected (cluster not formed yet, or Bolt unreachable)</td>
 </tr>
 <tr>
 <td><code>ServersPendingDrain</code></td>
@@ -8491,6 +8525,58 @@ visible via <code>kubectl get svc</code>.</p>
 <blockquote>
 <p><strong>Note:</strong> The <code>system</code> database is excluded from the <code>DatabasesHealthy</code> check because it has special internal lifecycle behavior.</p>
 </blockquote>
+<h3 id="server-availability">Server availability<a class="headerlink" href="#server-availability" title="Anchor link to this section">&para;</a></h3>
+<p>A cluster is <code>Forming</code> until every server has joined it once. After that, a missing server — a pod restart, an OOM kill, a node drain — is an outage of a formed cluster, and the cluster is judged on whether it is still serving:</p>
+<table>
+<thead>
+<tr>
+<th>Situation</th>
+<th>Phase</th>
+<th><code>Ready</code> condition</th>
+<th><code>Degraded</code> condition</th>
+<th>Dependents¹</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Every server available</td>
+<td><code>Ready</code></td>
+<td><code>True</code></td>
+<td><code>False</code></td>
+<td>proceed</td>
+</tr>
+<tr>
+<td>A majority available, short for less than the grace period</td>
+<td><code>Ready</code></td>
+<td><code>True</code></td>
+<td><code>True</code></td>
+<td>proceed</td>
+</tr>
+<tr>
+<td>A majority available, short for longer than the grace period</td>
+<td><code>Degraded</code></td>
+<td><code>False</code> (<code>ClusterDegraded</code>)</td>
+<td><code>True</code></td>
+<td>proceed</td>
+</tr>
+<tr>
+<td>Half or fewer available</td>
+<td><code>Forming</code></td>
+<td><code>Unknown</code></td>
+<td><code>True</code></td>
+<td>pause</td>
+</tr>
+<tr>
+<td>First formation, a scale-up, or a rollout of the server StatefulSet</td>
+<td><code>Forming</code></td>
+<td><code>Unknown</code></td>
+<td>unchanged</td>
+<td>pause</td>
+</tr>
+</tbody>
+</table>
+<p>¹ <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jDatabase</code>, <code>Neo4jShardedDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jReplicaDatabase</code>, <code>Neo4jReplicaPromotion</code> and <code>Neo4jBackup</code>. Whether a statement can run on the servers that are up is Neo4j's call, reported on that resource. Operations that restart every server — a rolling image upgrade, a <code>Neo4jPlugin</code> install — wait until every server is back.</p>
+<p>The grace period defaults to 5 minutes and is set with the operator flag <code>--server-unavailable-grace</code> (Helm: <code>serverUnavailableGrace</code>). Raise it if your servers take longer than that to restart and rejoin. Entering <code>Degraded</code> raises one <code>ClusterDegraded</code> Warning event; losing a majority raises one <code>ClusterQuorumLost</code> Warning. <code>ServersHealthy</code>, <code>DatabasesHealthy</code> and the <code>neo4j_operator_server_health</code> metric keep updating throughout.</p>
 <h2 id="examples">Examples<a class="headerlink" href="#examples" title="Anchor link to this section">&para;</a></h2>
 <h3 id="basic-cluster">Basic Cluster<a class="headerlink" href="#basic-cluster" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>

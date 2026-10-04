@@ -4257,7 +4257,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ClusterFormationStarted</code></td>
 <td>Normal</td>
-<td>Cluster formation has begun (first time entering Forming phase)</td>
+<td>Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it)</td>
 </tr>
 <tr>
 <td><code>ClusterFormationFailed</code></td>
@@ -4318,6 +4318,16 @@ and alerting systems.</p>
 <td><code>MCPApocMissing</code></td>
 <td>Warning</td>
 <td>MCP server requires APOC plugin which is not installed</td>
+</tr>
+<tr>
+<td><code>ClusterDegraded</code></td>
+<td>Warning</td>
+<td>A formed cluster has been short of one or more servers for longer than the grace period (<code>--server-unavailable-grace</code>, default 5m) and its phase is now <code>Degraded</code>. It is still serving with a majority; dependents keep reconciling. Emitted once per transition</td>
+</tr>
+<tr>
+<td><code>ClusterQuorumLost</code></td>
+<td>Warning</td>
+<td>A formed cluster has half or fewer of its servers available. Its phase is <code>Forming</code> and dependents pause until a majority is back. Emitted once per transition (an operator restart during the outage may repeat it once)</td>
 </tr>
 <tr>
 <td><code>ConnectivityDegraded</code></td>

@@ -3994,11 +3994,14 @@ each server's <code>SHOW SERVERS</code> version against the image tag, normalizi
 Neo4j's kernel alias (the <code>2025.01.x</code> CalVer releases report kernel <code>5.27.x</code> —
 both are accepted as the same version).</p>
 <p><strong>Image changes while the cluster is not Ready are deferred.</strong> Changing
-<code>spec.image</code> while the cluster is <code>Forming</code>, mid-restore, or otherwise not
-<code>Ready</code> does not roll pods immediately: the operator holds the change (you'll
-see an <code>UpgradeDeferred</code> event on the cluster) and the rolling-upgrade state
-machine performs it once the cluster reaches <code>Ready</code> — a version change must
-never sneak in as an ungated restart while quorum is still forming.</p>
+<code>spec.image</code> while the cluster is <code>Forming</code>, <code>Degraded</code>, mid-restore, or
+otherwise not <code>Ready</code> — or while it is <code>Ready</code> but a server is unavailable (its
+<code>Degraded</code> condition is <code>True</code>) — does not roll pods immediately: the operator
+holds the change (you'll see an <code>UpgradeDeferred</code> event on the cluster) and the
+rolling-upgrade state machine performs it once the cluster is <code>Ready</code> with every
+server available — a version change must never sneak in as an ungated restart
+while quorum is still forming, and rolling the other servers while one is down
+could cost the cluster its majority.</p>
 <p>One deliberate exception: if <strong>no server pod has ever become ready</strong> — the
 typical case being a first deploy stuck in <code>ImagePullBackOff</code> on a mistyped
 tag — there is no formed quorum to protect, so a corrected <code>spec.image</code>

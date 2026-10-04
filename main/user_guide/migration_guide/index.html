@@ -761,6 +761,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v118x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.18.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.18.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-no-action-needed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New, no action needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4102,6 +4141,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v118x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.18.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.18.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#new-no-action-needed_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        New, no action needed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4383,6 +4461,57 @@ them. <code>neo4j_operator_</code> followed by: <code>backup_size_bytes</code>,
 <li>A failed Aura Fleet Management token registration raises an
   <code>AuraFleetManagementFailed</code> Warning event, once per distinct failure message.
   It almost never fired before.</li>
+</ul>
+<h2 id="upgrading-from-v118x">Upgrading from v1.18.x<a class="headerlink" href="#upgrading-from-v118x" title="Anchor link to this section">&para;</a></h2>
+<p>No CRD changes. Nothing to do before upgrading; the behaviour changes below
+take effect on the first reconcile.</p>
+<h3 id="behaviour-changes_1">Behaviour changes<a class="headerlink" href="#behaviour-changes_1" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>A cluster that loses a server stays <code>Ready</code></strong> (#444). It used to drop to
+  <code>Forming</code> on any one pod restart, which paused every <code>Neo4jUser</code>,
+  <code>Neo4jRole</code>, <code>Neo4jDatabase</code>, <code>Neo4jBackup</code> and the rest until the server
+  came back, and left a cluster whose server never came back <code>Forming</code> for
+  good. A cluster that has formed now stays <code>Ready</code> while a majority of its
+  servers is serving, with a new <code>Degraded</code> condition naming the missing
+  servers. If a server is still missing after the grace period (5 minutes;
+  <code>--server-unavailable-grace</code>, Helm <code>serverUnavailableGrace</code>), the phase
+  turns <strong><code>Degraded</code></strong>: <code>status.ready</code> is <code>false</code>, the <code>Ready</code> condition is
+  <code>False</code> with reason <code>ClusterDegraded</code>, and a <code>ClusterDegraded</code> Warning event
+  is raised. Losing a majority still reports <code>Forming</code>, now with a
+  <code>ClusterQuorumLost</code> Warning. See
+  <a href="../../api_reference/neo4jenterprisecluster/#server-availability">Server availability</a>.</li>
+<li><strong>Dependents keep working against a <code>Degraded</code> cluster.</strong> Users, roles,
+  bindings, auth rules, databases, sharded databases, aliases, composites,
+  replicas, promotions and backups reconcile as they do against a <code>Ready</code> one.
+  A rolling image upgrade or a <code>Neo4jPlugin</code> install waits until every server
+  is back, including during the grace period.</li>
+<li><strong>Alerts and pipelines:</strong> <code>kubectl wait --for=condition=Ready</code>, Flux health
+  checks and the <a href="../../gitops/">ArgoCD health checks</a> report a
+  <code>Degraded</code> cluster as not ready — that is new, since it used to be
+  <code>Forming</code> (<code>Ready=Unknown</code>, ArgoCD <code>Progressing</code>). If you alert on
+  <code>neo4j_operator_cluster_phase{phase="Forming"}</code> to catch a lost server, alert
+  on <code>phase="Degraded"</code> too, or on the <code>Degraded</code> condition directly.</li>
+<li><strong>Diagnostics keep running while a server is down.</strong> <code>ServersHealthy</code>,
+  <code>DatabasesHealthy</code>, <code>status.diagnostics</code> and <code>neo4j_operator_server_health</code>
+  used to freeze at their last healthy values whenever the cluster was not
+  <code>Ready</code>; they are now collected whenever the cluster has formed.</li>
+<li><strong><code>ClusterFormationStarted</code> is raised on first formation only</strong>, no longer
+  on every pod restart of a formed cluster.</li>
+<li><strong><code>neo4j_operator_server_health</code> no longer leaves series behind.</strong> A server
+  that was down was reported with <code>server_address="&lt;nil&gt;"</code> (also in
+  <code>status.diagnostics.servers[].address</code>), which started a new series and left
+  the old one exported at its last value — a <code>0</code> that kept a
+  <code>server_health == 0</code> alert firing after the server came back. A down server
+  now keeps the last address it reported, and series a cluster no longer
+  reports are withdrawn.</li>
+</ul>
+<h3 id="new-no-action-needed_2">New, no action needed<a class="headerlink" href="#new-no-action-needed_2" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li>Conditions <code>Degraded</code> and <code>ClusterFormed</code> on <code>Neo4jEnterpriseCluster</code>.</li>
+<li>The <code>Ready</code> condition of a <code>Degraded</code> cluster has reason <code>ClusterDegraded</code>
+  instead of <code>ReconciliationFailed</code>.</li>
+<li>Operator flag <code>--server-unavailable-grace</code> (default <code>5m</code>) and Helm value
+  <code>serverUnavailableGrace</code>.</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>

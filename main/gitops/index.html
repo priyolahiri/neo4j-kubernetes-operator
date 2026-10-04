@@ -3822,6 +3822,13 @@ backup is not ready to run) but with reason <code>Suspended</code>, not <code>Re
 nothing failed.
 <code>Invalid</code> (a spec the validator rejected) is terminal until the spec is edited,
 so it maps to Degraded rather than Progressing.</p>
+<p>A <code>Neo4jEnterpriseCluster</code> that loses a server stays <code>Ready</code> — Healthy — for a
+grace period (default 5 minutes), so a routine pod restart does not flip the
+Application. If the server is still missing after that, the phase turns
+<code>Degraded</code> and so does the Application; it returns to Healthy when the server
+does. A cluster that loses a majority of its servers reports <code>Forming</code>, which
+ArgoCD shows as Progressing. See
+<a href="../api_reference/neo4jenterprisecluster/#server-availability">Server availability</a>.</p>
 <p>Health checks are configured for <strong>all 27 CRDs</strong> in the <code>neo4j.neo4j.com</code>
 group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
 replication) and all 12 Aura CRDs. <code>make check-crd-catalog</code> fails the build if a
@@ -3846,6 +3853,10 @@ never modify the database again.</p>
 <p>Flux automatically detects readiness via <code>status.conditions</code> when CRDs expose a
 standard <code>Ready</code> condition (type <code>Ready</code>, using <code>metav1.Condition</code>). No extra
 Flux configuration is needed once the operator surfaces that condition.</p>
+<p>A <code>Neo4jEnterpriseCluster</code> keeps <code>Ready=True</code> through a short server outage
+(the grace period above); a <code>Degraded</code> one reports <code>Ready=False</code> with reason
+<code>ClusterDegraded</code>, so a Kustomization health-checking it fails until the
+missing server is back.</p>
 <h2 id="prometheus-servicemonitor">Prometheus ServiceMonitor<a class="headerlink" href="#prometheus-servicemonitor" title="Anchor link to this section">&para;</a></h2>
 <p>The Helm chart includes a <code>ServiceMonitor</code> for the Prometheus Operator. By default
 (<code>metrics.secure: true</code>) the operator serves <code>/metrics</code> over <strong>HTTPS</strong> with

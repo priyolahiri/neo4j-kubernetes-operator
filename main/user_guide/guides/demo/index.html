@@ -4653,7 +4653,7 @@
 <h3 id="plugin-installation-takes-too-long">Plugin installation takes too long<a class="headerlink" href="#plugin-installation-takes-too-long" title="Anchor link to this section">&para;</a></h3>
 <p>The APOC plugin requires a rolling restart of all cluster pods. Each pod restarts sequentially to maintain availability. Allow 2-3 minutes for a 3-node cluster.</p>
 <h3 id="diagnostics-section-shows-empty">Diagnostics section shows empty<a class="headerlink" href="#diagnostics-section-shows-empty" title="Anchor link to this section">&para;</a></h3>
-<p>Diagnostics are collected by default whenever the cluster is Ready. They may take 30-60 seconds to appear after cluster formation. If still empty, check that <code>spec.monitoring.enabled</code> is not explicitly set to <code>false</code>.</p>
+<p>Diagnostics are collected by default once the cluster has formed, including while a server is down. They may take 30-60 seconds to appear after cluster formation. If still empty, check that <code>spec.monitoring.enabled</code> is not explicitly set to <code>false</code>.</p>
 <h3 id="cypher-shell-connection-refused">cypher-shell connection refused<a class="headerlink" href="#cypher-shell-connection-refused" title="Anchor link to this section">&para;</a></h3>
 <p>Neo4j's bolt listener starts after the pod readiness probe passes. Wait 10-15 seconds after pod Ready before connecting. The demo includes appropriate delays.</p>
 

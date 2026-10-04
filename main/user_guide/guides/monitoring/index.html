@@ -4792,7 +4792,7 @@ string, so a missing value is visible instead of silently absent.</p>
 <td><code>neo4j_operator_server_health</code></td>
 <td>Gauge</td>
 <td><code>cluster_name</code>, <code>namespace</code>, <code>server_name</code>, <code>server_address</code>, <code>k8s_cluster</code></td>
-<td><code>1</code> = Enabled+Available; <code>0</code> = degraded. <code>k8s_cluster</code> is empty unless the operator runs with <code>--kubernetes-cluster-name</code> (Helm <code>kubernetesClusterName</code>) — see <a href="../multi_cluster/">Multi-cluster</a></td>
+<td><code>1</code> = Enabled+Available; <code>0</code> = degraded. Collected once the cluster has formed, including while a server is down; a down server keeps the last address it reported, and a server the cluster no longer lists has its series removed. <code>k8s_cluster</code> is empty unless the operator runs with <code>--kubernetes-cluster-name</code> (Helm <code>kubernetesClusterName</code>) — see <a href="../multi_cluster/">Multi-cluster</a></td>
 </tr>
 </tbody>
 </table>
@@ -5186,8 +5186,8 @@ on every reconcile cycle.</p>
 </thead>
 <tbody>
 <tr>
-<td>Cluster not yet <code>Ready</code></td>
-<td>Diagnostics only run when <code>status.phase=Ready</code>; check cluster phase</td>
+<td>Cluster has not formed yet</td>
+<td>Diagnostics run once the cluster has formed (been <code>Ready</code> at least once), and keep running while it is degraded; check the cluster phase</td>
 </tr>
 <tr>
 <td>Auth secret missing or wrong</td>
