@@ -105,14 +105,18 @@ load_and_deploy_operator() {
     # containerd restarts inside the node just after the cluster reports Ready,
     # so the first load often fails with a connection refused or a missing
     # content digest. Retry; this is the documented Kind race.
-    local i
+    local i loaded=""
     for i in 1 2 3; do
         if kind load docker-image "${OPERATOR_IMAGE}" --name "${name}"; then
+            loaded=1
             break
         fi
         warn "${name}: image load failed (attempt ${i}), retrying"
         sleep 10
     done
+    # Carrying on would deploy whatever image the node already has — on a
+    # reused cluster, the previous build — and nothing would say so.
+    [ -n "${loaded}" ] || die "${name}: could not load ${OPERATOR_IMAGE} after 3 attempts"
 
     # kubectl, not make: every make target here runs against the CURRENT
     # context, and `kind create cluster` has just switched it. Targeting the
@@ -120,10 +124,23 @@ load_and_deploy_operator() {
     # cost a false blocker on the first Part E walk — so nothing in this
     # script omits --context.
     log "${name}: CRDs + operator (dev overlay → ${OPERATOR_NS})"
+    # The upstream is the dev cluster, usually already running an operator.
+    # OPERATOR_IMAGE is a fixed tag, so applying an unchanged overlay changes
+    # nothing the Deployment can see and that operator would keep the old
+    # binary. Note whether it existed before the apply, and restart it if so;
+    # one the apply just created is already on the new image.
+    local existed
+    existed="$(kubectl --context "${ctx}" -n "${OPERATOR_NS}" get \
+        deployment/neo4j-operator-controller-manager -o name 2>/dev/null || true)"
     kubectl --context "${ctx}" apply -f "${REPO_ROOT}/config/crd/bases/" ||
         die "${name}: could not install the CRDs"
     kubectl --context "${ctx}" apply -k "${REPO_ROOT}/config/overlays/dev" ||
         die "${name}: could not apply the dev overlay"
+    if [ -n "${existed}" ]; then
+        log "${name}: restarting the operator so it runs the image just loaded"
+        kubectl --context "${ctx}" -n "${OPERATOR_NS}" rollout restart \
+            deployment/neo4j-operator-controller-manager
+    fi
     kubectl --context "${ctx}" -n "${OPERATOR_NS}" rollout status \
         deployment/neo4j-operator-controller-manager --timeout=300s
 }
