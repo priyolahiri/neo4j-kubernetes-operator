@@ -281,6 +281,21 @@ spec:
                     description: Skip recovery step after backup (advanced; use when
                       recovery is handled separately)
                     type: boolean
+                  splitArchivePartSize:
+                    description: |-
+                      SplitArchivePartSize writes each backup artifact as several files of at
+                      most this size (neo4j-admin `--split-archive-part-size`), for an
+                      artifact larger than the target storage accepts as one object. A
+                      Kubernetes quantity of at least 1Gi, Neo4j's minimum part size, e.g.
+                      "500Gi". Unset or "0" writes a single file. Requires Neo4j 2026.09 or
+                      later on the target deployment.
+
+                      A split artifact is `<name>.backup`, a small metadata file, plus its data
+                      parts `<name>.backup.1`, `<name>.backup.2`, …. Restores, replicas and
+                      retention use the `.backup` file and find the parts beside it, so the
+                      parts must stay together: a bucket lifecycle rule filtered on a `.backup`
+                      suffix expires the metadata file and strands the parts.
+                    type: string
                   tempPath:
                     description: |-
                       TempPath is a local directory for temporary files during the backup.

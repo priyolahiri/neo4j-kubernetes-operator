@@ -328,6 +328,32 @@ func TestSupportsParallelDownload(t *testing.T) {
 	}
 }
 
+// --split-archive-part-size arrived in 2026.09. The operator's backup Job runs
+// the target's own image, so on anything older the flag is an unknown option.
+func TestSupportsSplitArchive(t *testing.T) {
+	cases := []struct {
+		version string
+		want    bool
+	}{
+		{"2026.09.0-enterprise", true},
+		{"2026.09-enterprise", true},
+		{"2026.12.0-enterprise", true},
+		{"2027.01.0-enterprise", true},
+		{"2026.08.1-enterprise", false},
+		{"2025.12.0-enterprise", false},
+		{"5.26.0-enterprise", false},
+	}
+	for _, tc := range cases {
+		v, err := ParseVersion(tc.version)
+		if err != nil {
+			t.Fatalf("ParseVersion(%s): %v", tc.version, err)
+		}
+		if v.SupportsSplitArchive() != tc.want {
+			t.Errorf("SupportsSplitArchive(%s) = %v, want %v", tc.version, !tc.want, tc.want)
+		}
+	}
+}
+
 // TestRecreateDatabaseProcedure pins the procedure-name picker across the
 // three Neo4j eras that matter:
 //   - SemVer 5.24+ (incl. 5.26 LTS): cluster.* form.

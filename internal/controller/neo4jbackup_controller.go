@@ -797,6 +797,20 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+// splitArchivePartBytes is spec.options.splitArchivePartSize in bytes, or 0
+// when unset, zero or unparseable (the inline validator has already refused a
+// malformed value before a Job is built).
+func splitArchivePartBytes(opts *neo4jv1beta1.BackupOptions) int64 {
+	if opts == nil || opts.SplitArchivePartSize == "" {
+		return 0
+	}
+	q, err := resource.ParseQuantity(opts.SplitArchivePartSize)
+	if err != nil || q.Sign() <= 0 {
+		return 0
+	}
+	return q.Value()
+}
+
 // jobDuration reports how long the backup Job ran for. Both metrics
 // (RecordBackup) and history (BackupStats.Duration) need this; deriving from
 // time.Now() at reconcile entry is wrong because the reconcile that observes
@@ -1460,6 +1474,9 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		if backup.Spec.Options.PreferDiffAsParent && !version.SupportsPreferDiffAsParent() {
 			return "", fmt.Errorf("--prefer-diff-as-parent requires CalVer 2025.04+ (image: %s)", cluster.Spec.Image.Tag)
 		}
+		if splitArchivePartBytes(backup.Spec.Options) > 0 && !version.SupportsSplitArchive() {
+			return "", fmt.Errorf("spec.options.splitArchivePartSize requires Neo4j 2026.09 or later; the target runs %s", cluster.Spec.Image.Tag)
+		}
 	}
 
 	// All runs for one Neo4jBackup CR share a single --to-path directory
@@ -1541,6 +1558,11 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		}
 		if backup.Spec.Options.IncludeMetadata != "" && version.SupportsMetadataOption() {
 			cmd += " --include-metadata=" + backup.Spec.Options.IncludeMetadata
+		}
+		if n := splitArchivePartBytes(backup.Spec.Options); n > 0 {
+			// Exact bytes: neo4j-admin accepts a plain byte count, and it
+			// sidesteps any question of what "G" means on either side.
+			cmd += fmt.Sprintf(" --split-archive-part-size=%d", n)
 		}
 		for _, arg := range backup.Spec.Options.AdditionalArgs {
 			cmd += " " + shellQuote(arg)
@@ -2102,6 +2124,12 @@ func cleanupJobNameFor(backup *neo4jv1beta1.Neo4jBackup) string {
 // orphan differential artifacts whose parent FULL ages out — chain-aware
 // retention requires `neo4j-admin backup aggregate`. Prefer backupType=FULL
 // on CRs that use retention, or bucket lifecycle rules on cloud storage.
+//
+// Split archives (Neo4j 2026.09+, --split-archive-part-size): an artifact is
+// `x.backup` — a small metadata file — plus its data parts `x.backup.1`,
+// `x.backup.2`, …. Counting and ordering stay on `*.backup` (one per
+// artifact), but every deletion removes `x.backup.*` with it; deleting the
+// metadata file alone strands parts nothing tracks and fills the PVC.
 func buildRetentionScript(policy *neo4jv1beta1.RetentionPolicy, chainDir string) string {
 	script := fmt.Sprintf(`#!/bin/sh
 set -e
@@ -2127,8 +2155,10 @@ if [ "$FILE_COUNT" -gt "$MAX_COUNT" ]; then
         sort -n | \
         head -n "$TO_DELETE" | \
         cut -d' ' -f2- | \
-        tr '\n' '\0' | \
-        xargs -0 -r rm -f
+        while IFS= read -r f; do
+            # The artifact and, for a split archive, its data parts.
+            rm -f "$f" "$f".*
+        done
     echo "Deleted $TO_DELETE old backup artifacts"
 fi
 `, policy.MaxCount)
@@ -2143,7 +2173,8 @@ fi
 NEWEST=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' -exec stat -c '%%Y %%n' {} + | sort -rn | head -n1 | cut -d' ' -f2-)
 find "$BACKUP_DIR" -maxdepth 1 -type f -name '*.backup' %s -print | while IFS= read -r f; do
     [ "$f" = "$NEWEST" ] && continue
-    rm -f "$f"
+    # The artifact and, for a split archive, its data parts.
+    rm -f "$f" "$f".*
 done
 echo "Removed backup artifacts older than %s"
 `, policy.MaxAge, findArg, policy.MaxAge)

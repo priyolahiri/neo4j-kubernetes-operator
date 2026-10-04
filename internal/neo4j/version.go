@@ -267,6 +267,19 @@ func (v *Version) SupportsParallelDownload() bool {
 	return v.Major == 2025 && v.Minor >= 11
 }
 
+// SupportsSplitArchive reports whether neo4j-admin accepts
+// --split-archive-part-size (2026.09+): backup, aggregate, copy, dump and
+// import can write an archive as several part files.
+func (v *Version) SupportsSplitArchive() bool {
+	if !v.IsCalver {
+		return false
+	}
+	if v.Major > 2026 {
+		return true
+	}
+	return v.Major == 2026 && v.Minor >= 9
+}
+
 // SupportsSkipRecovery checks if version supports --skip-recovery flag (2025.11+).
 func (v *Version) SupportsSkipRecovery() bool {
 	return v.SupportsParallelDownload()
