@@ -7925,7 +7925,8 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <ul>
 <li>Builds <code>neo4j-operator:dev</code> image locally</li>
 <li>Auto-detects and loads to available Kind cluster</li>
-<li>Deploys to <code>neo4j-operator-dev</code> namespace
+<li>Deploys to <code>neo4j-operator-dev</code> namespace</li>
+<li>Restarts an operator that was already running, then waits for the rollout. The tag never changes, so without the restart an unchanged manifest leaves the old pod — and the old binary — running
 <strong>Example</strong>:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-30-1"><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>make<span class="w"> </span>deploy-dev-local
 </span><span id="__span-30-2"><a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a><span class="c1"># Explicit local build and deploy</span>
@@ -7940,7 +7941,8 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <ul>
 <li>Builds <code>neo4j-operator:latest</code> image locally</li>
 <li>Auto-detects and loads to available Kind cluster</li>
-<li>Deploys to production namespace
+<li>Deploys to production namespace</li>
+<li>Restarts an operator that was already running, then waits for the rollout (see <code>deploy-dev-local</code>)
 <strong>Example</strong>:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-31-1"><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>make<span class="w"> </span>deploy-prod-local
 </span><span id="__span-31-2"><a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a><span class="c1"># Explicit local build and deploy</span>
