@@ -183,12 +183,14 @@ Plugin-only mode: omit `tokenSecretRef` to defer registration. Implementation: `
 
 ## Live Cluster Diagnostics
 
-When the cluster is `Ready` — on by default (`spec.monitoring` omitted, or `enabled: true`); only an explicit `spec.monitoring.enabled: false` turns it off:
+Once the cluster has formed (`Ready`, `Degraded`, or `ClusterFormed=True` — so it keeps running while a server is down, #444) — on by default (`spec.monitoring` omitted, or `enabled: true`); only an explicit `spec.monitoring.enabled: false` turns it off:
 - `status.diagnostics.servers[]` from `SHOW SERVERS`; `status.diagnostics.databases[]` from `SHOW DATABASES` (`system` DB excluded from health checks).
 - Conditions `ServersHealthy`, `DatabasesHealthy` via `SetNamedCondition` (NOT `SetReadyCondition` — that's only for the `Ready` type).
 - Prometheus metric `neo4j_operator_server_health{cluster_name, namespace, server_name, server_address, k8s_cluster}`: 1=healthy, 0=degraded (`k8s_cluster` is empty unless `--kubernetes-cluster-name` is set).
 
-**`CollectDiagnostics` is non-fatal**: errors go to `status.diagnostics.collectionError` only — never `return err`. Standalone has its own non-fatal `collectStandaloneDiagnostics()` (`SHOW DATABASES`) under the same conditions.
+**`CollectDiagnostics` is non-fatal**: errors go to `status.diagnostics.collectionError` only — never `return err`. Standalone has its own non-fatal `collectStandaloneDiagnostics()` (`SHOW DATABASES`), run while the standalone is `Ready`.
+
+**Server availability (#444):** a formed cluster short of a server stays `Ready` (condition `Degraded=True`) for `--server-unavailable-grace` (default 5m), then turns phase `Degraded`; only first formation, rollouts, scale-ups, split-brain and loss of a majority are `Forming`. Dependents gate on `clusterAcceptsWork` (Ready or Degraded); anything that rolls the servers needs `Ready` with no `Degraded=True`. Rule: `docs/knowledge/operations.md` id 105.
 
 ## Neo4j Database Syntax (5.26+ and 2025.x)
 

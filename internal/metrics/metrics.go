@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -516,14 +517,42 @@ type ServerHealth struct {
 
 // RecordServerHealth records per-server health gauges from SHOW SERVERS results.
 func (m *ClusterMetrics) RecordServerHealth(servers []ServerHealth) {
+	k8sCluster := KubernetesClusterName()
+	current := make(map[serverHealthSeries]struct{}, len(servers))
 	for _, s := range servers {
 		value := 0.0
 		if s.Enabled && s.Available {
 			value = 1.0
 		}
-		serverHealth.WithLabelValues(m.clusterName, m.namespace, s.Name, s.Address, KubernetesClusterName()).Set(value)
+		serverHealth.WithLabelValues(m.clusterName, m.namespace, s.Name, s.Address, k8sCluster).Set(value)
+		current[serverHealthSeries{name: s.Name, address: s.Address}] = struct{}{}
 	}
+
+	// Withdraw the series this cluster no longer reports. A server whose
+	// address changes — or a server that is gone — would otherwise leave its
+	// old series exported at its last value forever: a 0 that keeps a
+	// `server_health == 0` alert firing after the server is back, or a 1 for
+	// a server that is down (#444).
+	key := k8sCluster + "/" + m.namespace + "/" + m.clusterName
+	serverHealthSeen.mu.Lock()
+	defer serverHealthSeen.mu.Unlock()
+	for prev := range serverHealthSeen.byCluster[key] {
+		if _, ok := current[prev]; !ok {
+			serverHealth.DeleteLabelValues(m.clusterName, m.namespace, prev.name, prev.address, k8sCluster)
+		}
+	}
+	serverHealthSeen.byCluster[key] = current
 }
+
+// serverHealthSeries is the per-server part of a server_health label set.
+type serverHealthSeries struct{ name, address string }
+
+// serverHealthSeen remembers, per k8s_cluster/namespace/cluster, which series
+// RecordServerHealth last exported, so the next call can withdraw the rest.
+var serverHealthSeen = struct {
+	mu        sync.Mutex
+	byCluster map[string]map[serverHealthSeries]struct{}
+}{byCluster: map[string]map[serverHealthSeries]struct{}{}}
 
 // operatorVersionEnv is set on the operator Deployment by both the kustomize
 // manifest (config/manager/manager.yaml) and the Helm chart, and stamped with

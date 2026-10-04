@@ -906,10 +906,10 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 
 | Field | Type | Description |
 |---|---|---|
-| `phase` | `string` | Cluster phase: `"Initializing"`, `"Forming"`, `"Ready"`, `"Expanding"` (storage expansion in progress), `"Paused"` (upgrade paused after a failure), `"Failed"` |
+| `phase` | `string` | Cluster phase: `"Initializing"`, `"Forming"`, `"Ready"`, `"Degraded"` (formed and serving with a majority of its servers, one or more unavailable for longer than the grace period — see [Server availability](#server-availability)), `"Expanding"` (storage expansion in progress), `"Paused"` (upgrade paused after a failure), `"Failed"` |
 | `ready` | `bool` | Whether the cluster is ready for connections |
 | `message` | `string` | Human-readable status message |
-| `conditions` | `[]metav1.Condition` | Cluster conditions (e.g. `Ready`, `ServersHealthy`, `DatabasesHealthy`, `ServersPendingDrain`) — see [Conditions](#conditions) |
+| `conditions` | `[]metav1.Condition` | Cluster conditions (e.g. `Ready`, `Degraded`, `ClusterFormed`, `ServersHealthy`, `DatabasesHealthy`, `ServersPendingDrain`) — see [Conditions](#conditions) |
 | `replicas` | [`*ReplicaStatus`](#replicastatus) | Server counts: `servers` (desired) and `ready` |
 | `endpoints` | [`EndpointStatus`](#endpointstatus) | Service endpoints |
 | `version` | `string` | Current Neo4j version |
@@ -1046,12 +1046,30 @@ The operator maintains the following condition types on `status.conditions` (sta
 
 | Condition Type | `True` when | `False` when | `Unknown` when |
 |---|---|---|---|
-| `ServersHealthy` | All servers are `state=Enabled` **and** `health=Available` | Any server is Cordoned, Deallocating, or Unavailable | Diagnostics cannot be collected (cluster not Ready or Bolt unreachable) |
-| `DatabasesHealthy` | All user databases have `status=online` | Any database has `requestedStatus=online` but `status≠online` | Diagnostics cannot be collected (cluster not Ready or Bolt unreachable) |
+| `Degraded` | The cluster has formed and one or more of its servers is unavailable (reason `ServersUnavailable`; the message names them). Its `lastTransitionTime` is when the shortfall began | Every server is available (reason `AllServersAvailable`) | n/a — absent until the cluster first forms |
+| `ClusterFormed` | The cluster has formed at least once. Never set back to `False` | n/a | n/a — absent until the cluster first forms |
+| `ServersHealthy` | All servers are `state=Enabled` **and** `health=Available` | Any server is Cordoned, Deallocating, or Unavailable | Diagnostics cannot be collected (cluster not formed yet, or Bolt unreachable) |
+| `DatabasesHealthy` | All user databases have `status=online` | Any database has `requestedStatus=online` but `status≠online` | Diagnostics cannot be collected (cluster not formed yet, or Bolt unreachable) |
 | `ServersPendingDrain` | Set during a scale-down: the cluster still has Neo4j servers registered beyond `spec.topology.servers` (removed servers not yet deallocated and dropped), so databases may be under-replicated on them | The removed servers have been drained and dropped | n/a |
 | `CrossClusterProxySecure` | The cluster SSL policy requires a peer certificate on the port the CCDR proxy publishes | `strictPeerValidation` is `false`, so `trust_all=true` accepts **any** peer certificate — the exposed port is encrypted but not authenticated. (A cluster with no TLS at all cannot reach this state: the proxy is rejected at validation.) | n/a — the condition is removed entirely when the proxy is disabled |
 
 > **Note:** The `system` database is excluded from the `DatabasesHealthy` check because it has special internal lifecycle behavior.
+
+### Server availability
+
+A cluster is `Forming` until every server has joined it once. After that, a missing server — a pod restart, an OOM kill, a node drain — is an outage of a formed cluster, and the cluster is judged on whether it is still serving:
+
+| Situation | Phase | `Ready` condition | `Degraded` condition | Dependents¹ |
+|---|---|---|---|---|
+| Every server available | `Ready` | `True` | `False` | proceed |
+| A majority available, short for less than the grace period | `Ready` | `True` | `True` | proceed |
+| A majority available, short for longer than the grace period | `Degraded` | `False` (`ClusterDegraded`) | `True` | proceed |
+| Half or fewer available | `Forming` | `Unknown` | `True` | pause |
+| First formation, a scale-up, or a rollout of the server StatefulSet | `Forming` | `Unknown` | unchanged | pause |
+
+¹ `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jDatabaseAlias`, `Neo4jCompositeDatabase`, `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion` and `Neo4jBackup`. Whether a statement can run on the servers that are up is Neo4j's call, reported on that resource. Operations that restart every server — a rolling image upgrade, a `Neo4jPlugin` install — wait until every server is back.
+
+The grace period defaults to 5 minutes and is set with the operator flag `--server-unavailable-grace` (Helm: `serverUnavailableGrace`). Raise it if your servers take longer than that to restart and rejoin. Entering `Degraded` raises one `ClusterDegraded` Warning event; losing a majority raises one `ClusterQuorumLost` Warning. `ServersHealthy`, `DatabasesHealthy` and the `neo4j_operator_server_health` metric keep updating throughout.
 
 ## Examples
 

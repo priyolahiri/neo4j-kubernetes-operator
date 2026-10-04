@@ -398,8 +398,9 @@ func (r *Neo4jShardedDatabaseReconciler) clusterSupportsPropertySharding(cluster
 		return false
 	}
 
-	// Check if cluster is ready and property sharding is operational
-	if cluster.Status.Phase != "Ready" {
+	// Check if cluster is ready (or Degraded but serving, #444) and property
+	// sharding is operational
+	if !clusterAcceptsWork(cluster) {
 		return false
 	}
 

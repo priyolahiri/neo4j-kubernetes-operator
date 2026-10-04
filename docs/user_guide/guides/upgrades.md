@@ -70,11 +70,14 @@ Neo4j's kernel alias (the `2025.01.x` CalVer releases report kernel `5.27.x` —
 both are accepted as the same version).
 
 **Image changes while the cluster is not Ready are deferred.** Changing
-`spec.image` while the cluster is `Forming`, mid-restore, or otherwise not
-`Ready` does not roll pods immediately: the operator holds the change (you'll
-see an `UpgradeDeferred` event on the cluster) and the rolling-upgrade state
-machine performs it once the cluster reaches `Ready` — a version change must
-never sneak in as an ungated restart while quorum is still forming.
+`spec.image` while the cluster is `Forming`, `Degraded`, mid-restore, or
+otherwise not `Ready` — or while it is `Ready` but a server is unavailable (its
+`Degraded` condition is `True`) — does not roll pods immediately: the operator
+holds the change (you'll see an `UpgradeDeferred` event on the cluster) and the
+rolling-upgrade state machine performs it once the cluster is `Ready` with every
+server available — a version change must never sneak in as an ungated restart
+while quorum is still forming, and rolling the other servers while one is down
+could cost the cluster its majority.
 
 One deliberate exception: if **no server pod has ever become ready** — the
 typical case being a first deploy stuck in `ImagePullBackOff` on a mistyped

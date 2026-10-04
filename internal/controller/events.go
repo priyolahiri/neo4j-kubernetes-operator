@@ -20,6 +20,14 @@ const (
 	// EventReasonConnectivityDegraded — the operator has failed to reach the
 	// cluster's Bolt endpoint for a sustained streak of reconciles (#263).
 	EventReasonConnectivityDegraded = "ConnectivityDegraded"
+	// EventReasonClusterDegraded — a formed cluster has been short of one or
+	// more servers for longer than the grace period and its phase is now
+	// Degraded. Emitted once per transition (#444).
+	EventReasonClusterDegraded = "ClusterDegraded"
+	// EventReasonClusterQuorumLost — a formed cluster has fewer than a
+	// majority of its servers available; dependents pause until a majority is
+	// back. Emitted once per transition (#444).
+	EventReasonClusterQuorumLost = "ClusterQuorumLost"
 )
 
 // Rolling upgrade events

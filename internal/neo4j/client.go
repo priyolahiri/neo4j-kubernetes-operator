@@ -2424,11 +2424,15 @@ func (c *Client) GetServerList(ctx context.Context) ([]ServerInfo, error) {
 		// Extract server information from record
 		// SHOW SERVERS returns: name, address, state, health, hosting
 		if len(record.Values) >= 5 {
+			// columnString, not %v: SHOW SERVERS returns a NULL address for
+			// a server that is down, which %v renders as the literal "<nil>"
+			// — and that reached status.diagnostics, the server_health
+			// metric's server_address label and the Degraded condition (#444).
 			server := ServerInfo{
-				Name:    fmt.Sprintf("%v", record.Values[0]),
-				Address: fmt.Sprintf("%v", record.Values[1]),
-				State:   fmt.Sprintf("%v", record.Values[2]),
-				Health:  fmt.Sprintf("%v", record.Values[3]),
+				Name:    columnString(record.Values[0]),
+				Address: columnString(record.Values[1]),
+				State:   columnString(record.Values[2]),
+				Health:  columnString(record.Values[3]),
 			}
 
 			// Parse hosting databases (array of strings)

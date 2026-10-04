@@ -39,13 +39,14 @@ type ResolvedTarget struct {
 	Standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
 }
 
-// IsReady reports whether the resolved target has reached its Ready phase.
-// Cluster readiness is detected via the Ready condition; standalone via the
-// status.Ready boolean (matching the existing convention from the database
-// controller).
+// IsReady reports whether the resolved target can take work. A cluster
+// qualifies when its Ready condition is True or its phase is Degraded — formed
+// and serving with a majority of its servers (clusterAcceptsWork, #444);
+// standalone via the status.Ready boolean (matching the existing convention
+// from the database controller).
 func (r ResolvedTarget) IsReady() bool {
 	if r.Cluster != nil {
-		return hasReadyCondition(r.Cluster.Status.Conditions)
+		return clusterAcceptsWork(r.Cluster)
 	}
 	if r.Standalone != nil {
 		return r.Standalone.Status.Ready

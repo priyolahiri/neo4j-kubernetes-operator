@@ -3,14 +3,15 @@
     "id": "su-neo4jenterprisecluster",
     "name": "Neo4jEnterpriseCluster Reconciler",
     "kind": "controller",
-    "description": "Reconciles Neo4jEnterpriseCluster CRs into a single {cluster}-server StatefulSet plus Services/ConfigMap/RBAC/TLS, drives rolling upgrades, scale-down drains, and diagnostics, and reports the cluster phase (Initializing to Forming to Ready) via status and events.",
+    "description": "Reconciles Neo4jEnterpriseCluster CRs into a single {cluster}-server StatefulSet plus Services/ConfigMap/RBAC/TLS, drives rolling upgrades, scale-down drains, and diagnostics, and reports the cluster phase (Initializing to Forming to Ready, and Degraded when a formed cluster stays short of a server past the grace period) via status, conditions and events.",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],
     "dependsOn": [],
     "moduleId": "mod-cluster",
     "paths": [
-      "internal/controller/neo4jenterprisecluster_controller.go"
+      "internal/controller/neo4jenterprisecluster_controller.go",
+      "internal/controller/cluster_availability.go"
     ]
   },
   {
@@ -115,7 +116,7 @@
     "id": "su-diagnostics",
     "name": "Live Diagnostics Collector",
     "kind": "worker",
-    "description": "Collects live SHOW SERVERS / SHOW DATABASES / SHOW USERS / SHOW ROLES data from a Ready cluster or standalone instance into status.diagnostics and the ServersHealthy/DatabasesHealthy conditions, never failing the reconcile on a collection error.",
+    "description": "Collects live SHOW SERVERS / SHOW DATABASES / SHOW USERS / SHOW ROLES data from a cluster that has formed (Ready, Degraded, or rolling) or a Ready standalone instance into status.diagnostics and the ServersHealthy/DatabasesHealthy conditions, never failing the reconcile on a collection error.",
     "entityIds": [
       "ent-neo4jenterprisecluster",
       "ent-neo4jenterprisestandalone"

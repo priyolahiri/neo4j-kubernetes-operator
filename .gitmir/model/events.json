@@ -2,7 +2,7 @@
   {
     "id": "ev-cluster-formation-started",
     "name": "ClusterFormationStarted",
-    "description": "Fires the first time verifyNeo4jClusterFormation finds the cluster not yet formed, as status.phase transitions into Forming.",
+    "description": "Fires when a cluster that has never formed enters Forming. A formed cluster that rolls, scales up or loses servers does not raise it (#444).",
     "moduleId": "mod-cluster"
   },
   {
@@ -1030,5 +1030,17 @@
     "name": "PrivilegeNamesUnknownDatabase",
     "description": "Warning emitted when a Neo4jRole's spec.privileges name a database that does not exist and is not an alias (or grant graph privileges on a composite); the grants are skipped, not applied, and PrivilegesResolve is set False until the database exists (neo4jrole_controller.go).",
     "moduleId": "mod-security"
+  },
+  {
+    "id": "ev-cluster-degraded",
+    "name": "ClusterDegraded",
+    "description": "Warning, once per transition: a formed cluster has been short of one or more servers for longer than the grace period (--server-unavailable-grace, default 5m) while a majority keeps it serving, and its phase turns Degraded (#444).",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-cluster-quorum-lost",
+    "name": "ClusterQuorumLost",
+    "description": "Warning, once per transition: a formed cluster has half or fewer of its servers available; its phase goes to Forming and dependents pause until a majority is back (#444).",
+    "moduleId": "mod-cluster"
   }
 ]
