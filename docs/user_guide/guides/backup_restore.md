@@ -1445,7 +1445,7 @@ kubectl get events --field-selector involvedObject.name=restore-operation
 
 - Enable `validate: true` to run `neo4j-admin backup validate` after each backup, so recoverability issues are surfaced at backup time (on `status.history[].validation`) rather than discovered at restore time. **Requires a CalVer (2025.x+) Neo4j image** — the `neo4j-admin backup validate` subcommand does not exist on 5.26, so on a 5.26 target the option has no effect (`status.history[].validation` stays empty) and the operator emits a one-time `BackupValidateUnsupported` warning event. The backup itself still succeeds either way.
 - For cloud destinations, set `tempStorage` (PVC for staging) on large databases — without it `neo4j-admin` buffers in the Pod's filesystem.
-- The operator doesn't manage cloud object expiry — configure bucket lifecycle rules to delete old backups.
+- The operator doesn't manage cloud object expiry — configure bucket lifecycle rules to delete old backups. With [split archives](#split-backup-archives), filter those rules by prefix, not by a `.backup` suffix.
 - Restore is non-trivial post-incident; rehearse it against a staging cluster at least once.
 - Prefer Workload Identity (IRSA / GKE WI / Azure WI) over static credentials. Rotate `credentialsSecretRef` Secrets if you do use them.
 - IAM permissions needed: `PutObject`, `GetObject`, `ListBucket`, `DeleteObject` on the backup bucket prefix.
@@ -1552,6 +1552,28 @@ options:
   additionalArgs:
     - "--verbose"
 ```
+
+### Split backup archives
+
+**Neo4j 2026.09+.** By default an artifact is one file. For a database whose backup is larger than the target storage accepts as a single object, split it into parts:
+
+```yaml
+spec:
+  options:
+    splitArchivePartSize: 500Gi   # each part at most 500GiB
+```
+
+- **Size:** a Kubernetes quantity of at least `1Gi`, Neo4j's minimum part size. Note that `1G` is 10⁹ bytes, which is below the minimum: the backup goes `Invalid` with a message that says so.
+- **Version:** on a target older than 2026.09 the backup is refused with a message naming the field and the image.
+- **Files written:** each artifact becomes `<db>-<timestamp>.backup`, a small metadata file, plus `<db>-<timestamp>.backup.1`, `.backup.2`, … holding the data. That layout applies whenever the option is set, so even a small differential is a metadata file plus `.backup.1`.
+- **Nothing else changes.** Restores and replicas reference the `.backup` file and Neo4j reads the parts beside it, for every restore and replica path the operator drives:
+  - standalone restore (`neo4j-admin`);
+  - cluster restore from cloud storage or a PVC;
+  - a `Neo4jReplicaDatabase` seeding from and pulling a split chain.
+- **Keep the parts together:**
+  - PVC retention deletes an artifact's parts with it.
+  - On cloud storage, filter bucket lifecycle rules **by prefix**, never by a `.backup` suffix: a suffix filter expires the metadata file and strands the parts.
+  - `neo4j-admin database upload` (to Aura) does not accept split archives.
 
 ### Custom Backup Arguments
 

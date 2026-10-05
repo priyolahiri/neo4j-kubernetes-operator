@@ -500,6 +500,18 @@ func (v *BackupValidator) validateBackupOptions(options *neo4jv1beta1.BackupOpti
 	var allErrs field.ErrorList
 	optionsPath := field.NewPath("spec", "options")
 
+	if options.SplitArchivePartSize != "" {
+		if err := splitArchivePartSizeError(options.SplitArchivePartSize); err != "" {
+			allErrs = append(allErrs, field.Invalid(optionsPath.Child("splitArchivePartSize"), options.SplitArchivePartSize, err))
+		}
+		for i, arg := range options.AdditionalArgs {
+			if strings.HasPrefix(arg, "--split-archive-part-size") {
+				allErrs = append(allErrs, field.Invalid(optionsPath.Child("additionalArgs").Index(i), arg,
+					"spec.options.splitArchivePartSize is set; set the part size in one place"))
+			}
+		}
+	}
+
 	// Validate additional args for Neo4j 5.26+ compatibility
 	if len(options.AdditionalArgs) > 0 {
 		for i, arg := range options.AdditionalArgs {
@@ -514,6 +526,30 @@ func (v *BackupValidator) validateBackupOptions(options *neo4jv1beta1.BackupOpti
 	}
 
 	return allErrs
+}
+
+// MinSplitArchivePartSize is Neo4j's smallest split-archive part, 1GiB. A
+// smaller non-zero --split-archive-part-size fails the neo4j-admin command.
+const MinSplitArchivePartSize = int64(1) << 30
+
+// splitArchivePartSizeError returns why a spec.options.splitArchivePartSize
+// value is unusable, or "" when it is fine. It is a Kubernetes quantity, so
+// "1G" is 10^9 bytes — below Neo4j's 1GiB minimum — and is refused here
+// rather than by a failed backup Job.
+func splitArchivePartSizeError(value string) string {
+	q, err := resource.ParseQuantity(value)
+	if err != nil {
+		return "must be a Kubernetes quantity such as 500Gi or 1Ti"
+	}
+	switch {
+	case q.Sign() < 0:
+		return "must not be negative"
+	case q.IsZero():
+		return "" // explicitly off: a single file
+	case q.Value() < MinSplitArchivePartSize:
+		return fmt.Sprintf("must be at least 1Gi (1073741824 bytes), Neo4j's minimum part size; %s is %d bytes", value, q.Value())
+	}
+	return ""
 }
 
 // validateBackupArg validates additional backup arguments for Neo4j 5.26+

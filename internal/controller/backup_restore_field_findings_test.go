@@ -360,3 +360,40 @@ func TestEnsureBackupPVC_StripsStaleOwnerRef(t *testing.T) {
 	require.Len(t, pvc.OwnerReferences, 1, "unrelated owner-refs must be preserved")
 	assert.Equal(t, "unrelated", pvc.OwnerReferences[0].Name)
 }
+
+// spec.options.splitArchivePartSize reaches neo4j-admin as an exact byte count
+// on 2026.09+, and is refused — naming the field and the image — on anything
+// older, where the backup Job would otherwise die on an unknown option.
+func TestBuildBackupCommand_SplitArchivePartSize(t *testing.T) {
+	r := newShardedTestReconciler(t)
+
+	cmd, err := r.buildBackupCommand(context.Background(),
+		fieldFindingsBackup(&neo4jv1beta1.BackupOptions{SplitArchivePartSize: "500Gi"}),
+		fieldFindingsCluster("2026.09.0-enterprise"))
+	if err != nil {
+		t.Fatalf("buildBackupCommand: %v", err)
+	}
+	if !strings.Contains(cmd, " --split-archive-part-size=536870912000") {
+		t.Errorf("expected 500Gi as bytes on the command:\n%s", cmd)
+	}
+
+	for _, tag := range []string{"2026.08.1-enterprise", "5.26.0-enterprise"} {
+		_, err = r.buildBackupCommand(context.Background(),
+			fieldFindingsBackup(&neo4jv1beta1.BackupOptions{SplitArchivePartSize: "500Gi"}),
+			fieldFindingsCluster(tag))
+		if err == nil || !strings.Contains(err.Error(), "spec.options.splitArchivePartSize requires Neo4j 2026.09") || !strings.Contains(err.Error(), tag) {
+			t.Errorf("%s: expected a refusal naming the field and the image, got %v", tag, err)
+		}
+	}
+
+	// "0" means a single file: no flag, and no version requirement.
+	cmd, err = r.buildBackupCommand(context.Background(),
+		fieldFindingsBackup(&neo4jv1beta1.BackupOptions{SplitArchivePartSize: "0"}),
+		fieldFindingsCluster("5.26.0-enterprise"))
+	if err != nil {
+		t.Fatalf("buildBackupCommand with 0: %v", err)
+	}
+	if strings.Contains(cmd, "split-archive") {
+		t.Errorf("0 must not emit the flag:\n%s", cmd)
+	}
+}
