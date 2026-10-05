@@ -982,7 +982,7 @@
     "name": "Resolve Cluster Reference",
     "serverUnitId": "su-cluster-resolver",
     "operation": "resolver",
-    "description": "ResolveClusterRef() looks up a clusterRef, trying Neo4jEnterpriseCluster first and falling back to Neo4jEnterpriseStandalone of the same name, returning a ResolvedTarget with IsReady()/NewClient() helpers. IsReady() accepts a cluster whose Ready condition is True or whose phase is Degraded (clusterAcceptsWork), so dependents keep working against a cluster that is serving with a majority of its servers.",
+    "description": "ResolveClusterRef() looks up a clusterRef, trying Neo4jEnterpriseCluster first and falling back to Neo4jEnterpriseStandalone of the same name, returning a ResolvedTarget with IsReady()/NewClient() helpers. IsReady() accepts a cluster whose phase is Ready or Degraded, or whose Ready condition is True (clusterAcceptsWork), so dependents keep working against a cluster that is serving with a majority of its servers.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
