@@ -1460,6 +1460,13 @@
         "note": "Specific backup path within storage."
       },
       {
+        "id": "f-neo4jrestore-source-source-database",
+        "name": "source.sourceDatabase",
+        "type": "string",
+        "isNullable": true,
+        "note": "The database to take from the backup when it is not spec.database (restore under a different name); needed only for a backup holding several databases. Defaults to spec.database."
+      },
+      {
         "id": "f-neo4jrestore-source-point-in-time",
         "name": "source.pointInTime",
         "type": "timestamp",

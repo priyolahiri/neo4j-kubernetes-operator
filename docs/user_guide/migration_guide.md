@@ -278,6 +278,14 @@ take effect on the first reconcile.
 
 ### New, no action needed
 
+- **A standalone restores into a new database name.** It used to look for the
+  *target* name's files and fail; the tutorial's "restore into a new
+  database" step could not work on a standalone. Standalone restores from a
+  `backupRef` now read the run's recorded artifact, as cluster restores
+  always have. New `Neo4jRestore.spec.source.sourceDatabase` picks one
+  database out of an all-databases backup to restore under `spec.database`,
+  on clusters and standalones. See
+  [Restoring under a different name](guides/backup_restore.md#restoring-under-a-different-name).
 - `Neo4jBackup.spec.options.splitArchivePartSize` (Neo4j 2026.09+) writes each artifact as several files — see [Split backup archives](guides/backup_restore.md#split-backup-archives). Apply the new CRDs to use it. PVC retention now deletes a split artifact's data parts with it; before, passing `--split-archive-part-size` through `additionalArgs` left the parts on the volume.
 - Conditions `Degraded` and `ClusterFormed` on `Neo4jEnterpriseCluster`.
 - The `Ready` condition of a `Degraded` cluster has reason `ClusterDegraded`

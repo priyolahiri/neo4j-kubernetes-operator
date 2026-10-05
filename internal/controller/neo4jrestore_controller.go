@@ -926,6 +926,21 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		}
 	}
 
+	// spec.source.sourceDatabase names ONE database inside the backup; it
+	// reaches the shell glob and the artifact lookup, so it gets the same
+	// grammar as spec.database.
+	if src := restore.Spec.Source.SourceDatabase; src != "" {
+		switch {
+		case restore.Spec.AllDatabases:
+			return fmt.Errorf("spec.source.sourceDatabase picks one database to restore under spec.database; it does not apply to spec.allDatabases")
+		case strings.EqualFold(src, "system"):
+			return fmt.Errorf("spec.source.sourceDatabase %q is not restorable: the system database is managed by Neo4j", src)
+		case !validation.IsValidDatabaseName(src):
+			return fmt.Errorf("spec.source.sourceDatabase %q is invalid: must start with a letter, contain only letters, digits, dots or dashes, and be at most %d characters",
+				src, validation.MaxDatabaseNameLength)
+		}
+	}
+
 	// spec.timeout must parse as a positive Go duration — silently falling
 	// back to the default and then telling the user to "increase
 	// spec.timeout" on expiry is misleading when they set a value the
@@ -1517,6 +1532,9 @@ func (r *Neo4jRestoreReconciler) resolveRestoreSource(ctx context.Context, resto
 			Storage:     snap.Storage,
 			BackupPath:  snap.BackupPath,
 			PointInTime: restore.Spec.Source.PointInTime,
+			// Carried, not resolved: it picks the database inside the backup.
+			// Dropping it here restored the TARGET name's files (found live).
+			SourceDatabase: restore.Spec.Source.SourceDatabase,
 		}, nil
 	}
 
@@ -1534,10 +1552,11 @@ func (r *Neo4jRestoreReconciler) resolveRestoreSource(ctx context.Context, resto
 		// switch matches the cloud / pvc branch unconditionally. The
 		// underlying storage.type (s3 / gcs / azure / pvc) still drives
 		// URI construction inside buildRestoreFromPath.
-		Type:        "storage",
-		Storage:     &storage,
-		BackupPath:  backupPath,
-		PointInTime: restore.Spec.Source.PointInTime,
+		Type:           "storage",
+		Storage:        &storage,
+		BackupPath:     backupPath,
+		PointInTime:    restore.Spec.Source.PointInTime,
+		SourceDatabase: restore.Spec.Source.SourceDatabase,
 	}, nil
 }
 
@@ -1562,6 +1581,93 @@ func artifactForDatabase(artifacts []neo4jv1beta1.DatabaseArtifact, database str
 		}
 	}
 	return ""
+}
+
+// restoreSourceDatabase is the database to read from the backup:
+// spec.source.sourceDatabase when set, otherwise spec.database.
+func restoreSourceDatabase(restore *neo4jv1beta1.Neo4jRestore) string {
+	if restore.Spec.Source.SourceDatabase != "" {
+		return restore.Spec.Source.SourceDatabase
+	}
+	return restore.Spec.Database
+}
+
+// artifactDatabase is the database a standard `<db>-<timestamp>.backup`
+// artifact holds, or "" when the name has another shape.
+func artifactDatabase(filename string) string {
+	if m := standardArtifactFilenameRegex.FindStringSubmatch(filename); len(m) > 2 && m[1] == filename {
+		return m[2]
+	}
+	return ""
+}
+
+// standaloneRestoreArtifact returns the exact artifact a single-database
+// neo4j-admin restore should read, or "" when only its directory is known.
+//
+// neo4j-admin restores under a different name only when --from-path names a
+// single artifact (`[<database>]` in the restore reference, 5.x and CalVer
+// alike); given a directory it picks artifacts by the target name, and the
+// shell glob that stood in for it did the same — so a standalone could not
+// restore into a new database at all, which the tutorial's standalone note
+// promised. The operator usually knows the file:
+//   - source.backupPath already names a `.backup` file;
+//   - a pinned backupRef snapshot records the latest run's artifact for a
+//     one-database backup, and the per-database map for an all-databases one.
+//
+// A differential artifact is fine: neo4j-admin finds the chain ending at it in
+// the same folder.
+func standaloneRestoreArtifact(restore *neo4jv1beta1.Neo4jRestore, dir string) (string, error) {
+	if dir == "" {
+		return "", nil
+	}
+	if strings.HasSuffix(dir, ".backup") {
+		return dir, nil
+	}
+	snap := resolvedBackupSnapshot(restore)
+	if snap == nil {
+		return "", nil
+	}
+	artifact := snap.ArtifactFilename
+	if artifact != "" {
+		if want := restore.Spec.Source.SourceDatabase; want != "" {
+			if have := artifactDatabase(artifact); have != "" && have != want {
+				return "", fmt.Errorf("spec.source.sourceDatabase is %q but Neo4jBackup %q holds database %q; omit sourceDatabase for a backup of one database", want, snap.BackupRef, have)
+			}
+		}
+	} else {
+		artifact = artifactForDatabase(snap.DatabaseArtifacts, restoreSourceDatabase(restore))
+	}
+	if artifact == "" {
+		return "", nil
+	}
+	return strings.TrimRight(dir, "/") + "/" + artifact, nil
+}
+
+// standaloneRestoreFromPath is the shell-ready --from-path for a
+// single-database neo4j-admin restore (main and PITR paths): the exact
+// artifact when the operator knows it, else the source database's latest
+// file in a PVC directory, else the cloud directory itself — which
+// neo4j-admin can only restore under the same name.
+func standaloneRestoreFromPath(restore *neo4jv1beta1.Neo4jRestore, backupPath string, pvc bool) (string, error) {
+	file, err := standaloneRestoreArtifact(restore, backupPath)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case file != "":
+		return shellQuote(file), nil
+	case pvc:
+		return resolveLocalPVCFromPath(backupPath, restoreSourceDatabase(restore)), nil
+	case backupPath == "":
+		return "", nil
+	case restoreSourceDatabase(restore) != restore.Spec.Database:
+		return "", fmt.Errorf("restoring %q as %q needs the exact .backup artifact: neo4j-admin restores under a different name only from a single file, and %s is a directory. Set source.backupPath to the <database>-<timestamp>.backup file (listed in the Neo4jBackup's status.history), or use source.type=backup",
+			restoreSourceDatabase(restore), restore.Spec.Database, backupPath)
+	default:
+		// Cloud directory: quote so spec.source.{bucket,path,backupPath}
+		// can't break out of /bin/sh -c.
+		return shellQuote(backupPath), nil
+	}
 }
 
 func resolvedBackupSnapshot(restore *neo4jv1beta1.Neo4jRestore) *neo4jv1beta1.ResolvedRestoreSource {
@@ -1821,10 +1927,10 @@ func buildLocalRestoreFilePath(restore *neo4jv1beta1.Neo4jRestore, sourceDir str
 	if !isLocalPVCRestoreSource(restore) {
 		return ""
 	}
-	if restore.Spec.Database == "" {
+	if restoreSourceDatabase(restore) == "" {
 		return ""
 	}
-	return resolveLocalPVCFromPath(sourceDir, restore.Spec.Database)
+	return resolveLocalPVCFromPath(sourceDir, restoreSourceDatabase(restore))
 }
 
 // resolveLocalPVCFromPath is the path-based equivalent of
@@ -1919,15 +2025,13 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 	// This also handles the cluster-target backup case where multiple
 	// `*.backup` files co-locate in one directory (one per database) — the
 	// glob naturally selects only the requested DB's file.
-	if resolved := buildLocalRestoreFilePath(restore, backupPath); resolved != "" {
-		backupPath = resolved
-	} else if !isLocalPVCRestoreSource(restore) && backupPath != "" {
-		// Cloud --from-path (s3://, gs://, azb://): quote the whole URI so a
-		// crafted spec.source.{bucket,path,backupPath} can't break out of
-		// /bin/sh -c. PVC sources take the branch above ($(ls …)), which must
-		// stay unquoted to execute the command substitution.
-		backupPath = shellQuote(backupPath)
+	// The exact artifact when it is known — the only form neo4j-admin will
+	// restore under a different name — else the shell glob / cloud directory.
+	fromPath, err := standaloneRestoreFromPath(restore, backupPath, isLocalPVCRestoreSource(restore))
+	if err != nil {
+		return "", err
 	}
+	backupPath = fromPath
 
 	// Extract Neo4j version from cluster image
 	imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
@@ -2082,13 +2186,11 @@ func (r *Neo4jRestoreReconciler) buildPITRRestoreCommand(ctx context.Context, re
 	// transformation so the post-transform `$(ls ...)` form doesn't have
 	// to be re-detected downstream.
 	isPVC := isPVCBackupPath(backupPath)
-	if isPVC {
-		backupPath = resolveLocalPVCFromPath(backupPath, restore.Spec.Database)
-	} else if backupPath != "" {
-		// Cloud --from-path URI: quote so spec.source.{bucket,path,backupPath}
-		// can't break out of /bin/sh -c (PVC takes the $(ls …) branch above).
-		backupPath = shellQuote(backupPath)
+	fromPath, err := standaloneRestoreFromPath(restore, backupPath, isPVC)
+	if err != nil {
+		return "", err
 	}
+	backupPath = fromPath
 	preludeCmd := ""
 	if isPVC {
 		preludeCmd = "rm -rf /tmp/restore-tmp && mkdir -p /tmp/restore-tmp && "
@@ -3422,7 +3524,7 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 			// An all-databases backup pins the per-database map instead of a
 			// single filename; the file for THIS database is right there.
 			if filename == "" {
-				filename = artifactForDatabase(snap.DatabaseArtifacts, restore.Spec.Database)
+				filename = artifactForDatabase(snap.DatabaseArtifacts, restoreSourceDatabase(restore))
 			}
 		} else {
 			backup := &neo4jv1beta1.Neo4jBackup{}
@@ -3433,7 +3535,7 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 				if backup.Status.History[i].Status == "Succeeded" {
 					filename = backup.Status.History[i].ArtifactFilename
 					if filename == "" {
-						filename = artifactForDatabase(backup.Status.History[i].DatabaseArtifacts, restore.Spec.Database)
+						filename = artifactForDatabase(backup.Status.History[i].DatabaseArtifacts, restoreSourceDatabase(restore))
 					}
 					break
 				}
@@ -3651,7 +3753,7 @@ func (r *Neo4jRestoreReconciler) resolvedOrLiveArtifactFilename(ctx context.Cont
 	if snap := resolvedBackupSnapshot(restore); snap != nil && snap.ArtifactFilename != "" {
 		return snap.ArtifactFilename, nil
 	}
-	return r.latestSucceededArtifactFilename(ctx, restore.Spec.Source.BackupRef, restore.Namespace, restore.Spec.Database)
+	return r.latestSucceededArtifactFilename(ctx, restore.Spec.Source.BackupRef, restore.Namespace, restoreSourceDatabase(restore))
 }
 
 // warnIfChainParent emits a Warning event when source.backupRef points at the

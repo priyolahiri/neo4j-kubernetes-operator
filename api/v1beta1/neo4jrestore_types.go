@@ -83,6 +83,16 @@ type RestoreSource struct {
 	// Specific backup path within storage
 	BackupPath string `json:"backupPath,omitempty"`
 
+	// SourceDatabase is the database to take from the backup when it is not
+	// spec.database — restoring under a different name. Needed only when the
+	// backup holds more than one database (an all-databases backup, or a
+	// storage directory); a backup of one database already says which it is.
+	// Defaults to spec.database.
+	// +kubebuilder:validation:Pattern=`^[a-zA-Z][a-zA-Z0-9.\-]*$`
+	// +kubebuilder:validation:MaxLength=65
+	// +optional
+	SourceDatabase string `json:"sourceDatabase,omitempty"`
+
 	// Point in time for restore (when type=pitr or for PITR with backup/storage types)
 	PointInTime *metav1.Time `json:"pointInTime,omitempty"`
 

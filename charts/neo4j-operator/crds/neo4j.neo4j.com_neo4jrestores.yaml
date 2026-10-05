@@ -862,6 +862,16 @@ spec:
                       PITR with backup/storage types)
                     format: date-time
                     type: string
+                  sourceDatabase:
+                    description: |-
+                      SourceDatabase is the database to take from the backup when it is not
+                      spec.database — restoring under a different name. Needed only when the
+                      backup holds more than one database (an all-databases backup, or a
+                      storage directory); a backup of one database already says which it is.
+                      Defaults to spec.database.
+                    maxLength: 65
+                    pattern: ^[a-zA-Z][a-zA-Z0-9.\-]*$
+                    type: string
                   storage:
                     description: Direct storage location (when type=storage)
                     properties:
