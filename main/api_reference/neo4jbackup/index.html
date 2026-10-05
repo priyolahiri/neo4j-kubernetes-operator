@@ -4999,7 +4999,7 @@
 <p><strong>How retention actually works</strong> (read this before relying on it):</p>
 <ul>
 <li><strong>Cloud storage (S3/GCS/Azure)</strong>: the operator never deletes cloud objects. Configure <strong>bucket lifecycle rules</strong> on the provider side; <code>retention</code> on a cloud-backed CR is advisory only.</li>
-<li><strong>PVC storage</strong>: retention is enforced by a cleanup Job that runs <strong>only when the Neo4jBackup CR is deleted</strong> — it is <em>not</em> a continuous pruning loop. The Job prunes <code>*.backup</code> <strong>files</strong> inside this CR's chain directory (<code>/backup/&lt;chain-root&gt;/</code>) only, <strong>oldest-first by file mtime</strong>, and <strong>always keeps the newest artifact</strong> even if it has aged out. Other CRs' chain directories on a shared PVC are never touched.</li>
+<li><strong>PVC storage</strong>: retention is enforced by a cleanup Job that runs <strong>only when the Neo4jBackup CR is deleted</strong> — it is <em>not</em> a continuous pruning loop. The Job prunes <code>*.backup</code> <strong>files</strong> inside this CR's chain directory (<code>/backup/&lt;chain-root&gt;/</code>) only, <strong>oldest-first by file mtime</strong>, and <strong>always keeps the newest artifact</strong> even if it has aged out. A split artifact's data parts (<code>&lt;name&gt;.backup.1</code>, <code>.2</code>, …) are deleted with it, and count as part of one artifact. Other CRs' chain directories on a shared PVC are never touched.</li>
 <li><strong>DIFF-orphaning caveat</strong>: artifact filenames don't encode FULL vs DIFF, so pruning can orphan differential artifacts whose parent FULL ages out (making them unrestorable). The operator emits a <code>BackupRetentionCaveat</code> Warning event when retention is configured on a CR that can produce DIFFs. Prefer <code>options.backupType: FULL</code> on CRs that use retention, or prune chains with <code>neo4j-admin backup aggregate</code>.</li>
 </ul>
 <h3 id="backupoptions">BackupOptions<a class="headerlink" href="#backupoptions" title="Anchor link to this section">&para;</a></h3>
@@ -5097,6 +5097,12 @@
 <td><code>bool</code></td>
 <td>❌</td>
 <td>Preserve failed backup artifacts for debugging instead of deleting them</td>
+</tr>
+<tr>
+<td><code>splitArchivePartSize</code></td>
+<td><code>string</code></td>
+<td>❌</td>
+<td>Write each artifact as several files of at most this size, for an artifact larger than the target storage accepts as one object. A Kubernetes quantity of at least <code>1Gi</code>, Neo4j's minimum part size (e.g. <code>"500Gi"</code>); unset or <code>"0"</code> writes a single file. Maps to <code>--split-archive-part-size</code>, passed as an exact byte count — note <code>1G</code> is 10⁹ bytes, below the minimum, and is refused (<code>phase: Invalid</code>). <strong>Requires Neo4j 2026.09+ on the target</strong>; on an older image the backup is refused with a message naming the field. Cannot also be set in <code>additionalArgs</code>. See <a href="../../user_guide/guides/backup_restore/#split-backup-archives">Split backup archives</a>.</td>
 </tr>
 <tr>
 <td><code>additionalArgs</code></td>

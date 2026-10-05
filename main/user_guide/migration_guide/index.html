@@ -4507,6 +4507,7 @@ take effect on the first reconcile.</p>
 </ul>
 <h3 id="new-no-action-needed_2">New, no action needed<a class="headerlink" href="#new-no-action-needed_2" title="Anchor link to this section">&para;</a></h3>
 <ul>
+<li><code>Neo4jBackup.spec.options.splitArchivePartSize</code> (Neo4j 2026.09+) writes each artifact as several files — see <a href="../guides/backup_restore/#split-backup-archives">Split backup archives</a>. Apply the new CRDs to use it. PVC retention now deletes a split artifact's data parts with it; before, passing <code>--split-archive-part-size</code> through <code>additionalArgs</code> left the parts on the volume.</li>
 <li>Conditions <code>Degraded</code> and <code>ClusterFormed</code> on <code>Neo4jEnterpriseCluster</code>.</li>
 <li>The <code>Ready</code> condition of a <code>Degraded</code> cluster has reason <code>ClusterDegraded</code>
   instead of <code>ReconciliationFailed</code>.</li>

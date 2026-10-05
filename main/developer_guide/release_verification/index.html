@@ -4180,6 +4180,11 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Standalone restores via the <code>neo4j-admin</code> path (supports PITR <code>--restore-until</code>); cluster restores via the in-place <strong>Cypher</strong> path (PITR is <em>rejected</em> on clusters). Separate code paths.</td>
 </tr>
 <tr>
+<td><strong>Split backup archives</strong> (<code>splitArchivePartSize</code>)</td>
+<td>Standalone <strong>and</strong> Cluster, on a <strong>2026.09+</strong> image (not the CI anchor)</td>
+<td>The parts are written by the backup Job and read by every consumer, so the walk needs both restore paths (standalone <code>neo4j-admin</code>, cluster <code>seedURI</code> from cloud and through the PVC proxy) plus PVC retention. A backup larger than one part needs &gt;1GiB of incompressible data, which is why this runs outside CI</td>
+</tr>
+<tr>
 <td>Property sharding</td>
 <td>Cluster (CalVer)</td>
 <td>Cluster-only by nature; needs a CalVer image and is memory-heavy</td>
@@ -4588,6 +4593,10 @@ standalone backup" as one of Phase 1's outputs.</p>
 <tr>
 <td>A lost server is an outage, not formation (#444)</td>
 <td>Delete one server pod: the cluster <strong>stays <code>Ready</code></strong> throughout (watch <code>.status.phase</code> every few seconds — it must never read <code>Forming</code>), <code>Degraded=True</code> (reason <code>ServersUnavailable</code>) names the pod while it is down, <code>ServersHealthy</code> turns <code>False</code> and <code>neo4j_operator_server_health</code> drops to <code>0</code> for that pod's address — still <strong>one series per server</strong>, none left behind afterwards — and a <code>Neo4jUser</code> applied meanwhile reaches <code>Ready</code>. When it rejoins, <code>Degraded=False</code> and no <code>ClusterFormationStarted</code> event was raised. Then hold a server down past the grace: redeploy the operator with <code>--server-unavailable-grace=2m</code>, <code>kubectl cordon</code> the Kind node and delete one server pod (it stays <code>Pending</code>; give the operator Deployment a toleration for <code>node.kubernetes.io/unschedulable</code> first if you will restart it while cordoned). At 2 minutes: phase <code>Degraded</code>, <code>Ready=False</code>/<code>ClusterDegraded</code>, <strong>one</strong> <code>ClusterDegraded</code> Warning; a new <code>Neo4jUser</code> still reconciles; an image change is held (<code>UpgradeDeferred</code>, StatefulSet image unchanged — revert it afterwards). Delete a second pod: phase <code>Forming</code>, one <code>ClusterQuorumLost</code> Warning, a new <code>Neo4jUser</code> waits with <code>ClusterNotReady</code>. <code>kubectl uncordon</code> → <code>Degraded</code> (already past the grace), then <code>Ready</code>; the waiting user reconciles. Walked on 2026.08.1, 2026-10-03</td>
+</tr>
+<tr>
+<td>Split backup archives (2026.09+)</td>
+<td>On a <code>2026.09+</code> standalone, load &gt;1GiB of incompressible data (e.g. 1.3M nodes of 28 concatenated <code>randomUUID()</code>s, in 50k-row statements — one 1.3M-row <code>CALL … IN TRANSACTIONS</code> hits <code>dbms.memory.transaction.total.max</code>). Back up with <code>compress: false</code> and <code>splitArchivePartSize: 1Gi</code> to a PVC and to MinIO: each artifact is a 24-byte <code>.backup</code> plus <code>.backup.1</code> (exactly 1073741824 bytes) and <code>.backup.2</code>, and <code>status.history[].artifactFilename</code> names the <code>.backup</code>. A scheduled CR with <code>retention.maxCount: 1</code>, deleted after two runs, leaves one artifact <strong>with its parts</strong>. Restore over <code>neo4j</code> on the standalone (marker node gone, every node back), then on a 2026.09 cluster restore into new databases from MinIO and from the PVC — both online with every node. Optionally, a replication-source chain split the same way seeds and pulls into a <code>Neo4jReplicaDatabase</code>. <code>splitArchivePartSize: 1G</code> goes <code>Invalid</code> (10⁹ bytes &lt; 1GiB), and <code>kubectl neo4j validate</code> says the same. Walked 2026-10-05</td>
 </tr>
 </tbody>
 </table>

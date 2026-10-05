@@ -2600,6 +2600,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#split-backup-archives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split backup archives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#custom-backup-arguments" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5730,6 +5741,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#split-backup-archives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Split backup archives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#custom-backup-arguments" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7254,7 +7276,7 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 <ul>
 <li>Enable <code>validate: true</code> to run <code>neo4j-admin backup validate</code> after each backup, so recoverability issues are surfaced at backup time (on <code>status.history[].validation</code>) rather than discovered at restore time. <strong>Requires a CalVer (2025.x+) Neo4j image</strong> — the <code>neo4j-admin backup validate</code> subcommand does not exist on 5.26, so on a 5.26 target the option has no effect (<code>status.history[].validation</code> stays empty) and the operator emits a one-time <code>BackupValidateUnsupported</code> warning event. The backup itself still succeeds either way.</li>
 <li>For cloud destinations, set <code>tempStorage</code> (PVC for staging) on large databases — without it <code>neo4j-admin</code> buffers in the Pod's filesystem.</li>
-<li>The operator doesn't manage cloud object expiry — configure bucket lifecycle rules to delete old backups.</li>
+<li>The operator doesn't manage cloud object expiry — configure bucket lifecycle rules to delete old backups. With <a href="#split-backup-archives">split archives</a>, filter those rules by prefix, not by a <code>.backup</code> suffix.</li>
 <li>Restore is non-trivial post-incident; rehearse it against a staging cluster at least once.</li>
 <li>Prefer Workload Identity (IRSA / GKE WI / Azure WI) over static credentials. Rotate <code>credentialsSecretRef</code> Secrets if you do use them.</li>
 <li>IAM permissions needed: <code>PutObject</code>, <code>GetObject</code>, <code>ListBucket</code>, <code>DeleteObject</code> on the backup bucket prefix.</li>
@@ -7346,13 +7368,32 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </span><span id="__span-61-37"><a id="__codelineno-61-37" name="__codelineno-61-37" href="#__codelineno-61-37"></a><span class="w">  </span><span class="nt">additionalArgs</span><span class="p">:</span>
 </span><span id="__span-61-38"><a id="__codelineno-61-38" name="__codelineno-61-38" href="#__codelineno-61-38"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--verbose"</span>
 </span></code></pre></div>
-<h3 id="custom-backup-arguments">Custom Backup Arguments<a class="headerlink" href="#custom-backup-arguments" title="Anchor link to this section">&para;</a></h3>
-<p>Pass flags directly to <code>neo4j-admin database backup</code>:</p>
+<h3 id="split-backup-archives">Split backup archives<a class="headerlink" href="#split-backup-archives" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Neo4j 2026.09+.</strong> By default an artifact is one file. For a database whose backup is larger than the target storage accepts as a single object, split it into parts:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-62-1"><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-62-2"><a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-62-3"><a id="__codelineno-62-3" name="__codelineno-62-3" href="#__codelineno-62-3"></a><span class="w">    </span><span class="nt">additionalArgs</span><span class="p">:</span>
-</span><span id="__span-62-4"><a id="__codelineno-62-4" name="__codelineno-62-4" href="#__codelineno-62-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--verbose"</span>
-</span><span id="__span-62-5"><a id="__codelineno-62-5" name="__codelineno-62-5" href="#__codelineno-62-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--parallel-recovery"</span>
+</span><span id="__span-62-3"><a id="__codelineno-62-3" name="__codelineno-62-3" href="#__codelineno-62-3"></a><span class="w">    </span><span class="nt">splitArchivePartSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500Gi</span><span class="w">   </span><span class="c1"># each part at most 500GiB</span>
+</span></code></pre></div>
+<ul>
+<li><strong>Size:</strong> a Kubernetes quantity of at least <code>1Gi</code>, Neo4j's minimum part size. Note that <code>1G</code> is 10⁹ bytes, which is below the minimum: the backup goes <code>Invalid</code> with a message that says so.</li>
+<li><strong>Version:</strong> on a target older than 2026.09 the backup is refused with a message naming the field and the image.</li>
+<li><strong>Files written:</strong> each artifact becomes <code>&lt;db&gt;-&lt;timestamp&gt;.backup</code>, a small metadata file, plus <code>&lt;db&gt;-&lt;timestamp&gt;.backup.1</code>, <code>.backup.2</code>, … holding the data. That layout applies whenever the option is set, so even a small differential is a metadata file plus <code>.backup.1</code>.</li>
+<li><strong>Nothing else changes.</strong> Restores and replicas reference the <code>.backup</code> file and Neo4j reads the parts beside it, for every restore and replica path the operator drives:</li>
+<li>standalone restore (<code>neo4j-admin</code>);</li>
+<li>cluster restore from cloud storage or a PVC;</li>
+<li>a <code>Neo4jReplicaDatabase</code> seeding from and pulling a split chain.</li>
+<li><strong>Keep the parts together:</strong></li>
+<li>PVC retention deletes an artifact's parts with it.</li>
+<li>On cloud storage, filter bucket lifecycle rules <strong>by prefix</strong>, never by a <code>.backup</code> suffix: a suffix filter expires the metadata file and strands the parts.</li>
+<li><code>neo4j-admin database upload</code> (to Aura) does not accept split archives.</li>
+</ul>
+<h3 id="custom-backup-arguments">Custom Backup Arguments<a class="headerlink" href="#custom-backup-arguments" title="Anchor link to this section">&para;</a></h3>
+<p>Pass flags directly to <code>neo4j-admin database backup</code>:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-63-1"><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-63-2"><a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-63-3"><a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a><span class="w">    </span><span class="nt">additionalArgs</span><span class="p">:</span>
+</span><span id="__span-63-4"><a id="__codelineno-63-4" name="__codelineno-63-4" href="#__codelineno-63-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--verbose"</span>
+</span><span id="__span-63-5"><a id="__codelineno-63-5" name="__codelineno-63-5" href="#__codelineno-63-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--parallel-recovery"</span>
 </span></code></pre></div>
 <h3 id="namespace-scoping">Namespace scoping<a class="headerlink" href="#namespace-scoping" title="Anchor link to this section">&para;</a></h3>
 <p>A <code>Neo4jBackup</code> backs up a deployment <strong>in its own namespace</strong>. <code>instanceRef</code> (and <code>shardedDatabase</code>) resolve within the backup CR's namespace, and the API has no namespace field to point elsewhere (the legacy <code>target</code> block, including <code>target.namespace</code>, was removed in v1.14). This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the <code>Neo4jBackup</code> in <strong>that</strong> namespace.</p>
