@@ -4447,6 +4447,10 @@ back to 1 replica.</p>
 <td><code>neo4j-admin</code> path with <code>stopCluster: true</code>: add a marker node → back up → delete the marker → restore → confirm the marker returns</td>
 </tr>
 <tr>
+<td>Restore under a new name (standalone)</td>
+<td><code>stopCluster: true</code>, <code>database: &lt;new&gt;</code>: from a one-database <code>backupRef</code> (PVC and MinIO), and from an <code>allDatabases</code> backup with <code>source.sourceDatabase</code> — each new database is created with the source's data, and the Job's <code>--from-path</code> names the exact <code>.backup</code> file (no <code>$(ls …)</code> glob). A same-name restore with <code>replaceExisting</code> still brings the marker back</td>
+</tr>
+<tr>
 <td>All-databases restore (standalone)</td>
 <td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>stopCluster: true</code>, <code>options.replaceExisting: true</code>); confirm both round-trip via the single offline Job and <code>status.databaseResults</code> are all <code>Completed</code> (<code>system</code> excluded) (#288)</td>
 </tr>
@@ -4572,7 +4576,7 @@ standalone backup" as one of Phase 1's outputs.</p>
 </tr>
 <tr>
 <td>Backup → restore (cluster)</td>
-<td>in-place <strong>Cypher</strong> path: back up one DB (<code>instanceRef</code> + <code>database</code>), restore into a <strong>new</strong> database, confirm the data round-trips</td>
+<td>in-place <strong>Cypher</strong> path: back up one DB (<code>instanceRef</code> + <code>database</code>), restore into a <strong>new</strong> database, confirm the data round-trips. Also one database out of an <code>allDatabases</code> backup under a new name with <code>source.sourceDatabase</code></td>
 </tr>
 <tr>
 <td>All-databases restore (cluster)</td>

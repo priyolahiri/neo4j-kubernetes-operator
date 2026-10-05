@@ -4507,6 +4507,14 @@ take effect on the first reconcile.</p>
 </ul>
 <h3 id="new-no-action-needed_2">New, no action needed<a class="headerlink" href="#new-no-action-needed_2" title="Anchor link to this section">&para;</a></h3>
 <ul>
+<li><strong>A standalone restores into a new database name.</strong> It used to look for the
+  <em>target</em> name's files and fail; the tutorial's "restore into a new
+  database" step could not work on a standalone. Standalone restores from a
+  <code>backupRef</code> now read the run's recorded artifact, as cluster restores
+  always have. New <code>Neo4jRestore.spec.source.sourceDatabase</code> picks one
+  database out of an all-databases backup to restore under <code>spec.database</code>,
+  on clusters and standalones. See
+  <a href="../guides/backup_restore/#restoring-under-a-different-name">Restoring under a different name</a>.</li>
 <li><code>Neo4jBackup.spec.options.splitArchivePartSize</code> (Neo4j 2026.09+) writes each artifact as several files — see <a href="../guides/backup_restore/#split-backup-archives">Split backup archives</a>. Apply the new CRDs to use it. PVC retention now deletes a split artifact's data parts with it; before, passing <code>--split-archive-part-size</code> through <code>additionalArgs</code> left the parts on the volume.</li>
 <li>Conditions <code>Degraded</code> and <code>ClusterFormed</code> on <code>Neo4jEnterpriseCluster</code>.</li>
 <li>The <code>Ready</code> condition of a <code>Degraded</code> cluster has reason <code>ClusterDegraded</code>

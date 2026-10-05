@@ -4937,7 +4937,13 @@
 <td><code>backupPath</code></td>
 <td><code>string</code></td>
 <td>conditional</td>
-<td>Specific backup path within the storage location. <strong>Required (non-empty) when <code>type="storage"</code></strong> — the controller fails the restore otherwise; for cluster targets it must be the exact <code>.backup</code> file. Not used for <code>type="backup"</code> (resolved from the <code>Neo4jBackup</code>).</td>
+<td>Specific backup path within the storage location. <strong>Required (non-empty) when <code>type="storage"</code></strong> — the controller fails the restore otherwise; for cluster targets it must be the exact <code>.backup</code> file. On a standalone it may be the directory or the exact <code>.backup</code> file; restoring under a different name from a cloud directory needs the exact file. Not used for <code>type="backup"</code> (resolved from the <code>Neo4jBackup</code>).</td>
+</tr>
+<tr>
+<td><code>sourceDatabase</code></td>
+<td><code>string</code></td>
+<td>❌</td>
+<td>The database to take from the backup when it is not <code>spec.database</code> — restoring under a different name. Needed only when the backup holds more than one database (an <code>allDatabases</code> backup, or a storage directory); a backup of one database already says which it is, and naming a different one is refused. Defaults to <code>spec.database</code>. Not allowed with <code>spec.allDatabases</code>, or as <code>system</code>.</td>
 </tr>
 <tr>
 <td><code>pointInTime</code></td>
