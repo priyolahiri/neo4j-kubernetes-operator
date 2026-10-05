@@ -212,6 +212,25 @@ func TestClusterAcceptsWork(t *testing.T) {
 	assert.True(t, (&Neo4jDatabaseReconciler{}).isClusterReady(availCluster(neo4jv1beta1.PhaseDegraded)))
 }
 
+// The backup controller backs up a standalone through standaloneAsCluster,
+// which copies the phase and not the conditions. Live on Kind after #447, a
+// Ready standalone's backup sat in "Waiting: Target cluster is not ready".
+func TestBackupGateAcceptsAReadyStandalone(t *testing.T) {
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+		Status: neo4jv1beta1.Neo4jEnterpriseStandaloneStatus{
+			Phase: neo4jv1beta1.PhaseReady,
+			Ready: true,
+			Conditions: []metav1.Condition{
+				cond(ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady),
+			},
+		},
+	}
+	assert.True(t, (&Neo4jBackupReconciler{}).isClusterReady(standaloneAsCluster(standalone)))
+
+	standalone.Status.Phase = neo4jv1beta1.PhasePending
+	assert.False(t, (&Neo4jBackupReconciler{}).isClusterReady(standaloneAsCluster(standalone)))
+}
+
 func TestStatefulSetRolloutInFlight(t *testing.T) {
 	podRestart := gateTestSTS("neo4j:x", 3, "rev1", "rev1", 3, 2)
 	assert.False(t, statefulSetRolloutInFlight(podRestart), "a pod that restarted on its own leaves the revisions equal")

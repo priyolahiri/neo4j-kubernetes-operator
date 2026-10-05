@@ -256,8 +256,14 @@ func clusterHasFormed(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 // past the grace period). Pausing them until a lost server returns would stop
 // backups exactly when they matter. Whether a particular statement can run
 // on fewer servers is Neo4j's call, reported on that resource.
+//
+// Phase Ready counts on its own: the backup controller hands this a
+// standalone dressed as a cluster (standaloneAsCluster), which carries the
+// phase but no conditions. Reading only the Ready condition left every
+// standalone backup "Waiting: Target cluster is not ready" forever.
 func clusterAcceptsWork(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	if cluster.Status.Phase == neo4jv1beta1.PhaseDegraded {
+	switch cluster.Status.Phase {
+	case neo4jv1beta1.PhaseReady, neo4jv1beta1.PhaseDegraded:
 		return true
 	}
 	return hasReadyCondition(cluster.Status.Conditions)
