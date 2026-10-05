@@ -125,8 +125,9 @@ seeds it from the backup over Cypher — online, no downtime, and your original
     operator scales the instance to 0 for the restore and back up afterwards),
     plus `options.replaceExisting: true` to overwrite a database that already
     exists. Applied as written below, it goes `Failed` with *"cannot run
-    against a live cluster … Set spec.stopCluster=true"*. See
-    [Restore Operations](#restore-operations).
+    against a live cluster … Set spec.stopCluster=true"*. With
+    `stopCluster: true` it restores into the new `neo4jrestored` database as
+    on a cluster. See [Restore Operations](#restore-operations).
 
 ```yaml
 cat <<'EOF' | kubectl apply -f -
@@ -1201,7 +1202,22 @@ spec:
 >
 > ⚠️ **Restore is destructive and overwrites in place.** With `options.replaceExisting: true` the target database's current data is replaced by the backup. Re-running a restore — including after re-creating a deleted Backup CR — re-seeds and overwrites again. Treat every restore as a destructive operation against the named database.
 
-> **Which run a restore picks**: a cluster restore seeds from the **latest successful artifact of the referenced `Neo4jBackup` CR** (standalone uses `tail -1` of the timestamped glob in that CR's directory). In a FULL+DIFF chain, reference the **DIFF CR** for the latest state or the **FULL CR** to roll back to the last full snapshot — restoring via the FULL CR does *not* apply the newer diffs (and emits a `RestoreFromChainParent` warning). To pin to an arbitrary earlier run, set `source.type: storage` with `backupPath` pointing at the exact `.backup` file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning).
+> **Which run a restore picks**: both cluster and standalone restores read the **latest successful artifact of the referenced `Neo4jBackup` CR**, by its recorded filename (a standalone falls back to the newest `<database>-*.backup` in that CR's directory only for a backup that recorded none). In a FULL+DIFF chain, reference the **DIFF CR** for the latest state or the **FULL CR** to roll back to the last full snapshot — restoring via the FULL CR does *not* apply the newer diffs (and emits a `RestoreFromChainParent` warning). To pin to an arbitrary earlier run, set `source.type: storage` with `backupPath` pointing at the exact `.backup` file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning).
+
+#### Restoring under a different name
+
+Set `spec.database` to the new name. From a backup of **one** database that is all it takes — the operator knows which file to read. From a backup that holds several (an `allDatabases` backup, or a `source.type: storage` directory), also say which database to take:
+
+```yaml
+spec:
+  database: customers-copy        # created by the restore
+  source:
+    type: backup
+    backupRef: nightly-all        # an allDatabases backup
+    sourceDatabase: customers     # the database inside it
+```
+
+This works on clusters and standalones alike. `neo4j-admin` restores under a new name only from a single `.backup` file, so from a cloud **directory** (`source.type: storage` without the filename) a rename is refused with a message; point `source.backupPath` at the exact file instead.
 
 #### Restore to a Standalone Instance
 

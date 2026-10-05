@@ -231,3 +231,36 @@ func TestClusterRestore_AllDatabasesBackupLooksUpTheSourceDatabase(t *testing.T)
 	assert.Equal(t, "customers-2026-10-05T00-04-58.backup", got)
 	assert.True(t, strings.HasPrefix(got, restoreSourceDatabase(restore)+"-"))
 }
+
+// End to end from the user's spec: source.type=backup goes through
+// resolveRestoreSource before the command is built. Live on Kind, that step
+// dropped sourceDatabase, so the command globbed the TARGET name — the tests
+// above, which start from an already-resolved source, could not see it.
+func TestStandaloneRestore_SourceDatabaseSurvivesResolution(t *testing.T) {
+	restore := &neo4jv1beta1.Neo4jRestore{
+		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jRestoreSpec{
+			InstanceRef: "sa",
+			Database:    "secondcopy",
+			StopCluster: true,
+			Source:      neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "all-pvc", SourceDatabase: "second"},
+		},
+		Status: neo4jv1beta1.Neo4jRestoreStatus{ResolvedSource: &neo4jv1beta1.ResolvedRestoreSource{
+			BackupRef:  "all-pvc",
+			Storage:    &renamePVC,
+			BackupPath: "all-pvc",
+			DatabaseArtifacts: []neo4jv1beta1.DatabaseArtifact{
+				{Database: "neo4j", Filename: "neo4j-2026-10-05T08-43-33.backup"},
+				{Database: "second", Filename: "second-2026-10-05T08-43-34.backup"},
+			},
+		}},
+	}
+	r := &Neo4jRestoreReconciler{}
+	resolved, err := r.resolveRestoreSource(context.Background(), restore)
+	require.NoError(t, err)
+	assert.Equal(t, "second", resolved.SourceDatabase)
+
+	copied := *restore
+	copied.Spec.Source = resolved
+	assert.Contains(t, restoreCmd(t, &copied), "--from-path='/backup/all-pvc/second-2026-10-05T08-43-34.backup' 'secondcopy'")
+}

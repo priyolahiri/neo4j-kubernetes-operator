@@ -1532,6 +1532,9 @@ func (r *Neo4jRestoreReconciler) resolveRestoreSource(ctx context.Context, resto
 			Storage:     snap.Storage,
 			BackupPath:  snap.BackupPath,
 			PointInTime: restore.Spec.Source.PointInTime,
+			// Carried, not resolved: it picks the database inside the backup.
+			// Dropping it here restored the TARGET name's files (found live).
+			SourceDatabase: restore.Spec.Source.SourceDatabase,
 		}, nil
 	}
 
@@ -1549,10 +1552,11 @@ func (r *Neo4jRestoreReconciler) resolveRestoreSource(ctx context.Context, resto
 		// switch matches the cloud / pvc branch unconditionally. The
 		// underlying storage.type (s3 / gcs / azure / pvc) still drives
 		// URI construction inside buildRestoreFromPath.
-		Type:        "storage",
-		Storage:     &storage,
-		BackupPath:  backupPath,
-		PointInTime: restore.Spec.Source.PointInTime,
+		Type:           "storage",
+		Storage:        &storage,
+		BackupPath:     backupPath,
+		PointInTime:    restore.Spec.Source.PointInTime,
+		SourceDatabase: restore.Spec.Source.SourceDatabase,
 	}, nil
 }
 
@@ -1591,7 +1595,7 @@ func restoreSourceDatabase(restore *neo4jv1beta1.Neo4jRestore) string {
 // artifactDatabase is the database a standard `<db>-<timestamp>.backup`
 // artifact holds, or "" when the name has another shape.
 func artifactDatabase(filename string) string {
-	if m := standardArtifactFilenameRegex.FindStringSubmatch(filename); m != nil && m[1] == filename {
+	if m := standardArtifactFilenameRegex.FindStringSubmatch(filename); len(m) > 2 && m[1] == filename {
 		return m[2]
 	}
 	return ""

@@ -918,7 +918,7 @@
     "name": "Create Standalone Restore Job",
     "serverUnitId": "su-neo4jrestore",
     "operation": "job",
-    "description": "createRestoreJob() builds and creates the offline `neo4j-admin database restore` Job used for Neo4jEnterpriseStandalone targets (neo4j-admin restore --overwrite-destination is documented as unsafe on clusters).",
+    "description": "createRestoreJob() builds and creates the offline `neo4j-admin database restore` Job used for Neo4jEnterpriseStandalone targets (neo4j-admin restore --overwrite-destination is documented as unsafe on clusters). --from-path names the exact artifact whenever it is known (backupPath ending in .backup, or the pinned snapshot's recorded file or per-database entry for the source database) — the only form neo4j-admin restores under a different name; otherwise it globs the source database's newest file (PVC) or passes the cloud directory (same name only).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
