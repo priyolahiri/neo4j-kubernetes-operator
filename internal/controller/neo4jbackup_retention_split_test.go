@@ -42,7 +42,7 @@ func runRetentionScript(t *testing.T, policy *neo4jv1beta1.RetentionPolicy, dir 
 	script = strings.Replace(script, "BACKUP_DIR='/backup/chain'", "BACKUP_DIR='"+dir+"'", 1)
 	require.Contains(t, script, "BACKUP_DIR='"+dir+"'")
 
-	cmd := exec.Command("sh", "-c", script)
+	cmd := exec.CommandContext(t.Context(), "sh", "-c", script)
 	cmd.Env = os.Environ()
 	if runtime.GOOS == "darwin" {
 		shim := t.TempDir()

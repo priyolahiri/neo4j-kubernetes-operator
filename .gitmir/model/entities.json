@@ -1349,6 +1349,13 @@
         "note": "Pointer type; default true. Use CompressEffective(), never dereference directly."
       },
       {
+        "id": "f-neo4jbackup-options-split-archive-part-size",
+        "name": "options.splitArchivePartSize",
+        "type": "string",
+        "isNullable": true,
+        "note": "Kubernetes quantity >= 1Gi (or 0 = off); passed to neo4j-admin as --split-archive-part-size=<bytes>. Requires Neo4j 2026.09+ on the target. A split artifact is x.backup (metadata) + x.backup.1..N."
+      },
+      {
         "id": "f-neo4jbackup-suspend",
         "name": "suspend",
         "type": "bool",
