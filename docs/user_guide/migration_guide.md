@@ -287,11 +287,12 @@ behaviour changes below take effect on the first reconcile.
   `Neo4jEnterpriseStandalone` no longer stops the instance: it runs
   `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }` against
   it, so only the restored database is unavailable, and `stopCluster: true` is
-  ignored. `source.type: storage`, point-in-time restores that cannot run
-  online (below), and cloud storage by pod identity unless the standalone sets
-  the new `spec.podServiceAccountAnnotations` (below) still restore offline
-  and need `stopCluster: true`. A restore already running offline when you
-  upgrade finishes offline. See
+  ignored. These still restore offline and need `stopCluster: true`:
+  `source.type: storage`; a point-in-time restore that cannot run online
+  (below); cloud storage by pod identity, unless the standalone sets the new
+  `spec.podServiceAccountAnnotations` (below); and a backup run that recorded
+  no artifact. A restore already running offline when you upgrade finishes
+  offline. See
   [Restore to a Standalone Instance](guides/backup_restore.md#restore-to-a-standalone-instance).
   - From **cloud storage with static credentials**, the standalone's own pods
     now fetch the seed. They need the credentials Secret in `spec.extraEnvFrom`

@@ -117,14 +117,16 @@ Job-per-CR `Neo4jBackup` (one-shot and scheduled) and `Neo4jRestore` scenarios. 
 | [`backup-minio.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/backup-minio.yaml) | Backups to MinIO / any S3-compatible store — full, scheduled, and external-TLS-endpoint variants | `cloud.endpointURL`, `cloud.forcePathStyle: true` |
 | [`restore-from-backup.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/restore-from-backup.yaml) | Restore from a `Neo4jBackup` reference, with pre/post Cypher hooks and a post-restore validation Job variant (online on clusters and standalones) | `source.backupRef`, `options.preRestore`/`postRestore` |
 | [`restore-overwrite.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/restore-overwrite.yaml) | Destructive restore over an existing database on a cluster (Cypher/seedURI path — no Job) | `options.replaceExisting: true` |
-| [`restore-pitr-basic.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/restore-pitr-basic.yaml) | Point-in-time recovery on a standalone target, plus an advanced storage-based variant with hooks | `source.type: pitr`, `pointInTime`, `pitr.logStorage` |
+| [`restore-point-in-time-online.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/restore-point-in-time-online.yaml) | Online point-in-time restore into a new database, on a cluster or a standalone (CalVer, cloud storage) | `source.type: backup`, `source.pointInTime` |
+| [`restore-pitr-basic.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/restore-pitr-basic.yaml) | Point-in-time recovery on a standalone target, plus an advanced storage-based variant with hooks | `source.type: pitr`, `pointInTime`, `pitr.baseBackup` |
 | [`pitr-setup-complete.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/pitr-setup-complete.yaml) | End-to-end PITR environment — base backup with validation, log-retention notes, and the restore | `options.validate`, `options.includeMetadata`, `source.type: pitr` |
 
-!!! warning "PITR is standalone-only via `Neo4jRestore`"
+!!! warning "`source.type: pitr` is standalone-only"
     `source.type: pitr` runs `neo4j-admin database restore --restore-until` as a
-    Job and applies only to `Neo4jEnterpriseStandalone` targets. For a cluster,
-    do point-in-time recovery by creating a `Neo4jDatabase` with
-    `seedConfig.restoreUntil` instead — see the database seed examples above.
+    Job that stops the instance, and applies only to `Neo4jEnterpriseStandalone`
+    targets. A cluster restores to a point in time **online** with
+    `source.type: backup` + `source.pointInTime`, into a new database, on
+    CalVer, from cloud storage — see `restore-point-in-time-online.yaml`.
 
 ## Cross-Cluster Replication & Aliases
 

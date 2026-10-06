@@ -4,8 +4,9 @@
 # Clusters and standalones both restore ONLINE: only the restored database is
 # unavailable, the instance keeps running, and stopCluster is not needed. (A
 # standalone falls back to an offline neo4j-admin Job, which needs
-# stopCluster: true, for point-in-time restores, source.type storage and
-# cloud storage by pod identity — see the backup guide.)
+# stopCluster: true, for point-in-time restores that cannot run online,
+# source.type storage, and cloud storage by pod identity when the standalone
+# sets no spec.podServiceAccountAnnotations — see the backup guide.)
 #
 # Hooks (spec.options.{preRestore,postRestore}) run on every target:
 #   - preRestore hooks run BEFORE the restore is issued (Cypher like

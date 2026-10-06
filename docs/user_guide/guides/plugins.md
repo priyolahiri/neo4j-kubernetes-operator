@@ -298,7 +298,7 @@ kubectl exec <pod-name> -c neo4j -- \
 
 ### Other common issues
 
-- **`status.phase: Waiting`**: the target cluster/standalone isn't functional yet — the plugin controller requeues until it is.
+- **`status.phase: Waiting`**: the target cluster/standalone isn't functional yet — the plugin controller requeues until it is. On a cluster it also waits while any server is unavailable (`Degraded` condition `True`, or phase `Degraded`), since installing a plugin restarts every server.
 - **VerifiedDownload pod stuck `Pending`**: checksum mismatch or unreachable URL — `kubectl describe pod` and read the init container's termination message.
 - **Plugin loads but procedures fail**: check `spec.security.allowedProcedures` and whether the plugin needs unrestricted procedures; for license-bound plugins (Bloom, GDS Enterprise, GenAI) verify the license file is mounted (`kubectl exec <pod> -c neo4j -- ls /licenses/`).
 

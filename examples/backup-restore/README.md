@@ -51,8 +51,9 @@ kubectl get neo4jbackup simple-backup -w
 - [`restore-overwrite.yaml`](restore-overwrite.yaml) - **Intermediate**: Destructive overwrite of an existing database (`options.replaceExisting`)
 
 ### 🔴 Point-in-Time Recovery (PITR) - Enterprise
-- [`restore-pitr-basic.yaml`](restore-pitr-basic.yaml) - **Advanced**: Basic PITR restore
-- [`pitr-setup-complete.yaml`](pitr-setup-complete.yaml) - **Advanced**: Complete PITR setup
+- [`restore-point-in-time-online.yaml`](restore-point-in-time-online.yaml) - **Intermediate**: Online point-in-time restore into a new database, on a cluster or a standalone (CalVer, cloud storage)
+- [`restore-pitr-basic.yaml`](restore-pitr-basic.yaml) - **Advanced**: Offline PITR restore on a standalone (`source.type: pitr`)
+- [`pitr-setup-complete.yaml`](pitr-setup-complete.yaml) - **Advanced**: Complete offline PITR setup on a standalone
 
 ## Running Examples
 

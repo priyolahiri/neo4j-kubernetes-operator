@@ -406,9 +406,10 @@ spec:
    - Check that pod FQDNs resolve: `kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-server-0.{cluster-name}-headless.{ns}.svc.cluster.local`
    - Inspect the startup script for correct LIST endpoints: `kubectl get configmap {cluster-name}-config -o yaml | grep -A2 resolver_type`
 
-3. **Quorum Loss**
-   - Check primary node health
-   - Verify minimum cluster size configuration
+3. **A server down, or quorum lost**
+   - One server down: the cluster stays `Ready` with a `Degraded` condition, then turns phase `Degraded` after the grace period (default 5m). It keeps serving.
+   - A majority down: phase `Forming` with a `ClusterQuorumLost` Warning event.
+   - See [Server availability](../api_reference/neo4jenterprisecluster.md#server-availability) and [Troubleshooting](guides/troubleshooting.md#problem-a-server-is-down-degraded).
 
 ### Debug Commands
 

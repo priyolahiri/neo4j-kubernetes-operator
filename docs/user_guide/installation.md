@@ -290,7 +290,7 @@ kubectl get pods -n neo4j-operator-system
 kubectl get crd | grep neo4j
 
 # View operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 ```
 
 Expected output:
@@ -497,10 +497,10 @@ make install
 #### 2. Operator Pod Not Starting
 ```bash
 # Check operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 
 # Check operator pod events
-kubectl describe pod -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl describe pod -n neo4j-operator-system -l control-plane=controller-manager
 ```
 
 #### 3. RBAC Permission Issues
@@ -519,7 +519,7 @@ If the operator pod shows `ImagePullBackOff` or `ErrImagePull`:
 
 ```bash
 # Check pod events for image pull errors
-kubectl describe pod -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl describe pod -n neo4j-operator-system -l control-plane=controller-manager
 
 # Verify image exists and is accessible
 docker pull ghcr.io/priyolahiri/neo4j-kubernetes-operator:latest

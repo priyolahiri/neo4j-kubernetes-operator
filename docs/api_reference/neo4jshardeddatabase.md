@@ -68,7 +68,7 @@ status:
 
 #### Prerequisites for propertyShardingReady=true
 
-1. Cluster phase is "Ready"
+1. Cluster phase is `Ready` or `Degraded` (formed and serving with a majority of its servers)
 2. Neo4j version is 2025.12+
 3. Minimum 2 servers configured (3+ recommended for HA graph shard primaries)
 4. Minimum 4GB memory per server (8GB+ recommended for production)
@@ -263,7 +263,7 @@ status:
 |-------|-------------|
 | `Validating` | Initial phase while the spec is validated |
 | `Creating` | Spec validated; the sharded database is being created |
-| `Waiting` | The target cluster is not yet `Ready` with property sharding operational (reconciler requeues) |
+| `Waiting` | The target cluster is not yet `Ready` (or `Degraded`) with property sharding operational (reconciler requeues) |
 | `Pending` | Waiting on a `seedBackupRef` whose backup has no Succeeded run yet, on the PVC seed proxy, or on seed credentials being projected onto the cluster (reconciler requeues) |
 | `Ready` | Sharded database created and operational |
 | `Failed` | Validation, seed resolution, client creation or database creation failed |
@@ -369,7 +369,7 @@ queryMetrics:
 - `seedConfig.restoreUntil`, when set, is an RFC3339 timestamp or `txId:<positive integer>`; `seedConfig.config` and `seedURIs` keys may contain only letters, digits, `.`, `_` and `-`, and `seedConfig.config` values may not contain `,`, `=`, quotes, backticks or newlines
 - `replaceExisting: true` requires `force: true` (destructive `DROP ... DESTROY DATA`)
 - `replaceExisting: true` is mutually exclusive with `ifNotExists: true` and requires a seed source (`seedURI`, `seedURIs`, or `seedBackupRef`)
-- The target cluster must be `Ready` with property sharding operational (`propertyShardingReady: true`). This is not a validation error: until then the sharded database waits in phase `Waiting` and retries
+- The target cluster must be `Ready` or `Degraded` with property sharding operational (`propertyShardingReady: true`). This is not a validation error: until then the sharded database waits in phase `Waiting` and retries
 - `graphShard.primaries` should be >= 3 for high availability (advice only)
 
 ## Error Conditions

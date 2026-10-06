@@ -433,7 +433,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `RolesSynced` | Granted roles equal `spec.roles` (PUBLIC excluded) |
 | `PasswordSynced` | The password from the current version of the Secret has been applied |
 | `PendingDependencies` | One or more `spec.roles` reference custom roles that don't yet exist |
-| `ClusterNotReady` | `spec.clusterRef` exists but is not in `Ready` phase |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
 
 ### `Neo4jRole`
 
@@ -442,7 +442,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `Ready` | Role exists, privileges in sync |
 | `PrivilegesSynced` | Live privileges match `spec.privileges` and `spec.privilegeRules` (immutable extras excluded). `False`/`PrivilegesDrifted`: something could not be reconciled (see events). `Unknown`/`UnattributedPrivileges`: learn mode holds rows it cannot attribute and will not revoke — see [Learn mode](#learn-mode-default) |
 | `PrivilegesResolve` | Every database a privilege names exists. `False`/`DatabaseNotFound`: those privileges are skipped (Neo4j refuses a grant on a missing database) and the rest applied; the message names them, and the field for a `privilegeRules` entry. `False`/`GraphPrivilegeOnComposite`: a GRAPH privilege on a composite database, which Neo4j accepts and ignores |
-| `ClusterNotReady` | `spec.clusterRef` exists but is not in `Ready` phase |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
 
 ### `Neo4jRoleBinding`
 
@@ -452,7 +452,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `RolesSynced` | `status.grantedRoles` covers `spec.roles` |
 | `UserNotFound` | The named user does not exist in Neo4j (waiting for SSO/LDAP first-login) |
 | `PendingDependencies` | One or more `spec.roles` reference a custom role that doesn't exist yet |
-| `ClusterNotReady` | `spec.clusterRef` exists but is not in `Ready` phase |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
 
 The `kubectl get` printer columns surface the most actionable bits:
 
@@ -474,7 +474,7 @@ prod       analytics-reader  prod-cluster  Ready   True   false  3m
 | Update spec | Diffed against live state; only changed fields trigger Cypher |
 | Update Secret | Secret's `resourceVersion` changes → `ALTER USER SET PASSWORD` |
 | `kubectl delete` | Finalizer-protected: controller drops user/role first (unless `deletionPolicy: Retain`) |
-| Cluster not Ready | `ClusterNotReady` condition; reconcile requeued every 30s |
+| Cluster neither Ready nor Degraded | `ClusterNotReady` condition; reconcile requeued every 30s |
 | Referenced role missing | `PendingDependencies` condition; requeue when role lands |
 
 The user controller watches `Neo4jRole` resources and re-reconciles bound users when a role is created or updated. You don't need to apply CRs in any particular order — the operator converges.

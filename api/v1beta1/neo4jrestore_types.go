@@ -270,10 +270,10 @@ type ResolvedRestoreSource struct {
 	BackupPath string `json:"backupPath,omitempty"`
 
 	// ArtifactFilename is the exact `.backup` filename of the resolved
-	// most-recent Succeeded run. Required by the cluster Cypher restore paths
-	// (cloud seedURI + PVC proxy), which seed from a single file; empty for
-	// older backups whose Pod-log capture didn't record it (standalone Job
-	// restores don't need it — they resolve the file with a shell glob).
+	// Succeeded run (the most recent, or with spec.source.pointInTime the one
+	// that holds it). Online restores seed from this one file; empty when the
+	// run did not record it, in which case only the offline standalone path
+	// can restore (it finds the newest file in the backup directory).
 	ArtifactFilename string `json:"artifactFilename,omitempty"`
 
 	// ArtifactType is the resolved run's BackupRun.ArtifactType: FULL, DIFF,
@@ -285,8 +285,7 @@ type ResolvedRestoreSource struct {
 	// ResolvedAt is when the backupRef was first dereferenced.
 	ResolvedAt *metav1.Time `json:"resolvedAt,omitempty"`
 
-	// BackupCreatedAt is the completion time of the resolved most-recent
-	// Succeeded run, captured at resolution so restore provenance
+	// BackupCreatedAt is the completion time of the resolved Succeeded run, captured at resolution so restore provenance
 	// (status.backupInfo.backupCreatedAt) survives deletion of the source
 	// Neo4jBackup CR. Empty when the run recorded no completion time.
 	// +optional

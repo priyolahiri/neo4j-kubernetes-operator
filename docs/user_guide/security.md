@@ -1044,7 +1044,7 @@ The correct flow is two-step, in this order:
 3. **Verify** by checking the operator's logs — the next reconcile should succeed against the new password:
 
    ```bash
-   kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator --tail=20 | grep -i auth
+   kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=20 | grep -i auth
    ```
 
    If the operator logs `Neo.ClientError.Security.Unauthorized` after the rotation, the Secret was updated but `ALTER USER` didn't take — repeat step 1.

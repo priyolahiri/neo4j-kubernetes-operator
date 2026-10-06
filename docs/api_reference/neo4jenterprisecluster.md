@@ -902,7 +902,7 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | Field | Type | Description |
 |---|---|---|
 | `phase` | `string` | Cluster phase: `"Initializing"`, `"Forming"`, `"Ready"`, `"Degraded"` (formed and serving with a majority of its servers, one or more unavailable for longer than the grace period — see [Server availability](#server-availability)), `"Expanding"` (storage expansion in progress), `"Paused"` (upgrade paused after a failure), `"Failed"` |
-| `ready` | `bool` | Whether the cluster is ready for connections |
+| `ready` | `bool` | `true` only in phase `Ready`; `false` in phase `Degraded`, though the cluster still serves |
 | `message` | `string` | Human-readable status message |
 | `conditions` | `[]metav1.Condition` | Cluster conditions (e.g. `Ready`, `Degraded`, `ClusterFormed`, `ServersHealthy`, `DatabasesHealthy`, `ServersPendingDrain`) — see [Conditions](#conditions) |
 | `replicas` | [`*ReplicaStatus`](#replicastatus) | Server counts: `servers` (desired) and `ready` |

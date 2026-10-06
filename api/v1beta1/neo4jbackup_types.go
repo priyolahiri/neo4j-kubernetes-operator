@@ -436,9 +436,9 @@ type BackupRun struct {
 
 	// ArtifactType says whether ArtifactFilename is a FULL backup or a DIFF
 	// (differential) one, which needs the rest of its chain to restore. Read
-	// from the Job's Pod log; empty when the log did not say. A restore that
-	// seeds from a PVC fetches the one file over HTTP and cannot follow a
-	// chain, so it relies on this.
+	// from the Job's Pod log; empty when the log did not say. An online
+	// restore from a PVC fetches one file over HTTP, so for anything not
+	// recorded FULL the seed proxy first merges the chain into a full backup.
 	// +kubebuilder:validation:Enum=FULL;DIFF
 	// +optional
 	ArtifactType string `json:"artifactType,omitempty"`

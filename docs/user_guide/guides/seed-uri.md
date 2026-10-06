@@ -302,7 +302,7 @@ The operator provides detailed status and events during seed restoration:
 kubectl get neo4jdatabase my-database -o yaml
 
 # View operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 
 # Check events
 kubectl describe neo4jdatabase my-database

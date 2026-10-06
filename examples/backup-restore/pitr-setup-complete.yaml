@@ -7,9 +7,9 @@
 # NOTE on PITR target type:
 #   Neo4jRestore `source.type: pitr` uses `neo4j-admin database restore
 #   --restore-until` (a Job) and applies ONLY to a Neo4jEnterpriseStandalone.
-#   For a CLUSTER, do point-in-time recovery by creating a Neo4jDatabase with
-#   spec.seedConfig.restoreUntil instead — the operator rejects source.type=pitr
-#   against a cluster target. See examples/databases/database-from-s3-seed.yaml.
+#   On a cluster, restore to a point in time ONLINE with `source.type: backup`
+#   and `source.pointInTime` into a new database (CalVer, cloud storage) — see
+#   restore-point-in-time-online.yaml.
 
 ---
 # Base backup for PITR
@@ -84,7 +84,7 @@ metadata:
     environment: disaster-recovery
     restore-type: pitr-example
 spec:
-  # Must reference a Neo4jEnterpriseStandalone (PITR is standalone-only).
+  # Must reference a Neo4jEnterpriseStandalone (`source.type: pitr` is standalone-only).
   instanceRef: recovery-standalone
   database: production-db
   source:
@@ -102,7 +102,7 @@ spec:
           provider: aws
   options:
     replaceExisting: true
-    # A point-in-time restore runs offline: preRestore Cypher hooks run
+    # A `source.type: pitr` restore runs offline: preRestore Cypher hooks run
     # BEFORE the instance is stopped; postRestore hooks run AFTER the
     # restored database is registered/started.
     preRestore:
