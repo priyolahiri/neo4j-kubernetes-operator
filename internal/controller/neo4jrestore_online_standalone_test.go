@@ -92,8 +92,8 @@ func TestRestoreRunsOffline(t *testing.T) {
 		offline bool
 	}{
 		{"PVC FULL", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", full) }, false, false},
-		{"PVC DIFF: HTTP fetches one file, not the chain", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", diff) }, false, true},
-		{"PVC, type not recorded", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", untyped) }, false, true},
+		{"PVC DIFF: the seed proxy merges the chain", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", diff) }, false, false},
+		{"PVC, type not recorded: merged too", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", untyped) }, false, false},
 		{"cloud DIFF: the seed provider reads the chain", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("s3", diff) }, false, false},
 		{"cloud, type not recorded", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("s3", untyped) }, false, false},
 		{"cloud by pod identity: a standalone's pods cannot carry one", func() *neo4jv1beta1.Neo4jRestore {
@@ -138,7 +138,7 @@ func TestRestoreRunsOffline(t *testing.T) {
 			r := pinnedBackupRestore("pvc", allDBs("FULL", "DIFF"))
 			r.Spec.AllDatabases = true
 			return r
-		}, false, true},
+		}, false, false},
 		{"one database of an all-databases backup, FULL", func() *neo4jv1beta1.Neo4jRestore {
 			r := pinnedBackupRestore("pvc", allDBs("DIFF", "FULL"))
 			r.Spec.Source.SourceDatabase = "db1"
@@ -148,7 +148,7 @@ func TestRestoreRunsOffline(t *testing.T) {
 			r := pinnedBackupRestore("pvc", allDBs("DIFF", "FULL"))
 			r.Spec.Source.SourceDatabase = "db0"
 			return r
-		}, false, true},
+		}, false, false},
 		{"cluster: never the Job, whatever the source", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", diff) }, true, false},
 		{"cluster pitr (refused by validation, never a Job)", func() *neo4jv1beta1.Neo4jRestore {
 			r := minimalRestore("r", "ns", "c")
@@ -326,9 +326,9 @@ func TestStartRestore_StandalonePointInTimeStaysOnTheJob(t *testing.T) {
 }
 
 // A scheduled PVC backup's latest artifact is usually a DIFF (backupType AUTO).
-// Seeded over HTTP Neo4j refuses it, so a standalone restores it offline, as
-// before, and says why.
-func TestStartRestore_StandalonePVCDiffTakesTheJob(t *testing.T) {
+// Served over HTTP Neo4j refuses it, so the seed proxy merges its chain first:
+// a standalone restores it online, with no Job.
+func TestStartRestore_StandalonePVCDiffMergesOnline(t *testing.T) {
 	sa := minimalStandaloneForRestore("sa", "ns")
 	restore := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
 		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "DIFF",
@@ -336,18 +336,19 @@ func TestStartRestore_StandalonePVCDiffTakesTheJob(t *testing.T) {
 	restore.Status.ResolvedSource.Storage.PVC = &neo4jv1beta1.PVCSpec{Name: "backups"}
 	restore.Spec.Options = &neo4jv1beta1.RestoreOptionsSpec{ReplaceExisting: true}
 	backup := &neo4jv1beta1.Neo4jBackup{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"}}
-	// No pods: the instance is already stopped, so the Job may run without
-	// stopCluster.
 	r := statusRestoreReconciler(t, sa, restore, backup)
 
 	_, _ = r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
 
 	jobs := &batchv1.JobList{}
 	require.NoError(t, r.List(context.Background(), jobs))
-	require.Len(t, jobs.Items, 1, "a PVC DIFF restores through the neo4j-admin Job")
-	recorder, ok := r.Recorder.(*record.FakeRecorder)
-	require.True(t, ok)
-	assert.Contains(t, strings.Join(drainEvents(recorder), "\n"), "differential (DIFF) backup on a PVC")
+	assert.Empty(t, jobs.Items, "a PVC DIFF no longer needs the neo4j-admin Job")
+	proxy := &appsv1.Deployment{}
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: pvcSeedProxyName("r"), Namespace: "ns"}, proxy))
+	pod := proxy.Spec.Template.Spec
+	require.Len(t, pod.InitContainers, 1, "the proxy merges the chain before serving it")
+	assert.Equal(t, "neo4j:5.26-enterprise", pod.InitContainers[0].Image, "with the standalone's own Neo4j image")
+	assert.Equal(t, []string{"nightly", "neo4j-2026-10-06T07-40-04.backup", "neo4j", "merge"}, pod.InitContainers[0].Command[4:])
 }
 
 // Without stopCluster the Job path refuses a running standalone; now that most
@@ -355,27 +356,27 @@ func TestStartRestore_StandalonePVCDiffTakesTheJob(t *testing.T) {
 func TestStartRestore_StandaloneOfflineRefusalSaysWhy(t *testing.T) {
 	sa := minimalStandaloneForRestore("sa", "ns")
 	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "sa-0", Namespace: "ns", Labels: map[string]string{"app": "sa"}}}
-	restore := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
-		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "DIFF",
-	})
-	restore.Status.ResolvedSource.Storage.PVC = &neo4jv1beta1.PVCSpec{Name: "backups"}
+	restore := minimalRestore("r", "ns", "sa")
+	restore.Spec.Source = neo4jv1beta1.RestoreSource{
+		Type: "storage", BackupPath: "nightly/neo4j-2026-10-06T07-40-04.backup",
+		Storage: &neo4jv1beta1.StorageLocation{Type: "pvc", PVC: &neo4jv1beta1.PVCSpec{Name: "backups"}},
+	}
 	restore.Spec.Options = &neo4jv1beta1.RestoreOptionsSpec{ReplaceExisting: true}
-	backup := &neo4jv1beta1.Neo4jBackup{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"}}
-	r := statusRestoreReconciler(t, sa, pod, restore, backup)
+	r := statusRestoreReconciler(t, sa, pod, restore)
 
 	_, _ = r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
 
 	got := &neo4jv1beta1.Neo4jRestore{}
 	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
 	assert.Equal(t, StatusFailed, got.Status.Phase)
-	assert.Contains(t, got.Status.Message, "it restores offline: neo4j-2026-10-06T07-40-04.backup is a differential (DIFF) backup on a PVC")
+	assert.Contains(t, got.Status.Message, `it restores offline: source.type "storage" gives a path`)
 	assert.Contains(t, got.Status.Message, "spec.stopCluster=true")
 }
 
-// A cluster has no Job to fall back to. Seeding a PVC DIFF used to create the
-// database and leave it offline ("not part of a valid backup chain"), to be
-// DROPped by hand; it is refused before anything is created.
-func TestClusterRestore_RefusesAPVCDiffBeforeCreatingAnything(t *testing.T) {
+// A cluster restoring a PVC DIFF used to create the database and leave it
+// offline ("not part of a valid backup chain"). The seed proxy now merges the
+// chain first, with the cluster's Neo4j image.
+func TestClusterRestore_MergesAPVCDiffBeforeSeeding(t *testing.T) {
 	cluster := minimalClusterForRestore("c", "ns")
 	restore := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
 		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "DIFF",
@@ -385,15 +386,56 @@ func TestClusterRestore_RefusesAPVCDiffBeforeCreatingAnything(t *testing.T) {
 	r := statusRestoreReconciler(t, cluster, restore)
 
 	_, err := r.startClusterCypherRestore(context.Background(), restore, cluster)
-	require.Error(t, err)
+	require.NoError(t, err)
 
 	got := &neo4jv1beta1.Neo4jRestore{}
 	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
+	assert.Equal(t, StatusPending, got.Status.Phase, "waiting for the proxy to merge and come up")
+	proxy := &appsv1.Deployment{}
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: pvcSeedProxyName("r"), Namespace: "ns"}, proxy))
+	require.Len(t, proxy.Spec.Template.Spec.InitContainers, 1)
+	assert.Contains(t, proxy.Spec.Template.Spec.InitContainers[0].Env, corev1.EnvVar{Name: "SEED_MERGE_COMMAND", Value: "neo4j-admin database aggregate-backup"})
+
+	// A known full backup is served as it always was.
+	full := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
+		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "FULL",
+	})
+	full.Name, full.Spec.InstanceRef = "f", "c"
+	full.Status.ResolvedSource.Storage.PVC = &neo4jv1beta1.PVCSpec{Name: "backups"}
+	r = statusRestoreReconciler(t, cluster, full)
+	_, err = r.startClusterCypherRestore(context.Background(), full, cluster)
+	require.NoError(t, err)
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: pvcSeedProxyName("f"), Namespace: "ns"}, proxy))
+	assert.Empty(t, proxy.Spec.Template.Spec.InitContainers)
+}
+
+// A merge that failed does not heal by waiting: the restore fails at once with
+// neo4j-admin's reason.
+func TestClusterRestore_FailsAtOnceWhenTheMergeFails(t *testing.T) {
+	cluster := minimalClusterForRestore("c", "ns")
+	restore := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
+		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "DIFF",
+	})
+	restore.Spec.InstanceRef = "c"
+	restore.Status.ResolvedSource.Storage.PVC = &neo4jv1beta1.PVCSpec{Name: "backups"}
+	failed := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "proxy-0", Namespace: "ns", Labels: map[string]string{
+			"app.kubernetes.io/name": "backup-seed-proxy", "app.kubernetes.io/instance": "r"}},
+		Status: corev1.PodStatus{InitContainerStatuses: []corev1.ContainerStatus{{
+			Name: seedMergeContainerName,
+			LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+				ExitCode: 1, Message: "could not merge the backup chain ending at nightly/x: no space left"}},
+		}}},
+	}
+	r := statusRestoreReconciler(t, cluster, restore, failed)
+
+	_, _ = r.startClusterCypherRestore(context.Background(), restore, cluster) // creates the proxy
+	_, err := r.startClusterCypherRestore(context.Background(), restore, cluster)
+	require.Error(t, err)
+	got := &neo4jv1beta1.Neo4jRestore{}
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
 	assert.Equal(t, StatusFailed, got.Status.Phase)
-	assert.Contains(t, got.Status.Message, "cannot be seeded online")
-	deployments := &appsv1.DeploymentList{}
-	require.NoError(t, r.List(context.Background(), deployments))
-	assert.Empty(t, deployments.Items, "no seed proxy is started for a seed that cannot work")
+	assert.Contains(t, got.Status.Message, "could not merge the backup chain: could not merge the backup chain ending at nightly/x: no space left")
 }
 
 // The online path skipped restore hooks entirely — a standalone that used to

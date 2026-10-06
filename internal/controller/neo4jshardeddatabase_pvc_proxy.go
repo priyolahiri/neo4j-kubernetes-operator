@@ -39,7 +39,7 @@ func (r *Neo4jShardedDatabaseReconciler) ensurePVCSeedProxy(
 	shardedDB *neo4jv1beta1.Neo4jShardedDatabase,
 	backupPVCName string,
 ) (proxyAvailable bool, err error) {
-	available, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, shardedDB, shardedDB.Name, backupPVCName)
+	available, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, shardedDB, shardedDB.Name, backupPVCName, nil)
 	if err == nil {
 		// Restrict the proxy to the target cluster's server pods (#219).
 		if npErr := ensurePVCSeedProxyNetworkPolicy(ctx, r.Client, r.Scheme, shardedDB, shardedDB.Name, clusterPodLabels(shardedDB.Spec.ClusterRef)); npErr != nil {

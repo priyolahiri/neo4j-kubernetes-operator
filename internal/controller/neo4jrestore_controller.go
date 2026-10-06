@@ -180,7 +180,26 @@ const (
 	// up: a single busybox pod, Ready in seconds normally — 3 minutes covers
 	// slow image pulls. spec.timeout, when set, overrides.
 	seedProxyWaitTimeout = 3 * time.Minute
+
+	// seedProxyMergeWaitTimeout is the default budget when the proxy merges
+	// a backup chain first: it pulls the Neo4j image, copies the chain and
+	// recovers it, which scales with the store. spec.timeout overrides.
+	seedProxyMergeWaitTimeout = 30 * time.Minute
 )
+
+// seedProxyBudget is how long a restore waits for its seed proxy: spec.timeout
+// when set, otherwise a default that allows for merging a chain.
+func seedProxyBudget(restore *neo4jv1beta1.Neo4jRestore, merging bool) time.Duration {
+	if restore.Spec.Timeout != "" {
+		if d, err := time.ParseDuration(restore.Spec.Timeout); err == nil && d > 0 {
+			return d
+		}
+	}
+	if merging {
+		return seedProxyMergeWaitTimeout
+	}
+	return seedProxyWaitTimeout
+}
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jrestores,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jrestores/status,verbs=get;update;patch
@@ -3100,22 +3119,11 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			}
 		}
 	case "pvc":
-		// Refuse a DIFF before creating anything: seeded over HTTP it fails
-		// inside Neo4j and leaves the database offline.
-		if snap := resolvedBackupSnapshot(restore); snap != nil {
-			for _, a := range restoreSeedArtifacts(restore, snap) {
-				if msg := pvcDiffSeedRefusal(storage.Type, a.Filename, a.Type); msg != "" {
-					r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-					r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
-					return ctrl.Result{}, fmt.Errorf("%s", msg)
-				}
-			}
-		}
 		// Cluster + PVC restore: spawn the in-cluster HTTP proxy in front
 		// of the backup PVC, build a single-file seedURI against it. The
 		// cluster's seed_from_uri_providers default (rule 74) includes
 		// URLConnectionSeedProvider so http:// URIs are accepted.
-		uri, result, perr := r.resolveClusterPVCRestoreURI(ctx, restore, storage, backupPath, target.podLabels())
+		uri, result, perr := r.resolveClusterPVCRestoreURI(ctx, restore, storage, backupPath, target.podLabels(), target.image())
 		if perr != nil {
 			r.updateRestoreStatus(ctx, restore, StatusFailed, perr.Error())
 			return ctrl.Result{}, perr
@@ -3594,6 +3602,7 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 	storage neo4jv1beta1.StorageLocation,
 	backupsPath string,
 	peers map[string]string,
+	image neo4jv1beta1.ImageSpec,
 ) (string, ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -3662,10 +3671,23 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 		return "", ctrl.Result{}, fmt.Errorf("PVC cluster restore not supported with source.type=%q", restore.Spec.Source.Type)
 	}
 
+	// Unless the backup recorded the file as a full backup, the proxy merges
+	// its chain first (rule 109): served over HTTP, a differential is refused.
+	recorded := ""
+	if snap := resolvedBackupSnapshot(restore); snap != nil && restore.Spec.Source.Type == SourceTypeBackup {
+		for _, a := range restoreSeedArtifacts(restore, snap) {
+			if a.Filename == filename {
+				recorded = a.Type
+			}
+		}
+	}
+	merge := newSeedMergePlan(image, restore.Spec.Options,
+		[]seedArtifact{newSeedArtifact(backupsPath, filename, recorded, restoreSourceDatabase(restore))})
+
 	// Spawn (idempotent) the HTTP proxy in front of the backup PVC. The
 	// Neo4jRestore CR is the owner so the proxy is GC'd when the restore
 	// is deleted.
-	proxyAvailable, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, restore, restore.Name, storage.PVC.Name)
+	proxyAvailable, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, restore, restore.Name, storage.PVC.Name, merge)
 	if err == nil {
 		// Restrict the proxy (which serves the whole backup PVC) to the
 		// target's Neo4j pods (#219) — selected by `peers`, since a
@@ -3684,14 +3706,15 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 		// kept the restore Pending forever with no diagnosis. Anchor a
 		// deadline on the first wait and surface the proxy's live condition
 		// while waiting; fail with it once the budget is spent.
+		if why := pvcSeedProxyMergeFailure(ctx, r.Client, restore.Namespace, restore.Name); why != "" {
+			msg := "the seed proxy could not merge the backup chain: " + why
+			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+			return "", ctrl.Result{}, fmt.Errorf("%s", msg)
+		}
 		waitStart, haveAnchor := r.seedProxyWaitStart(ctx, restore)
 		diagnosis := pvcSeedProxyDiagnosis(ctx, r.Client, restore.Namespace, restore.Name)
-		budget := seedProxyWaitTimeout
-		if restore.Spec.Timeout != "" {
-			if d, perr := time.ParseDuration(restore.Spec.Timeout); perr == nil && d > 0 {
-				budget = d
-			}
-		}
+		budget := seedProxyBudget(restore, merge != nil)
 		if haveAnchor && time.Since(waitStart) > budget {
 			msg := fmt.Sprintf("backup-seed-proxy Deployment did not become Ready within %s: %s — a common cause is the backup PVC (%s) being ReadWriteOnce and still attached to another pod/node; fix the cause and re-trigger the restore by bumping the spec",
 				budget, diagnosis, storage.PVC.Name)
