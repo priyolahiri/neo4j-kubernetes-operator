@@ -5029,7 +5029,7 @@
 <td><code>backupType</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Backup type: <code>"FULL"</code>, <code>"DIFF"</code>, <code>"AUTO"</code> (default)</td>
+<td>Backup type: <code>"FULL"</code>, <code>"DIFF"</code>, <code>"AUTO"</code> (default). <code>AUTO</code> takes a full backup the first time and differentials after — except for a sharded database (<code>spec.shardedDatabase</code>) on a PVC, where every run is full, because only full shard backups can seed a sharded database from a PVC</td>
 </tr>
 <tr>
 <td><code>preferDiffAsParent</code></td>

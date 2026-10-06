@@ -5146,7 +5146,7 @@ prefer per-family lifecycles.</p>
 </span><span id="__span-25-20"><a id="__codelineno-25-20" name="__codelineno-25-20" href="#__codelineno-25-20"></a><span class="w">    </span><span class="nt">maxCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
 </span><span id="__span-25-21"><a id="__codelineno-25-21" name="__codelineno-25-21" href="#__codelineno-25-21"></a>
 </span><span id="__span-25-22"><a id="__codelineno-25-22" name="__codelineno-25-22" href="#__codelineno-25-22"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-25-23"><a id="__codelineno-25-23" name="__codelineno-25-23" href="#__codelineno-25-23"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span><span class="w">               </span><span class="c1"># on a PVC, only full runs can seed a sharded database</span>
+</span><span id="__span-25-23"><a id="__codelineno-25-23" name="__codelineno-25-23" href="#__codelineno-25-23"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTO</span><span class="w">               </span><span class="c1"># on a PVC, AUTO takes full backups of a sharded database</span>
 </span><span id="__span-25-24"><a id="__codelineno-25-24" name="__codelineno-25-24" href="#__codelineno-25-24"></a><span class="w">    </span><span class="nt">validate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                 </span><span class="c1"># optional per-shard recoverability check</span>
 </span></code></pre></div>
 <p>The per-shard <code>.backup</code> artifacts produced by the run are recorded in
@@ -5164,10 +5164,16 @@ only from a full backup of each shard. A differential cannot be turned into one
 either: merging a shard's chain loses the sharding information the seed needs.
 So:</p>
 <ul>
-<li>Back sharded databases up to a PVC with <code>options.backupType: FULL</code>. With
-  <code>AUTO</code>, the default, every run after the first holds a differential of the
-  graph shard. Each such run raises a <code>BackupShardedDifferential</code> warning, and
-  each run's shard types are in <code>status.history[].shardArtifacts[].type</code>.</li>
+<li>On a PVC, <code>backupType: AUTO</code> (the default) takes a <strong>full</strong> backup of a
+  sharded database on every run, so every run can seed one. Only an explicit
+  <code>backupType: DIFF</code> writes differentials there; each such run raises a
+  <code>BackupShardedDifferential</code> warning. Each run's shard types are in
+  <code>status.history[].shardArtifacts[].type</code>.</li>
+<li>An all-databases backup (<code>spec.allDatabases</code>) keeps <code>AUTO</code> as usual, because
+  one <code>neo4j-admin</code> run covers every database. Its sharded families' runs after
+  the first hold differentials, and raise the same warning. To restore a
+  sharded database from a PVC, back it up with its own <code>Neo4jBackup</code>
+  (<code>spec.shardedDatabase</code>).</li>
 <li>A <code>seedBackupRef</code> whose latest run holds a differential shard fails at once,
   naming the shards. It retries: once a full run of that backup lands, the
   database seeds from it.</li>
