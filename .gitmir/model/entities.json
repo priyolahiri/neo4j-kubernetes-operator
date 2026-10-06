@@ -1400,7 +1400,7 @@
         "name": "status.history[].artifactType",
         "type": "enum",
         "isNullable": true,
-        "note": "FULL or DIFF per run (and databaseArtifacts[].type per database), read from neo4j-admin's log; empty when the log did not say. An online PVC restore can only seed a FULL artifact."
+        "note": "FULL or DIFF per run (and databaseArtifacts[].type per database), read from neo4j-admin's log; empty when the log did not say. An online PVC restore merges the chain of anything not recorded as FULL."
       }
     ],
     "paths": [
@@ -1512,7 +1512,7 @@
         "name": "stopCluster",
         "type": "bool",
         "isNullable": true,
-        "note": "Scales a standalone to 0 for an offline neo4j-admin restore and back up afterwards. Used only by a standalone restore that cannot run online (point-in-time, source.type storage, a PVC differential, cloud by pod identity); online restores — every cluster restore and most standalone ones — ignore it, with an event on a standalone."
+        "note": "Scales a standalone to 0 for an offline neo4j-admin restore and back up afterwards. Used only by a standalone restore that cannot run online (point-in-time, source.type storage, cloud by pod identity); online restores — every cluster restore and most standalone ones — ignore it, with an event on a standalone."
       },
       {
         "id": "f-neo4jrestore-timeout",
@@ -1564,7 +1564,7 @@
         "name": "status.resolvedSource.artifactType",
         "type": "enum",
         "isNullable": true,
-        "note": "FULL or DIFF, carried from the resolved backup run (FULL for an unrecorded run of a backupType FULL backup). A PVC seed must be FULL; decides a standalone's online vs offline restore."
+        "note": "FULL or DIFF, carried from the resolved backup run (FULL for an unrecorded run of a backupType FULL backup). Anything but FULL on a PVC has its chain merged by the seed proxy before seeding."
       }
     ],
     "paths": [

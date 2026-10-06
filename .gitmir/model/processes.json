@@ -101,7 +101,7 @@
       {
         "refKind": "function",
         "refId": "sf-create-restore-job",
-        "note": "Offline standalone restores only (point-in-time, storage path, PVC differential, cloud by pod identity): scales the instance to 0 and runs an offline neo4j-admin restore Job"
+        "note": "Offline standalone restores only (point-in-time, storage path, cloud by pod identity): scales the instance to 0 and runs an offline neo4j-admin restore Job"
       },
       {
         "refKind": "event",
