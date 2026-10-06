@@ -5605,7 +5605,7 @@
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="database-creation-fails">Database Creation Fails<a class="headerlink" href="#database-creation-fails" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Check operator logs</strong>:
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>control-plane<span class="o">=</span>controller-manager<span class="w"> </span>--tail<span class="o">=</span>-1
 </span></code></pre></div></p>
 <p><strong>Common Issues</strong>:</p>
 <ul>
@@ -5690,7 +5690,7 @@
 </span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span>-d<span class="w"> </span>&lt;db-name&gt;<span class="w"> </span><span class="s2">"&lt;test-statement&gt;"</span>
 </span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>
 </span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="c1"># Check operator logs for import errors</span>
-</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"initial.*data"</span>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>control-plane<span class="o">=</span>controller-manager<span class="w"> </span>--tail<span class="o">=</span>-1<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"initial.*data"</span>
 </span></code></pre></div></p>
 <p><strong>Common Issues</strong>:</p>
 <ul>

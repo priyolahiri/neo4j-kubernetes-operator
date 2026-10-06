@@ -4228,7 +4228,7 @@
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>kubectl<span class="w"> </span>get<span class="w"> </span>deployments<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-dev<span class="w">     </span><span class="c1"># for dev deployments</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="c1"># Check operator logs</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-f<span class="w"> </span>-l<span class="w"> </span>control-plane<span class="o">=</span>controller-manager<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
 </span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
 </span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="c1"># Verify CRDs are installed</span>
 </span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>kubectl<span class="w"> </span>get<span class="w"> </span>crd<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>neo4j
