@@ -48,6 +48,10 @@ const (
 	// EventReasonBackupRetentionCaveat — retention pruning configured on a CR
 	// whose chain may contain differential artifacts (#217).
 	EventReasonBackupRetentionCaveat = "BackupRetentionCaveat"
+	// EventReasonBackupRestoreCaveat — a valid backup whose artifacts a
+	// Neo4jRestore cannot seed online (a PVC backup that writes
+	// differentials); see BackupValidator.Warnings.
+	EventReasonBackupRestoreCaveat = "BackupRestoreCaveat"
 	// EventReasonBackupShardedExcluded — an all-databases backup wrote a
 	// property-sharded family's shard databases to disk but did not catalogue
 	// them, so an all-databases restore cannot recreate them; each must be
