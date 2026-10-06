@@ -4177,7 +4177,7 @@ cluster only when it <em>needs</em> clustering.</p>
 <tr>
 <td><strong>Backup → restore</strong></td>
 <td><strong>Both</strong></td>
-<td>Both restore via the in-place <strong>Cypher</strong> path, but the standalone differs in its target plumbing (StatefulSet name, pod labels, which CR carries the seed env) and is the only target with an offline <code>neo4j-admin</code> path (PITR <code>--restore-until</code>, <code>source.type: storage</code>, PVC differentials, cloud by pod identity — rule 108). PITR is <em>rejected</em> on clusters.</td>
+<td>Both restore via the in-place <strong>Cypher</strong> path, but the standalone differs in its target plumbing (StatefulSet name, pod labels, which CR carries the seed env) and is the only target with an offline <code>neo4j-admin</code> path (PITR <code>--restore-until</code>, <code>source.type: storage</code>, cloud by pod identity — rule 108). PITR is <em>rejected</em> on clusters.</td>
 </tr>
 <tr>
 <td><strong>Split backup archives</strong> (<code>splitArchivePartSize</code>)</td>
@@ -4447,8 +4447,12 @@ back to 1 replica.</p>
 <td>add a marker node → back up (one-shot, PVC) → change the marker → restore over <code>neo4j</code> with <code>replaceExisting</code> → the marker returns. While it runs, poll a <strong>second</strong> database: it stays <code>online</code> throughout, the pod's restart count and UID do not change, no <code>&lt;restore&gt;-restore</code> Job exists, and a <code>stopCluster: true</code> on the restore draws an event saying it is ignored. A <code>postRestore</code> Cypher hook runs (rule 108)</td>
 </tr>
 <tr>
+<td>Backup → restore (PVC differential, merged)</td>
+<td>a scheduled PVC backup (<code>backupType: AUTO</code>) until a run records <code>artifactType: DIFF</code>, with data written between runs → restore it into a new database and over <code>neo4j</code>: online, no Job, every run's data present (the proxy's <code>merge-chain</code> init container merged the chain). On a 2026.09 image, repeat with <code>splitArchivePartSize</code> and with an <code>allDatabases</code> backup whose quiet database's newest run is empty. Then delete the chain's full from the PVC and restore again: <code>Failed</code> within a minute, carrying neo4j-admin's reason (rule 109)</td>
+</tr>
+<tr>
 <td>Backup → restore (offline)</td>
-<td>a scheduled PVC backup (<code>backupType: AUTO</code>) until a run records <code>artifactType: DIFF</code> → restore it without <code>stopCluster</code>: <code>Failed</code>, naming the differential → with <code>stopCluster: true</code>: the <code>neo4j-admin</code> Job restores the whole chain (data written after the full is present)</td>
+<td>a point-in-time restore (<code>source.pointInTime</code>) without <code>stopCluster</code>: <code>Failed</code>, naming the reason → with <code>stopCluster: true</code>: the <code>neo4j-admin</code> Job restores to that point</td>
 </tr>
 <tr>
 <td>Restore under a new name (standalone)</td>

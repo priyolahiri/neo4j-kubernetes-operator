@@ -5029,7 +5029,7 @@
 <td><code>backupType</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Backup type: <code>"FULL"</code>, <code>"DIFF"</code>, <code>"AUTO"</code> (default). On PVC storage, prefer <code>"FULL"</code> for backups you will restore from: a <code>Neo4jRestore</code> cannot seed a PVC differential online, and the operator raises a <code>BackupRestoreCaveat</code> Warning event when this backup's runs will be differentials</td>
+<td>Backup type: <code>"FULL"</code>, <code>"DIFF"</code>, <code>"AUTO"</code> (default)</td>
 </tr>
 <tr>
 <td><code>preferDiffAsParent</code></td>
@@ -5338,7 +5338,7 @@
 <tr>
 <td><code>artifactType</code></td>
 <td><code>string</code></td>
-<td><code>FULL</code> or <code>DIFF</code>: whether <code>artifactFilename</code> is a full backup or a differential that needs the rest of its chain. Read from the Job's Pod log (<code>AUTO</code> that fell back to a full is <code>FULL</code>); empty when the log did not say. An online restore from a PVC seeds the one file over HTTP, so it needs <code>FULL</code> — a cluster refuses a <code>DIFF</code>, a standalone restores it offline.</td>
+<td><code>FULL</code> or <code>DIFF</code>: whether <code>artifactFilename</code> is a full backup or a differential that needs the rest of its chain. Read from the Job's Pod log (<code>AUTO</code> that fell back to a full is <code>FULL</code>); empty when the log did not say. An online restore from a PVC seeds one file over HTTP, so for anything but <code>FULL</code> the seed proxy merges the chain into one full artifact first.</td>
 </tr>
 <tr>
 <td><code>shardArtifacts</code></td>

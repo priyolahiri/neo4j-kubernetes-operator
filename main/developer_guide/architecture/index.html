@@ -6175,9 +6175,10 @@ Job — <code>neo4j-admin restore</code>'s <code>--overwrite-destination</code> 
 unsafe on a cluster, and on a standalone it stopped every database to restore
 one). A standalone takes the <strong>Job path</strong> below only when
 <code>standaloneOfflineReason</code> names a reason: point-in-time, <code>source.type:
-storage</code>, a PVC artifact not known to be <code>FULL</code> (the seed proxy serves one
-file over HTTP; a differential needs its chain), or cloud storage by pod
-identity (standalone pods cannot carry one).</p>
+storage</code>, or cloud storage by pod identity (standalone pods cannot carry
+one). A PVC differential stays online: the seed proxy serves one file over
+HTTP and a differential needs its chain, so an init container merges the
+chain into one full artifact first (<code>pvc_seed_merge.go</code>, rule 109).</p>
 <p><strong>Online Cypher restore</strong> (<code>startClusterCypherRestore</code>, clusters and
 standalones): no Job, no <code>stopCluster</code>/scale-down. The controller seeds each
 server from a single backup-file URI — <code>RecreateDatabaseWithSeedURI</code> when the

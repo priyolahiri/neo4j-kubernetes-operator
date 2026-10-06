@@ -4466,8 +4466,8 @@ them. <code>neo4j_operator_</code> followed by: <code>backup_size_bytes</code>,
 <p>Apply the new CRDs with the operator: they add <code>Neo4jRestore.spec.source.sourceDatabase</code>,
 <code>Neo4jBackup.spec.options.splitArchivePartSize</code>, and status fields the
 operator now records (<code>Neo4jBackup</code> <code>status.history[].artifactType</code>). Without
-them those status fields are dropped on write, and a standalone restores PVC
-backups offline, as before. The behaviour changes below take effect on the
+them those status fields are dropped on write; restores still work, merging
+the chain of every PVC artifact they cannot tell is a full backup. The behaviour changes below take effect on the
 first reconcile.</p>
 <h3 id="behaviour-changes_1">Behaviour changes<a class="headerlink" href="#behaviour-changes_1" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -4515,10 +4515,9 @@ first reconcile.</p>
   <code>Neo4jEnterpriseStandalone</code> no longer stops the instance: it runs
   <code>dbms.recreateDatabase</code> / <code>CREATE DATABASE … OPTIONS { seedURI }</code> against
   it, so only the restored database is unavailable, and <code>stopCluster: true</code> is
-  ignored. Point-in-time restores, <code>source.type: storage</code>, PVC differentials
-  and cloud storage by pod identity still restore offline and need
-  <code>stopCluster: true</code>; a restore already running offline when you upgrade
-  finishes offline. See
+  ignored. Point-in-time restores, <code>source.type: storage</code> and cloud storage
+  by pod identity still restore offline and need <code>stopCluster: true</code>; a
+  restore already running offline when you upgrade finishes offline. See
   <a href="../guides/backup_restore/#restore-to-a-standalone-instance">Restore to a Standalone Instance</a>.</p>
 </li>
 <li>From <strong>cloud storage with static credentials</strong>, the standalone's own pods
@@ -4526,25 +4525,22 @@ first reconcile.</p>
     (and, for MinIO, the endpoint in <code>spec.env</code>), or the
     <code>neo4j.com/auto-inherit-seed-creds: "true"</code> annotation, which adds them at
     the cost of one restart. Without either, the restore fails and says so.</li>
-<li><strong>PVC backups taken before the upgrade</strong> carry no <code>FULL</code>/<code>DIFF</code> record, so
-    a standalone restores them offline unless the backup's <code>backupType</code> is
-    <code>FULL</code>.</li>
 <li><strong>Cluster restores run their hooks.</strong> <code>spec.options.preRestore</code> and
   <code>postRestore</code> were ignored on clusters; they now run before the restore is
   issued and once the database is online, as on a standalone. A failing
   post-restore hook fails the restore. Check any cluster <code>Neo4jRestore</code> that
   carries hooks before re-running it.</li>
-<li><strong>A cluster refuses a PVC differential.</strong> Seeding one created the database
-  and left it offline (<em>"not part of a valid backup chain"</em>), to be dropped by
-  hand. The restore now fails first, naming the artifact. Take PVC backups
-  that clusters restore from with <code>backupType: FULL</code>, or keep them on cloud
-  storage, whose seed provider reads the whole chain.</li>
+<li><strong>PVC differentials restore online.</strong> Seeding a cluster from a PVC
+  differential — every scheduled <code>backupType: AUTO</code> run after the first —
+  created the database and left it offline (<em>"not part of a valid backup
+  chain"</em>). The seed proxy now merges the chain into one full backup first,
+  with the target's own Neo4j image, unless the backup recorded the artifact
+  as a full backup. The merge needs scratch space about the size of the chain
+  (an <code>emptyDir</code> unless you set <code>spec.options.tempStorage</code>) and time: the
+  restore waits up to <code>spec.timeout</code>, 30 minutes by default while merging.</li>
 </ul>
 <h3 id="new-no-action-needed_2">New, no action needed<a class="headerlink" href="#new-no-action-needed_2" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li>A <code>BackupRestoreCaveat</code> Warning event (and a <code>kubectl neo4j validate</code>
-  warning) on a PVC <code>Neo4jBackup</code> whose runs will be differentials, which no
-  <code>Neo4jRestore</code> can seed online.</li>
 <li><code>Neo4jBackup</code> <code>status.history[].artifactType</code> (and <code>databaseArtifacts[].type</code>):
   <code>FULL</code> or <code>DIFF</code>, read from each run's log. <code>Neo4jRestore</code>
   <code>status.resolvedSource.artifactType</code> carries it into the restore.</li>

@@ -6020,8 +6020,8 @@ seeds it from the backup over Cypher — online, no downtime, and your original
 <p>The same: a standalone restores online too, and its other databases stay
 available throughout. A few restores run <strong>offline</strong> through
 <code>neo4j-admin</code>, which stops the instance — point-in-time restores, for
-example, and a PVC backup whose latest artifact is a differential. Those
-need <code>stopCluster: true</code>, and the restore's status names the reason. See
+example. Those need <code>stopCluster: true</code>, and the restore's status names
+the reason. See
 <a href="#restore-to-a-standalone-instance">Restore to a Standalone Instance</a>.</p>
 </div>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="l l-Scalar l-Scalar-Plain">cat &lt;&lt;'EOF' | kubectl apply -f -</span>
@@ -6089,7 +6089,7 @@ need <code>stopCluster: true</code>, and the restore's status names the reason. 
 </span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">{</span><span class="nt"> type</span><span class="p">:</span><span class="w"> </span><span class="nv">backup</span><span class="p p-Indicator">,</span><span class="nt"> backupRef</span><span class="p">:</span><span class="w"> </span><span class="nv">customers-backup</span><span class="w"> </span><span class="p p-Indicator">}</span>
 </span></code></pre></div></p>
 <p><strong>Cross-topology restore.</strong> A backup is database-scoped, not topology-scoped — a database backed up from a <strong>standalone</strong> can be restored into a <strong>cluster</strong> (and vice-versa); the operator picks the engine from the <em>target</em>. Caveats: the target Neo4j version must be ≥ the source; the <code>system</code> database is never restored across topologies (an <code>allDatabases</code> restore skips it, although the backup captures it — carry users/roles via <code>options.includeMetadata</code> on the backup).</p>
-<p><strong>All-databases restore.</strong> <code>Neo4jRestore.spec.allDatabases: true</code> restores every user database recorded in the source backup, with per-database progress in <code>status.databaseResults</code>. Requires <code>source.type=backup</code>. The operator restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike; set <code>options.replaceExisting: true</code> to overwrite existing databases. A standalone falls back to a single offline <code>neo4j-admin database restore</code> Job covering all user databases — with <code>stopCluster: true</code>, which scales the instance to 0 — in the cases listed under <a href="#restore-to-a-standalone-instance">Restore to a Standalone Instance</a>, for example when any of the PVC artifacts is a differential.</p>
+<p><strong>All-databases restore.</strong> <code>Neo4jRestore.spec.allDatabases: true</code> restores every user database recorded in the source backup, with per-database progress in <code>status.databaseResults</code>. Requires <code>source.type=backup</code>. The operator restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike; set <code>options.replaceExisting: true</code> to overwrite existing databases. A standalone falls back to a single offline <code>neo4j-admin database restore</code> Job covering all user databases — with <code>stopCluster: true</code>, which scales the instance to 0 — in the cases listed under <a href="#restore-to-a-standalone-instance">Restore to a Standalone Instance</a>, for example a point-in-time restore.</p>
 <p><strong>Migrating from the pre-v1.14 API</strong> (<code>spec.target</code>, <code>spec.clusterRef</code>, <code>spec.databaseName</code>, <code>spec.force</code>): see the <a href="../../migration_guide/#v114-backup-restore-api-cleanup-breaking">Upgrade Guide</a>.</p>
 <h2 id="backup-architecture">Backup Architecture<a class="headerlink" href="#backup-architecture" title="Anchor link to this section">&para;</a></h2>
 <p>The operator spawns a Kubernetes Job that runs <code>neo4j-admin database backup</code> from the same Neo4j Enterprise image as the cluster (no sidecar containers). The Job connects to each <code>{cluster}-server-N</code> Pod on port 6362 (<code>server.backup.listen_address=0.0.0.0:6362</code>, configured automatically). For cloud destinations, <code>neo4j-admin</code> streams directly to the bucket — set <code>tempStorage</code> for large databases that need a PVC for staging.</p>
@@ -6972,7 +6972,7 @@ operator-side rule protects you here.</p>
 <td>as above</td>
 </tr>
 <tr>
-<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time, <code>source.type: storage</code>, a PVC differential, cloud by pod identity)</td>
+<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time, <code>source.type: storage</code>, cloud by pod identity)</td>
 <td>Kubernetes Job; stops the instance</td>
 <td><code>neo4j-admin database restore --from-path=&lt;latest-file-in-chain&gt;</code> followed by <code>CREATE/START DATABASE</code></td>
 </tr>
@@ -6990,7 +6990,7 @@ operator-side rule protects you here.</p>
 <ul>
 <li><strong>Cloud-backed backup</strong> (S3 / GCS / Azure): the operator passes the exact <code>.backup</code> <strong>file</strong> URI of the latest successful run (<code>s3://bucket/&lt;path&gt;/&lt;backup-cr-name&gt;/&lt;dbname&gt;-&lt;timestamp&gt;.backup</code>) as <code>seedURI</code>. When that file is a differential, Neo4j applies the full + differential chain from the same directory automatically. The Neo4j server pods fetch the seed themselves, so they need the cloud credentials Secret in the cluster's or standalone's <code>spec.extraEnvFrom</code> — the operator says exactly what is missing, or projects it for you when the CR carries the annotation <code>neo4j.com/auto-inherit-seed-creds: "true"</code> (one rolling restart).</li>
 <li><strong>PVC-backed backup</strong>: the operator starts a temporary proxy (<code>backup-seed-proxy-&lt;restore-name&gt;</code>) that serves the backup PVC read-only over HTTP, and passes the artifact's URL as <code>seedURI</code>. A NetworkPolicy admits only the target's server pods (effective on enforcing CNIs), and the proxy is removed as soon as the restore reaches <code>Completed</code> or <code>Failed</code>. No credentials required.</li>
-<li><strong>A PVC seed must be a full backup.</strong> The server fetches that one file over HTTP, and Neo4j refuses a differential without the rest of its chain. Each backup run records whether it wrote a <code>FULL</code> or a <code>DIFF</code> (<code>status.history[].artifactType</code>): a cluster refuses a PVC differential before creating anything, and a standalone restores it <a href="#restore-to-a-standalone-instance">offline</a>. With <code>backupType: AUTO</code> (the default) every scheduled run after the first is a differential — so take the PVC backups a cluster restores from with <code>backupType: FULL</code>, or keep them on cloud storage, whose seed provider reads the whole chain. A PVC <code>Neo4jBackup</code> whose runs will be differentials raises a <code>BackupRestoreCaveat</code> Warning event, and <code>kubectl neo4j validate</code> warns about it before you apply.</li>
+<li><strong>A PVC differential is merged first.</strong> Neo4j fetches the seed over HTTP as one file, and a differential needs the rest of its chain — with <code>backupType: AUTO</code> (the default), every scheduled run after the first is one. So unless the backup recorded the artifact as a full backup (<code>status.history[].artifactType</code>), the proxy first merges the chain ending at it into a single full backup, with the target's own Neo4j image (<code>neo4j-admin database aggregate-backup</code> on 5.26, <code>backup aggregate</code> on CalVer), and serves that. Merging copies the chain to scratch space — an <code>emptyDir</code> on the node by default; set <code>spec.options.tempStorage</code> to at least the chain's size for a large store — and runs with <code>spec.options.resources</code>. It takes as long as copying the chain and replaying its transactions: the restore waits up to <code>spec.timeout</code>, 30 minutes by default while merging. If the chain cannot be merged — a full backup it needs was deleted, the scratch space ran out — the restore fails at once with neo4j-admin's reason. Restores of full backups skip all of this.</li>
 <li>An <strong>existing</strong> database is recreated with <code>dbms.recreateDatabase</code>, which keeps its users' privileges — this needs the explicit opt-in <code>spec.options.replaceExisting: true</code>, since it replaces the live contents. A new database is created with <code>CREATE DATABASE … OPTIONS { seedURI } WAIT</code>.</li>
 <li>The restore is <code>Completed</code> once every allocation reports <code>online</code>, bounded by <strong><code>spec.timeout</code></strong> (default 5m) — raise it for multi-GB stores seeded from object storage.</li>
 </ul>
@@ -7142,14 +7142,6 @@ instance — every database is offline until it is back:</p>
 <tr>
 <td><code>source.type: storage</code></td>
 <td>the path may be a directory or part of a backup chain; only <code>neo4j-admin</code> resolves those</td>
-</tr>
-<tr>
-<td>A PVC backup whose artifact is a differential (<code>DIFF</code>) — with <code>backupType: AUTO</code> (the default), every scheduled run after the first</td>
-<td>the seed proxy serves one file over HTTP, and Neo4j refuses a differential without its chain</td>
-</tr>
-<tr>
-<td>A PVC backup whose run did not record <code>FULL</code>/<code>DIFF</code> (taken by an earlier operator release, unless its <code>backupType</code> is <code>FULL</code>)</td>
-<td>it might be a differential</td>
 </tr>
 <tr>
 <td>Cloud storage with no <code>credentialsSecretRef</code> (Workload Identity, node IAM)</td>

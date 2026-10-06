@@ -4760,7 +4760,7 @@
 <ol>
 <li>Resolves <code>source.backupRef</code> (or <code>source.storage</code>) into the exact <code>.backup</code> <strong>file</strong> URI of the latest successful run, e.g. <code>s3://bucket/path/&lt;cr-name&gt;/&lt;dbname&gt;-&lt;timestamp&gt;.backup</code>. Neo4j's <code>CloudSeedProvider</code> seeds a single database from one file (a directory URI fails with <code>Can't open seed file</code>); when that file is a differential, Neo4j resolves and applies the full + differential chain from the same directory automatically.</li>
 <li><strong>Mixed-cadence chains (<code>spec.chainFromBackup</code>)</strong>: "latest successful run" is scoped to the <strong>referenced CR</strong>, not the shared chain directory. Reference the <strong>differential</strong> CR to restore the latest state; referencing the parent <strong>full</strong> CR seeds from its latest full snapshot — the newer diffs are <em>not</em> applied. Restoring via a chain-parent CR emits a <code>RestoreFromChainParent</code> Warning event naming the differential children, so a restore intending "latest" that references the full CR isn't a silent surprise. To pin an arbitrary run, use <code>source.type: storage</code> with <code>backupPath</code> set to the exact <code>.backup</code> file.</li>
-<li>For <strong>PVC-backed</strong> backups, the operator spawns a <code>backup-seed-proxy-&lt;restore-name&gt;</code> Deployment + Service serving the backup PVC read-only over HTTP, plus a <strong>NetworkPolicy restricting proxy ingress to the target's server pods</strong> (effective on enforcing CNIs). The seedURI becomes an <code>http://</code> URL at the exact <code>.backup</code> filename (<code>URLConnectionSeedProvider</code>). That provider fetches one file, so the artifact must be a <strong>full</strong> backup — Neo4j refuses a differential without its chain. The operator reads each run's <code>FULL</code>/<code>DIFF</code> from the backup's <code>status.history[].artifactType</code>: a cluster refuses a PVC differential before creating anything, and a standalone restores it offline. The whole proxy stack is <strong>torn down automatically</strong> as soon as the restore reaches <code>Completed</code> or <code>Failed</code> (and on CR deletion) — it does not linger for the lifetime of the CR.</li>
+<li>For <strong>PVC-backed</strong> backups, the operator spawns a <code>backup-seed-proxy-&lt;restore-name&gt;</code> Deployment + Service serving the backup PVC read-only over HTTP, plus a <strong>NetworkPolicy restricting proxy ingress to the target's server pods</strong> (effective on enforcing CNIs). The seedURI becomes an <code>http://</code> URL at the exact <code>.backup</code> filename (<code>URLConnectionSeedProvider</code>). That provider fetches one file, and Neo4j refuses a differential without its chain, so unless the backup recorded the artifact as a full backup (<code>status.history[].artifactType</code>), the proxy first merges the chain ending at it into one full artifact — in an init container running the target's Neo4j image (<code>neo4j-admin database aggregate-backup</code> on 5.26, <code>backup aggregate</code> on CalVer), on scratch space from <code>options.tempStorage</code> (an <code>emptyDir</code> when unset), with <code>options.resources</code>. A merge that fails fails the restore at once with neo4j-admin's reason. The whole proxy stack is <strong>torn down automatically</strong> as soon as the restore reaches <code>Completed</code> or <code>Failed</code> (and on CR deletion) — it does not linger for the lifetime of the CR.</li>
 <li>Projects cloud credentials onto the server pods via <code>spec.extraEnvFrom</code> (on the cluster or standalone CR) — required so the JVM's AWS/GCP/Azure SDK can authenticate. The operator emits an actionable error if the Secret isn't projected; set the annotation <code>neo4j.com/auto-inherit-seed-creds=true</code> on the cluster or standalone to auto-patch (triggers a rolling restart, which the restore waits out in <code>Pending</code>). With <strong>workload identity</strong> (no <code>credentialsSecretRef</code>), the SDK default chain is used — the IAM binding must then be on the <strong>server pods'</strong> ServiceAccount, since the seed fetch runs inside the Neo4j JVM, not in a Job. (Only a cluster can annotate it, through <code>spec.podServiceAccountAnnotations</code>; a standalone restoring by pod identity runs offline.)</li>
 <li>Opens a Bolt session and runs <code>SHOW DATABASES</code> to detect whether the target database already exists.</li>
 <li>Existing database → <code>CALL dbms.[cluster.]recreateDatabase($db, {seedURI: $uri})</code>. <strong>Requires <code>spec.options.replaceExisting: true</code></strong> — recreating wipes and replaces the live contents, so the operator refuses without the explicit opt-in (clear <code>Failed</code> message instead of a silent overwrite). Preserves user/role privileges, atomically swaps the database on every server, no <code>DROP</code> needed.</li>
@@ -4840,7 +4840,7 @@
 <td><code>timeout</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Go duration (e.g. <code>"30m"</code>, <code>"2h"</code>). For <strong>online</strong> restores (clusters, and most standalone ones) this bounds the online-convergence wait after <code>dbms.recreateDatabase</code> is issued (default <strong>5m</strong> when unset) — raise it for multi-GB stores seeded from object storage. For <strong>PVC-backed online restores</strong> it also bounds the wait for the backup-seed-proxy Deployment to become Ready (default <strong>3m</strong> when unset); on expiry the restore fails with the proxy pod's condition (e.g. an RWO backup PVC still attached elsewhere).</td>
+<td>Go duration (e.g. <code>"30m"</code>, <code>"2h"</code>). For <strong>online</strong> restores (clusters, and most standalone ones) this bounds the online-convergence wait after <code>dbms.recreateDatabase</code> is issued (default <strong>5m</strong> when unset) — raise it for multi-GB stores seeded from object storage. For <strong>PVC-backed online restores</strong> it also bounds the wait for the backup-seed-proxy Deployment to become Ready (default <strong>3m</strong> when unset, <strong>30m</strong> when the proxy merges a backup chain first); on expiry the restore fails with the proxy pod's condition (e.g. an RWO backup PVC still attached elsewhere).</td>
 </tr>
 </tbody>
 </table>
@@ -5066,13 +5066,13 @@
 <td><code>tempStorage</code></td>
 <td><a href="#tempstoragespec"><code>TempStorageSpec</code></a></td>
 <td>❌</td>
-<td>Provisions a PVC for temporary staging files during cloud restores. Without it, cloud restores use the container's ephemeral disk (may be too small for large databases). The operator mounts the PVC and passes <code>--temp-path</code> automatically.</td>
+<td>Provisions a PVC for temporary staging files during cloud restores. Without it, cloud restores use the container's ephemeral disk (may be too small for large databases). The operator mounts the PVC and passes <code>--temp-path</code> automatically. Also the scratch space the seed proxy merges a PVC backup chain on (otherwise an <code>emptyDir</code> on the node).</td>
 </tr>
 <tr>
 <td><code>resources</code></td>
 <td><code>corev1.ResourceRequirements</code></td>
 <td>❌</td>
-<td>CPU/memory requests + limits on the restore Job's container. When unset, the operator applies a Burstable default (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory). <strong>Offline standalone restores only</strong> — online restores (every cluster restore, and most standalone ones) use Cypher, run no Job, and ignore this field.</td>
+<td>CPU/memory requests + limits on the restore Job's container. When unset, the operator applies a Burstable default (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory). Used by offline standalone restores (the restore Job) and by the seed proxy's chain merge on PVC restores; otherwise online restores run no Job and ignore it.</td>
 </tr>
 <tr>
 <td><code>preRestore</code></td>
@@ -5621,14 +5621,6 @@
 <tr>
 <td><code>source.type: storage</code></td>
 <td>the path may be a directory or part of a chain; only <code>neo4j-admin</code> resolves those</td>
-</tr>
-<tr>
-<td>A PVC artifact that is a differential (<code>status.history[].artifactType: DIFF</code> — <code>backupType: AUTO</code> writes one on every run after the first)</td>
-<td>the seed proxy serves one file, and Neo4j refuses a differential without its chain</td>
-</tr>
-<tr>
-<td>A PVC artifact whose type was not recorded (unless the backup's <code>backupType</code> is <code>FULL</code>)</td>
-<td>it might be a differential</td>
 </tr>
 <tr>
 <td>Cloud storage with no <code>credentialsSecretRef</code></td>
