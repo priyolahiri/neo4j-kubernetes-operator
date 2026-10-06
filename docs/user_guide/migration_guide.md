@@ -233,13 +233,16 @@ them. `neo4j_operator_` followed by: `backup_size_bytes`,
 
 ## Upgrading from v1.18.x
 
-Apply the new CRDs with the operator: they add `Neo4jRestore.spec.source.sourceDatabase`,
-`Neo4jBackup.spec.options.splitArchivePartSize`, and status fields the
-operator now records (`Neo4jBackup` `status.history[].artifactType` and
-`shardArtifacts[].type`). Without them those status fields are dropped on
-write; restores still work, merging the chain of every PVC artifact they
-cannot tell is a full backup. The behaviour changes below take effect on the
-first reconcile.
+Apply the new CRDs with the operator. They add three spec fields —
+`Neo4jRestore.spec.source.sourceDatabase`,
+`Neo4jBackup.spec.options.splitArchivePartSize` and
+`Neo4jEnterpriseStandalone.spec.podServiceAccountAnnotations` — and status
+fields the operator now records: `Neo4jBackup` `status.history[].artifactType`
+(with `databaseArtifacts[].type` and `shardArtifacts[].type`), and `Neo4jRestore`
+`status.resolvedSource.artifactType` and `backupStartedAt`. Without the new
+CRDs those status fields are dropped on write; restores still work, merging
+the chain of every PVC artifact they cannot tell is a full backup. The
+behaviour changes below take effect on the first reconcile.
 
 ### Behaviour changes
 
@@ -280,7 +283,6 @@ first reconcile.
   `server_health == 0` alert firing after the server came back. A down server
   now keeps the last address it reported, and series a cluster no longer
   reports are withdrawn.
-
 - **A standalone restores online.** A `Neo4jRestore` into a
   `Neo4jEnterpriseStandalone` no longer stops the instance: it runs
   `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }` against
@@ -318,12 +320,14 @@ first reconcile.
   as a full backup. The merge needs scratch space about the size of the chain
   (an `emptyDir` unless you set `spec.options.tempStorage`) and time: the
   restore waits up to `spec.timeout`, 30 minutes by default while merging.
-- **Sharded databases still need full PVC backups.** A sharded database
-  seeds from a PVC only when every shard of the run is a full backup, and
-  a differential cannot be merged into one. A `seedBackupRef` whose latest
-  run holds a differential shard used to fail inside Neo4j after the seed
-  proxy started; it now fails at once, naming the shards, and seeds once a
-  full run lands. Each sharded PVC run that writes a differential raises a
+  Sharded databases are the exception (next two items).
+- **A sharded seed from a PVC differential fails at once.** A sharded
+  database seeds from a PVC only when every shard of the run is a full
+  backup, and a differential cannot be merged into one. A `seedBackupRef`
+  whose latest run holds a differential shard used to fail inside Neo4j after
+  the seed proxy started; it now fails at once, naming the shards, and seeds
+  once a full run lands. A sharded PVC run that still writes a differential
+  (an explicit `DIFF`, or an all-databases backup) raises a
   `BackupShardedDifferential` warning.
 - **`backupType: AUTO` takes full backups of a sharded database on a PVC.**
   A `Neo4jBackup` with `spec.shardedDatabase` and PVC storage used to write a
@@ -377,7 +381,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.18.0/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.19.0/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:
