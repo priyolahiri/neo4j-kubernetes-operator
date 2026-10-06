@@ -6089,7 +6089,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <h2 id="plugin-status-phases">Plugin Status Phases<a class="headerlink" href="#plugin-status-phases" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>Pending</strong>: Plugin resource created, waiting for processing</li>
-<li><strong>Waiting</strong>: Waiting for deployment to be ready</li>
+<li><strong>Waiting</strong>: Waiting for the deployment to be ready — on a cluster, also while any server is unavailable (<code>Degraded</code>), since installing restarts every server</li>
 <li><strong>Installing</strong>: Plugin installation in progress</li>
 <li><strong>Ready</strong>: Plugin successfully installed and active</li>
 <li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs)</li>

@@ -6182,7 +6182,7 @@ the reason. See
 </span></code></pre></div>
 <p>A standalone is just an instance — back it up with <code>instanceRef: &lt;standalone-name&gt;</code> + a scope, exactly like a cluster.</p>
 <blockquote>
-<p>ℹ️ <strong><code>allDatabases</code> and property-sharded databases — one backup, two restore paths.</strong> An instance-wide backup <strong>catalogues</strong> each property-sharded family's per-shard <code>.backup</code> files in <code>status.history[].shardedFamilies</code> (the family names are also listed in <code>shardedDatabasesExcluded</code>, with a <code>BackupShardedDatabasesExcluded</code> event). So <strong>one <code>allDatabases</code> backup is a complete DR source</strong>. What differs is <em>how</em> each kind is restored: the all-databases <strong>restore loop recreates standard databases only</strong> (sharded DBs need the shard-topology <code>CREATE</code> clauses only <code>Neo4jShardedDatabase</code> emits), so to recover a sharded family you re-apply its <code>Neo4jShardedDatabase</code> CR with <code>spec.seedBackupRef</code> pointing at that <strong>same</strong> backup (add <code>spec.seedSourceDatabase</code> if restoring under a different name). The all-databases restore re-warns (<code>RestoreShardedDatabasesNotCovered</code>) naming each family and the <code>seedBackupRef</code> to use — see <a href="../../property_sharding/">Property Sharding</a>. Recovering a mixed cluster is therefore an all-databases restore <strong>plus</strong> one <code>Neo4jShardedDatabase</code> re-apply per family, all seeding from the single backup. (You can still take a dedicated <code>shardedDatabase:</code>-scoped backup per family if you prefer per-family lifecycles.)</p>
+<p>ℹ️ <strong><code>allDatabases</code> and property-sharded databases — one backup, two restore paths.</strong> An instance-wide backup <strong>catalogues</strong> each property-sharded family's per-shard <code>.backup</code> files in <code>status.history[].shardedFamilies</code> (the family names are also listed in <code>shardedDatabasesExcluded</code>, with a <code>BackupShardedDatabasesExcluded</code> event). So <strong>one <code>allDatabases</code> backup is a complete DR source</strong>. What differs is <em>how</em> each kind is restored: the all-databases <strong>restore loop recreates standard databases only</strong> (sharded DBs need the shard-topology <code>CREATE</code> clauses only <code>Neo4jShardedDatabase</code> emits), so to recover a sharded family you re-apply its <code>Neo4jShardedDatabase</code> CR with <code>spec.seedBackupRef</code> pointing at that <strong>same</strong> backup (add <code>spec.seedSourceDatabase</code> if restoring under a different name). The all-databases restore re-warns (<code>RestoreShardedDatabasesNotCovered</code>) naming each family and the <code>seedBackupRef</code> to use — see <a href="../../property_sharding/">Property Sharding</a>. Recovering a mixed cluster is therefore an all-databases restore <strong>plus</strong> one <code>Neo4jShardedDatabase</code> re-apply per family, all seeding from the single backup. This holds for cloud storage. <strong>On a PVC</strong>, a sharded database seeds only from a run whose shards are all full backups, and an all-databases backup's runs after the first hold differentials — so back each sharded database up with its own <code>shardedDatabase:</code>-scoped backup, which takes full backups on a PVC (see <a href="../../property_sharding/#restoring-a-sharded-database">Restoring a sharded database</a>).</p>
 </blockquote>
 <p><strong>Restore is single-database</strong> even when the backup was instance-wide (<code>allDatabases</code>): the backup leaves one artifact per database in the chain directory, and records each one in <code>status.history[].databaseArtifacts</code>. Reference the instance-wide backup and name the database (<code>spec.database</code>, or <code>source.sourceDatabase</code> to restore it under another name); the operator seeds from that database's recorded artifact, on clusters and standalones alike. (An offline standalone restore of a backup that recorded no map falls back to the newest <code>&lt;database&gt;-*.backup</code> in the directory.)</p>
 <p>To restore <strong>every</strong> database at once, set <code>allDatabases: true</code> on the <code>Neo4jRestore</code> (see <a href="#backup-restore-api-scope-not-topology">the scope API</a> above).</p>
@@ -7031,9 +7031,9 @@ operator-side rule protects you here.</p>
 <td>as above</td>
 </tr>
 <tr>
-<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time that cannot run online, <code>source.type: storage</code>, cloud by pod identity without <code>spec.podServiceAccountAnnotations</code>)</td>
+<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time that cannot run online, <code>source.type: storage</code>, cloud by pod identity without <code>spec.podServiceAccountAnnotations</code>, a run with no recorded artifact)</td>
 <td>Kubernetes Job; stops the instance</td>
-<td><code>neo4j-admin database restore --from-path=&lt;latest-file-in-chain&gt;</code> followed by <code>CREATE/START DATABASE</code></td>
+<td><code>neo4j-admin database restore --from-path=&lt;recorded artifact&gt;</code> followed by <code>CREATE/START DATABASE</code></td>
 </tr>
 <tr>
 <td><code>Neo4jShardedDatabase</code> (sharded)</td>
@@ -7140,7 +7140,7 @@ resolves the path for you — prefer it.)</p>
 </span><span id="__span-50-27"><a id="__codelineno-50-27" name="__codelineno-50-27" href="#__codelineno-50-27"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span><span id="__span-50-28"><a id="__codelineno-50-28" name="__codelineno-50-28" href="#__codelineno-50-28"></a><span class="w">    </span><span class="nt">tempStorage</span><span class="p">:</span>
 </span><span id="__span-50-29"><a id="__codelineno-50-29" name="__codelineno-50-29" href="#__codelineno-50-29"></a><span class="w">      </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="s">"50Gi"</span>
-</span><span id="__span-50-30"><a id="__codelineno-50-30" name="__codelineno-50-30" href="#__codelineno-50-30"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># ignored on cluster targets (Cypher path); required on standalone (offline)</span>
+</span><span id="__span-50-30"><a id="__codelineno-50-30" name="__codelineno-50-30" href="#__codelineno-50-30"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># only for a standalone's offline cases; ignored by online restores</span>
 </span></code></pre></div>
 <p><strong>Best for:</strong> Cross-cluster recovery, disaster recovery from a known directory in storage (no <code>Neo4jBackup</code> CR available in this namespace).</p>
 <blockquote>
@@ -7205,6 +7205,10 @@ instance — every database is offline until it is back:</p>
 <tr>
 <td>Cloud storage with no <code>credentialsSecretRef</code> (Workload Identity, node IAM), on a standalone without <code>spec.podServiceAccountAnnotations</code></td>
 <td>its pod has no workload identity; the restore Job's ServiceAccount does. Set the field on the standalone to restore online instead</td>
+</tr>
+<tr>
+<td><code>source.type: backup</code> whose run recorded no artifact (a run from an older operator, or one whose log could not be read)</td>
+<td>only <code>neo4j-admin</code> finds the file in the backup directory</td>
 </tr>
 </tbody>
 </table>

@@ -4899,7 +4899,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is not in <code>Ready</code> phase</td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
 </tr>
 </tbody>
 </table>
@@ -4926,7 +4926,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is not in <code>Ready</code> phase</td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
 </tr>
 </tbody>
 </table>
@@ -4957,7 +4957,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is not in <code>Ready</code> phase</td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
 </tr>
 </tbody>
 </table>
@@ -4996,7 +4996,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <td>Finalizer-protected: controller drops user/role first (unless <code>deletionPolicy: Retain</code>)</td>
 </tr>
 <tr>
-<td>Cluster not Ready</td>
+<td>Cluster neither Ready nor Degraded</td>
 <td><code>ClusterNotReady</code> condition; reconcile requeued every 30s</td>
 </tr>
 <tr>

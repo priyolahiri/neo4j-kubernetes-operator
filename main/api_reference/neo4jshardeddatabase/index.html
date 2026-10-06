@@ -4823,7 +4823,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 </table>
 <h4 id="prerequisites-for-propertyshardingreadytrue">Prerequisites for propertyShardingReady=true<a class="headerlink" href="#prerequisites-for-propertyshardingreadytrue" title="Anchor link to this section">&para;</a></h4>
 <ol>
-<li>Cluster phase is "Ready"</li>
+<li>Cluster phase is <code>Ready</code> or <code>Degraded</code> (formed and serving with a majority of its servers)</li>
 <li>Neo4j version is 2025.12+</li>
 <li>Minimum 2 servers configured (3+ recommended for HA graph shard primaries)</li>
 <li>Minimum 4GB memory per server (8GB+ recommended for production)</li>
@@ -5163,7 +5163,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 </tr>
 <tr>
 <td><code>Waiting</code></td>
-<td>The target cluster is not yet <code>Ready</code> with property sharding operational (reconciler requeues)</td>
+<td>The target cluster is not yet <code>Ready</code> (or <code>Degraded</code>) with property sharding operational (reconciler requeues)</td>
 </tr>
 <tr>
 <td><code>Pending</code></td>
@@ -5292,7 +5292,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <li><code>seedConfig.restoreUntil</code>, when set, is an RFC3339 timestamp or <code>txId:&lt;positive integer&gt;</code>; <code>seedConfig.config</code> and <code>seedURIs</code> keys may contain only letters, digits, <code>.</code>, <code>_</code> and <code>-</code>, and <code>seedConfig.config</code> values may not contain <code>,</code>, <code>=</code>, quotes, backticks or newlines</li>
 <li><code>replaceExisting: true</code> requires <code>force: true</code> (destructive <code>DROP ... DESTROY DATA</code>)</li>
 <li><code>replaceExisting: true</code> is mutually exclusive with <code>ifNotExists: true</code> and requires a seed source (<code>seedURI</code>, <code>seedURIs</code>, or <code>seedBackupRef</code>)</li>
-<li>The target cluster must be <code>Ready</code> with property sharding operational (<code>propertyShardingReady: true</code>). This is not a validation error: until then the sharded database waits in phase <code>Waiting</code> and retries</li>
+<li>The target cluster must be <code>Ready</code> or <code>Degraded</code> with property sharding operational (<code>propertyShardingReady: true</code>). This is not a validation error: until then the sharded database waits in phase <code>Waiting</code> and retries</li>
 <li><code>graphShard.primaries</code> should be &gt;= 3 for high availability (advice only)</li>
 </ul>
 <h2 id="error-conditions">Error Conditions<a class="headerlink" href="#error-conditions" title="Anchor link to this section">&para;</a></h2>

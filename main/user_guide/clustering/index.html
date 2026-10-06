@@ -5165,10 +5165,11 @@
 <p>Inspect the startup script for correct LIST endpoints: <code>kubectl get configmap {cluster-name}-config -o yaml | grep -A2 resolver_type</code></p>
 </li>
 <li>
-<p><strong>Quorum Loss</strong></p>
+<p><strong>A server down, or quorum lost</strong></p>
 </li>
-<li>Check primary node health</li>
-<li>Verify minimum cluster size configuration</li>
+<li>One server down: the cluster stays <code>Ready</code> with a <code>Degraded</code> condition, then turns phase <code>Degraded</code> after the grace period (default 5m). It keeps serving.</li>
+<li>A majority down: phase <code>Forming</code> with a <code>ClusterQuorumLost</code> Warning event.</li>
+<li>See <a href="../../api_reference/neo4jenterprisecluster/#server-availability">Server availability</a> and <a href="../guides/troubleshooting/#problem-a-server-is-down-degraded">Troubleshooting</a>.</li>
 </ol>
 <h3 id="debug-commands">Debug Commands<a class="headerlink" href="#debug-commands" title="Anchor link to this section">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Check cluster member status</span>

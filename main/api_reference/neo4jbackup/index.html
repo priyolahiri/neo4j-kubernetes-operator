@@ -5218,7 +5218,7 @@
 </tr>
 <tr>
 <td><code>Waiting</code></td>
-<td>The target cluster/standalone CR doesn't exist yet (common with <code>kubectl apply -f dir/</code> ordering) or isn't <code>Ready</code>. Transient — the controller requeues.</td>
+<td>The target cluster/standalone CR doesn't exist yet (common with <code>kubectl apply -f dir/</code> ordering) or isn't accepting work yet (a cluster still forming or without a majority; a standalone not <code>Ready</code>). A <code>Degraded</code> cluster is backed up. Transient — the controller requeues.</td>
 </tr>
 <tr>
 <td><code>Scheduled</code></td>
@@ -5358,7 +5358,7 @@
 <tr>
 <td><code>shardedFamilies</code></td>
 <td><a href="#shardedfamilyartifacts"><code>[]ShardedFamilyArtifacts</code></a></td>
-<td>Per-family shard <code>.backup</code> artifacts catalogued by an all-databases backup (one entry per logical family, each with its <code>shardArtifacts</code>). Makes one all-databases backup a complete DR source: a <code>Neo4jShardedDatabase</code> whose <code>spec.seedBackupRef</code> points here is seeded from these. Empty for single-database and single-family <code>shardedDatabase</code>-scoped runs (those use <code>shardArtifacts</code>).</td>
+<td>Per-family shard <code>.backup</code> artifacts catalogued by an all-databases backup (one entry per logical family, each with its <code>shardArtifacts</code>). Makes one all-databases backup in cloud storage a complete DR source: a <code>Neo4jShardedDatabase</code> whose <code>spec.seedBackupRef</code> points here is seeded from these. On a PVC only a run whose shards are all <code>FULL</code> seeds — back sharded databases up there with a <code>shardedDatabase</code>-scoped backup. Empty for single-database and single-family <code>shardedDatabase</code>-scoped runs (those use <code>shardArtifacts</code>).</td>
 </tr>
 <tr>
 <td><code>validation</code></td>

@@ -4356,9 +4356,14 @@ CI validates (<code>2026.08.1-enterprise</code>).</p>
 <td><code>options.replaceExisting: true</code></td>
 </tr>
 <tr>
+<td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/restore-point-in-time-online.yaml"><code>restore-point-in-time-online.yaml</code></a></td>
+<td>Online point-in-time restore into a new database, on a cluster or a standalone (CalVer, cloud storage)</td>
+<td><code>source.type: backup</code>, <code>source.pointInTime</code></td>
+</tr>
+<tr>
 <td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/restore-pitr-basic.yaml"><code>restore-pitr-basic.yaml</code></a></td>
 <td>Point-in-time recovery on a standalone target, plus an advanced storage-based variant with hooks</td>
-<td><code>source.type: pitr</code>, <code>pointInTime</code>, <code>pitr.logStorage</code></td>
+<td><code>source.type: pitr</code>, <code>pointInTime</code>, <code>pitr.baseBackup</code></td>
 </tr>
 <tr>
 <td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/backup-restore/pitr-setup-complete.yaml"><code>pitr-setup-complete.yaml</code></a></td>
@@ -4368,11 +4373,12 @@ CI validates (<code>2026.08.1-enterprise</code>).</p>
 </tbody>
 </table>
 <div class="admonition warning">
-<p class="admonition-title">PITR is standalone-only via <code>Neo4jRestore</code></p>
+<p class="admonition-title"><code>source.type: pitr</code> is standalone-only</p>
 <p><code>source.type: pitr</code> runs <code>neo4j-admin database restore --restore-until</code> as a
-Job and applies only to <code>Neo4jEnterpriseStandalone</code> targets. For a cluster,
-do point-in-time recovery by creating a <code>Neo4jDatabase</code> with
-<code>seedConfig.restoreUntil</code> instead — see the database seed examples above.</p>
+Job that stops the instance, and applies only to <code>Neo4jEnterpriseStandalone</code>
+targets. A cluster restores to a point in time <strong>online</strong> with
+<code>source.type: backup</code> + <code>source.pointInTime</code>, into a new database, on
+CalVer, from cloud storage — see <code>restore-point-in-time-online.yaml</code>.</p>
 </div>
 <h2 id="cross-cluster-replication-aliases">Cross-Cluster Replication &amp; Aliases<a class="headerlink" href="#cross-cluster-replication-aliases" title="Anchor link to this section">&para;</a></h2>
 <p>Read-only replicas of a database on <strong>another</strong> Neo4j cluster, fed by a differential backup chain in object storage — plus the aliases that keep connection strings stable across a failover. See the <a href="../guides/cross_cluster_replication/">Cross-Cluster Replication guide</a> and the <a href="../guides/database_aliases/">Database aliases guide</a>.</p>

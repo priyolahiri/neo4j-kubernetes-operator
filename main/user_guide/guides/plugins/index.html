@@ -4597,7 +4597,7 @@ defaults.</p>
 </table>
 <h3 id="other-common-issues">Other common issues<a class="headerlink" href="#other-common-issues" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><strong><code>status.phase: Waiting</code></strong>: the target cluster/standalone isn't functional yet — the plugin controller requeues until it is.</li>
+<li><strong><code>status.phase: Waiting</code></strong>: the target cluster/standalone isn't functional yet — the plugin controller requeues until it is. On a cluster it also waits while any server is unavailable (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), since installing a plugin restarts every server.</li>
 <li><strong>VerifiedDownload pod stuck <code>Pending</code></strong>: checksum mismatch or unreachable URL — <code>kubectl describe pod</code> and read the init container's termination message.</li>
 <li><strong>Plugin loads but procedures fail</strong>: check <code>spec.security.allowedProcedures</code> and whether the plugin needs unrestricted procedures; for license-bound plugins (Bloom, GDS Enterprise, GenAI) verify the license file is mounted (<code>kubectl exec &lt;pod&gt; -c neo4j -- ls /licenses/</code>).</li>
 </ul>

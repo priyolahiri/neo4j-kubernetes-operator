@@ -4177,7 +4177,7 @@ cluster only when it <em>needs</em> clustering.</p>
 <tr>
 <td><strong>Backup → restore</strong></td>
 <td><strong>Both</strong></td>
-<td>Both restore via the in-place <strong>Cypher</strong> path, but the standalone differs in its target plumbing (StatefulSet name, pod labels, which CR carries the seed env) and is the only target with an offline <code>neo4j-admin</code> path (PITR <code>--restore-until</code>, <code>source.type: storage</code>, cloud by pod identity — rule 108). PITR is <em>rejected</em> on clusters.</td>
+<td>Both restore via the in-place <strong>Cypher</strong> path, but the standalone differs in its target plumbing (StatefulSet name, pod labels, which CR carries the seed env) and is the only target with an offline <code>neo4j-admin</code> path (a point in time it cannot restore online, <code>source.type: storage</code>, cloud by pod identity without <code>spec.podServiceAccountAnnotations</code> — rules 108, 111, 112). A point-in-time restore runs online on a CalVer cluster (into a new database) and is refused there otherwise.</td>
 </tr>
 <tr>
 <td><strong>Split backup archives</strong> (<code>splitArchivePartSize</code>)</td>
@@ -4452,11 +4452,15 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Backup → restore (offline)</td>
-<td>a point-in-time restore (<code>source.pointInTime</code>) without <code>stopCluster</code>: <code>Failed</code>, naming the reason → with <code>stopCluster: true</code>: the <code>neo4j-admin</code> Job restores to that point</td>
+<td>a point-in-time restore (<code>source.pointInTime</code>) on this 5.26 standalone without <code>stopCluster</code>: <code>Failed</code>, naming the reason (Neo4j 5.26 has no <code>seedRestoreUntil</code>; <code>neo4j.com/point-in-time-path</code> reads <code>offline: …</code>) → with <code>stopCluster: true</code>: the <code>neo4j-admin</code> Job restores the run <code>status.resolvedSource</code> pinned — the earliest that <strong>started</strong> at or after the point in time — to that point</td>
 </tr>
 <tr>
 <td>Restore under a new name (standalone)</td>
 <td><code>database: &lt;new&gt;</code>: from a one-database <code>backupRef</code> (PVC and MinIO), and from an <code>allDatabases</code> backup with <code>source.sourceDatabase</code> — each new database is created online with the source's data. MinIO first <strong>without</strong> <code>neo4j.com/auto-inherit-seed-creds</code>: <code>Failed</code>, naming the standalone and the missing Secret/endpoint; then with it: exactly one restart, then <code>Completed</code>. On the offline path (<code>source.type: storage</code> + <code>stopCluster: true</code>) the Job's <code>--from-path</code> names the exact <code>.backup</code> file (no <code>$(ls …)</code> glob)</td>
+</tr>
+<tr>
+<td>Standalone workload identity</td>
+<td>The upgrade row's standalone (created under the previous release) keeps its pod UID, gets <strong>no</strong> <code>&lt;name&gt;-neo4j</code> ServiceAccount, and its StatefulSet <code>metadata.generation</code> does not change. Set <code>spec.podServiceAccountAnnotations</code> (e.g. <code>eks.amazonaws.com/role-arn</code>) → <code>&lt;name&gt;-neo4j</code> exists with that annotation and an owner reference to the standalone, and the pod is recreated with <code>serviceAccountName: &lt;name&gt;-neo4j</code>. Kind has no identity webhook, so stand in for one with the MinIO credentials in <code>spec.extraEnvFrom</code> + endpoint in <code>spec.env</code>, back up to MinIO, then remove <code>credentialsSecretRef</code> from the <code>Neo4jBackup</code> and restore into a new database: <strong>online</strong>, no Job, no restart. Remove the field → the pod returns to <code>default</code> and the ServiceAccount is deleted; the same restore is then refused, naming <code>spec.podServiceAccountAnnotations</code></td>
 </tr>
 <tr>
 <td>All-databases restore (standalone)</td>
@@ -4587,6 +4591,10 @@ standalone backup" as one of Phase 1's outputs.</p>
 <td>in-place <strong>Cypher</strong> path: back up one DB (<code>instanceRef</code> + <code>database</code>), restore into a <strong>new</strong> database, confirm the data round-trips. Also one database out of an <code>allDatabases</code> backup under a new name with <code>source.sourceDatabase</code></td>
 </tr>
 <tr>
+<td>Point-in-time restore (online, cluster)</td>
+<td>A scheduled MinIO backup (<code>backupType: AUTO</code>, every minute): after the first run write a <code>Phase 1</code> node, note <code>RETURN datetime()</code> as the point in time, write <code>Phase 2</code>, wait for the next run (it holds both). Restore <code>pointInTime</code> into a <strong>new</strong> database: <code>Completed</code> online, no Job; <code>neo4j.com/point-in-time-path=online</code>; <code>status.resolvedSource.backupStartedAt</code> is the first run that started after the point; the database has <code>Phase 1</code> and <strong>not</strong> <code>Phase 2</code> (Neo4j truncated that run — it is not just an older run). The same restore over <code>neo4j</code> → <code>Failed</code>, naming the existing database, and <code>neo4j</code> keeps both phases</td>
+</tr>
+<tr>
 <td>All-databases restore (cluster)</td>
 <td><code>Neo4jBackup</code> <code>allDatabases: true</code> → <code>Neo4jRestore</code> <code>allDatabases: true</code> (cloud-backed); confirm every user DB round-trips and <code>status.databaseResults</code> are all <code>Completed</code> (#222)</td>
 </tr>
@@ -4645,6 +4653,14 @@ cluster (~2Gi each):</p>
 <tr>
 <td>Sharded backup <strong>by CR name</strong></td>
 <td><code>Neo4jBackup</code> with <strong><code>spec.shardedDatabase</code></strong> = the <code>Neo4jShardedDatabase</code> <strong>CR metadata name</strong> → <code>Succeeded</code>; <code>status.history[].shardArtifacts</code> lists every shard, and the filenames carry the LOGICAL names (<code>&lt;spec.name&gt;-g000</code>, <code>-p000</code>, <code>-p001</code>). Using the <em>logical</em> name instead fails with <code>Neo4jShardedDatabase "&lt;name&gt;" not found</code>. (This row said <code>kind=ShardedDatabase</code> with <code>target.name</code> until 2026-09-03; <code>spec.target</code> does not exist on <code>Neo4jBackup</code> and the row was unfollowable as written.)</td>
+</tr>
+<tr>
+<td>Sharded PVC backups are full</td>
+<td>The scheduled sharded backup on a PVC with <code>backupType: AUTO</code> (or none): every run's <code>status.history[].shardArtifacts[].type</code> is <code>FULL</code> (the Job command carries <code>--type=FULL</code>), and a new <code>Neo4jShardedDatabase</code> with <code>seedBackupRef</code> to it seeds from the latest run (the seed proxy serves it, no <code>merge-chain</code> init container). Set <code>backupType: DIFF</code> and let one run land → a <code>BackupShardedDifferential</code> Warning naming the shards; a <code>seedBackupRef</code> to it → <code>Failed</code> within seconds, naming the differential shards, with <strong>no</strong> <code>backup-seed-proxy</code> Deployment. Set <code>FULL</code> again → once a run lands, that database seeds on its own requeue</td>
+</tr>
+<tr>
+<td>Sharded seed from MinIO</td>
+<td>Back the sharded database up to MinIO. On a sharding cluster with <strong>no</strong> MinIO credentials or endpoint in its spec but <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, a <code>seedBackupRef</code> to it: one <code>SeedCredsAutoInherited</code> event, the cluster gains the credentials in <code>extraEnvFrom</code> <strong>and</strong> <code>AWS_ENDPOINT_URL_S3</code> + <code>JAVA_TOOL_OPTIONS=-Daws.s3.forcePathStyle=true</code> in <code>spec.env</code> in <strong>one</strong> rolling restart, and the database seeds after it. Without the annotation → <code>Failed</code>, naming both the credentials and the endpoint</td>
 </tr>
 <tr>
 <td>Shard language follows the parent</td>
@@ -5170,11 +5186,38 @@ the first walk. The scripted steps already do.</p>
 <tr>
 <td>Backup → restore</td>
 <td style="text-align: center;"></td>
-<td style="text-align: center;">✅ (neo4j-admin)</td>
+<td style="text-align: center;">✅ (online + neo4j-admin)</td>
 <td style="text-align: center;">✅ (Cypher)</td>
 <td style="text-align: center;">✅ (sharded)</td>
 <td style="text-align: center;">✅ (per-DB, API)</td>
 <td style="text-align: center;">✅ (chain as source)</td>
+</tr>
+<tr>
+<td>Point-in-time restore</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (offline, 5.26)</td>
+<td style="text-align: center;">✅ (online, <code>seedRestoreUntil</code>)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Workload identity on the server pods</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (<code>&lt;name&gt;-neo4j</code>, simulated)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Sharded seed from PVC (full only) and MinIO (endpoint projected)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
 </tr>
 <tr>
 <td>Property sharding</td>

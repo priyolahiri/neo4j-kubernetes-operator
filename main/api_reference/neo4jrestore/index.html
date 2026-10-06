@@ -4761,7 +4761,7 @@
 <li>Resolves <code>source.backupRef</code> (or <code>source.storage</code>) into the exact <code>.backup</code> <strong>file</strong> URI of the latest successful run, e.g. <code>s3://bucket/path/&lt;cr-name&gt;/&lt;dbname&gt;-&lt;timestamp&gt;.backup</code>. Neo4j's <code>CloudSeedProvider</code> seeds a single database from one file (a directory URI fails with <code>Can't open seed file</code>); when that file is a differential, Neo4j resolves and applies the full + differential chain from the same directory automatically.</li>
 <li><strong>Mixed-cadence chains (<code>spec.chainFromBackup</code>)</strong>: "latest successful run" is scoped to the <strong>referenced CR</strong>, not the shared chain directory. Reference the <strong>differential</strong> CR to restore the latest state; referencing the parent <strong>full</strong> CR seeds from its latest full snapshot — the newer diffs are <em>not</em> applied. Restoring via a chain-parent CR emits a <code>RestoreFromChainParent</code> Warning event naming the differential children, so a restore intending "latest" that references the full CR isn't a silent surprise. To pin an arbitrary run, use <code>source.type: storage</code> with <code>backupPath</code> set to the exact <code>.backup</code> file.</li>
 <li>For <strong>PVC-backed</strong> backups, the operator spawns a <code>backup-seed-proxy-&lt;restore-name&gt;</code> Deployment + Service serving the backup PVC read-only over HTTP, plus a <strong>NetworkPolicy restricting proxy ingress to the target's server pods</strong> (effective on enforcing CNIs). The seedURI becomes an <code>http://</code> URL at the exact <code>.backup</code> filename (<code>URLConnectionSeedProvider</code>). That provider fetches one file, and Neo4j refuses a differential without its chain, so unless the backup recorded the artifact as a full backup (<code>status.history[].artifactType</code>), the proxy first merges the chain ending at it into one full artifact — in an init container running the target's Neo4j image (<code>neo4j-admin database aggregate-backup</code> on 5.26, <code>backup aggregate</code> on CalVer), on scratch space from <code>options.tempStorage</code> (an <code>emptyDir</code> when unset), with <code>options.resources</code>. A merge that fails fails the restore at once with neo4j-admin's reason. The whole proxy stack is <strong>torn down automatically</strong> as soon as the restore reaches <code>Completed</code> or <code>Failed</code> (and on CR deletion) — it does not linger for the lifetime of the CR.</li>
-<li>Projects cloud credentials onto the server pods via <code>spec.extraEnvFrom</code> (on the cluster or standalone CR) — required so the JVM's AWS/GCP/Azure SDK can authenticate. The operator emits an actionable error if the Secret isn't projected; set the annotation <code>neo4j.com/auto-inherit-seed-creds=true</code> on the cluster or standalone to auto-patch (triggers a rolling restart, which the restore waits out in <code>Pending</code>). With <strong>workload identity</strong> (no <code>credentialsSecretRef</code>), the SDK default chain is used — the IAM binding must then be on the <strong>server pods'</strong> ServiceAccount, since the seed fetch runs inside the Neo4j JVM, not in a Job. (Only a cluster can annotate it, through <code>spec.podServiceAccountAnnotations</code>; a standalone restoring by pod identity runs offline.)</li>
+<li>Projects cloud credentials onto the server pods via <code>spec.extraEnvFrom</code> (on the cluster or standalone CR) — required so the JVM's AWS/GCP/Azure SDK can authenticate. The operator emits an actionable error if the Secret isn't projected; set the annotation <code>neo4j.com/auto-inherit-seed-creds=true</code> on the cluster or standalone to auto-patch (triggers a rolling restart, which the restore waits out in <code>Pending</code>). With <strong>workload identity</strong> (no <code>credentialsSecretRef</code>), the SDK default chain is used — the IAM binding must then be on the <strong>server pods'</strong> ServiceAccount, since the seed fetch runs inside the Neo4j JVM, not in a Job. (Set <code>spec.podServiceAccountAnnotations</code> on the cluster or standalone; a standalone without it restores by pod identity offline.)</li>
 <li>Opens a Bolt session and runs <code>SHOW DATABASES</code> to detect whether the target database already exists.</li>
 <li>Existing database → <code>CALL dbms.[cluster.]recreateDatabase($db, {seedURI: $uri})</code>. <strong>Requires <code>spec.options.replaceExisting: true</code></strong> — recreating wipes and replaces the live contents, so the operator refuses without the explicit opt-in (clear <code>Failed</code> message instead of a silent overwrite). Preserves user/role privileges, atomically swaps the database on every server, no <code>DROP</code> needed.</li>
 <li>New database → <code>CREATE DATABASE $db OPTIONS { seedURI: '&lt;file&gt;' } WAIT</code> (no opt-in needed; nothing is overwritten).</li>
@@ -4774,7 +4774,7 @@
 </ol>
 <p><strong>Offline path — <code>Neo4jEnterpriseStandalone</code> only, in the <a href="#stopcluster-and-offline-restore-standalone-targets">offline cases</a></strong> — Kubernetes Job:</p>
 <ol>
-<li>Spawns a restore Job that runs <code>neo4j-admin database restore --from-path=$(ls &lt;dir&gt;/&lt;dbname&gt;-*.backup | tail -1) &lt;dbname&gt;</code>. The shell substitution picks the latest run in the chain by default.</li>
+<li>Spawns a restore Job that runs <code>neo4j-admin database restore --from-path=&lt;artifact&gt; &lt;dbname&gt;</code>: the artifact the backup recorded for the resolved run, or — from a <code>source.type: storage</code> directory, or a backup that recorded none — the newest <code>&lt;dbname&gt;-*.backup</code> in it.</li>
 <li>If <code>stopCluster: true</code>, the operator scales down the StatefulSet first and mounts the standalone's data PVC (<code>neo4j-data-{name}-0</code>) directly into the Job container for offline access. With <code>stopCluster: false</code> the operator <strong>refuses to start the Job while any server pod is running</strong> (it never writes into a live data volume) — so in practice standalone restores need <code>stopCluster: true</code> unless you have already scaled the instance down yourself.</li>
 <li>After the Job succeeds, automatically runs <code>CREATE DATABASE &lt;dbname&gt;</code> (new) or <code>START DATABASE &lt;dbname&gt;</code> (existed but stopped) via Bolt.</li>
 <li><code>spec.options.preRestore</code> hooks run <strong>before</strong> the instance is stopped (so Cypher like <code>CALL db.checkpoint()</code> hits a live Bolt endpoint); <code>postRestore</code> hooks run <strong>after</strong> the restored database is registered and started.</li>
@@ -4990,7 +4990,7 @@
 <td><code>logStorage</code></td>
 <td><a href="#storagelocation"><code>StorageLocation</code></a></td>
 <td>❌</td>
-<td>Storage location for transaction logs</td>
+<td>Accepted but not read by the restore command (a <code>pvc</code> is only mounted at <code>/transaction-logs</code>); the transaction logs come from the base backup's chain</td>
 </tr>
 </tbody>
 </table>
@@ -5488,17 +5488,17 @@
 <tr>
 <td><code>backupPath</code></td>
 <td><code>string</code></td>
-<td>The per-CR shared chain directory of the resolved most-recent Succeeded run</td>
+<td>The per-CR shared chain directory of the resolved Succeeded run</td>
 </tr>
 <tr>
 <td><code>artifactFilename</code></td>
 <td><code>string</code></td>
-<td>Exact <code>.backup</code> filename of the resolved run — required by the online Cypher paths (cloud seedURI + PVC proxy), which seed from a single file</td>
+<td>Exact <code>.backup</code> filename of the resolved run (the most recent, or with <code>source.pointInTime</code> the one that holds it) — online restores seed from this single file</td>
 </tr>
 <tr>
 <td><code>artifactType</code></td>
 <td><code>string</code></td>
-<td><code>FULL</code> or <code>DIFF</code>, from the resolved run's <code>artifactType</code> (or <code>FULL</code> for an unrecorded run of a backup whose <code>backupType</code> is <code>FULL</code>); empty when unknown. A PVC seed must be <code>FULL</code></td>
+<td><code>FULL</code> or <code>DIFF</code>, from the resolved run's <code>artifactType</code> (or <code>FULL</code> for an unrecorded run of a backup whose <code>backupType</code> is <code>FULL</code>); empty when unknown. A PVC seed that is not <code>FULL</code> is merged into one full backup by the seed proxy first (not for sharded databases)</td>
 </tr>
 <tr>
 <td><code>databaseArtifacts</code></td>
@@ -5630,6 +5630,10 @@
 <tr>
 <td>Cloud storage with no <code>credentialsSecretRef</code>, on a standalone without <code>spec.podServiceAccountAnnotations</code></td>
 <td>its pod has no workload identity; the Job's ServiceAccount does</td>
+</tr>
+<tr>
+<td><code>source.type: backup</code> whose run recorded no artifact (a run from an older operator, or one whose log could not be read)</td>
+<td>only <code>neo4j-admin</code> finds the file in the backup directory</td>
 </tr>
 </tbody>
 </table>
