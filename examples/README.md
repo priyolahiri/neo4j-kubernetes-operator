@@ -177,7 +177,7 @@ oc get route -n <namespace>
 
 ## Fault Tolerance Considerations ⚠️
 
-The operator now allows even numbers of primary nodes but issues warnings about reduced fault tolerance. Understanding these implications is crucial for production deployments.
+The operator allows even numbers of primary nodes but issues warnings about reduced fault tolerance. Understanding these implications is crucial for production deployments.
 
 ### Server Configuration Recommendations
 
@@ -284,7 +284,7 @@ config:
 Neo4j clusters use parallel pod startup with coordinated formation:
 
 1. **Parallel Startup**: All server pods start simultaneously for faster deployment
-2. **Discovery Phase**: Servers discover each other via Kubernetes service discovery
+2. **Discovery Phase**: Servers find each other through the `LIST` resolver's static pod FQDNs (port 6000) that the operator injects
 3. **Self-Organization**: Servers automatically form cluster and assign roles as needed
 4. **Total Time**: Typical cluster formation completes in 2-3 minutes
 

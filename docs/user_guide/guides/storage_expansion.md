@@ -124,7 +124,7 @@ To recover, set `spec.storage.size` back to the current size or larger.
 
 ### StorageClass Changes Are Not Supported
 
-Changing `spec.storage.className` after creation requires manual migration (different operation, out of scope for this feature).
+Changing `spec.storage.className` after creation requires manual migration.
 
 ### Filesystem Expansion Timing
 
@@ -160,7 +160,7 @@ kubectl get pvc -l neo4j.com/cluster=my-cluster -l neo4j.com/role=server
 kubectl get pvc -l neo4j.com/cluster=my-standalone -l neo4j.com/role=data
 ```
 
-For clusters created before labeling was added, the operator falls back to name-based discovery (`data-{cluster-name}-server-{ordinal}`).
+If no PVC carries these labels, the operator falls back to name-based discovery (`data-{cluster-name}-server-{ordinal}`).
 
 ## Example
 

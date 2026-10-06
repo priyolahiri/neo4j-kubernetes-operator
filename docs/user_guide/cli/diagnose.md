@@ -83,12 +83,6 @@ A Job keeps the pods of its failed attempts, so a backup that was OOM-killed onc
 
 Things marked `…` — a readiness probe that has not passed yet — are printed but **do not** change the exit code. Neo4j Enterprise takes tens of seconds to open Bolt on first start, and a command that failed during a normal startup would be useless in the loop the exit code exists for.
 
-## Why this does not go stale
-
-Every rule is anchored to a fact the Kubernetes API defines. Where client-go exports a constant it is used — `PodScheduled`, `PodReasonUnschedulable`, `ClaimBound` — so an upstream rename fails the build rather than silently matching nothing. The three kubelet-owned reasons that have no constant (`CrashLoopBackOff`, `ImagePullBackOff`, `OOMKilled`) are matched as literals, and OOM is additionally matched on exit code 137 so the most common Enterprise failure does not rest on a string alone.
-
-Workloads are found through the operator's **own exported selectors**, not a label scheme restated here — the same discipline that has `validate` call the operator's own validators.
-
 ## See also
 
 - [`status`](status.md) — what is deployed and which resources need attention

@@ -63,7 +63,7 @@ spec:
     enabled: true
 ```
 
-For standalone, the metrics port is added to the existing `my-standalone-client` Service — no separate metrics Service is created. (The legacy `my-standalone-service` alias still works this release but is deprecated.)
+For standalone, the metrics port is added to the existing `my-standalone-client` Service — no separate metrics Service is created. (The `my-standalone-service` alias also resolves but is deprecated; use `my-standalone-client`.)
 
 ### Verify metrics are exposed
 
@@ -843,7 +843,7 @@ neo4j_dbms_bolt_connections_idle
 ### Metrics show stale data
 
 - The operator records metrics on every reconcile cycle (~30s default)
-- If the cluster is not in `Ready` phase, diagnostics metrics like `server_health` are not updated
+- Until the cluster has formed, diagnostics metrics like `server_health` are not updated (once formed, they keep updating while a server is down)
 - Check reconcile logs: `kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i reconcile`
 
 ---

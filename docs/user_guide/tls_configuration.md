@@ -87,7 +87,7 @@ The trust anchor is the cert-manager-issued Secret's `ca.crt`, projected to `/ss
 The opt-out exists for installations whose external issuer (e.g. some custom `AWSPCAClusterIssuer` setups) does not populate `ca.crt` in the Secret it issues. Without `ca.crt` the trust anchor is missing and strict validation rejects every peer. The operator detects this at reconcile time and refuses to apply the strict config — `status.phase` flips to `Failed` with a message naming the issuer. Two paths forward:
 
 - **Recommended**: fix the issuer to include the CA in its Secret output.
-- **Escape hatch**: set `spec.tls.strictPeerValidation: false`. The operator reverts to `trust_all=true` + `client_auth=NONE` — the legacy posture, which Neo4j's own docs flag as *"debugging only, since it does not offer security."*
+- **Escape hatch**: set `spec.tls.strictPeerValidation: false`. The operator uses `trust_all=true` + `client_auth=NONE`, which Neo4j's own docs flag as *"debugging only, since it does not offer security."*
 
 ### Hands off the SSL policy keys
 
@@ -494,22 +494,13 @@ The operator exposes three fields for this:
     connection is refused (`x509: certificate signed by unknown authority`)
     until the Secret catches up.
 
-    **Before operator v1.15 this configuration could not connect at all.** The
-    old code asked the Bolt driver to skip verification, but the driver derives
-    that setting from the URI scheme and reset it, so the connection was
-    verified against system roots and a privately-issued certificate failed —
-    while the operator logged that verification was disabled. If you set
-    `strictPeerValidation: false` on an older version and saw
-    `x509: certificate signed by unknown authority` in the operator log, that is
-    the bug, and pinning is the fix.
-
     Prefer an issuer that populates `ca.crt` (cert-manager's CA and
     self-signed issuers both do) over turning this off.
 
 !!! warning "This cannot add trust to the operator-managed `cluster` SSL policy"
 
     `spec.extraVolumes` is **not** a way to make the built-in `cluster` policy
-    trust an additional CA, and earlier revisions of this page implied it was.
+    trust an additional CA.
 
     The `cluster` policy reads its trust anchors from `/ssl/trusted/`, which the
     operator projects from the cluster's own cert-manager Secret with exactly one
@@ -532,7 +523,7 @@ The operator exposes three fields for this:
     no cross-cluster TLS trust at all. See
     [Cross-cluster replication](guides/cross_cluster_replication.md).
 
-The legacy singular `spec.auth.trustStore` continues to work and is folded
+The deprecated singular `spec.auth.trustStore` still works and is folded
 into the same JKS at reconcile time.
 
 ```yaml

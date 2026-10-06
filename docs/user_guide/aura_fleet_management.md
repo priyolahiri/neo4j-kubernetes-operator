@@ -145,7 +145,7 @@ no copy-paste.
 !!! success "Verified against a live Aura account (2026-07-31)"
     The whole provisioning path — deployment registration, token minting,
     rotation and cleanup — has been driven end-to-end against a real Aura
-    organization. That verification found and fixed four silent bugs; see
+    organization. See
     [Aura Orchestration → Verification status](aura_orchestration.md#verification-status).
 
 Set `spec.auraFleetManagement.provision` instead of `tokenSecretRef` (the two are
@@ -174,9 +174,7 @@ The operator then:
    (override with `provision.tokenSecretName`). The Secret is owned by the CR, so
    it is garbage-collected with it.
 3. Registers that token over Bolt exactly as the manual flow does — reading it
-   back out of the Secret from step 2. There is no `tokenSecretRef` to point at
-   (the two are mutually exclusive), so the registration phase resolves the
-   provisioned Secret name itself.
+   back out of the Secret from step 2.
 
 The Aura deployment ID is pinned to the CR in the
 `neo4j.com/external-fleet-deployment-id` annotation. **Do not remove it** — it is
@@ -308,7 +306,7 @@ A failure to *patch the plugin onto the StatefulSet* is reported separately, as 
 
 **Other plugins disappear after enabling Fleet Management**
 
-This should not happen with current operator versions (the additive merge strategy prevents it). If you observe it, verify the operator is up to date and check:
+This should not happen (the additive merge strategy prevents it). If you observe it, check:
 
 ```bash
 # Inspect the full NEO4J_PLUGINS value

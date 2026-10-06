@@ -10,8 +10,6 @@ Aura REST API.
     opposite direction: the operator acts as a **control plane** that provisions
     and manages **Aura-hosted** instances. The two are complementary.
 
-Design details and rationale: `docs/design/aura-orchestration.md`.
-
 ## Prerequisites
 
 1. An Aura account and a **project** (the API calls it `tenant`).
@@ -45,12 +43,6 @@ Every one of these CRDs talks to a **live cloud API**, so what matters is not
 only whether the code compiles but whether its request shapes are what Aura
 actually accepts. The table below says exactly that, per surface.
 
-Some of these clients were first written from the published OpenAPI spec and later
-corrected once they were exercised against a real account. Unit tests alone did
-not surface those corrections, because they asserted the client matched the spec
-rather than the API. The table therefore records live verification separately from
-test coverage.
-
 | Surface | Aura API | Live-verified | Notes |
 |---|---|---|---|
 | `AuraProviderConfig` | OAuth | ✅ 2026-07-30 | A token from the v1 endpoint authenticates v2beta1 calls too. |
@@ -58,10 +50,10 @@ test coverage.
 | `AuraSnapshot` | v1 | ✅ 2026-08-01 | |
 | `AuraRestore` | v1 | ✅ 2026-08-01 | |
 | `AuraCustomerManagedKey` | v1 | ❌ **UNTESTED** | See the warning below. |
-| `AuraIPFilter` | v2beta1 | ✅ 2026-08-01 | Request shapes corrected against the live API (create, update and delete). |
+| `AuraIPFilter` | v2beta1 | ✅ 2026-08-01 | Create, update and delete confirmed. |
 | `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore` | v2beta1 | ✅ 2026-07-31 | Requires a multi-database instance. |
 | `AuraOrganizationMember`, `AuraProjectMember` | v2beta1 | ✅ 2026-08-01 | Read + write shapes and all role enums confirmed. |
-| `AuraInvite` | v2beta1 | ✅ 2026-08-01 | Request body corrected against the live API; an organization role is required on every invite. |
+| `AuraInvite` | v2beta1 | ✅ 2026-08-01 | An organization role is required on every invite. |
 | `spec.auraFleetManagement` (on a self-managed cluster) | v2beta1 | ✅ 2026-07-31 | See [Aura Fleet Management](aura_fleet_management.md). |
 
 !!! danger "AuraCustomerManagedKey has never been exercised against the Aura API"
@@ -72,10 +64,10 @@ test coverage.
 
     Its client shape comes from the **published v1 OpenAPI spec** and has not been
     confirmed against the API. Treat `AuraCustomerManagedKey` as **unproven** and
-    verify it in a non-production project before relying on it. The one part that
-    *is* pinned by a test is the adoption logic — the v1 CMK **list** endpoint
-    returns only `id`/`name`/`tenant_id`, so a filter cannot be matched on
-    `key_id`/`region`/`cloud_provider` from a list entry.
+    verify it in a non-production project before relying on it. On adoption,
+    note that the v1 CMK **list** endpoint returns only `id`/`name`/`tenant_id`,
+    so a filter cannot be matched on `key_id`/`region`/`cloud_provider` from a
+    list entry.
 
     If you do exercise it, please report what you find so this table can be
     updated.
@@ -182,8 +174,7 @@ kubectl -n neo4j wait aurainstance/analytics --for=condition=Ready --timeout=20m
 > multi-database, and Aura fixes that at creation — picking a Business Critical
 > or dedicated tier is *not* on its own enough (though it is necessary: only
 > `business-critical` and `enterprise-db` support the flag at all). There is no way to convert an
-> existing instance, so an instance created without the flag (including every
-> instance created by earlier operator versions) can never host an
+> existing instance, so an instance created without the flag can never host an
 > `AuraDatabase`. Setting it moves the create call to the Aura **v2beta1** API,
 > which needs an organization ID and accepts fewer fields — see
 > [Multi-database instances](../api_reference/aurainstance.md#multi-database-instances).
@@ -344,7 +335,7 @@ CRDs at an instance. Those CRDs are for self-managed clusters/standalone only
     The CRDs in this section use the Aura API **v2beta1**, an unstable beta whose
     contract can change without a version bump. Some request bodies are not fully
     documented upstream and are best-effort. Validate against your account before
-    relying on them in production. See `docs/design/aura-orchestration.md`.
+    relying on them in production.
 
 ### Databases
 
@@ -491,7 +482,8 @@ Note the role vocabularies are the Aura API's own, and there are **three** of
 them: `organization-*` for org roles, `project-*` for project roles, and
 `namespace-*` for the project part of an **invite** body — Aura spells the same
 concepts differently on those two endpoints. `AuraInvite.spec.organizationRole`
-optionally grants an org role alongside a project-scoped (`namespace-*`) invite.
+grants an org role alongside a project-scoped (`namespace-*`) invite, and is
+required there.
 
 Field references:
 [`AuraInvite`](../api_reference/aurainvite.md),
@@ -534,8 +526,7 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
 - **`multiDatabase` is fixed at creation.** Only an instance created with
   `multiDatabase: true` can host `AuraDatabase` resources, only
   `business-critical` and `enterprise-db` support it, and Aura offers no way to
-  convert an existing instance. Instances created by operator versions before
-  this field existed are single-database for good.
+  convert an existing instance.
 - **Every invite carries an organization role.** Aura has no project-only
   invitation, so an `AuraInvite` scoping someone to a project must also set
   `spec.organizationRole`.
@@ -571,9 +562,11 @@ Each `allowList` entry is `{address, prefixLen, description?}` — so
 !!! warning "Beta / best-effort"
     IP filtering is only exposed on the Aura API **v2beta1**, an unstable beta
     (breaking changes are allowed without a version bump). This CRD is
-    best-effort: the client shape follows the official v2beta1 `IpFilter` schema,
-    but v2beta1 may change without a version bump. The rest of Aura orchestration
-    uses the stable v1 API. See `docs/design/aura-orchestration.md`.
+    best-effort: the client shape follows the live API, which differs from the
+    published v2beta1 `IpFilter` schema in places (see the
+    [`AuraIPFilter` reference](../api_reference/auraipfilter.md)), and v2beta1
+    may change without a version bump. It is not the only v2beta1 surface — see
+    [Verification status](#verification-status) for the API each CRD uses.
 
 ## Metrics
 

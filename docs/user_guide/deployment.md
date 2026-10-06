@@ -134,7 +134,6 @@ If you see `ImagePullBackOff` errors:
 
 - Production deployments use `neo4j-operator-system` namespace
 - Development deployments use `neo4j-operator-dev` namespace
-- Integration tests expect operator in `neo4j-operator-system`
 
 ### Best Practices
 

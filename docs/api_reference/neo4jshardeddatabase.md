@@ -157,7 +157,7 @@ spec:
 | `defaultCypherLanguage` | `string` | Yes | - | Must be "25" for property sharding |
 | `propertySharding` | `PropertyShardingConfiguration` | Yes | - | Property sharding configuration |
 | `wait` | `boolean` | No | true | Wait for database creation to complete |
-| `ifNotExists` | `*boolean` | No | true | Pointer type. When unset (nil) or `true`, creation is idempotent (`CREATE DATABASE ... IF NOT EXISTS`). Set explicitly to `false` to omit the `IF NOT EXISTS` clause — required when paired with `replaceExisting: true`. Use `ifNotExistsEffective()`; never dereference directly |
+| `ifNotExists` | `*boolean` | No | true | Pointer type. When unset (nil) or `true`, creation is idempotent (`CREATE DATABASE ... IF NOT EXISTS`). Set explicitly to `false` to omit the `IF NOT EXISTS` clause — required when paired with `replaceExisting: true` |
 | `replaceExisting` | `boolean` | No | false | **Destructive.** Drops and recreates the sharded database from the seed (typically `seedBackupRef`). Runs `DROP DATABASE {name} DESTROY DATA WAIT` before CREATE — all existing data is lost. Requires `force: true`; mutually exclusive with `ifNotExists: true`; requires a seed source |
 | `force` | `boolean` | No | false | Confirms the destructive `replaceExisting` operation. The validator rejects `replaceExisting: true` without `force: true` so an accidental flip can't destroy data |
 | `seedURI` | `string` | No | - | Seed URI for creating the sharded database |

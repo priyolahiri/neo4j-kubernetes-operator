@@ -89,7 +89,7 @@ Mirrors the instance state last observed from the Aura API — the source of tru
 
 ## Immutability
 
-The following fields are immutable and enforced declaratively by the apiserver via CEL transition rules — there is **no admission webhook** (project Invariant 1):
+The following fields are immutable and enforced declaratively by the apiserver via CEL transition rules — there is **no admission webhook**:
 
 - `cloudProvider`, `region`, `version`
 - `type` — **except** the one in-place `professional-db` → `business-critical` upgrade
@@ -97,7 +97,7 @@ The following fields are immutable and enforced declaratively by the apiserver v
 - `source`, `multiDatabase`
 - `graphAnalytics` — applied at creation; the only way to set it on an existing instance is to replace the deprecated `graphAnalyticsPlugin` with its equivalent value (the boolean itself is not locked, but it is only read at creation, so editing or removing it changes nothing)
 
-The `type` / `region` / `cloudProvider` combination is additionally validated before create against the live per-project `instance_configurations` inline in the reconciler (the one check CEL cannot express). `memory` and `version` are not checked locally.
+The `type` / `region` / `cloudProvider` combination is additionally validated before create against the live per-project `instance_configurations`. `memory` and `version` are not checked locally.
 
 ## Multi-database instances
 
@@ -110,7 +110,7 @@ This has consequences worth knowing before you rely on it:
 - **It needs an organization ID**, because the v2beta1 paths are organization-scoped. Set `spec.organizationId` or `defaultOrganizationId` on the [`AuraProviderConfig`](auraproviderconfig.md).
 - **A smaller set of fields applies.** The v2beta1 create takes name, type, cloudProvider, region, memory, `storage`, `graphAnalytics` (including `serverless`) and, for a serverless-only instance, `vectorOptimized`. `vectorOptimized: true` is **rejected** together with `multiDatabase`, because Aura refuses the combination. `secondariesCount`, `cdcEnrichmentMode`, `customerManagedKeyId` and `source` have no v2beta1 equivalent and are rejected too. `version` is not sent either — Aura picks the version — although the CRD still requires it.
 - **A create the operator can already tell Aura will refuse is stopped before the API call**, and stays stopped (the cause is in the spec, so retrying cannot help). The condition `Ready=False` carries one of two reasons: `MultiDatabaseUnsupported` for a `multiDatabase` instance, and `ServerlessGraphAnalyticsUnsupported` for a `graphAnalytics: serverless` one. The message names the cause — usually a missing organization ID, or a tier or field combination Aura rejects. Fix the spec and re-apply.
-- **Instances created by earlier operator versions are not multi-database**, and cannot be made so. An `AuraDatabase` against one is refused with `Ready=False`, reason `InstanceNotMultiDatabase`; the fix is a new `AuraInstance` (and a data migration), not a spec edit.
+- **Instances created without it are not multi-database**, and cannot be made so. An `AuraDatabase` against one is refused with `Ready=False`, reason `InstanceNotMultiDatabase`; the fix is a new `AuraInstance` (and a data migration), not a spec edit.
 
 ```yaml
 spec:

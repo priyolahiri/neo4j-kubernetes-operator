@@ -72,7 +72,7 @@ Off by default. When set, `source.seedURI` is built by joining the newest **succ
 
 ## Validated by construction
 
-Every manifest is run through the operator's **own `ReplicaValidator`** before it is printed. A command that emitted something [`validate`](validate.md) would then reject would be worse than no command — so if validation fails, nothing is written and the failure is reported as a bug worth filing.
+Every manifest is run through the operator's **own replica validator** before it is printed. A command that emitted something [`validate`](validate.md) would then reject would be worse than no command — so if validation fails, nothing is written and the failure is reported as a bug worth filing.
 
 ## See also
 

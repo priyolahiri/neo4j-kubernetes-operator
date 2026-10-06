@@ -33,7 +33,7 @@ spec:
   # are NOT valid, so the Neo4j role name (spec.name) is the underscore form.
   # Users may reference EITHER this spec.name OR the CR's metadata.name
   # (analytics-reader) in their spec.roles: the operator resolves a
-  # same-namespace, same-clusterRef Neo4jRole CR name to its spec.name (#260).
+  # same-namespace, same-clusterRef Neo4jRole CR name to its spec.name.
   name: analytics_reader
   # Each privilege MUST end with `TO <spec.name>` so the controller can
   # derive the matching REVOKE if the privilege is later removed.
@@ -65,6 +65,6 @@ spec:
     name: analytics-reader-creds
   roles:
     # Reference the Neo4jRole by its CR metadata.name — the operator resolves
-    # it to the role's spec.name (analytics_reader) automatically (#260). The
+    # it to the role's spec.name (analytics_reader) automatically. The
     # underscore form (analytics_reader) also works.
     - analytics-reader

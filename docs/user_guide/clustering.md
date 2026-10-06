@@ -36,8 +36,10 @@ The operator uses the **LIST resolver** with pre-computed pod FQDNs from the Sta
 The operator automatically creates:
 
 - `{cluster-name}-headless` — StatefulSet headless service (pod FQDNs)
+- `{cluster-name}-discovery` — legacy ClusterIP service (port 5000); not used by LIST discovery
 - `{cluster-name}-internals` — cluster-internal routing
 - `{cluster-name}-client` — external Bolt/HTTP access
+- `{cluster-name}-metrics` — Prometheus metrics (port 2004), when `spec.monitoring` is set and enabled
 
 ### Discovery Configuration (Injected Automatically)
 
@@ -392,7 +394,7 @@ spec:
 
 ### Common Issues
 
-1. **Cluster Formation Issues (Rare with Current Configuration)**
+1. **Cluster Formation Issues (Rare)**
    - The parallel startup strategy and topology-aligned minimum primaries configuration eliminate most formation issues
    - Check pod logs: `kubectl logs {cluster-name}-server-0` for any startup errors
    - Verify all pods can resolve DNS: `kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-headless`
@@ -403,7 +405,6 @@ spec:
    - Check endpoints include all pods: `kubectl describe endpoints {cluster-name}-headless`
    - Check that pod FQDNs resolve: `kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-server-0.{cluster-name}-headless.{ns}.svc.cluster.local`
    - Inspect the startup script for correct LIST endpoints: `kubectl get configmap {cluster-name}-config -o yaml | grep -A2 resolver_type`
-   - Verify pod has correct ServiceAccount: `kubectl get pod {cluster-name}-server-0 -o jsonpath='{.spec.serviceAccountName}'`
 
 3. **Quorum Loss**
    - Check primary node health
@@ -439,7 +440,7 @@ When migrating from Neo4j 4.x clustering to 5.x:
 1. **Remove all manual discovery configuration** - the operator handles discovery automatically
 2. **Update from `causal_clustering.*` to `dbms.cluster.*`** - but discovery settings are managed by operator
 3. **Update port configurations** for new routing service if customized
-4. **Remove static endpoint lists** - no longer needed with Kubernetes discovery
+4. **Remove static endpoint lists** - the operator injects its own LIST of pod FQDNs
 5. **Test cluster formation** in staging environment first
 
 **Important**: The operator automatically handles all cluster discovery. Remove any manual discovery configuration from your cluster specifications.

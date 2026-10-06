@@ -7,7 +7,7 @@
 #
 # Quick MinIO setup (for testing — not production-hardened):
 #
-# MinIO no longer publishes public images (Docker Hub minio/minio and
+# MinIO does not publish public images (Docker Hub minio/minio and
 # quay.io/minio/* both require authentication), so this uses Chainguard's
 # build of the same server and client. Neither image has a shell.
 #

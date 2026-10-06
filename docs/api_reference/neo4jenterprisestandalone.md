@@ -267,13 +267,12 @@ upgradeStrategy:
 
 For the full type definition see [`UpgradeStrategySpec`](neo4jenterprisecluster.md#upgradestrategyspec).
 
-#### Plugin management (no embedded `plugins` field)
-There is **no** `spec.plugins` field on `Neo4jEnterpriseStandalone` — the embedded
-plugin configuration was removed. Use separate Neo4jPlugin resources for all
-plugin management:
+#### Plugin management
+There is **no** `spec.plugins` field on `Neo4jEnterpriseStandalone`. Use
+separate Neo4jPlugin resources for all plugin management:
 
 ```yaml
-# Instead of embedded plugins, use Neo4jPlugin CRD
+# Plugins are installed with the Neo4jPlugin CRD
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
@@ -379,7 +378,7 @@ init container that copies the JDK's default `cacerts` to a writable JKS,
 imports each supplied CA with the Secret name as the keytool alias, and sets
 `-Djavax.net.ssl.trustStore=/truststore/truststore.jks` on the JVM.
 
-The legacy singular `spec.auth.trustStore` continues to work and is folded
+The legacy singular `spec.auth.trustStore` is also folded
 into the same JKS at reconcile time. See the
 [shared TrustedCASecret reference](neo4jenterprisecluster.md#trustedcasecret)
 for full details and a cert-manager example.
@@ -479,7 +478,7 @@ Detailed conditions about the deployment state.
 #### `endpoints` (EndpointStatus)
 Connection endpoints for the Neo4j instance. The bolt scheme reflects the TLS configuration: `bolt+s://` when TLS is enabled, `bolt://` when disabled. `connectionExamples` is populated from `spec.service.type` and the LoadBalancer-assigned external IP (when applicable).
 
-Endpoints are resolved against the `{name}-client` Service. Connection strings saved against the legacy `{name}-service` name still resolve this release (it remains as a deprecated ClusterIP-only alias) but will stop working next release — update them to `{name}-client`.
+Endpoints are resolved against the `{name}-client` Service. `{name}-service` also resolves (a ClusterIP-only alias) but is deprecated; use `{name}-client`.
 
 ```yaml
 # TLS disabled, ClusterIP
@@ -551,7 +550,7 @@ databaseStatus:
 
 #### `diagnostics` (StandaloneDiagnosticsStatus)
 
-Live diagnostics collected from `SHOW DATABASES`, `SHOW USERS` and `SHOW ROLES` when `spec.monitoring.enabled=true` and the standalone is in `Ready` phase. Updated on every reconcile cycle. Collection errors are stored in `diagnostics.collectionError` and never block reconciliation.
+Live diagnostics collected from `SHOW DATABASES`, `SHOW USERS` and `SHOW ROLES` while the standalone is in `Ready` phase. On by default; `spec.monitoring.enabled: false` turns it off. Updated on every reconcile cycle. Collection errors are stored in `diagnostics.collectionError` and never block reconciliation.
 
 | Field | Type | Description |
 |---|---|---|
@@ -1161,7 +1160,7 @@ EOF
 3. **Authentication**: Always use adminSecret for secure credential management
 4. **TLS**: Enable TLS for production deployments using cert-manager
 5. **Backup Strategy**: Implement regular backups with appropriate retention policies
-6. **Plugin Management**: Use Neo4jPlugin CRD instead of deprecated embedded configuration
+6. **Plugin Management**: Use Neo4jPlugin CRD for plugin installation
 7. **Database Management**: Use Neo4jDatabase CRD for automated database creation and schema setup
 8. **Monitoring**: Enable query monitoring for performance insights
 9. **Configuration**: Use Neo4j 5.26+ configuration syntax (server.* instead of dbms.connector.*)

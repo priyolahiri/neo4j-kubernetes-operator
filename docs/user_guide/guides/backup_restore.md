@@ -210,7 +210,7 @@ spec:
 
 **All-databases restore.** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, with per-database progress in `status.databaseResults`. Requires `source.type=backup`. The operator restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike; set `options.replaceExisting: true` to overwrite existing databases. A standalone falls back to a single offline `neo4j-admin database restore` Job covering all user databases — with `stopCluster: true`, which scales the instance to 0 — in the cases listed under [Restore to a Standalone Instance](#restore-to-a-standalone-instance), for example when any of the PVC artifacts is a differential.
 
-**Migrating from the pre-v1.14 API.** The legacy `spec.target` (backup) and `spec.clusterRef`/`spec.databaseName`/`spec.force` (restore) fields were deprecated in v1.13 and **removed in v1.14**. Migrate backups to `instanceRef` + `database`/`allDatabases`/`shardedDatabase` (cloud config moves under `storage.cloud`), and restores to `instanceRef` + `database`/`allDatabases` with `options.replaceExisting` in place of `force`.
+**Migrating from the pre-v1.14 API** (`spec.target`, `spec.clusterRef`, `spec.databaseName`, `spec.force`): see the [Upgrade Guide](../migration_guide.md#v114-backup-restore-api-cleanup-breaking).
 
 ## Backup Architecture
 
@@ -239,8 +239,6 @@ spec:
 A standalone is just an instance — back it up with `instanceRef: <standalone-name>` + a scope, exactly like a cluster.
 
 > ℹ️ **`allDatabases` and property-sharded databases — one backup, two restore paths.** An instance-wide backup **catalogues** each property-sharded family's per-shard `.backup` files in `status.history[].shardedFamilies` (the family names are also listed in `shardedDatabasesExcluded`, with a `BackupShardedDatabasesExcluded` event). So **one `allDatabases` backup is a complete DR source**. What differs is *how* each kind is restored: the all-databases **restore loop recreates standard databases only** (sharded DBs need the shard-topology `CREATE` clauses only `Neo4jShardedDatabase` emits), so to recover a sharded family you re-apply its `Neo4jShardedDatabase` CR with `spec.seedBackupRef` pointing at that **same** backup (add `spec.seedSourceDatabase` if restoring under a different name). The all-databases restore re-warns (`RestoreShardedDatabasesNotCovered`) naming each family and the `seedBackupRef` to use — see [Property Sharding](../property_sharding.md). Recovering a mixed cluster is therefore an all-databases restore **plus** one `Neo4jShardedDatabase` re-apply per family, all seeding from the single backup. (You can still take a dedicated `shardedDatabase:`-scoped backup per family if you prefer per-family lifecycles.)
-
-> **Removed `target` block.** The pre-v1.14 `target: {kind: Cluster|Database|ShardedDatabase, name, clusterRef}` form was deprecated in v1.13 and **removed in v1.14** — use `instanceRef` + `allDatabases`/`database`/`shardedDatabase`.
 
 **Restore is single-database** even when the backup was instance-wide (`allDatabases`): the backup leaves one artifact per database in the chain directory, and records each one in `status.history[].databaseArtifacts`. Reference the instance-wide backup and name the database (`spec.database`, or `source.sourceDatabase` to restore it under another name); the operator seeds from that database's recorded artifact, on clusters and standalones alike. (An offline standalone restore of a backup that recorded no map falls back to the newest `<database>-*.backup` in the directory.)
 
@@ -466,7 +464,7 @@ kubectl run minio-client --rm -i --restart=Never \
   -- ls --recursive local/neo4j-backups/cluster/
 ```
 
-MinIO no longer publishes public images — `minio/mc` on Docker Hub and
+MinIO does not publish public images — `minio/mc` on Docker Hub and
 `quay.io/minio/mc` both require authentication — so this uses Chainguard's
 build of the same client. It has no shell, which is why the alias comes from
 the `MC_HOST_local` variable rather than `mc alias set`.
@@ -994,7 +992,7 @@ spec:
 >   - **S3**: [S3 Lifecycle Rules](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lifecycle-mgmt.html)
 >   - **GCS**: [Object Lifecycle Management](https://cloud.google.com/storage/docs/lifecycle)
 >   - **Azure**: [Blob Lifecycle Management](https://learn.microsoft.com/en-us/azure/storage/blobs/lifecycle-management-overview)
-> - **PVC storage**: retention is enforced by a cleanup Job that runs **only when the Neo4jBackup CR is deleted** — it is *not* a continuous pruning loop. The Job prunes `*.backup` **files** in this CR's chain directory only, oldest-first by mtime, and **always keeps the newest artifact**. `maxAge` accepts a **single** `d`/`h`/`m`/`s` unit (`"30d"`, `"24h"`; compound values like `"1h30m"` and `"4w"` are rejected). `deletePolicy` accepts only `Delete` (the `Archive` value was removed in v1.14).
+> - **PVC storage**: retention is enforced by a cleanup Job that runs **only when the Neo4jBackup CR is deleted** — it is *not* a continuous pruning loop. The Job prunes `*.backup` **files** in this CR's chain directory only, oldest-first by mtime, and **always keeps the newest artifact**. `maxAge` accepts a **single** `d`/`h`/`m`/`s` unit (`"30d"`, `"24h"`; compound values like `"1h30m"` and `"4w"` are rejected). `deletePolicy` accepts only `Delete`.
 > - **DIFF caveat**: filenames don't encode FULL vs DIFF, so pruning can orphan diffs whose parent FULL ages out — the operator emits a `BackupRetentionCaveat` warning event when this applies. Prefer `backupType: FULL` on CRs that use retention.
 
 #### Weekly Backup with Long Retention
@@ -1029,7 +1027,7 @@ spec:
     maxCount: 12
 ```
 
-**Best for:** Enterprise compliance, long-term archival. For cloud storage the `retention` block is advisory — configure GCS Lifecycle Management to expire (or transition to archival storage classes) objects after 90 days. There is no operator-side archive action (the `deletePolicy: Archive` value was removed in v1.14).
+**Best for:** Enterprise compliance, long-term archival. For cloud storage the `retention` block is advisory — configure GCS Lifecycle Management to expire (or transition to archival storage classes) objects after 90 days. There is no operator-side archive action.
 
 ### Suspended Backups
 
@@ -1374,7 +1372,7 @@ spec:
 
 #### Restore with Job Hooks
 
-Hook Jobs run in their own pods — anything that talks to Neo4j (e.g. `cypher-shell`) must address the instance's service explicitly (`-a neo4j://<standalone>-client:7687`), or it will try to connect to localhost inside the hook pod. (The legacy `<standalone>-service` name still resolves this release but is deprecated — update saved hook commands to `-client`.)
+Hook Jobs run in their own pods — anything that talks to Neo4j (e.g. `cypher-shell`) must address the instance's service explicitly (`-a neo4j://<standalone>-client:7687`), or it will try to connect to localhost inside the hook pod. (`<standalone>-service` also resolves but is deprecated — use `-client`.)
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -1448,10 +1446,10 @@ kubectl logs job/daily-backup-backup
 # List all restores
 kubectl get neo4jrestores
 
-# Get detailed restore status
+# Get detailed restore status — the events name the path (online or offline)
 kubectl describe neo4jrestore restore-operation
 
-# Check restore job logs
+# Offline standalone restores only: the restore Job's log
 kubectl logs job/restore-operation-restore
 
 # Monitor restore progress
@@ -1618,7 +1616,7 @@ spec:
 
 ### Namespace scoping
 
-A `Neo4jBackup` backs up a deployment **in its own namespace**. `instanceRef` (and `shardedDatabase`) resolve within the backup CR's namespace, and the API has no namespace field to point elsewhere (the legacy `target` block, including `target.namespace`, was removed in v1.14). This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the `Neo4jBackup` in **that** namespace.
+A `Neo4jBackup` backs up a deployment **in its own namespace**. `instanceRef` (and `shardedDatabase`) resolve within the backup CR's namespace, and the API has no namespace field to point elsewhere. This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the `Neo4jBackup` in **that** namespace.
 
 ---
 

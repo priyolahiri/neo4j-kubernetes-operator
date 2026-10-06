@@ -159,7 +159,7 @@ So do the cross-cluster replication metrics, `neo4j_operator_replica_lag_transac
 !!! note "`k8s_cluster` is not `cluster_name`"
     `cluster_name` is the Neo4j cluster. `k8s_cluster` is the Kubernetes cluster it runs in. The flag is `--kubernetes-cluster-name` rather than `--cluster-name` to keep that distinction visible at the point of configuration.
 
-**Backwards compatible.** The flag is unset by default, which emits an empty `k8s_cluster` label. Prometheus treats an empty label value as equivalent to the label being absent, so existing queries, dashboards and alert rules keep matching unchanged whether or not you adopt this.
+**Optional.** The flag is unset by default, which emits an empty `k8s_cluster` label. Prometheus treats an empty label value as equivalent to the label being absent, so queries, dashboards and alert rules that do not use `k8s_cluster` match whether or not you set it.
 
 ### Federating
 

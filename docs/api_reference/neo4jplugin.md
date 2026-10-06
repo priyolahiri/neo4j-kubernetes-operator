@@ -145,7 +145,7 @@ kind: Neo4jPlugin
 | `phase` | `string` | Current phase: `"Pending"`, `"Installing"`, `"Ready"`, `"Failed"`, `"Waiting"`, `"Invalid"` (spec failed validation; not retried until the CR is edited) |
 | `message` | `string` | Human-readable status message |
 | `installedVersion` | `string` | The version the operator last installed successfully: `spec.version` as it was when the plugin reached `Ready` (the version *requested*, not read back from the running plugin). Left unchanged while a later attempt is `Installing` or `Failed`, so it always names the last install that worked |
-| `installationTime` | `*metav1.Time` | When the plugin was first recorded as installed at `installedVersion`: set on reaching `Ready`, not touched by later reconciles or by `Ready` → `Installing` → `Ready` cycles at the same version. A different `spec.version` is a new installation and restarts it. For a plugin that was already `Ready` before this field existed, it is the time the operator first saw it so |
+| `installationTime` | `*metav1.Time` | When the plugin was first recorded as installed at `installedVersion`: set on reaching `Ready`, not touched by later reconciles or by `Ready` → `Installing` → `Ready` cycles at the same version. A different `spec.version` is a new installation and restarts it |
 | `health` | [`*PluginHealth`](#pluginhealth) | **Reserved — never populated today.** Intended: plugin health and performance information |
 | `usage` | [`*PluginUsage`](#pluginusage) | **Reserved — never populated today.** Intended: plugin usage statistics |
 | `observedGeneration` | `int64` | Generation of the most recently observed spec |
@@ -286,14 +286,14 @@ into air-gapped clusters that need a mirrored image.
 
 - `spec.source.type` must be `url` or `custom` — the entrypoint's
   `official`/`community` types resolve via an internal manifest the
-  user can't point at a verifiable URL, so they're rejected at admission.
+  user can't point at a verifiable URL, so the API server rejects them
+  at apply time (a CRD validation rule — the operator has no webhooks).
 - `spec.dependencies` are rejected on a VerifiedDownload plugin —
   mixed install paths in a single CR confuse the supply-chain story.
   Create each dependency as its own `Neo4jPlugin` CR with its own
   `source.url` + `checksum`.
 - Every pod restart re-runs the init container, which re-downloads the
-  JAR. For large JARs (GDS ≈ 30 MB) this is bandwidth-wasteful; a
-  caching PVC is a planned follow-up.
+  JAR. For large JARs (GDS ≈ 30 MB) this is bandwidth-wasteful.
 
 ### Duplicate-CR protection (all install modes)
 
@@ -393,8 +393,7 @@ spec:
 
   # GDS-specific configuration. Mount the license file at /licenses/gds.license
   # via the cluster/standalone spec.extraVolumes + spec.extraVolumeMounts
-  # (e.g. from a Secret named gds-license-secret) — Neo4jPlugin no longer has a
-  # typed license block.
+  # (e.g. from a Secret named gds-license-secret).
   config:
     "gds.enterprise.license_file": "/licenses/gds.license"
     "gds.procedure.allowlist": "gds.*"
@@ -495,7 +494,7 @@ spec:
 
 ## Automatic Security Configuration
 
-**New Feature**: Some plugins require specific security settings to function properly. The operator automatically applies these settings even when no user configuration is provided.
+Some plugins require specific security settings to function properly. The operator automatically applies these settings even when no user configuration is provided.
 
 ### Plugins with Automatic Security
 
