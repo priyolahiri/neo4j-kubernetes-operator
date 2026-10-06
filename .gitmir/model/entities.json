@@ -1401,6 +1401,13 @@
         "type": "enum",
         "isNullable": true,
         "note": "FULL or DIFF per run (and databaseArtifacts[].type per database), read from neo4j-admin's log; empty when the log did not say. An online PVC restore merges the chain of anything not recorded as FULL."
+      },
+      {
+        "id": "f-neo4jbackup-status-history-shard-artifact-type",
+        "name": "status.history[].shardArtifacts[].type",
+        "type": "enum",
+        "isNullable": true,
+        "note": "FULL or DIFF per shard (also in shardedFamilies[].shardArtifacts), read from neo4j-admin's log. A sharded database seeds from a PVC only when every shard of the run is FULL; differentials are never merged for shards."
       }
     ],
     "paths": [

@@ -268,30 +268,9 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				"seedBackupRef", shardedDatabase.Spec.SeedBackupRef, "shardCount", len(resolved.PerShardURIs))
 		}
 
-		// Phase 2b: ensure the referenced cluster has the backup's
-		// credentials Secret projected onto its server pods (cloud only;
-		// PVC seed uses in-cluster HTTP, no creds needed).
-		if resolved.CredsSecretName != "" {
-			autoInherited, credsErr := EnsureClusterHasSeedCreds(ctx, r.Client, cluster, resolved.CredsSecretName)
-			if credsErr != nil {
-				logger.Error(credsErr, "Cluster missing seed credentials projection")
-				r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, "SeedCredsMissing", credsErr.Error())
-				if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", credsErr.Error(), nil); statusErr != nil {
-					logger.Error(statusErr, "Failed to update status to Failed")
-				}
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-			}
-			if autoInherited {
-				logger.Info("Auto-inherited seed credentials onto cluster; waiting for rolling restart",
-					"cluster", cluster.Name, "credentialsSecret", resolved.CredsSecretName)
-				r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, "SeedCredsAutoInherited",
-					fmt.Sprintf("Patched cluster %q spec.extraEnvFrom with %q; waiting for rolling restart", cluster.Name, resolved.CredsSecretName))
-				if statusErr := r.updateStatus(ctx, &shardedDatabase, "Pending",
-					fmt.Sprintf("Auto-inherited seed credentials Secret %q onto cluster %q; waiting for cluster pods to restart", resolved.CredsSecretName, cluster.Name), nil); statusErr != nil {
-					logger.Error(statusErr, "Failed to update status to Pending")
-				}
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-			}
+		// Phase 2b: the server pods fetch a cloud seed themselves.
+		if res, wait := r.ensureClusterSeedConfig(ctx, &shardedDatabase, cluster, resolved); wait {
+			return res, nil
 		}
 	}
 

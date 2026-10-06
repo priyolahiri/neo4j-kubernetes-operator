@@ -54,6 +54,9 @@ const (
 	// backed up with a ShardedDatabase-scoped Neo4jBackup and restored via its
 	// Neo4jShardedDatabase CR. Makes the otherwise-silent exclusion explicit.
 	EventReasonBackupShardedExcluded = "BackupShardedDatabasesExcluded"
+	// EventReasonBackupShardedDifferential — a run wrote differential shard
+	// backups to a PVC, which cannot seed a sharded database (rule 110).
+	EventReasonBackupShardedDifferential = "BackupShardedDifferential"
 	// EventReasonServiceAccountAnnotationConflict — a backup/restore CR
 	// overwrote DIFFERENT workload-identity annotations on the shared
 	// namespace ServiceAccount; last writer wins and the others' cloud

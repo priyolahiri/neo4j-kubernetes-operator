@@ -18,7 +18,12 @@ package controller
 
 import (
 	"context"
+	stderrors "errors"
+	"fmt"
+	"strings"
 
+	corev1 "k8s.io/api/core/v1"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -47,6 +52,76 @@ func (r *Neo4jShardedDatabaseReconciler) ensurePVCSeedProxy(
 		}
 	}
 	return available, err
+}
+
+// ensureClusterSeedConfig makes a cloud seed reachable from the cluster's
+// server pods, which fetch it themselves: the backup's credentials Secret and
+// — for MinIO and other S3-compatible stores — its endpoint, projected as a
+// Neo4jRestore does it (both in one update, so one rolling restart, under the
+// neo4j.com/auto-inherit-seed-creds annotation), and seeding only once the
+// pods carry them. wait=true means return res: the database is Pending or
+// Failed with the reason. PVC seeds need nothing here (in-cluster HTTP).
+func (r *Neo4jShardedDatabaseReconciler) ensureClusterSeedConfig(
+	ctx context.Context,
+	shardedDB *neo4jv1beta1.Neo4jShardedDatabase,
+	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
+	resolved *ResolvedShardedSeed,
+) (res ctrl.Result, wait bool) {
+	customEndpoint := resolved.Cloud != nil && resolved.Cloud.EndpointURL != ""
+	if resolved.CredsSecretName == "" && !customEndpoint {
+		return ctrl.Result{}, false
+	}
+	logger := log.FromContext(ctx)
+	requeue := ctrl.Result{RequeueAfter: r.RequeueAfter}
+	setStatus := func(phase, msg string) {
+		if err := r.updateStatus(ctx, shardedDB, phase, msg, nil); err != nil {
+			logger.Error(err, "Failed to update status", "phase", phase)
+		}
+	}
+	seed := r.seedConfig()
+	target := restoreTarget{cluster: cluster}
+
+	projected, missing, err := seed.projectSeedConfig(ctx, target, resolved.CredsSecretName, resolved.Cloud)
+	if err != nil {
+		if stderrors.Is(err, errSeedConfigNotAutoInherited) {
+			msg := fmt.Sprintf("cluster %q's server pods can't reach the seed source: missing %s. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation %s=\"true\" to let the operator inject them (triggers one rolling restart).",
+				cluster.Name, strings.Join(missing, "; "), AutoInheritSeedCredsAnnotation)
+			r.Recorder.Event(shardedDB, corev1.EventTypeWarning, "SeedCredsMissing", msg)
+			setStatus("Failed", msg)
+			return requeue, true
+		}
+		logger.Error(err, "Failed to project seed configuration onto the cluster")
+		setStatus("Pending", fmt.Sprintf("Retrying projection of seed configuration onto cluster %q: %v", cluster.Name, err))
+		return requeue, true
+	}
+	if projected {
+		r.Recorder.Event(shardedDB, corev1.EventTypeNormal, "SeedCredsAutoInherited",
+			fmt.Sprintf("Projected seed configuration (credentials/endpoint) onto cluster %q; waiting for the rolling restart", cluster.Name))
+		setStatus("Pending", fmt.Sprintf("Projected seed configuration onto cluster %q; waiting for the rolling restart", cluster.Name))
+		return requeue, true
+	}
+	rolledOut := true
+	if resolved.CredsSecretName != "" {
+		if ok, err := seed.seedCredsRolledOut(ctx, target, resolved.CredsSecretName); err != nil || !ok {
+			rolledOut = false
+		}
+	}
+	if customEndpoint && envHasSeedEndpoint(cluster.Spec.Env) {
+		if ok, err := seed.specEnvEndpointRolledOut(ctx, target); err != nil || !ok {
+			rolledOut = false
+		}
+	}
+	if !rolledOut {
+		setStatus("Pending", fmt.Sprintf("Waiting for cluster %q pods to roll out the seed configuration", cluster.Name))
+		return requeue, true
+	}
+	return ctrl.Result{}, false
+}
+
+// seedConfig reuses the restore path's projection of seed credentials and
+// endpoint onto a cluster, and its rollout checks: they need only a client.
+func (r *Neo4jShardedDatabaseReconciler) seedConfig() *Neo4jRestoreReconciler {
+	return &Neo4jRestoreReconciler{Client: r.Client, Scheme: r.Scheme}
 }
 
 // teardownPVCSeedProxy removes the proxy stack once the sharded database has

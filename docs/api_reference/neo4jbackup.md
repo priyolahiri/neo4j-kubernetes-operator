@@ -319,6 +319,7 @@ Identifies one `.backup` file produced by a sharded backup.
 | `shardName` | `string` | Per-shard database name (e.g. `"products-g000"`, `"products-p000"`). Derived by stripping the timestamp suffix from the neo4j-admin output filename. |
 | `filename` | `string` | On-disk filename as written by neo4j-admin (e.g. `"products-g000-2025-06-11T21-04-42.backup"`). |
 | `size` | `int64` | Artifact size in bytes. Zero if not parseable. |
+| `type` | `string` | `FULL` or `DIFF`, read from the Job's Pod log; empty when the log did not say. A sharded database seeds from a PVC only when every shard of the run is `FULL` — see [Restoring a sharded database](../user_guide/property_sharding.md#restoring-a-sharded-database). |
 
 ### ShardedFamilyArtifacts
 

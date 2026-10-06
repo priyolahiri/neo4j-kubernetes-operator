@@ -235,9 +235,10 @@ them. `neo4j_operator_` followed by: `backup_size_bytes`,
 
 Apply the new CRDs with the operator: they add `Neo4jRestore.spec.source.sourceDatabase`,
 `Neo4jBackup.spec.options.splitArchivePartSize`, and status fields the
-operator now records (`Neo4jBackup` `status.history[].artifactType`). Without
-them those status fields are dropped on write; restores still work, merging
-the chain of every PVC artifact they cannot tell is a full backup. The behaviour changes below take effect on the
+operator now records (`Neo4jBackup` `status.history[].artifactType` and
+`shardArtifacts[].type`). Without them those status fields are dropped on
+write; restores still work, merging the chain of every PVC artifact they
+cannot tell is a full backup. The behaviour changes below take effect on the
 first reconcile.
 
 ### Behaviour changes
@@ -306,6 +307,21 @@ first reconcile.
   as a full backup. The merge needs scratch space about the size of the chain
   (an `emptyDir` unless you set `spec.options.tempStorage`) and time: the
   restore waits up to `spec.timeout`, 30 minutes by default while merging.
+- **Sharded databases still need full PVC backups.** A sharded database
+  seeds from a PVC only when every shard of the run is a full backup, and
+  a differential cannot be merged into one. A `seedBackupRef` whose latest
+  run holds a differential shard used to fail inside Neo4j after the seed
+  proxy started; it now fails at once, naming the shards, and seeds once a
+  full run lands. Each sharded PVC run that writes a differential raises a
+  `BackupShardedDifferential` warning. If you back sharded databases up to a
+  PVC with `backupType: AUTO` (the default), switch to `FULL`; cloud storage
+  seeds differentials. See
+  [Restoring a sharded database](property_sharding.md#restoring-a-sharded-database).
+- **A sharded seed from MinIO gets its endpoint.** Seeding a sharded database
+  from S3-compatible storage under `neo4j.com/auto-inherit-seed-creds` added
+  only the credentials to the cluster, so Neo4j went to AWS for the bucket.
+  The operator now adds the endpoint too, in the same rolling restart, and
+  waits for it before seeding.
 
 ### New, no action needed
 

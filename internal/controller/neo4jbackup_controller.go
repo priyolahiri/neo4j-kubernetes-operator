@@ -421,6 +421,7 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 			}
 			if jobLog != "" {
 				recordArtifactTypes(&run, jobLog, latest.Spec.ScopedName())
+				r.warnShardedPVCDifferential(latest, &run)
 			}
 			if jobLog != "" {
 				if validation := parseValidationFromLog(jobLog); validation != nil {
@@ -2298,6 +2299,21 @@ func (r *Neo4jBackupReconciler) recordShardedExclusion(backup *neo4jv1beta1.Neo4
 		fmt.Sprintf("all-databases backup captured property-sharded database(s) %s as per-shard artifacts (status.shardedFamilies); they are NOT recreated by an all-databases restore — restore each from THIS backup via its Neo4jShardedDatabase CR with spec.seedBackupRef: %s", strings.Join(families, ", "), backup.Name))
 }
 
+// warnShardedPVCDifferential warns when a run wrote differential shard
+// backups to a PVC: no sharded database can be seeded from them (rule 110),
+// which a DR plan otherwise finds out only when it needs the backup.
+func (r *Neo4jBackupReconciler) warnShardedPVCDifferential(backup *neo4jv1beta1.Neo4jBackup, run *neo4jv1beta1.BackupRun) {
+	if backup.Spec.Storage.Type != "pvc" || run.Status != "Succeeded" {
+		return
+	}
+	diffs := runDifferentialShards(run)
+	if len(diffs) == 0 {
+		return
+	}
+	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupShardedDifferential,
+		fmt.Sprintf("run %s wrote differential backups of %s to a PVC, which cannot seed a sharded database: over HTTP, Neo4j seeds one only from a full backup of every shard. Set options.backupType: FULL for sharded backups on a PVC, or keep them in cloud storage, where differentials seed directly", run.RunID, strings.Join(diffs, ", ")))
+}
+
 // recordOneShotBackupRun records a terminal Job's run into status.history and
 // returns whether the caller may finalize the CR (flip to Completed/Failed).
 // It returns FALSE only for a Succeeded run whose artifact-filename metadata was
@@ -2355,6 +2371,7 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 	}
 	if logContent != "" {
 		recordArtifactTypes(&run, logContent, backup.Spec.ScopedName())
+		r.warnShardedPVCDifferential(backup, &run)
 	}
 	if logContent != "" {
 		if validation := parseValidationFromLog(logContent); validation != nil {

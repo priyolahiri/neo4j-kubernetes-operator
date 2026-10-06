@@ -673,7 +673,7 @@
     "name": "Resolve And Serve Sharded Seed",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "business_action",
-    "description": "resolveShardedSeed()/resolvePVCShardedSeed() turn spec.seedBackupRef into either per-shard cloud seedURIs or an operator-managed PVC seed-proxy Deployment+Service serving each shard's .backup file over HTTP.",
+    "description": "resolveShardedSeed()/resolvePVCShardedSeed() turn spec.seedBackupRef into either per-shard cloud seedURIs or an operator-managed PVC seed-proxy Deployment+Service serving each shard's .backup file over HTTP. A PVC run with a shard recorded as DIFF is refused before the proxy starts (Neo4j seeds a sharded database over HTTP only from full backups, and merging drops the sharding header); the requeue seeds once a full run lands. For a cloud seed, ensureClusterSeedConfig() projects the backup's credentials and custom endpoint onto the cluster under the auto-inherit annotation and waits for the rollout.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -853,7 +853,7 @@
     "name": "Record Backup Run Outcome",
     "serverUnitId": "su-neo4jbackup",
     "operation": "business_action",
-    "description": "recordOneShotBackupRun() / reconcileScheduledHistory() observe a completed Job's conditions, parse its pod log, and append a BackupRun to status.history, deferring finalization until restore-critical artifact filenames are captured, including each artifact's FULL/DIFF type (status.history[].artifactType, databaseArtifacts[].type).",
+    "description": "recordOneShotBackupRun() / reconcileScheduledHistory() observe a completed Job's conditions, parse its pod log, and append a BackupRun to status.history, deferring finalization until restore-critical artifact filenames are captured, including each artifact's FULL/DIFF type (status.history[].artifactType, databaseArtifacts[].type, shardArtifacts[].type), warning when a sharded run on a PVC wrote a differential shard.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -862,7 +862,8 @@
     "emitsEventIds": [
       "ev-backup-completed",
       "ev-backup-failed",
-      "ev-backup-sharded-databases-excluded"
+      "ev-backup-sharded-databases-excluded",
+      "ev-backup-sharded-differential"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-backup-restore"

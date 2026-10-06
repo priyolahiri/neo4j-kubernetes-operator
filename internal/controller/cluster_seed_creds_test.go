@@ -30,11 +30,11 @@ import (
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-// TestEnsureClusterHasSeedCreds_Matrix pins the three branches of the
+// TestEnsureSeedCredsProjected_Matrix pins the three branches of the
 // helper: already-configured (no-op), auto-inherit annotation set
 // (patches the cluster), and not configured + no annotation (returns an
 // actionable error).
-func TestEnsureClusterHasSeedCreds_Matrix(t *testing.T) {
+func TestEnsureSeedCredsProjected_Matrix(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		t.Fatalf("scheme: %v", err)
@@ -122,7 +122,7 @@ func TestEnsureClusterHasSeedCreds_Matrix(t *testing.T) {
 				WithObjects(cluster).
 				Build()
 
-			autoInherited, err := EnsureClusterHasSeedCreds(context.Background(), fakeClient, cluster, c.credsSecretName)
+			autoInherited, err := EnsureSeedCredsProjected(context.Background(), fakeClient, cluster, c.credsSecretName)
 
 			if c.wantErrSubstr != "" {
 				if err == nil || !strings.Contains(err.Error(), c.wantErrSubstr) {

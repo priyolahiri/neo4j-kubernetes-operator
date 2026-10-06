@@ -45,6 +45,9 @@ type ResolvedShardedSeed struct {
 	// pods for cloud seedURIs. Empty for PVC (the proxy is in-cluster
 	// HTTP, no creds needed) and for backups that use workload identity.
 	CredsSecretName string
+	// Cloud is the backup's cloud block (nil for PVC): its custom endpoint
+	// (MinIO and other S3-compatible stores) must reach the server pods too.
+	Cloud *neo4jv1beta1.CloudBlock
 	// ProxyAvailable is meaningful only for PVC-backed restores: true
 	// when the proxy Deployment reports ≥1 Ready replica. False means
 	// the caller should route to Pending and requeue.
@@ -118,7 +121,7 @@ func (r *Neo4jShardedDatabaseReconciler) resolveShardedSeed(ctx context.Context,
 			if err != nil {
 				return nil, err
 			}
-			return &ResolvedShardedSeed{PerShardURIs: perShard, CredsSecretName: credsSecretName, ProxyAvailable: true}, nil
+			return &ResolvedShardedSeed{PerShardURIs: perShard, CredsSecretName: credsSecretName, Cloud: storage.Cloud, ProxyAvailable: true}, nil
 		}
 		// Single-family: the directory holds only this family's shards →
 		// CloudSeedProvider directory URI.
@@ -126,7 +129,7 @@ func (r *Neo4jShardedDatabaseReconciler) resolveShardedSeed(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		return &ResolvedShardedSeed{URI: uri, CredsSecretName: credsSecretName}, nil
+		return &ResolvedShardedSeed{URI: uri, CredsSecretName: credsSecretName, Cloud: storage.Cloud}, nil
 
 	case "pvc":
 		// PVC always uses per-shard proxy URLs (single-family or all-DB family).
@@ -257,6 +260,15 @@ func (r *Neo4jShardedDatabaseReconciler) resolvePVCShardedSeed(
 	}
 	if len(missingFilenames) > 0 {
 		return nil, fmt.Errorf("PVC seed: shards %v have empty Filename in backup status.history — Pod-log parsing didn't capture them. Re-run the backup, or use a cloud-backed seedBackupRef instead", missingFilenames)
+	}
+
+	// Over HTTP, a sharded seed must be a full backup of every shard, and a
+	// differential cannot be merged into one: neo4j-admin's aggregate drops
+	// the sharding metadata the seed needs (rule 110). Refuse before exposing
+	// the PVC; the caller requeues, so a later full run seeds.
+	if diffs := differentialShards(artifacts); len(diffs) > 0 {
+		return nil, fmt.Errorf("PVC seed: the latest run of Neo4jBackup %q holds differential backups of %s. Over HTTP, Neo4j seeds a sharded database only from a full backup of every shard, and merging a shard's chain drops the sharding metadata the seed needs. Seed from a full run (options.backupType: FULL), or keep sharded backups in cloud storage, where differentials seed directly",
+			shardedDB.Spec.SeedBackupRef, strings.Join(diffs, ", "))
 	}
 
 	// Ensure the proxy exists + is Ready. If not Ready yet, route to Pending so
