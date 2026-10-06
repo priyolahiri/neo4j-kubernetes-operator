@@ -503,7 +503,7 @@ spec:
     maxCount: 10
 
   options:
-    backupType: FULL               # on a PVC, only full runs can seed a sharded database
+    backupType: AUTO               # on a PVC, AUTO takes full backups of a sharded database
     validate: true                 # optional per-shard recoverability check
 ```
 
@@ -525,10 +525,16 @@ only from a full backup of each shard. A differential cannot be turned into one
 either: merging a shard's chain loses the sharding information the seed needs.
 So:
 
-- Back sharded databases up to a PVC with `options.backupType: FULL`. With
-  `AUTO`, the default, every run after the first holds a differential of the
-  graph shard. Each such run raises a `BackupShardedDifferential` warning, and
-  each run's shard types are in `status.history[].shardArtifacts[].type`.
+- On a PVC, `backupType: AUTO` (the default) takes a **full** backup of a
+  sharded database on every run, so every run can seed one. Only an explicit
+  `backupType: DIFF` writes differentials there; each such run raises a
+  `BackupShardedDifferential` warning. Each run's shard types are in
+  `status.history[].shardArtifacts[].type`.
+- An all-databases backup (`spec.allDatabases`) keeps `AUTO` as usual, because
+  one `neo4j-admin` run covers every database. Its sharded families' runs after
+  the first hold differentials, and raise the same warning. To restore a
+  sharded database from a PVC, back it up with its own `Neo4jBackup`
+  (`spec.shardedDatabase`).
 - A `seedBackupRef` whose latest run holds a differential shard fails at once,
   naming the shards. It retries: once a full run of that backup lands, the
   database seeds from it.

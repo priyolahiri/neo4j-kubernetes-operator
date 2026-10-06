@@ -260,7 +260,7 @@ Two different `Neo4jBackup` CRs pointing at the same bucket+path stay isolated b
 
 | Type | Description | `backupType` value |
 |------|-------------|-------------------|
-| **Auto** (default) | FULL on the first run, DIFF on subsequent runs | `AUTO` |
+| **Auto** (default) | FULL on the first run, DIFF on subsequent runs (always FULL for a sharded database on a PVC — see [Property Sharding](../property_sharding.md#restoring-a-sharded-database)) | `AUTO` |
 | **Full** | Complete snapshot of all database files | `FULL` |
 | **Differential** | Only pages changed since the last full backup | `DIFF` |
 

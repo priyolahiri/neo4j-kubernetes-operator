@@ -1346,7 +1346,7 @@
         "name": "options.backupType",
         "type": "enum",
         "isNullable": true,
-        "note": "FULL;DIFF;AUTO, default AUTO."
+        "note": "FULL;DIFF;AUTO, default AUTO. AUTO is FULL then DIFF, except a shardedDatabase-scoped backup on a PVC, where every run is FULL."
       },
       {
         "id": "f-neo4jbackup-options-compress",

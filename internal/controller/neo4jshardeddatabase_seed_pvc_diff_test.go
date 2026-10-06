@@ -148,18 +148,24 @@ func TestWarnShardedPVCDifferential(t *testing.T) {
 	pvc := seedTestPVCBackup()
 	cloud := seedTestPVCBackup()
 	cloud.Spec.Storage = neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b"}
+	allDBs := seedTestPVCBackup()
+	allDBs.Spec.ShardedDatabase = ""
+	allDBs.Spec.AllDatabases = true
 
 	cases := []struct {
 		name   string
 		backup *neo4jv1beta1.Neo4jBackup
 		run    neo4jv1beta1.BackupRun
 		want   string
+		fix    string
 	}{
-		{"a differential shard on a PVC", pvc, diffRun, "run sbackup-backup-cron-1 wrote differential backups of sdata-g000 to a PVC"},
-		{"an all-databases run's family", pvc, familyRun, "differential backups of sdata-g000"},
-		{"cloud storage seeds differentials", cloud, diffRun, ""},
-		{"every shard full", pvc, fullRun, ""},
-		{"a failed run", pvc, failedRun, ""},
+		{"a differential shard on a PVC", pvc, diffRun, "run sbackup-backup-cron-1 wrote differential backups of sdata-g000 to a PVC",
+			"Remove options.backupType: DIFF"},
+		{"an all-databases run's family", allDBs, familyRun, "differential backups of sdata-g000",
+			"back the sharded database up with its own Neo4jBackup"},
+		{"cloud storage seeds differentials", cloud, diffRun, "", ""},
+		{"every shard full", pvc, fullRun, "", ""},
+		{"a failed run", pvc, failedRun, "", ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -174,7 +180,7 @@ func TestWarnShardedPVCDifferential(t *testing.T) {
 			ev := <-rec.Events
 			assert.True(t, strings.HasPrefix(ev, "Warning "+EventReasonBackupShardedDifferential), ev)
 			assert.Contains(t, ev, tc.want)
-			assert.Contains(t, ev, "options.backupType: FULL")
+			assert.Contains(t, ev, tc.fix)
 		})
 	}
 }
@@ -241,4 +247,52 @@ func TestEnsureClusterSeedConfig(t *testing.T) {
 		_, wait := r.ensureClusterSeedConfig(context.Background(), sdb, cluster, minio)
 		assert.False(t, wait)
 	})
+}
+
+// AUTO, the default, would make every sharded PVC run after the first a
+// differential no sharded database can be seeded from, so on a PVC it takes
+// full backups of a sharded database. Only that case changes: an explicit
+// DIFF is honoured, cloud storage seeds differentials, and an all-databases
+// backup's one neo4j-admin run covers every database.
+func TestEffectiveBackupType(t *testing.T) {
+	with := func(mutate func(*neo4jv1beta1.Neo4jBackup)) *neo4jv1beta1.Neo4jBackup {
+		b := seedTestPVCBackup()
+		mutate(b)
+		return b
+	}
+	opts := func(t string) *neo4jv1beta1.BackupOptions { return &neo4jv1beta1.BackupOptions{BackupType: t} }
+	cases := []struct {
+		name   string
+		backup *neo4jv1beta1.Neo4jBackup
+		want   string
+	}{
+		{"sharded on a PVC, AUTO", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = opts("AUTO") }), "FULL"},
+		{"sharded on a PVC, no options", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = nil }), "FULL"},
+		{"sharded on a PVC, type unset", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = opts("") }), "FULL"},
+		{"sharded on a PVC, explicit DIFF", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = opts("DIFF") }), "DIFF"},
+		{"sharded in cloud storage, AUTO", with(func(b *neo4jv1beta1.Neo4jBackup) {
+			b.Spec.Options = opts("AUTO")
+			b.Spec.Storage = neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b"}
+		}), "AUTO"},
+		{"one database on a PVC, AUTO", with(func(b *neo4jv1beta1.Neo4jBackup) {
+			b.Spec.Options = opts("AUTO")
+			b.Spec.ShardedDatabase = ""
+			b.Spec.Database = "neo4j"
+		}), "AUTO"},
+		{"all databases on a PVC, AUTO", with(func(b *neo4jv1beta1.Neo4jBackup) {
+			b.Spec.Options = opts("AUTO")
+			b.Spec.ShardedDatabase = ""
+			b.Spec.AllDatabases = true
+		}), "AUTO"},
+		{"one database, no options", with(func(b *neo4jv1beta1.Neo4jBackup) {
+			b.Spec.Options = nil
+			b.Spec.ShardedDatabase = ""
+			b.Spec.Database = "neo4j"
+		}), ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, effectiveBackupType(tc.backup))
+		})
+	}
 }
