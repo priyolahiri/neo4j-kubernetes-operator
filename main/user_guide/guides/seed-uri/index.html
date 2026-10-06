@@ -4637,7 +4637,7 @@
 <h3 id="1-system-wide-authentication-recommended">1. System-Wide Authentication (Recommended)<a class="headerlink" href="#1-system-wide-authentication-recommended" title="Anchor link to this section">&para;</a></h3>
 <p>Use cloud-native authentication mechanisms that don't require explicit credentials.</p>
 <blockquote>
-<p><strong>Where the identity must be bound:</strong> <code>CREATE DATABASE … OPTIONS { seedURI }</code> runs inside the Neo4j JVM <strong>on the server pods</strong> — not in a backup/restore Job. Under pod identity (IRSA / GKE Workload Identity / Azure Workload Identity) the IAM binding therefore goes on the <strong>server pods' ServiceAccount</strong>, not on the <code>neo4j-backup-sa</code> used by backup Jobs (<code>Neo4jBackup</code>'s <code>cloud.identity.autoCreate.annotations</code> only annotates the Job SA and has no effect on seeding).</p>
+<p><strong>Where the identity must be bound:</strong> <code>CREATE DATABASE … OPTIONS { seedURI }</code> runs inside the Neo4j JVM <strong>on the server pods</strong> — not in a backup/restore Job. Under pod identity (IRSA / GKE Workload Identity / Azure Workload Identity) the IAM binding therefore goes on the <strong>server pods' ServiceAccount</strong> (<code>spec.podServiceAccountAnnotations</code> on the cluster or standalone), not on the <code>neo4j-backup-sa</code> used by backup Jobs (<code>Neo4jBackup</code>'s <code>cloud.identity.autoCreate.annotations</code> only annotates the Job SA and has no effect on seeding).</p>
 </blockquote>
 <p><strong>AWS S3:</strong></p>
 <ul>

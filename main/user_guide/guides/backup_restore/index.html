@@ -6258,24 +6258,27 @@ the reason. See
 <tr>
 <td>Online <code>Neo4jRestore</code> (Cypher path, clusters and standalones), <code>Neo4jDatabase</code> <code>seedURI</code>, sharded <code>seedBackupRef</code> seeding</td>
 <td>the Neo4j <strong>server pods</strong> (the JVM fetches the seed itself)</td>
-<td>the <strong>cluster's server pods' ServiceAccount</strong> — the Job SA annotation does nothing here</td>
+<td>the <strong>server pods' ServiceAccount</strong> (cluster or standalone) — the Job SA annotation does nothing here</td>
 </tr>
 </tbody>
 </table>
 <p><strong>Annotating the server pods' ServiceAccount (Workload Identity):</strong> set
-<code>spec.podServiceAccountAnnotations</code> on the <code>Neo4jEnterpriseCluster</code> — the
-operator stamps them onto the ServiceAccount the Neo4j pods run under, so the
-JVM assumes the role for the seed fetch:</p>
+<code>spec.podServiceAccountAnnotations</code> on the <code>Neo4jEnterpriseCluster</code> or
+<code>Neo4jEnterpriseStandalone</code> — the operator stamps them onto the ServiceAccount
+the Neo4j pods run under (a standalone's is <code>&lt;name&gt;-neo4j</code>, created only while
+the field is set), so the JVM assumes the role for the seed fetch:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span><span class="nt">podServiceAccountAnnotations</span><span class="p">:</span>
 </span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">    </span><span class="nt">eks.amazonaws.com/role-arn</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">arn:aws:iam::123456789012:role/neo4j-seed</span><span class="w">   </span><span class="c1"># AWS IRSA</span>
 </span><span id="__span-14-4"><a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">    </span><span class="c1"># iam.gke.io/gcp-service-account: neo4j-seed@my-project.iam.gserviceaccount.com   # GKE WI</span>
 </span></code></pre></div>
-<p>Set it <strong>before</strong> the pods start (or roll the StatefulSet after adding it) so
-the identity webhook injects the credentials at pod admission. (Standalone
-pods don't support this yet, so a standalone restore from cloud storage with no
-<code>credentialsSecretRef</code> runs offline, through the restore Job, whose
-ServiceAccount carries the identity.)</p>
+<p>The identity webhook injects the credentials at pod admission, so the pods must
+start after the annotation is there. On a cluster, set it <strong>before</strong> the pods
+start (or roll the StatefulSet after adding it). A standalone restarts its pod
+whenever the field is set, changed or removed, and an online restore waits for
+that restart. A standalone without it restores from cloud storage with no
+<code>credentialsSecretRef</code> offline, through the restore Job, whose ServiceAccount
+carries the identity.</p>
 <p>With <strong>static credentials</strong> the equivalent split applies: Job paths read the Secret referenced by <code>credentialsSecretRef</code>; the seedURI paths need the same Secret projected onto the server pods via the cluster/standalone CR's <code>spec.extraEnvFrom</code> (the operator checks this and emits a copy-pasteable fix, or auto-patches under the <code>neo4j.com/auto-inherit-seed-creds: "true"</code> annotation).</p>
 <hr />
 <h3 id="aws-s3-authentication">AWS S3 Authentication<a class="headerlink" href="#aws-s3-authentication" title="Anchor link to this section">&para;</a></h3>
@@ -6972,7 +6975,7 @@ operator-side rule protects you here.</p>
 <td>as above</td>
 </tr>
 <tr>
-<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time, <code>source.type: storage</code>, cloud by pod identity)</td>
+<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time, <code>source.type: storage</code>, cloud by pod identity without <code>spec.podServiceAccountAnnotations</code>)</td>
 <td>Kubernetes Job; stops the instance</td>
 <td><code>neo4j-admin database restore --from-path=&lt;latest-file-in-chain&gt;</code> followed by <code>CREATE/START DATABASE</code></td>
 </tr>
@@ -7144,8 +7147,8 @@ instance — every database is offline until it is back:</p>
 <td>the path may be a directory or part of a backup chain; only <code>neo4j-admin</code> resolves those</td>
 </tr>
 <tr>
-<td>Cloud storage with no <code>credentialsSecretRef</code> (Workload Identity, node IAM)</td>
-<td>standalone pods cannot carry a workload identity; the restore Job's ServiceAccount can</td>
+<td>Cloud storage with no <code>credentialsSecretRef</code> (Workload Identity, node IAM), on a standalone without <code>spec.podServiceAccountAnnotations</code></td>
+<td>its pod has no workload identity; the restore Job's ServiceAccount does. Set the field on the standalone to restore online instead</td>
 </tr>
 </tbody>
 </table>

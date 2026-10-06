@@ -4516,9 +4516,11 @@ first reconcile.</p>
   <code>Neo4jEnterpriseStandalone</code> no longer stops the instance: it runs
   <code>dbms.recreateDatabase</code> / <code>CREATE DATABASE … OPTIONS { seedURI }</code> against
   it, so only the restored database is unavailable, and <code>stopCluster: true</code> is
-  ignored. Point-in-time restores, <code>source.type: storage</code> and cloud storage
-  by pod identity still restore offline and need <code>stopCluster: true</code>; a
-  restore already running offline when you upgrade finishes offline. See
+  ignored. Point-in-time restores and <code>source.type: storage</code> still restore
+  offline and need <code>stopCluster: true</code>, as does cloud storage by pod identity
+  unless the standalone sets the new <code>spec.podServiceAccountAnnotations</code>
+  (below). A restore already running offline when you upgrade finishes
+  offline. See
   <a href="../guides/backup_restore/#restore-to-a-standalone-instance">Restore to a Standalone Instance</a>.</p>
 </li>
 <li>From <strong>cloud storage with static credentials</strong>, the standalone's own pods
@@ -4557,6 +4559,12 @@ first reconcile.</p>
 </ul>
 <h3 id="new-no-action-needed_2">New, no action needed<a class="headerlink" href="#new-no-action-needed_2" title="Anchor link to this section">&para;</a></h3>
 <ul>
+<li><code>Neo4jEnterpriseStandalone.spec.podServiceAccountAnnotations</code> binds a
+  standalone's pod to a cloud role (Workload Identity), as the cluster field
+  does: the operator creates a <code>&lt;name&gt;-neo4j</code> ServiceAccount carrying them and
+  runs the pod under it, so a restore from cloud storage without a credentials
+  Secret runs online. Standalones that do not set it are not restarted by the
+  upgrade. Apply the new CRDs to use it.</li>
 <li><code>Neo4jBackup</code> <code>status.history[].artifactType</code> (and <code>databaseArtifacts[].type</code>):
   <code>FULL</code> or <code>DIFF</code>, read from each run's log. <code>Neo4jRestore</code>
   <code>status.resolvedSource.artifactType</code> carries it into the restore.</li>

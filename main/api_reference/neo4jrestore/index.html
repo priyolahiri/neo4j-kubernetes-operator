@@ -5623,8 +5623,8 @@
 <td>the path may be a directory or part of a chain; only <code>neo4j-admin</code> resolves those</td>
 </tr>
 <tr>
-<td>Cloud storage with no <code>credentialsSecretRef</code></td>
-<td>a standalone's pods cannot carry a workload identity; the Job's ServiceAccount can</td>
+<td>Cloud storage with no <code>credentialsSecretRef</code>, on a standalone without <code>spec.podServiceAccountAnnotations</code></td>
+<td>its pod has no workload identity; the Job's ServiceAccount does</td>
 </tr>
 </tbody>
 </table>
