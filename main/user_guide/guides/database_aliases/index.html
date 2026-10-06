@@ -4096,7 +4096,7 @@ validation. The dated databases remain available for rollback.</p>
 resolving to <code>graph-dev</code>, <code>graph-staging</code> or <code>graph-prod</code> per cluster — without
 templating the database name into every client.</p>
 <h3 id="cross-cluster-replication-failover">Cross-cluster replication failover<a class="headerlink" href="#cross-cluster-replication-failover" title="Anchor link to this section">&para;</a></h3>
-<p>The case that motivated this CRD. A replica created as <code>foo-replica</code> keeps that
+<p>A replica created as <code>foo-replica</code> keeps that
 name through promotion, so DR clients would otherwise have to change connection
 strings mid-incident. An alias avoids that entirely:</p>
 <table>

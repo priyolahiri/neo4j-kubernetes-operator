@@ -4311,7 +4311,7 @@
 </span></code></pre></div>
 <p>To recover, set <code>spec.storage.size</code> back to the current size or larger.</p>
 <h3 id="storageclass-changes-are-not-supported">StorageClass Changes Are Not Supported<a class="headerlink" href="#storageclass-changes-are-not-supported" title="Anchor link to this section">&para;</a></h3>
-<p>Changing <code>spec.storage.className</code> after creation requires manual migration (different operation, out of scope for this feature).</p>
+<p>Changing <code>spec.storage.className</code> after creation requires manual migration.</p>
 <h3 id="filesystem-expansion-timing">Filesystem Expansion Timing<a class="headerlink" href="#filesystem-expansion-timing" title="Anchor link to this section">&para;</a></h3>
 <p>The operator patches PVC <code>.spec.resources.requests</code> but does not wait for <code>.status.capacity</code> to reflect the new size. The actual filesystem resize is handled asynchronously by the CSI driver and kubelet. For most providers this takes seconds to a few minutes.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
@@ -4334,7 +4334,7 @@
 </span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># Standalone PVCs</span>
 </span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>pvc<span class="w"> </span>-l<span class="w"> </span>neo4j.com/cluster<span class="o">=</span>my-standalone<span class="w"> </span>-l<span class="w"> </span>neo4j.com/role<span class="o">=</span>data
 </span></code></pre></div>
-<p>For clusters created before labeling was added, the operator falls back to name-based discovery (<code>data-{cluster-name}-server-{ordinal}</code>).</p>
+<p>If no PVC carries these labels, the operator falls back to name-based discovery (<code>data-{cluster-name}-server-{ordinal}</code>).</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <p>See <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/clusters/storage-expansion.yaml"><code>examples/clusters/storage-expansion.yaml</code></a> for a complete example.</p>
 

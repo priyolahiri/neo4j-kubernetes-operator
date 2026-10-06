@@ -5364,8 +5364,8 @@ SSL configuration automatically:</p>
 </tr>
 </tbody>
 </table>
-<p>Set <code>spec.tls.strictPeerValidation: false</code> to revert the cluster SSL
-policy to the legacy <code>trust_all=true</code> + <code>client_auth=NONE</code> posture.
+<p>Set <code>spec.tls.strictPeerValidation: false</code> to switch the cluster SSL
+policy to <code>trust_all=true</code> + <code>client_auth=NONE</code>.
 This is the only legitimate override path — useful when an external
 issuer doesn't populate <code>ca.crt</code> in the Secret it issues. Neo4j's own
 documentation flags <code>trust_all=true</code> as <em>"debugging only, since it
@@ -5398,7 +5398,7 @@ does not offer security."</em></p>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">native</span>
 </span></code></pre></div>
 <p>If you omit <code>authenticationProviders</code>, the operator defaults to <code>["native"]</code>.</p>
-<p>Both lists are written as given into <code>dbms.security.authentication_providers</code> and <code>dbms.security.authorization_providers</code>. The values Neo4j documents for them, on the 5.26 LTS and on CalVer alike, are <code>native</code>, <code>ldap</code>, <code>oidc-&lt;name&gt;</code>, and <code>plugin-&lt;name&gt;</code> for an auth plugin or add-on such as <a href="#kerberos-authentication">Kerberos</a>. Any other name is refused. The older names <code>oidc</code> (without a provider name), <code>kerberos</code>, <code>jwt</code>, <code>saml</code> and <code>custom</code>, which earlier operator versions accepted, still validate but raise a <code>ValidationWarning</code> event naming what to use instead.</p>
+<p>Both lists are written as given into <code>dbms.security.authentication_providers</code> and <code>dbms.security.authorization_providers</code>. The values Neo4j documents for them, on the 5.26 LTS and on CalVer alike, are <code>native</code>, <code>ldap</code>, <code>oidc-&lt;name&gt;</code>, and <code>plugin-&lt;name&gt;</code> for an auth plugin or add-on such as <a href="#kerberos-authentication">Kerberos</a>. Any other name is refused. The names <code>oidc</code> (without a provider name), <code>kerberos</code>, <code>jwt</code>, <code>saml</code> and <code>custom</code> are deprecated: they still validate but raise a <code>ValidationWarning</code> event naming what to use instead.</p>
 <h3 id="native-authentication">Native Authentication<a class="headerlink" href="#native-authentication" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jEnterpriseCluster</span>
@@ -5620,7 +5620,7 @@ does not offer security."</em></p>
 </tr>
 </tbody>
 </table>
-<p>A complete worked example for ABAC is at <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/users-roles/07-authrule-abac.yaml"><code>examples/users-roles/07-authrule-abac.yaml</code></a>; the integration test fixtures show the same pattern with a self-signed CA at <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/test/integration/neo4jauthrule_test.go"><code>test/integration/neo4jauthrule_test.go</code></a>.</p>
+<p>A complete worked example for ABAC is at <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/users-roles/07-authrule-abac.yaml"><code>examples/users-roles/07-authrule-abac.yaml</code></a>.</p>
 <h4 id="single-provider-okta">Single Provider (Okta)<a class="headerlink" href="#single-provider-okta" title="Anchor link to this section">&para;</a></h4>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">auth</span><span class="p">:</span>
@@ -5842,7 +5842,7 @@ Certificate it issues.</p>
 </span><span id="__span-15-25"><a id="__codelineno-15-25" name="__codelineno-15-25" href="#__codelineno-15-25"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">oidc-tls</span><span class="w">              </span><span class="c1"># default key "ca.crt" matches cert-manager</span>
 </span></code></pre></div>
 <h4 id="specauthtruststore-single-ca-legacy-form-deprecated"><code>spec.auth.trustStore</code> — single-CA legacy form (deprecated)<a class="headerlink" href="#specauthtruststore-single-ca-legacy-form-deprecated" title="Anchor link to this section">&para;</a></h4>
-<p>The pre-existing singular field still works for backward compatibility. The
+<p>The singular field still works. The
 operator folds it into the same truststore alongside <code>trustedCASecrets</code> at
 reconcile time. New configurations should use <code>trustedCASecrets</code>.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-16-1"><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nt">spec</span><span class="p">:</span>
@@ -5983,7 +5983,7 @@ reconcile time. New configurations should use <code>trustedCASecrets</code>.</p>
 <p>Short TTL = changes propagate faster. Long TTL = better performance. Setting to <code>"0"</code> disables caching.</p>
 <h3 id="kerberos-authentication">Kerberos Authentication<a class="headerlink" href="#kerberos-authentication" title="Anchor link to this section">&para;</a></h3>
 <p>Kerberos is <strong>not currently supported through operator-typed configuration</strong>. Neo4j implements Kerberos via the separate <a href="https://neo4j.com/docs/kerberos-add-on/current/">Neo4j Kerberos Add-On</a>, which uses its own <code>conf/kerberos.conf</code> file (not <code>neo4j.conf</code>), a Kerberos plugin JAR in <code>/plugins/</code>, and an external <code>krb5.conf</code> — a configuration shape that doesn't fit the operator's <code>spec.config</code> / typed-field model cleanly.</p>
-<p>You can in principle assemble it by hand using <code>spec.extraVolumes</code> to mount the plugin JAR + <code>kerberos.conf</code> + <code>krb5.conf</code>, plus <code>spec.auth.authenticationProviders: [plugin-Neo4j-Kerberos, native]</code>. We haven't shipped a worked example; follow <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/137">issue #137</a> for progress on a proper walkthrough.</p>
+<p>You can in principle assemble it by hand using <code>spec.extraVolumes</code> to mount the plugin JAR + <code>kerberos.conf</code> + <code>krb5.conf</code>, plus <code>spec.auth.authenticationProviders: [plugin-Neo4j-Kerberos, native]</code>. We haven't shipped a worked example.</p>
 <p>For the canonical Neo4j-side setup, see the upstream add-on documentation:
 <a href="https://neo4j.com/docs/kerberos-add-on/current/">neo4j.com/docs/kerberos-add-on/current/</a>.</p>
 <h2 id="authorization-and-rbac">Authorization and RBAC<a class="headerlink" href="#authorization-and-rbac" title="Anchor link to this section">&para;</a></h2>
@@ -6063,7 +6063,7 @@ upstream defaults (both on).</p>
 <li><strong>PII in query parameters</strong>: set <code>audit.parameterLogging: false</code> if parameter values themselves are sensitive (passwords passed as params). Query shapes remain logged.</li>
 <li><strong>High-volume successful logins</strong>: <code>audit.logSuccessfulAuthentication: false</code> keeps failed logins (the security-relevant signal) while suppressing successful ones.</li>
 <li><strong><code>spec.monitoring</code> overlap</strong>: when both set <code>db.logs.query.obfuscate_literals</code>, <code>spec.audit</code> wins (audit emits last). Direct <code>spec.config</code> overrides still win over both.</li>
-<li><strong>Not typed-exposed yet</strong>: log4j JSON format, file rotation tuning, <code>db.logs.query.transaction.enabled</code>, <code>max_parameter_length</code>, <code>obfuscate_errors</code>, HTTP/GC logs. Set these via <code>spec.config</code> directly; track <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/128">#128</a> for typed-field requests.</li>
+<li><strong>Not typed-exposed yet</strong>: log4j JSON format, file rotation tuning, <code>db.logs.query.transaction.enabled</code>, <code>max_parameter_length</code>, <code>obfuscate_errors</code>, HTTP/GC logs. Set these via <code>spec.config</code> directly.</li>
 </ul>
 <h2 id="network-security">Network Security<a class="headerlink" href="#network-security" title="Anchor link to this section">&para;</a></h2>
 <h3 id="operator-managed-network-policy-recommended">Operator-Managed Network Policy (recommended)<a class="headerlink" href="#operator-managed-network-policy-recommended" title="Anchor link to this section">&para;</a></h3>
@@ -6401,8 +6401,7 @@ your values file). Without this, any <code>Neo4jEnterpriseCluster</code> /
 <code>Neo4jEnterpriseStandalone</code> that sets <code>spec.tls.externalSecrets.enabled=true</code>
 or <code>spec.auth.externalSecrets.enabled=true</code> will fail with a clear
 RBAC-denied error when the operator tries to create the <code>ExternalSecret</code>.
-The default-off posture follows the November 2025 security review's
-recommendation to keep the operator's RBAC blast radius narrow for
+The default is off to keep the operator's RBAC blast radius narrow for
 deployments that don't actually use the integration.</p>
 </blockquote>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="c1"># SecretStore for AWS Secrets Manager</span>

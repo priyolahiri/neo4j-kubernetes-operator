@@ -4567,9 +4567,7 @@ because the controller cannot connect to a cluster that won't boot.</p>
 at config-parse time. There is no insecure-mode override. Self-hosted IDPs
 without TLS need a TLS-terminating proxy plus the proxy's CA in
 <a href="../../user_guide/security/#jvm-truststore-for-internal-cas"><code>spec.trustedCASecrets</code></a>
-so Neo4j trusts the issued certificate. The integration test in
-<a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/test/integration/neo4jauthrule_test.go"><code>test/integration/neo4jauthrule_test.go</code></a>
-shows this end-to-end with cert-manager + nginx + mock-oauth2-server.</p>
+so Neo4j trusts the issued certificate.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><a href="../../user_guide/user_role_management/">User &amp; Role Management Guide</a> — end-to-end walkthrough for <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, and <code>Neo4jAuthRule</code>.</li>

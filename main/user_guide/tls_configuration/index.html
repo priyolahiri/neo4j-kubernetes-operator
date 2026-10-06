@@ -4820,7 +4820,7 @@
 <p>The opt-out exists for installations whose external issuer (e.g. some custom <code>AWSPCAClusterIssuer</code> setups) does not populate <code>ca.crt</code> in the Secret it issues. Without <code>ca.crt</code> the trust anchor is missing and strict validation rejects every peer. The operator detects this at reconcile time and refuses to apply the strict config — <code>status.phase</code> flips to <code>Failed</code> with a message naming the issuer. Two paths forward:</p>
 <ul>
 <li><strong>Recommended</strong>: fix the issuer to include the CA in its Secret output.</li>
-<li><strong>Escape hatch</strong>: set <code>spec.tls.strictPeerValidation: false</code>. The operator reverts to <code>trust_all=true</code> + <code>client_auth=NONE</code> — the legacy posture, which Neo4j's own docs flag as <em>"debugging only, since it does not offer security."</em></li>
+<li><strong>Escape hatch</strong>: set <code>spec.tls.strictPeerValidation: false</code>. The operator uses <code>trust_all=true</code> + <code>client_auth=NONE</code>, which Neo4j's own docs flag as <em>"debugging only, since it does not offer security."</em></li>
 </ul>
 <h3 id="hands-off-the-ssl-policy-keys">Hands off the SSL policy keys<a class="headerlink" href="#hands-off-the-ssl-policy-keys" title="Anchor link to this section">&para;</a></h3>
 <blockquote>
@@ -5200,21 +5200,13 @@ connection. The fingerprint is directly comparable to
 onto a certificate that is not the one in the Secret, the operator's
 connection is refused (<code>x509: certificate signed by unknown authority</code>)
 until the Secret catches up.</p>
-<p><strong>Before operator v1.15 this configuration could not connect at all.</strong> The
-old code asked the Bolt driver to skip verification, but the driver derives
-that setting from the URI scheme and reset it, so the connection was
-verified against system roots and a privately-issued certificate failed —
-while the operator logged that verification was disabled. If you set
-<code>strictPeerValidation: false</code> on an older version and saw
-<code>x509: certificate signed by unknown authority</code> in the operator log, that is
-the bug, and pinning is the fix.</p>
 <p>Prefer an issuer that populates <code>ca.crt</code> (cert-manager's CA and
 self-signed issuers both do) over turning this off.</p>
 </div>
 <div class="admonition warning">
 <p class="admonition-title">This cannot add trust to the operator-managed <code>cluster</code> SSL policy</p>
 <p><code>spec.extraVolumes</code> is <strong>not</strong> a way to make the built-in <code>cluster</code> policy
-trust an additional CA, and earlier revisions of this page implied it was.</p>
+trust an additional CA.</p>
 <p>The <code>cluster</code> policy reads its trust anchors from <code>/ssl/trusted/</code>, which the
 operator projects from the cluster's own cert-manager Secret with exactly one
 entry (<code>ca.crt</code> → <code>trusted/ca.crt</code>). Two things block augmenting it:</p>
@@ -5235,7 +5227,7 @@ trust, so list the other cluster's CA on both. Backup-based replication needs
 no cross-cluster TLS trust at all. See
 <a href="../guides/cross_cluster_replication/">Cross-cluster replication</a>.</p>
 </div>
-<p>The legacy singular <code>spec.auth.trustStore</code> continues to work and is folded
+<p>The deprecated singular <code>spec.auth.trustStore</code> still works and is folded
 into the same JKS at reconcile time.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="c1"># cert-manager Certificate produces a Secret with ca.crt; reference it directly</span>
 </span><span id="__span-25-2"><a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="nt">trustedCASecrets</span><span class="p">:</span>

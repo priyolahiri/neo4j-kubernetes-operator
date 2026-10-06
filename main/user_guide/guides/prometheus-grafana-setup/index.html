@@ -4606,7 +4606,7 @@
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">monitoring</span><span class="p">:</span>
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
-<p>For standalone, the metrics port is added to the existing <code>my-standalone-client</code> Service — no separate metrics Service is created. (The legacy <code>my-standalone-service</code> alias still works this release but is deprecated.)</p>
+<p>For standalone, the metrics port is added to the existing <code>my-standalone-client</code> Service — no separate metrics Service is created. (The <code>my-standalone-service</code> alias also resolves but is deprecated; use <code>my-standalone-client</code>.)</p>
 <h3 id="verify-metrics-are-exposed">Verify metrics are exposed<a class="headerlink" href="#verify-metrics-are-exposed" title="Anchor link to this section">&para;</a></h3>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># Port-forward to any Neo4j pod and check the /metrics endpoint</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>kubectl<span class="w"> </span>port-forward<span class="w"> </span>pod/my-cluster-server-0<span class="w"> </span><span class="m">2004</span>:2004<span class="w"> </span><span class="p">&amp;</span>
@@ -5313,7 +5313,7 @@
 <h3 id="metrics-show-stale-data">Metrics show stale data<a class="headerlink" href="#metrics-show-stale-data" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li>The operator records metrics on every reconcile cycle (~30s default)</li>
-<li>If the cluster is not in <code>Ready</code> phase, diagnostics metrics like <code>server_health</code> are not updated</li>
+<li>Until the cluster has formed, diagnostics metrics like <code>server_health</code> are not updated (once formed, they keep updating while a server is down)</li>
 <li>Check reconcile logs: <code>kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i reconcile</code></li>
 </ul>
 <hr />

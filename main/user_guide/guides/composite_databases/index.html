@@ -4168,9 +4168,7 @@ rejected with a message saying so.</p>
 <h3 id="stored-native-credentials">Stored native credentials<a class="headerlink" href="#stored-native-credentials" title="Anchor link to this section">&para;</a></h3>
 <p>A username and password are stored on the alias. Neo4j encrypts them in the
 system database, which is why this mode needs a keystore on the deployment.
-This mode works on both the 5.26 LTS and CalVer. (Up to v1.16.0 the operator
-sent it with a <code>CYPHER 25</code> directive that 5.26 rejects, so on 5.26 it never
-got past <code>25 is not a valid option for cypher version</code>.) Neo4j requires a
+This mode works on both the 5.26 LTS and CalVer. Neo4j requires a
 secure scheme for any remote alias: <code>neo4j+s://</code>, or <code>neo4j+ssc://</code> to accept
 a self-signed certificate.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># on the deployment</span>

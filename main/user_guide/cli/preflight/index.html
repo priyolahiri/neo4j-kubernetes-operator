@@ -3903,7 +3903,7 @@
 </span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a>Shape only: no bucket, registry or endpoint was contacted.
 </span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a>1 of 1 resource(s) would fail on a precondition.
 </span></code></pre></div>
-<p>A manifest that names its own <code>metadata.namespace</code> is checked <strong>there</strong> — that is where <code>kubectl apply</code> will put it, and it decides the pod-security level and where Secrets are looked up. <code>-n</code> (or your kubeconfig's namespace) applies only to manifests that omit one. Before v1.17.0 the flag won even over a namespace written in the file, so a standalone bound for a <code>restricted</code> namespace could pass a check it would fail on apply.</p>
+<p>A manifest that names its own <code>metadata.namespace</code> is checked <strong>there</strong> — that is where <code>kubectl apply</code> will put it, and it decides the pod-security level and where Secrets are looked up. <code>-n</code> (or your kubeconfig's namespace) applies only to manifests that omit one.</p>
 <h2 id="what-it-checks">What it checks<a class="headerlink" href="#what-it-checks" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Clusters and standalones</strong></p>
 <table>
@@ -4055,7 +4055,7 @@
 </table>
 <p>The cloud is detected from a node's <code>spec.providerID</code>, which the kubelet sets — more reliable than node labels, which anyone can edit. On Kind this reports a development limitation (no load-balancer controller, so the Service stays <code>Pending</code>) rather than an exposure risk.</p>
 <p>An AWS load balancer is handed out as a <strong>hostname</strong>, not an IP. Resolving it would be reachability, so preflight reports the hostname as unchecked and gives you the <code>dig</code> command rather than implying it looked.</p>
-<p>This replaces the ritual the troubleshooting guide documents today — <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code>, in three vendor variants — which you only reach for <strong>after</strong> a backup has already failed.</p>
+<p>This replaces the ritual the troubleshooting guide documents — <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code>, in three vendor variants — which you only reach for <strong>after</strong> a backup has already failed.</p>
 <h2 id="what-it-does-not-check">What it does not check<a class="headerlink" href="#what-it-does-not-check" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Shape, not reachability.</strong> It reads Kubernetes objects: a StorageClass, a Secret's key names, a ServiceAccount's annotations, node allocatable capacity. It never contacts S3, GCS or Azure, never talks to a registry, and never runs a probe pod.</p>
 <p>So a bucket that exists but denies access still fails at run time, and credentials that are well-formed but wrong still fail at run time. The output says so on every run rather than letting a clean result imply more than it means.</p>

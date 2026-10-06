@@ -5752,7 +5752,7 @@
 <li><strong>Name Limit</strong>: <code>metadata.name</code> is at most 56 characters (generated resources append suffixes; validated)</li>
 </ul>
 <h2 id="architecture">Architecture<a class="headerlink" href="#architecture" title="Anchor link to this section">&para;</a></h2>
-<p><strong>Server-Based Architecture</strong>: <code>Neo4jEnterpriseCluster</code> uses a unified server-based architecture introduced in Neo4j 5.26.x:</p>
+<p><strong>Server-Based Architecture</strong>: <code>Neo4jEnterpriseCluster</code> uses a unified server-based architecture:</p>
 <ul>
 <li><strong>Single StatefulSet</strong>: <code>{cluster-name}-server</code> with configurable replica count</li>
 <li><strong>Server Pods</strong>: Named <code>{cluster-name}-server-0</code>, <code>{cluster-name}-server-1</code>, etc.</li>
@@ -6444,8 +6444,7 @@ cluster reaches <code>Ready</code> — see <a href="../neo4jrestore/"><code>Neo4
 <h3 id="secretkeyref-truststore">SecretKeyRef (TrustStore)<a class="headerlink" href="#secretkeyref-truststore" title="Anchor link to this section">&para;</a></h3>
 <p>Used by the legacy singular <code>spec.auth.trustStore</code> field. New configurations
 should prefer the plural <a href="#trustedcasecret"><code>TrustedCASecret</code></a> list at
-<code>spec.trustedCASecrets</code>; both fields are merged at reconcile time so
-backward compatibility is preserved.</p>
+<code>spec.trustedCASecrets</code>; both fields are merged at reconcile time.</p>
 <table>
 <thead>
 <tr>
@@ -6643,7 +6642,7 @@ not parse policy config to wire up filesystem mounts automatically.</p>
 <tr>
 <td><code>strictPeerValidation</code></td>
 <td><code>*bool</code></td>
-<td>Intra-cluster TLS posture. <strong>Default: <code>true</code></strong> (Neo4j's canonical production posture). When <code>true</code>, the operator emits <code>dbms.ssl.policy.cluster.trust_all=false</code>, <code>client_auth=REQUIRE</code> (mutual TLS), and <code>verify_hostname=true</code>, and projects the cert-manager Secret's <code>ca.crt</code> to <code>/ssl/trusted/ca.crt</code> as the trust anchor. When <code>false</code>, reverts to the legacy <code>trust_all=true</code> + <code>client_auth=NONE</code> posture — Neo4j's own docs flag this as <em>"debugging only, since it does not offer security."</em> The opt-out exists for external issuers that do not populate <code>ca.crt</code> in their Secret output. See the <a href="../../user_guide/tls_configuration/">TLS Configuration Guide</a> for details.</td>
+<td>Intra-cluster TLS posture. <strong>Default: <code>true</code></strong> (Neo4j's canonical production posture). When <code>true</code>, the operator emits <code>dbms.ssl.policy.cluster.trust_all=false</code>, <code>client_auth=REQUIRE</code> (mutual TLS), and <code>verify_hostname=true</code>, and projects the cert-manager Secret's <code>ca.crt</code> to <code>/ssl/trusted/ca.crt</code> as the trust anchor. When <code>false</code>, the operator emits <code>trust_all=true</code> + <code>client_auth=NONE</code> instead — Neo4j's own docs flag this as <em>"debugging only, since it does not offer security."</em> The opt-out exists for external issuers that do not populate <code>ca.crt</code> in their Secret output. See the <a href="../../user_guide/tls_configuration/">TLS Configuration Guide</a> for details.</td>
 </tr>
 <tr>
 <td><code>additionalClusterTrustCAs</code></td>
@@ -6746,11 +6745,9 @@ both RBAC modes, because ESO (not this operator) performs the cluster-scoped rea
 <a href="../../user_guide/operator-modes/">Operator modes</a>.</p>
 <div class="admonition note">
 <p class="admonition-title">Minimum External Secrets Operator version: v0.17.0</p>
-<p>The operator emits <code>apiVersion: external-secrets.io/v1</code>. ESO <strong>v0.17.0</strong> stopped serving
-the older <code>v1beta1</code>, and this operator previously emitted that older version — so on
-ESO ≥ 0.17 every emitted <code>ExternalSecret</code> was rejected. If you are on ESO &lt; 0.17.0,
+<p>The operator emits <code>apiVersion: external-secrets.io/v1</code>. If you are on ESO &lt; 0.17.0,
 upgrade ESO (its own <a href="https://external-secrets.io/latest/guides/v1beta1/">migration guide</a>
-covers the path) rather than pinning an older operator.</p>
+covers the path).</p>
 </div>
 <table>
 <thead>
@@ -7115,8 +7112,7 @@ downstream <code>Neo4jReplicaDatabase</code> in another Kubernetes cluster:</p>
 </span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="nn">---</span>
 </span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1"># status.crossClusterReplication.addresses on `prod`, once ready, becomes</span>
 </span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="c1"># spec.source.addresses on the downstream Neo4jReplicaDatabase — see</span>
-</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="c1"># docs/api_reference/neo4jreplicadatabase.md and</span>
-</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="c1"># docs/design/cross-cluster-replication.md §6.</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="c1"># docs/api_reference/neo4jreplicadatabase.md.</span>
 </span></code></pre></div>
 <hr />
 <h3 id="propertyshardingspec">PropertyShardingSpec<a class="headerlink" href="#propertyshardingspec" title="Anchor link to this section">&para;</a></h3>
@@ -7541,8 +7537,7 @@ last-write-wins config semantics give audit the final value. User
 <h3 id="networkpolicyspec">NetworkPolicySpec<a class="headerlink" href="#networkpolicyspec" title="Anchor link to this section">&para;</a></h3>
 <p>Controls operator emission of a Kubernetes NetworkPolicy that hardens
 ingress to the Neo4j server pods. Most importantly, closes the backup
-port (6362) to non-backup pods — Neo4j security checklist gap addressed
-in issue #128.</p>
+port (6362) to non-backup pods.</p>
 <table>
 <thead>
 <tr>
@@ -8071,7 +8066,7 @@ for details.</p>
 <tr>
 <td><code>diagnostics</code></td>
 <td><a href="#diagnosticsstatus"><code>*DiagnosticsStatus</code></a></td>
-<td>Live diagnostics collected when <code>spec.monitoring.enabled=true</code> and cluster is <code>Ready</code>.</td>
+<td>Live diagnostics, collected once the cluster has formed (also while it is degraded) unless <code>spec.monitoring.enabled: false</code>.</td>
 </tr>
 <tr>
 <td><code>crossClusterReplication</code></td>
@@ -8089,8 +8084,8 @@ for details.</p>
 <p>Service endpoints and connection information populated by the controller on
 every status update. Schema is shared between <code>Neo4jEnterpriseCluster</code> and
 <code>Neo4jEnterpriseStandalone</code>; both controllers resolve URLs against the
-<code>{name}-client</code> ClusterIP (the legacy standalone <code>{name}-service</code> name remains
-as a deprecated alias for one release).</p>
+<code>{name}-client</code> ClusterIP (on a standalone, <code>{name}-service</code> also resolves but
+is deprecated; use <code>{name}-client</code>).</p>
 <table>
 <thead>
 <tr>
@@ -8234,7 +8229,7 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Upgrade state-machine phase (schema enum <code>Pending</code>, <code>Staging</code>, <code>InProgress</code>, <code>Rolling</code>, <code>Stabilizing</code>, <code>Verifying</code>, <code>Paused</code>, <code>Completed</code>, <code>Failed</code>): <code>Staging</code> (target pod template applied, pod restarts frozen) → <code>Rolling</code> (servers restarted one at a time, highest ordinal first) → <code>Stabilizing</code> (health, consensus and replication gate) → <code>Verifying</code> (per-server version check) → <code>Completed</code>. <code>Paused</code> and <code>Failed</code> are terminal until operator/user action. <code>InProgress</code> is a legacy value from older operator versions, resumed as <code>Staging</code>; <code>Pending</code> is reserved</td>
+<td>Upgrade state-machine phase (schema enum <code>Pending</code>, <code>Staging</code>, <code>InProgress</code>, <code>Rolling</code>, <code>Stabilizing</code>, <code>Verifying</code>, <code>Paused</code>, <code>Completed</code>, <code>Failed</code>): <code>Staging</code> (target pod template applied, pod restarts frozen) → <code>Rolling</code> (servers restarted one at a time, highest ordinal first) → <code>Stabilizing</code> (health, consensus and replication gate) → <code>Verifying</code> (per-server version check) → <code>Completed</code>. <code>Paused</code> and <code>Failed</code> are terminal until operator/user action. <code>InProgress</code> is resumed as <code>Staging</code>; <code>Pending</code> is reserved</td>
 </tr>
 <tr>
 <td><code>startTime</code></td>
@@ -8249,7 +8244,7 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>phaseStartTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the current phase began; reset only when the phase changes (unlike <code>stepStartTime</code>, which also restarts on every partition advance inside <code>Rolling</code>). It is the anchor <code>neo4j_operator_upgrade_duration_seconds</code> is measured from. Absent on an upgrade that began under an older operator version</td>
+<td>When the current phase began; reset only when the phase changes (unlike <code>stepStartTime</code>, which also restarts on every partition advance inside <code>Rolling</code>). It is the anchor <code>neo4j_operator_upgrade_duration_seconds</code> is measured from</td>
 </tr>
 <tr>
 <td><code>currentPartition</code></td>
@@ -8370,7 +8365,7 @@ visible via <code>kubectl get svc</code>.</p>
 </tbody>
 </table>
 <h3 id="diagnosticsstatus">DiagnosticsStatus<a class="headerlink" href="#diagnosticsstatus" title="Anchor link to this section">&para;</a></h3>
-<p>Live diagnostics collected from <code>SHOW SERVERS</code> and <code>SHOW DATABASES</code> when <code>spec.monitoring.enabled=true</code> and the cluster is in <code>Ready</code> phase. Updated on every reconcile cycle.</p>
+<p>Live diagnostics collected from <code>SHOW SERVERS</code> and <code>SHOW DATABASES</code> once the cluster has formed, including while it is degraded with a server down. On by default; <code>spec.monitoring.enabled: false</code> turns it off. Updated on every reconcile cycle.</p>
 <table>
 <thead>
 <tr>
@@ -8685,7 +8680,7 @@ visible via <code>kubectl get svc</code>.</p>
 </span><span id="__span-11-28"><a id="__codelineno-11-28" name="__codelineno-11-28" href="#__codelineno-11-28"></a><span class="w">      </span><span class="nt">interval</span><span class="p">:</span><span class="w"> </span><span class="s">"30s"</span>
 </span></code></pre></div>
 <h3 id="create-scheduled-backup-separate-resource">Create Scheduled Backup (Separate Resource)<a class="headerlink" href="#create-scheduled-backup-separate-resource" title="Anchor link to this section">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Note: Backups are now managed via Neo4jBackup CRD</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Backups are managed via the Neo4jBackup CRD</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jBackup</span>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -8971,18 +8966,15 @@ visible via <code>kubectl get svc</code>.</p>
 </span><span id="__span-19-6"><a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>pod<span class="w"> </span>my-cluster-server-0
 </span><span id="__span-19-7"><a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a>
 </span><span id="__span-19-8"><a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="c1"># Check operator logs</span>
-</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator<span class="w"> </span>deployment/neo4j-operator-controller-manager
+</span><span id="__span-19-9"><a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager
 </span><span id="__span-19-10"><a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a>
 </span><span id="__span-19-11"><a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="c1"># Verify split-brain detection</span>
 </span><span id="__span-19-12"><a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>SplitBrainDetected
 </span></code></pre></div>
 <h3 id="resource-conflicts">Resource Conflicts<a class="headerlink" href="#resource-conflicts" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Check resource version conflicts</span>
-</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span><span class="nv">reason</span><span class="o">=</span>UpdateConflict
-</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
-</span><span id="__span-20-4"><a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="c1"># Force reconciliation with a no-op annotation change</span>
-</span><span id="__span-20-5"><a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a>kubectl<span class="w"> </span>annotate<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-20-6"><a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="w">  </span>troubleshooting.neo4j.com/reconcile<span class="o">=</span><span class="s2">"</span><span class="k">$(</span>date<span class="w"> </span>+%s<span class="k">)</span><span class="s2">"</span><span class="w"> </span>--overwrite
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-20-1"><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="c1"># Force reconciliation with a no-op annotation change</span>
+</span><span id="__span-20-2"><a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>kubectl<span class="w"> </span>annotate<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-20-3"><a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="w">  </span>troubleshooting.neo4j.com/reconcile<span class="o">=</span><span class="s2">"</span><span class="k">$(</span>date<span class="w"> </span>+%s<span class="k">)</span><span class="s2">"</span><span class="w"> </span>--overwrite
 </span></code></pre></div>
 <p>For more information:</p>
 <ul>

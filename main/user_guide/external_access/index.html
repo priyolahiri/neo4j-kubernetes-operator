@@ -4496,24 +4496,20 @@ and standalone.</p>
 </table>
 <p>Notes:</p>
 <ul>
-<li><strong>The client-facing Service is <code>{name}-client</code> for both kinds.</strong> Standalone
-  deployments previously used <code>{name}-service</code>; that name still resolves as a
-  deprecated ClusterIP-only alias (annotated <code>neo4j.com/deprecated-alias-of</code>;
-  still created as of v1.17.0) and will be removed in a future release — update any saved
+<li><strong>The client-facing Service is <code>{name}-client</code> for both kinds.</strong> On a
+  standalone, <code>{name}-service</code> also resolves, as a
+  deprecated ClusterIP-only alias (annotated <code>neo4j.com/deprecated-alias-of</code>)
+  that will be removed in a future release — update any saved
   connection strings, NetworkPolicies, and dashboards to <code>{name}-client</code> now.
   A pod's stable address is always
   <code>{name}-0.{name}-headless.&lt;namespace&gt;.svc.cluster.local</code>.</li>
-<li><strong>External exposure moves to <code>{name}-client</code> on upgrade</strong>: <code>spec.service</code>
+<li><strong>External exposure is on <code>{name}-client</code></strong>: <code>spec.service</code>
   settings (<code>type: LoadBalancer</code> / <code>NodePort</code>, annotations,
-  <code>loadBalancerSourceRanges</code>) are now applied to the standalone <code>{name}-client</code>
-  Service, not the alias. A pre-existing LoadBalancer external IP therefore
-  <strong>re-provisions once</strong> when you upgrade — expect a new external IP/hostname
-  and update DNS accordingly.</li>
-<li><strong>One-time TLS pod restart</strong>: with <code>spec.tls</code> enabled, the issued certificate
-  now carries SANs for both the <code>{name}-client</code> and legacy <code>{name}-service</code>
-  names. After the certificate is re-issued on upgrade, the operator
-  automatically restarts the standalone pod once so the running server presents
-  the new SANs.</li>
+  <code>loadBalancerSourceRanges</code>) are applied to the standalone <code>{name}-client</code>
+  Service, not the alias.</li>
+<li><strong>TLS SANs</strong>: with <code>spec.tls</code> enabled, the issued certificate
+  carries SANs for both the <code>{name}-client</code> and deprecated <code>{name}-service</code>
+  names.</li>
 <li><strong>The standalone headless service exposes <code>bolt</code>/<code>http</code>/<code>backup</code> (and <code>https</code>
   under TLS)</strong> for direct per-pod addressing, mirroring the cluster headless
   service. It does <strong>not</strong> expose the clustering ports (<code>6000/7000/7688/7689</code>):

@@ -4490,7 +4490,7 @@ defaults.</p>
 <h2 id="plugin-configuration">Plugin configuration<a class="headerlink" href="#plugin-configuration" title="Anchor link to this section">&para;</a></h2>
 <p><code>spec.config</code> is a string map of plugin settings. Where each entry lands depends on the plugin:</p>
 <ul>
-<li><strong>APOC</strong> (and APOC Extended): settings are applied as <strong>environment variables</strong>, not <code>neo4j.conf</code> — Neo4j 5.26+ no longer reads APOC settings from the config file. <code>apoc.export.file.enabled: "true"</code> becomes <code>NEO4J_APOC_EXPORT_FILE_ENABLED=true</code> on the StatefulSet.</li>
+<li><strong>APOC</strong> (and APOC Extended): settings are applied as <strong>environment variables</strong>, not <code>neo4j.conf</code> — Neo4j 5.26+ does not read APOC settings from the config file. <code>apoc.export.file.enabled: "true"</code> becomes <code>NEO4J_APOC_EXPORT_FILE_ENABLED=true</code> on the StatefulSet.</li>
 <li><strong>GDS, Bloom, GenAI, and others</strong>: settings flow through Neo4j configuration — the ConfigMap for standalone targets, runtime configuration for clusters.</li>
 <li><strong>Procedure allowlisting</strong> (<code>dbms.security.procedures.unrestricted</code>, allowlists) always goes through <code>neo4j.conf</code>-level configuration, for APOC too — that's what <code>spec.security</code> drives.</li>
 </ul>

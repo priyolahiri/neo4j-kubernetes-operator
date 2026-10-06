@@ -5185,8 +5185,8 @@ alert on it the same way as the proxy condition above.</p>
 <td>downstream cluster predates replica support</td>
 </tr>
 <tr>
-<td><strong>Backup mode stuck in <code>Seeding</code>, <code>status.message</code> never changes</strong></td>
-<td>the downstream SERVERS have no bucket credentials. The operator's message stays optimistic; the real error is in the operator log — the AWS SDK's <em>"Unable to load region from any of the providers"</em>. Set <code>source.credentialsSecretRef</code> on the replica, or <code>AWS_REGION</code> / <code>AWS_ACCESS_KEY_ID</code> / <code>AWS_SECRET_ACCESS_KEY</code> (and <code>AWS_ENDPOINT_URL_S3</code> for S3-compatible stores) in the downstream cluster's <code>spec.env</code> — see the warning in step 2. Either restarts the downstream servers</td>
+<td><strong>Backup mode <code>Failed</code>, "the downstream servers cannot read s3://…: AWS_REGION is not set on …"</strong></td>
+<td>the downstream SERVERS have no bucket credentials. The operator checks for <code>AWS_REGION</code> (or <code>AWS_DEFAULT_REGION</code>) before asking Neo4j and names what is missing; under workload identity it skips that check, and a misconfigured role shows as <code>Failed</code>, "create replica database failed: …" with the server's own error in <code>status.message</code>. Set <code>source.credentialsSecretRef</code> on the replica, or <code>AWS_REGION</code> / <code>AWS_ACCESS_KEY_ID</code> / <code>AWS_SECRET_ACCESS_KEY</code> (and <code>AWS_ENDPOINT_URL_S3</code> for S3-compatible stores) in the downstream cluster's <code>spec.env</code> — see the warning in step 2. Either restarts the downstream servers</td>
 </tr>
 <tr>
 <td><code>Failed</code>, "network replication requires at least one upstream cluster endpoint"</td>

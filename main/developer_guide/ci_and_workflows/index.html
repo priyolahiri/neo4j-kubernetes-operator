@@ -3501,6 +3501,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Extended Integration Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#neo4j-version-support-validation-gates-and-the-next-lts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Neo4j version support: validation gates and the next LTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4009,6 +4026,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Extended Integration Tests">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#neo4j-version-support-validation-gates-and-the-next-lts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Neo4j version support: validation gates and the next LTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4373,6 +4407,26 @@ so there's no single shared variable):</p>
    lane).</li>
 </ol>
 <p>Bump both in the same PR — the bump is itself a tested change.</p>
+<h3 id="neo4j-version-support-validation-gates-and-the-next-lts">Neo4j version support: validation gates and the next LTS<a class="headerlink" href="#neo4j-version-support-validation-gates-and-the-next-lts" title="Anchor link to this section">&para;</a></h3>
+<p>The user-facing policy is <a href="../../user_guide/version_support/">Supported Neo4j Versions</a>.
+What enforces it:</p>
+<ul>
+<li><strong>Hard-reject</strong> (version validator): anything older than the current LTS
+  (pre-5.26 today) or a line past its Neo4j EOL.</li>
+<li><strong>Allow, don't block</strong> "newer than the validated anchor" within a supported
+  track — a brand-new CalVer must not be rejected the day it ships.</li>
+<li><strong>CI anchors:</strong> integration suites run <code>5.26-enterprise</code> + the latest CalVer.
+  Invariant: <em>exactly two</em> anchors steady-state; a transition window may run three.</li>
+</ul>
+<p><strong>When the next LTS lands</strong>, the change is small and contained — touch:</p>
+<ul>
+<li>the version validator's allowed/minimum set (<code>internal/validation/</code>),</li>
+<li>the CI matrix anchors (<code>.github/workflows/integration.yml</code>, <code>integration-tests.yml</code>),</li>
+<li>the "Supported Neo4j versions" line in <code>CLAUDE.md</code>,</li>
+<li>the matrix at the top of <a href="../../user_guide/version_support/">Supported Neo4j Versions</a>.</li>
+</ul>
+<p>At the <em>old</em> LTS's EOL, raising the floor also lets you delete its now-dead
+version gates (e.g. the SemVer-only discovery paths once 5.26 is dropped).</p>
 <h2 id="install-confidence">Install Confidence<a class="headerlink" href="#install-confidence" title="Anchor link to this section">&para;</a></h2>
 <p><strong><code>scripts/install-confidence.sh</code> — the install/upgrade/uninstall matrix on a
 throwaway Kind cluster.</strong> Run locally with <code>make install-confidence</code> (~10–15

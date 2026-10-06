@@ -4809,8 +4809,10 @@
 <p>The operator automatically creates:</p>
 <ul>
 <li><code>{cluster-name}-headless</code> — StatefulSet headless service (pod FQDNs)</li>
+<li><code>{cluster-name}-discovery</code> — legacy ClusterIP service (port 5000); not used by LIST discovery</li>
 <li><code>{cluster-name}-internals</code> — cluster-internal routing</li>
 <li><code>{cluster-name}-client</code> — external Bolt/HTTP access</li>
+<li><code>{cluster-name}-metrics</code> — Prometheus metrics (port 2004), when <code>spec.monitoring</code> is set and enabled</li>
 </ul>
 <h3 id="discovery-configuration-injected-automatically">Discovery Configuration (Injected Automatically)<a class="headerlink" href="#discovery-configuration-injected-automatically" title="Anchor link to this section">&para;</a></h3>
 <p>The operator injects version-specific discovery settings into every pod's startup script. <strong>Do not set these in <code>spec.config</code></strong> — the operator manages them.</p>
@@ -5146,7 +5148,7 @@
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Anchor link to this section">&para;</a></h3>
 <ol>
-<li><strong>Cluster Formation Issues (Rare with Current Configuration)</strong></li>
+<li><strong>Cluster Formation Issues (Rare)</strong></li>
 <li>The parallel startup strategy and topology-aligned minimum primaries configuration eliminate most formation issues</li>
 <li>Check pod logs: <code>kubectl logs {cluster-name}-server-0</code> for any startup errors</li>
 <li>
@@ -5159,9 +5161,8 @@
 <li>Verify the headless service exists: <code>kubectl get service {cluster-name}-headless</code></li>
 <li>Check endpoints include all pods: <code>kubectl describe endpoints {cluster-name}-headless</code></li>
 <li>Check that pod FQDNs resolve: <code>kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-server-0.{cluster-name}-headless.{ns}.svc.cluster.local</code></li>
-<li>Inspect the startup script for correct LIST endpoints: <code>kubectl get configmap {cluster-name}-config -o yaml | grep -A2 resolver_type</code></li>
 <li>
-<p>Verify pod has correct ServiceAccount: <code>kubectl get pod {cluster-name}-server-0 -o jsonpath='{.spec.serviceAccountName}'</code></p>
+<p>Inspect the startup script for correct LIST endpoints: <code>kubectl get configmap {cluster-name}-config -o yaml | grep -A2 resolver_type</code></p>
 </li>
 <li>
 <p><strong>Quorum Loss</strong></p>
@@ -5195,7 +5196,7 @@
 <li><strong>Remove all manual discovery configuration</strong> - the operator handles discovery automatically</li>
 <li><strong>Update from <code>causal_clustering.*</code> to <code>dbms.cluster.*</code></strong> - but discovery settings are managed by operator</li>
 <li><strong>Update port configurations</strong> for new routing service if customized</li>
-<li><strong>Remove static endpoint lists</strong> - no longer needed with Kubernetes discovery</li>
+<li><strong>Remove static endpoint lists</strong> - the operator injects its own LIST of pod FQDNs</li>
 <li><strong>Test cluster formation</strong> in staging environment first</li>
 </ol>
 <p><strong>Important</strong>: The operator automatically handles all cluster discovery. Remove any manual discovery configuration from your cluster specifications.</p>

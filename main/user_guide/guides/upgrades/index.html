@@ -3942,7 +3942,7 @@
 </span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>app.kubernetes.io/name<span class="o">=</span>neo4j-operator<span class="w"> </span>-f<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>upgrade
 </span></code></pre></div>
 <h3 id="upgrade-phases-and-resumability">Upgrade phases and resumability<a class="headerlink" href="#upgrade-phases-and-resumability" title="Anchor link to this section">&para;</a></h3>
-<p>The upgrade runs as a requeue-driven state machine whose state is persisted in
+<p>The upgrade runs as a state machine whose state is persisted in
 <code>status.upgradeStatus</code>, so you can follow it with <code>kubectl</code> and it survives
 operator restarts:</p>
 <table>
@@ -3981,9 +3981,7 @@ on — counts down toward 0) and <code>stepStartTime</code> (when the current st
 each per-pod step is bounded by <code>upgradeTimeout</code>/<code>healthCheckTimeout</code>).</p>
 <p><strong>Resumability.</strong> Because the phase and partition are persisted in status, an
 operator restart (or leader change) mid-upgrade resumes exactly where it left
-off — already-rolled pods are not rolled again. Upgrades that were interrupted
-under an older operator version (<code>phase: InProgress</code>) are adopted and resumed
-automatically.</p>
+off — already-rolled pods are not rolled again.</p>
 <p><strong>Changing the target mid-upgrade.</strong> If you patch <code>spec.image.tag</code> again while
 an upgrade is running, the state machine retargets to the new image: pods not
 yet rolled go straight to the new version, and pods already rolled to the

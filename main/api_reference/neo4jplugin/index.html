@@ -5507,7 +5507,7 @@
 <tr>
 <td><code>installationTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the plugin was first recorded as installed at <code>installedVersion</code>: set on reaching <code>Ready</code>, not touched by later reconciles or by <code>Ready</code> → <code>Installing</code> → <code>Ready</code> cycles at the same version. A different <code>spec.version</code> is a new installation and restarts it. For a plugin that was already <code>Ready</code> before this field existed, it is the time the operator first saw it so</td>
+<td>When the plugin was first recorded as installed at <code>installedVersion</code>: set on reaching <code>Ready</code>, not touched by later reconciles or by <code>Ready</code> → <code>Installing</code> → <code>Ready</code> cycles at the same version. A different <code>spec.version</code> is a new installation and restarts it</td>
 </tr>
 <tr>
 <td><code>health</code></td>
@@ -5708,14 +5708,14 @@ into air-gapped clusters that need a mirrored image.</p>
 <ul>
 <li><code>spec.source.type</code> must be <code>url</code> or <code>custom</code> — the entrypoint's
   <code>official</code>/<code>community</code> types resolve via an internal manifest the
-  user can't point at a verifiable URL, so they're rejected at admission.</li>
+  user can't point at a verifiable URL, so the API server rejects them
+  at apply time (a CRD validation rule — the operator has no webhooks).</li>
 <li><code>spec.dependencies</code> are rejected on a VerifiedDownload plugin —
   mixed install paths in a single CR confuse the supply-chain story.
   Create each dependency as its own <code>Neo4jPlugin</code> CR with its own
   <code>source.url</code> + <code>checksum</code>.</li>
 <li>Every pod restart re-runs the init container, which re-downloads the
-  JAR. For large JARs (GDS ≈ 30 MB) this is bandwidth-wasteful; a
-  caching PVC is a planned follow-up.</li>
+  JAR. For large JARs (GDS ≈ 30 MB) this is bandwidth-wasteful.</li>
 </ul>
 <h3 id="duplicate-cr-protection-all-install-modes">Duplicate-CR protection (all install modes)<a class="headerlink" href="#duplicate-cr-protection-all-install-modes" title="Anchor link to this section">&para;</a></h3>
 <p>Two <code>Neo4jPlugin</code> CRs in the same namespace that target the <strong>same
@@ -5805,27 +5805,26 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a>
 </span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a><span class="w">  </span><span class="c1"># GDS-specific configuration. Mount the license file at /licenses/gds.license</span>
 </span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a><span class="w">  </span><span class="c1"># via the cluster/standalone spec.extraVolumes + spec.extraVolumeMounts</span>
-</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">  </span><span class="c1"># (e.g. from a Secret named gds-license-secret) — Neo4jPlugin no longer has a</span>
-</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="w">  </span><span class="c1"># typed license block.</span>
-</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="w">    </span><span class="s">"gds.enterprise.license_file"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"/licenses/gds.license"</span>
-</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="w">    </span><span class="s">"gds.procedure.allowlist"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"gds.*"</span>
-</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a><span class="w">    </span><span class="s">"gds.graph.store.max_size"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"2GB"</span>
-</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a>
-</span><span id="__span-6-34"><a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a><span class="w">  </span><span class="c1"># Security configuration</span>
-</span><span id="__span-6-35"><a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
-</span><span id="__span-6-36"><a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
-</span><span id="__span-6-37"><a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"gds.*"</span>
-</span><span id="__span-6-38"><a id="__codelineno-6-38" name="__codelineno-6-38" href="#__codelineno-6-38"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.load.*"</span><span class="w">  </span><span class="c1"># APOC dependency procedures</span>
-</span><span id="__span-6-39"><a id="__codelineno-6-39" name="__codelineno-6-39" href="#__codelineno-6-39"></a><span class="w">    </span><span class="nt">securityPolicy</span><span class="p">:</span><span class="w"> </span><span class="s">"strict"</span><span class="w">   </span><span class="c1"># strict | moderate | permissive (validated only; no runtime effect today)</span>
-</span><span id="__span-6-40"><a id="__codelineno-6-40" name="__codelineno-6-40" href="#__codelineno-6-40"></a><span class="w">    </span><span class="nt">sandbox</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># GDS requires full access</span>
-</span><span id="__span-6-41"><a id="__codelineno-6-41" name="__codelineno-6-41" href="#__codelineno-6-41"></a>
-</span><span id="__span-6-42"><a id="__codelineno-6-42" name="__codelineno-6-42" href="#__codelineno-6-42"></a><span class="w">  </span><span class="c1"># Reserved — validated but not applied today. Size GDS memory/CPU via the</span>
-</span><span id="__span-6-43"><a id="__codelineno-6-43" name="__codelineno-6-43" href="#__codelineno-6-43"></a><span class="w">  </span><span class="c1"># standalone's own spec.resources and spec.config instead.</span>
-</span><span id="__span-6-44"><a id="__codelineno-6-44" name="__codelineno-6-44" href="#__codelineno-6-44"></a><span class="w">  </span><span class="nt">resources</span><span class="p">:</span>
-</span><span id="__span-6-45"><a id="__codelineno-6-45" name="__codelineno-6-45" href="#__codelineno-6-45"></a><span class="w">    </span><span class="nt">memoryLimit</span><span class="p">:</span><span class="w"> </span><span class="s">"2Gi"</span>
-</span><span id="__span-6-46"><a id="__codelineno-6-46" name="__codelineno-6-46" href="#__codelineno-6-46"></a><span class="w">    </span><span class="nt">cpuLimit</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span>
-</span><span id="__span-6-47"><a id="__codelineno-6-47" name="__codelineno-6-47" href="#__codelineno-6-47"></a><span class="w">    </span><span class="nt">threadPoolSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
+</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a><span class="w">  </span><span class="c1"># (e.g. from a Secret named gds-license-secret).</span>
+</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a><span class="w">    </span><span class="s">"gds.enterprise.license_file"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"/licenses/gds.license"</span>
+</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a><span class="w">    </span><span class="s">"gds.procedure.allowlist"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"gds.*"</span>
+</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="w">    </span><span class="s">"gds.graph.store.max_size"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"2GB"</span>
+</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a>
+</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a><span class="w">  </span><span class="c1"># Security configuration</span>
+</span><span id="__span-6-34"><a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+</span><span id="__span-6-35"><a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
+</span><span id="__span-6-36"><a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"gds.*"</span>
+</span><span id="__span-6-37"><a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.load.*"</span><span class="w">  </span><span class="c1"># APOC dependency procedures</span>
+</span><span id="__span-6-38"><a id="__codelineno-6-38" name="__codelineno-6-38" href="#__codelineno-6-38"></a><span class="w">    </span><span class="nt">securityPolicy</span><span class="p">:</span><span class="w"> </span><span class="s">"strict"</span><span class="w">   </span><span class="c1"># strict | moderate | permissive (validated only; no runtime effect today)</span>
+</span><span id="__span-6-39"><a id="__codelineno-6-39" name="__codelineno-6-39" href="#__codelineno-6-39"></a><span class="w">    </span><span class="nt">sandbox</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span><span class="w">  </span><span class="c1"># GDS requires full access</span>
+</span><span id="__span-6-40"><a id="__codelineno-6-40" name="__codelineno-6-40" href="#__codelineno-6-40"></a>
+</span><span id="__span-6-41"><a id="__codelineno-6-41" name="__codelineno-6-41" href="#__codelineno-6-41"></a><span class="w">  </span><span class="c1"># Reserved — validated but not applied today. Size GDS memory/CPU via the</span>
+</span><span id="__span-6-42"><a id="__codelineno-6-42" name="__codelineno-6-42" href="#__codelineno-6-42"></a><span class="w">  </span><span class="c1"># standalone's own spec.resources and spec.config instead.</span>
+</span><span id="__span-6-43"><a id="__codelineno-6-43" name="__codelineno-6-43" href="#__codelineno-6-43"></a><span class="w">  </span><span class="nt">resources</span><span class="p">:</span>
+</span><span id="__span-6-44"><a id="__codelineno-6-44" name="__codelineno-6-44" href="#__codelineno-6-44"></a><span class="w">    </span><span class="nt">memoryLimit</span><span class="p">:</span><span class="w"> </span><span class="s">"2Gi"</span>
+</span><span id="__span-6-45"><a id="__codelineno-6-45" name="__codelineno-6-45" href="#__codelineno-6-45"></a><span class="w">    </span><span class="nt">cpuLimit</span><span class="p">:</span><span class="w"> </span><span class="s">"1"</span>
+</span><span id="__span-6-46"><a id="__codelineno-6-46" name="__codelineno-6-46" href="#__codelineno-6-46"></a><span class="w">    </span><span class="nt">threadPoolSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">8</span>
 </span></code></pre></div>
 <p><strong>Result</strong>: Updates <code>my-standalone</code> StatefulSet with:</p>
 <ul>
@@ -5955,7 +5954,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </tbody>
 </table>
 <h2 id="automatic-security-configuration">Automatic Security Configuration<a class="headerlink" href="#automatic-security-configuration" title="Anchor link to this section">&para;</a></h2>
-<p><strong>New Feature</strong>: Some plugins require specific security settings to function properly. The operator automatically applies these settings even when no user configuration is provided.</p>
+<p>Some plugins require specific security settings to function properly. The operator automatically applies these settings even when no user configuration is provided.</p>
 <h3 id="plugins-with-automatic-security">Plugins with Automatic Security<a class="headerlink" href="#plugins-with-automatic-security" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Bloom Plugin</strong>:</p>
 <ul>

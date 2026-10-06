@@ -4217,7 +4217,7 @@
 <p class="admonition-title"><code>k8s_cluster</code> is not <code>cluster_name</code></p>
 <p><code>cluster_name</code> is the Neo4j cluster. <code>k8s_cluster</code> is the Kubernetes cluster it runs in. The flag is <code>--kubernetes-cluster-name</code> rather than <code>--cluster-name</code> to keep that distinction visible at the point of configuration.</p>
 </div>
-<p><strong>Backwards compatible.</strong> The flag is unset by default, which emits an empty <code>k8s_cluster</code> label. Prometheus treats an empty label value as equivalent to the label being absent, so existing queries, dashboards and alert rules keep matching unchanged whether or not you adopt this.</p>
+<p><strong>Optional.</strong> The flag is unset by default, which emits an empty <code>k8s_cluster</code> label. Prometheus treats an empty label value as equivalent to the label being absent, so queries, dashboards and alert rules that do not use <code>k8s_cluster</code> match whether or not you set it.</p>
 <h3 id="federating">Federating<a class="headerlink" href="#federating" title="Anchor link to this section">&para;</a></h3>
 <p>With a Prometheus per cluster and one aggregating Prometheus, federate the operator metrics:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">scrape_configs</span><span class="p">:</span>

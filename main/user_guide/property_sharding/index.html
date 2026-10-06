@@ -4815,19 +4815,12 @@ URIs when seeding from dumps or multiple locations.</p>
 suggest <code>db.query.default_language=CYPHER_25</code>, but it is not needed: a sharded
 database's graph shard and property shards inherit the <strong>parent database's</strong>
 language, not the server's, and the operator creates every sharded database
-with <code>SET DEFAULT LANGUAGE CYPHER 25</code> (measured on 2026.06.0, including a
-cluster with the server-wide setting removed). The server default is yours to
+with <code>SET DEFAULT LANGUAGE CYPHER 25</code>. The server default is yours to
 set with <code>spec.serverDefaultCypherLanguage</code>, as on any other cluster.</p>
 <div class="admonition note">
 <p class="admonition-title">Upgrading a sharding cluster</p>
-<p>Operator releases up to v1.16.0 set <code>db.query.default_language=CYPHER_25</code>
-server-wide whenever sharding was enabled. An existing sharding cluster
-keeps it: the operator records what the cluster already runs in
-<code>status.effectiveCypherLanguage</code> and keeps writing it, so upgrading changes
-nothing and restarts nothing. Set <code>spec.serverDefaultCypherLanguage:
-CYPHER_5</code> if you want databases created from then on to default to
-Cypher 5 — Neo4j fixes a database's language when it is created, so
-existing databases keep theirs either way.</p>
+<p>If you are upgrading a sharding cluster from v1.16.x or earlier, see the
+<a href="../migration_guide/#sharding-no-longer-sets-the-servers-cypher-language">Upgrade Guide</a>.</p>
 </div>
 <h4 id="optional-performance-tuning">Optional Performance Tuning<a class="headerlink" href="#optional-performance-tuning" title="Anchor link to this section">&para;</a></h4>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">config</span><span class="p">:</span>
@@ -5085,17 +5078,16 @@ with <code>spec.instanceRef</code> (the cluster) + <code>spec.shardedDatabase</c
 resolves the logical database name (<code>spec.name</code>, e.g. <code>products</code>) from that resource.
 A single backup captures every shard consistently in one <code>neo4j-admin database backup</code>
 invocation via a <code>{logical-name}*</code> glob — you do <strong>not</strong> list the individual shard
-databases (<code>products-g000</code>, <code>products-p000</code>, …). (The pre-v1.14 <code>spec.target.kind:
-ShardedDatabase</code> form was removed in v1.14 — use <code>instanceRef</code> + <code>shardedDatabase</code>.)</p>
+databases (<code>products-g000</code>, <code>products-p000</code>, …).</p>
 <blockquote>
-<p>ℹ️ An <strong>all-databases</strong> backup (<code>spec.allDatabases</code>) now <strong>catalogues</strong> each sharded
+<p>ℹ️ An <strong>all-databases</strong> backup (<code>spec.allDatabases</code>) <strong>catalogues</strong> each sharded
 family's per-shard artifacts in <code>status.history[].shardedFamilies</code> (family names also
 in <code>shardedDatabasesExcluded</code>, with a warning event) — so one all-databases backup
 <em>is</em> a restorable source for sharded databases too. The all-databases <em>restore loop</em>
-still recreates standard databases only; recover each sharded family by re-applying
+recreates standard databases only; recover each sharded family by re-applying
 its <code>Neo4jShardedDatabase</code> with <code>spec.seedBackupRef</code> pointing at that same backup
 (add <code>spec.seedSourceDatabase</code> to restore under a different name) — not <code>Neo4jRestore</code>.
-A dedicated <code>shardedDatabase</code>-scoped <code>Neo4jBackup</code> per family is still available if you
+A dedicated <code>shardedDatabase</code>-scoped <code>Neo4jBackup</code> per family is also available if you
 prefer per-family lifecycles.</p>
 </blockquote>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-25-1"><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>

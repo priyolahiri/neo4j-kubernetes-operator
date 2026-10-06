@@ -3831,8 +3831,7 @@ ArgoCD shows as Progressing. See
 <a href="../api_reference/neo4jenterprisecluster/#server-availability">Server availability</a>.</p>
 <p>Health checks are configured for <strong>all 27 CRDs</strong> in the <code>neo4j.neo4j.com</code>
 group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
-replication) and all 12 Aura CRDs. <code>make check-crd-catalog</code> fails the build if a
-CRD is added without one.</p>
+replication) and all 12 Aura CRDs.</p>
 <p><strong>Self-managed CRDs</strong> key off <code>status.phase</code>, per the table above.</p>
 <p><strong>Aura CRDs</strong> key off the <code>Ready</code> <strong>condition</strong> instead. Their <code>status.phase</code>
 largely mirrors Aura's <em>own</em> API status (<code>AuraInstance</code> copies the live instance

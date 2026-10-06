@@ -666,17 +666,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#for-maintainers" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        For maintainers
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#faq" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3979,17 +3968,6 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#for-maintainers" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        For maintainers
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
   <a href="#faq" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4050,20 +4028,29 @@ the database it manages</strong>, so you can plan upgrades on your own schedule.
 <td>the <strong>operator-validated CalVer anchor</strong> (named in each operator release, e.g. <code>2026.08</code>)</td>
 <td>Newest capabilities, validated by the operator's CI.</td>
 </tr>
+<tr>
+<td><strong>Evaluating / dev / test</strong></td>
+<td>either</td>
+<td>CalVer for newest features, LTS for stability.</td>
+</tr>
 </tbody>
 </table>
 <div class="admonition note">
-<p class="admonition-title">One feature needs more than the anchor</p>
-<p><strong>Cross-cluster replication requires Neo4j 2026.08+ on the DOWNSTREAM
-cluster</strong> — the version that introduced <code>CREATE REPLICA DATABASE</code>. It is the
-only capability with a floor above the validated anchor, so a deployment
-sitting on the anchor cannot host a replica: the <code>Neo4jReplicaDatabase</code> CR
-fails with <code>ReplicaVersionTooOld</code>, naming both the requirement and the
-version it found. The upstream has no such floor (2025.01+ is enough) and
-must not be newer than the downstream. See
-<a href="../guides/cross_cluster_replication/">Cross-Cluster Replication</a>.</p>
+<p class="admonition-title">Features with their own version floor</p>
+<ul>
+<li><strong>Cross-cluster replication</strong> needs Neo4j 2026.08+ on the <strong>downstream</strong>
+  cluster — the version that introduced <code>CREATE REPLICA DATABASE</code>. The
+  validated anchor meets it; the 5.26 LTS does not. On an older image the
+  <code>Neo4jReplicaDatabase</code> CR fails with <code>ReplicaVersionTooOld</code>, naming both
+  the requirement and the version it found. The upstream has no such floor
+  (2025.01+ is enough) and must not be newer than the downstream. See
+  <a href="../guides/cross_cluster_replication/">Cross-Cluster Replication</a>.</li>
+<li><strong>Split backup archives</strong> (<code>Neo4jBackup</code> <code>spec.options.splitArchivePartSize</code>)
+  need Neo4j 2026.09+, newer than the current anchor. On an older target the
+  backup is refused with a message naming the field and the image. See
+  <a href="../guides/backup_restore/#split-backup-archives">Split backup archives</a>.</li>
+</ul>
 </div>
-<p>| <strong>Evaluating / dev / test</strong> | either | CalVer for newest features, LTS for stability. |</p>
 <p>Enterprise Edition images only — Community is not supported. Versions older than
 5.26 (4.x, 5.0–5.25) are not supported.</p>
 <h2 id="support-lifecycle-what-you-can-plan-around">Support lifecycle — what you can plan around<a class="headerlink" href="#support-lifecycle-what-you-can-plan-around" title="Anchor link to this section">&para;</a></h2>
@@ -4219,7 +4206,7 @@ release-workflow gates:</p>
 <tr>
 <td>Install-confidence gate</td>
 <td>Five legs on a fresh cluster: Helm install in cluster <strong>and</strong> namespace-scoped RBAC modes (with a live smoke deployment), Helm upgrade <strong>from the previous published release</strong> including the mandatory CRD refresh, documented-order uninstall with live resources, and the kubectl server-side-apply path</td>
-<td>Inside the release pipeline — <code>build-and-push</code> is blocked until it passes (<strong>blocking</strong>)</td>
+<td>Inside the release pipeline — release images are not built or pushed until it passes (<strong>blocking</strong>)</td>
 </tr>
 <tr>
 <td>Signed supply chain</td>
@@ -4245,25 +4232,6 @@ release-workflow gates:</p>
 <li><strong>NetworkPolicy</strong>: enforced policies require a CNI that implements them
   (e.g. Calico, Cilium); Flannel ignores NetworkPolicies silently.</li>
 </ul>
-<h2 id="for-maintainers">For maintainers<a class="headerlink" href="#for-maintainers" title="Anchor link to this section">&para;</a></h2>
-<p><strong>Validation gates in code:</strong></p>
-<ul>
-<li><strong>Hard-reject</strong> (version validator): anything older than the current LTS
-  (pre-5.26 today) or a line past its Neo4j EOL.</li>
-<li><strong>Allow, don't block</strong> "newer than the validated anchor" within a supported
-  track — a brand-new CalVer must not be rejected the day it ships.</li>
-<li><strong>CI anchors:</strong> integration suites run <code>5.26-enterprise</code> + the latest CalVer.
-  Invariant: <em>exactly two</em> anchors steady-state; a transition window may run three.</li>
-</ul>
-<p><strong>When the next LTS lands</strong>, the change is small and contained — touch:</p>
-<ul>
-<li>the version validator's allowed/minimum set (<code>internal/validation/</code>),</li>
-<li>the CI matrix anchors (<code>.github/workflows/integration.yml</code>, <code>integration-tests.yml</code>),</li>
-<li>the "Supported Neo4j versions" line in <code>CLAUDE.md</code>,</li>
-<li>the matrix at the top of this page.</li>
-</ul>
-<p>At the <em>old</em> LTS's EOL, raising the floor also lets you delete its now-dead
-version gates (e.g. the SemVer-only discovery paths once 5.26 is dropped).</p>
 <h2 id="faq">FAQ<a class="headerlink" href="#faq" title="Anchor link to this section">&para;</a></h2>
 <p><strong>I'm on 5.26 and a new LTS just shipped — will the next operator drop me?</strong>
 No. 5.26 stays supported until Neo4j's own EOL for the 5.26 line (~mid 2028),

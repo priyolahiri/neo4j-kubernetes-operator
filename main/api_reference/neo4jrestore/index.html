@@ -3209,34 +3209,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Version-Specific Notes">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#neo4j-526x" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4j 5.26.x
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#neo4j-2025x-calver" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4j 2025.x (CalVer)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -4724,34 +4696,6 @@
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Version-Specific Notes">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#neo4j-526x" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4j 5.26.x
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#neo4j-2025x-calver" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4j 2025.x (CalVer)
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
 </li>
       
         <li class="md-nav__item">
@@ -4900,9 +4844,6 @@
 </tr>
 </tbody>
 </table>
-<blockquote>
-<p>The pre-v1.13 top-level <code>clusterRef</code>, <code>databaseName</code>, and <code>force</code> fields were deprecated in v1.13 and <strong>removed in v1.14</strong>. Use <code>instanceRef</code>, <code>database</code>, and <code>options.replaceExisting</code> respectively.</p>
-</blockquote>
 <p><strong>Target compatibility</strong>: <code>instanceRef</code> can reference either:</p>
 <ul>
 <li><code>Neo4jEnterpriseCluster</code> — for HA cluster restore operations</li>
@@ -5107,7 +5048,7 @@
 <td><code>replaceExisting</code></td>
 <td><code>bool</code></td>
 <td>❌</td>
-<td>Confirm restoring <strong>over an existing database</strong> (default: <code>false</code>). Required before the operator overwrites existing contents on <strong>either</strong> target: cluster restores issue the destructive <code>dbms.recreateDatabase</code>; standalone restores pass <code>--overwrite-destination</code> to <code>neo4j-admin</code>.</td>
+<td>Confirm restoring <strong>over an existing database</strong> (default: <code>false</code>). Required before the operator overwrites existing contents on <strong>either</strong> target: online restores issue the destructive <code>dbms.recreateDatabase</code>; offline standalone restores pass <code>--overwrite-destination</code> to <code>neo4j-admin</code>.</td>
 </tr>
 <tr>
 <td><code>additionalArgs</code></td>
@@ -5131,7 +5072,7 @@
 <td><code>resources</code></td>
 <td><code>corev1.ResourceRequirements</code></td>
 <td>❌</td>
-<td>CPU/memory requests + limits on the restore Job's container. When unset, the operator applies a Burstable default (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory). <strong>Standalone restores only</strong> — cluster targets use the Cypher path (no Job) and ignore this field.</td>
+<td>CPU/memory requests + limits on the restore Job's container. When unset, the operator applies a Burstable default (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory). <strong>Offline standalone restores only</strong> — online restores (every cluster restore, and most standalone ones) use Cypher, run no Job, and ignore this field.</td>
 </tr>
 <tr>
 <td><code>preRestore</code></td>
@@ -5195,7 +5136,7 @@
 <td><code>cypherStatements</code></td>
 <td><code>[]string</code></td>
 <td>❌</td>
-<td>Cypher statements the operator executes over Bolt against the standalone instance (pre-restore: before the instance is stopped; post-restore: after the database is registered/started)</td>
+<td>Cypher statements the operator executes over Bolt against the target cluster or standalone (pre-restore: before the restore is issued — offline, before the instance is stopped; post-restore: once the restored database is online)</td>
 </tr>
 </tbody>
 </table>
@@ -5698,7 +5639,7 @@
 <p>The operator emits a <code>RestoreStarted</code> event naming the case.</p>
 <p>When <code>spec.stopCluster: true</code>:</p>
 <ol>
-<li>The operator scales the target StatefulSet down to 0 replicas (recording the original replica count so re-entries don't lose it).</li>
+<li>The operator scales the target StatefulSet down to 0 replicas (recording the original replica count).</li>
 <li>The restore Job is created with the standalone's actual data PVC (<code>neo4j-data-{name}-0</code>) mounted into the container, enabling direct offline file-level restore.</li>
 <li>After the restore Job succeeds, the StatefulSet is scaled back up. If the restore fails after the scale-down (hook failure, Job-create failure), the operator scales the instance back up rather than leaving it stranded at 0 replicas.</li>
 <li>The operator then issues <code>CREATE DATABASE</code> or <code>START DATABASE</code> as described above.</li>
@@ -5926,32 +5867,21 @@
 </span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="c1"># Check restore statistics</span>
 </span><span id="__span-10-14"><a id="__codelineno-10-14" name="__codelineno-10-14" href="#__codelineno-10-14"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jrestore<span class="w"> </span>production-pitr-restore<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.stats}'</span>
 </span><span id="__span-10-15"><a id="__codelineno-10-15" name="__codelineno-10-15" href="#__codelineno-10-15"></a>
-</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="c1"># Monitor restore Job logs (standalone targets only — cluster targets restore</span>
-</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="c1"># via Cypher and create no Job; follow the operator log instead)</span>
+</span><span id="__span-10-16"><a id="__codelineno-10-16" name="__codelineno-10-16" href="#__codelineno-10-16"></a><span class="c1"># Monitor restore Job logs (offline standalone restores only — online restores</span>
+</span><span id="__span-10-17"><a id="__codelineno-10-17" name="__codelineno-10-17" href="#__codelineno-10-17"></a><span class="c1"># create no Job; `kubectl describe neo4jrestore` shows their progress instead)</span>
 </span><span id="__span-10-18"><a id="__codelineno-10-18" name="__codelineno-10-18" href="#__codelineno-10-18"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j<span class="w"> </span>job/production-pitr-restore-restore<span class="w"> </span>--follow
 </span><span id="__span-10-19"><a id="__codelineno-10-19" name="__codelineno-10-19" href="#__codelineno-10-19"></a>
 </span><span id="__span-10-20"><a id="__codelineno-10-20" name="__codelineno-10-20" href="#__codelineno-10-20"></a><span class="c1"># Check completion time</span>
 </span><span id="__span-10-21"><a id="__codelineno-10-21" name="__codelineno-10-21" href="#__codelineno-10-21"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jrestore<span class="w"> </span>production-pitr-restore<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.completionTime}'</span>
 </span></code></pre></div>
 <h2 id="version-specific-notes">Version-Specific Notes<a class="headerlink" href="#version-specific-notes" title="Anchor link to this section">&para;</a></h2>
-<h3 id="neo4j-526x">Neo4j 5.26.x<a class="headerlink" href="#neo4j-526x" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li>Restore command: <code>neo4j-admin database restore</code></li>
-<li>Key flags: <code>--from-path</code> (source), <code>--overwrite-destination</code> (not <code>--force</code>)</li>
-<li>PITR flag: <code>--restore-until</code> in RFC3339 format</li>
-<li>Automatic database state management via <code>STOP DATABASE</code> / <code>START DATABASE</code></li>
-</ul>
-<h3 id="neo4j-2025x-calver">Neo4j 2025.x (CalVer)<a class="headerlink" href="#neo4j-2025x-calver" title="Anchor link to this section">&para;</a></h3>
-<ul>
-<li>Same restore command structure as 5.26.x</li>
-<li>Enhanced metadata restoration</li>
-<li>Additional <code>--restore-until</code> precision for PITR scenarios</li>
+<li><strong>Online restore procedure:</strong> <code>dbms.cluster.recreateDatabase</code> on 5.26.x and 2025.02–2025.03, <code>dbms.recreateDatabase</code> on 2025.04+ — the operator picks the right one from the image version.</li>
+<li><strong>Offline (<code>neo4j-admin</code>) restore:</strong> the same on every supported version — <code>neo4j-admin database restore --from-path=… [--overwrite-destination] [--restore-until=…]</code>, followed by <code>CREATE DATABASE</code> or <code>START DATABASE</code>.</li>
 </ul>
 <h2 id="version-requirements">Version Requirements<a class="headerlink" href="#version-requirements" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li><strong>Neo4j Version</strong>: 5.26.0+ (semver) or 2025.01.0+ (CalVer)</li>
-<li><strong>Kubernetes</strong>: 1.19+</li>
-<li><strong>Operator</strong>: Latest version with restore support</li>
+<li><strong>Neo4j Version</strong>: 5.26.x or CalVer 2025.x+ (see <a href="../../user_guide/version_support/">Supported Neo4j Versions</a>)</li>
 </ul>
 <h2 id="related-resources">Related Resources<a class="headerlink" href="#related-resources" title="Anchor link to this section">&para;</a></h2>
 <ul>

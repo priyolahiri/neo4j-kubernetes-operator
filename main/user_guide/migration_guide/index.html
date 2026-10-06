@@ -4471,7 +4471,7 @@ backups offline, as before. The behaviour changes below take effect on the
 first reconcile.</p>
 <h3 id="behaviour-changes_1">Behaviour changes<a class="headerlink" href="#behaviour-changes_1" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><strong>A cluster that loses a server stays <code>Ready</code></strong> (#444). It used to drop to
+<li><strong>A cluster that loses a server stays <code>Ready</code></strong>. It used to drop to
   <code>Forming</code> on any one pod restart, which paused every <code>Neo4jUser</code>,
   <code>Neo4jRole</code>, <code>Neo4jDatabase</code>, <code>Neo4jBackup</code> and the rest until the server
   came back, and left a cluster whose server never came back <code>Forming</code> for
@@ -4547,8 +4547,7 @@ first reconcile.</p>
   <code>status.resolvedSource.artifactType</code> carries it into the restore.</li>
 <li>An all-databases restore records <code>status.completionTime</code>.</li>
 <li><strong>A standalone restores into a new database name.</strong> It used to look for the
-  <em>target</em> name's files and fail; the tutorial's "restore into a new
-  database" step could not work on a standalone. Standalone restores from a
+  <em>target</em> name's files and fail. Standalone restores from a
   <code>backupRef</code> now read the run's recorded artifact, as cluster restores
   always have. New <code>Neo4jRestore.spec.source.sourceDatabase</code> picks one
   database out of an all-databases backup to restore under <code>spec.database</code>,

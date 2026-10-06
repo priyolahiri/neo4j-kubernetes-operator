@@ -4576,8 +4576,7 @@
 <li>For PVC storage, <code>--to-path</code> uses the local path within the mounted PVC.</li>
 <li>RBAC: Only a <code>neo4j-backup-sa</code> ServiceAccount is created. No Role or RoleBinding is created because the backup Job requires no Kubernetes API access.</li>
 <li>Retention: cloud storage (S3/GCS/Azure) is pruned by <strong>your bucket's lifecycle rules</strong>, not the operator. For PVC storage, the operator runs a cleanup Job <strong>only when the Neo4jBackup CR is deleted</strong> — see <a href="#retentionpolicy">RetentionPolicy</a>.</li>
-<li><strong>Scope:</strong> set <code>spec.instanceRef</code> (the deployment — a cluster <strong>or</strong> a standalone) plus exactly one scope field: <code>spec.database</code> (a single database), <code>spec.shardedDatabase</code> (the name of a <code>Neo4jShardedDatabase</code> CR), or <code>spec.allDatabases: true</code> (every user database; the <code>system</code> database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. <code>spec.allDatabases</code> produces one <code>.backup</code> artifact per database (recorded in <code>status.history[].databaseArtifacts</code>) and is restorable cluster-wide via <code>Neo4jRestore.spec.allDatabases</code> (closes <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222">#222</a>).</li>
-<li>The legacy <code>spec.target</code> block (<code>kind</code>/<code>name</code>/<code>clusterRef</code>) was deprecated in v1.13 and <strong>removed in v1.14</strong>. Use <code>spec.instanceRef</code> + a scope field instead.</li>
+<li><strong>Scope:</strong> set <code>spec.instanceRef</code> (the deployment — a cluster <strong>or</strong> a standalone) plus exactly one scope field: <code>spec.database</code> (a single database), <code>spec.shardedDatabase</code> (the name of a <code>Neo4jShardedDatabase</code> CR), or <code>spec.allDatabases: true</code> (every user database; the <code>system</code> database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. <code>spec.allDatabases</code> produces one <code>.backup</code> artifact per database (recorded in <code>status.history[].databaseArtifacts</code>) and is restorable cluster-wide via <code>Neo4jRestore.spec.allDatabases</code>.</li>
 </ul>
 <h2 id="spec">Spec<a class="headerlink" href="#spec" title="Anchor link to this section">&para;</a></h2>
 <p>The <code>Neo4jBackupSpec</code> defines the desired state of a Neo4j backup configuration.</p>
@@ -4745,7 +4744,7 @@
 </tbody>
 </table>
 <h3 id="cloudblock">CloudBlock<a class="headerlink" href="#cloudblock" title="Anchor link to this section">&para;</a></h3>
-<p>Cloud provider configuration. This type lives on <code>StorageLocation</code> as <code>storage.cloud</code> — it carries both per-storage credentials and workload-identity setup. (The top-level <code>spec.cloud</code> field was removed in v1.14; nest it under <code>storage.cloud</code> instead.)</p>
+<p>Cloud provider configuration. This type lives on <code>StorageLocation</code> as <code>storage.cloud</code> — it carries both per-storage credentials and workload-identity setup.</p>
 <table>
 <thead>
 <tr>
@@ -4959,7 +4958,7 @@
 <td><code>size</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Size for a new PVC (e.g., <code>"100Gi"</code>); omit to reference an externally provisioned PVC. Must be a valid Kubernetes quantity greater than zero — validation refuses anything else, and the controller reports phase <code>Invalid</code> (naming this field) rather than relying on that check</td>
+<td>Size for a new PVC (e.g., <code>"100Gi"</code>); omit to reference an externally provisioned PVC. Must be a valid Kubernetes quantity greater than zero — validation refuses anything else, and the controller reports phase <code>Invalid</code> (naming this field)</td>
 </tr>
 </tbody>
 </table>
@@ -4991,7 +4990,7 @@
 <td><code>deletePolicy</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td><code>"Delete"</code> (default, and the only accepted value). Expired PVC-stored artifacts are pruned by the delete-time cleanup Job; for cloud storage, retention is delegated to bucket lifecycle rules. (The <code>"Archive"</code> value was removed in v1.14.)</td>
+<td><code>"Delete"</code> (default, and the only accepted value). Expired PVC-stored artifacts are pruned by the delete-time cleanup Job; for cloud storage, retention is delegated to bucket lifecycle rules.</td>
 </tr>
 </tbody>
 </table>
@@ -5024,7 +5023,7 @@
 <td><code>compress</code></td>
 <td><code>*bool</code></td>
 <td>❌</td>
-<td>Compress the backup (default: <code>true</code>). Pointer type so an explicit <code>false</code> survives updates (a plain bool would silently snap back to the default).</td>
+<td>Compress the backup (default: <code>true</code>).</td>
 </tr>
 <tr>
 <td><code>backupType</code></td>
@@ -5060,7 +5059,7 @@
 <td><code>validate</code></td>
 <td><code>*bool</code></td>
 <td>❌</td>
-<td>When <code>true</code>, runs <code>neo4j-admin backup validate</code> against the artifacts <strong>after</strong> the backup succeeds, recording per-shard recoverability into <code>status.history[].validation</code>. Appended with <code>\|\| true</code> so validate failures don't fail the Job (the backup already succeeded). Pointer type preserves an explicit <code>true</code> or <code>false</code> across updates; nil (default) skips validate. Requires a CalVer (2025.x+) Neo4j image — on 5.26 the <code>neo4j-admin backup validate</code> subcommand does not exist, so the option has no effect and <code>validation</code> stays empty.</td>
+<td>When <code>true</code>, runs <code>neo4j-admin backup validate</code> against the artifacts <strong>after</strong> the backup succeeds, recording per-shard recoverability into <code>status.history[].validation</code>. Appended with <code>\|\| true</code> so validate failures don't fail the Job (the backup already succeeded). Unset (default) skips validate. Requires a CalVer (2025.x+) Neo4j image — on 5.26 the <code>neo4j-admin backup validate</code> subcommand does not exist, so the option has no effect and <code>validation</code> stays empty.</td>
 </tr>
 <tr>
 <td><code>parallelDownload</code></td>
@@ -5072,7 +5071,7 @@
 <td><code>remoteAddressResolution</code></td>
 <td><code>*bool</code></td>
 <td>❌</td>
-<td>Resolve remote addresses via the cluster discovery service (useful in multi-homed environments). Pointer type: when unset and the backup is <code>shardedDatabase</code>-scoped on Neo4j 2025.09+, the operator defaults this to <code>true</code> to match the canonical upstream sharded-backup invocation; otherwise unset. Set explicitly (<code>true</code> or <code>false</code>) to override in either direction.</td>
+<td>Resolve remote addresses via the cluster discovery service (useful in multi-homed environments). When unset and the backup is <code>shardedDatabase</code>-scoped on Neo4j 2025.09+, the operator defaults this to <code>true</code> to match the canonical upstream sharded-backup invocation; otherwise unset. Set explicitly (<code>true</code> or <code>false</code>) to override in either direction.</td>
 </tr>
 <tr>
 <td><code>skipRecovery</code></td>

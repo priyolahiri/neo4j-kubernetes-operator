@@ -4621,7 +4621,7 @@ and is how a user is permitted to query through the composite at all.</p>
 </span></code></pre></div>
 <p>Adopted built-in roles are never dropped on CR delete; only their privileges are reconciled.</p>
 <h3 id="password-rotation">Password rotation<a class="headerlink" href="#password-rotation" title="Anchor link to this section">&para;</a></h3>
-<p>Update the Secret. The operator detects a change in the password's SHA-256 hash (stored in <code>status.passwordSecretHash</code>) and issues <code>ALTER USER ... SET PASSWORD ...</code> automatically:</p>
+<p>Update the Secret. The operator detects that the Secret changed and issues <code>ALTER USER ... SET PASSWORD ...</code> automatically. <code>status.passwordSecretHash</code> is an opaque change token derived from the Secret's namespace, name, key and <code>resourceVersion</code> — not from the password itself:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>kubectl<span class="w"> </span>create<span class="w"> </span>secret<span class="w"> </span>generic<span class="w"> </span>analytics-reader-creds<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">password</span><span class="o">=</span><span class="s1">'NewStrongPassword!'</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--dry-run<span class="o">=</span>client<span class="w"> </span>-o<span class="w"> </span>yaml<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-
@@ -4891,7 +4891,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>PasswordSynced</code></td>
-<td>Last-applied password hash matches the Secret</td>
+<td>The password from the current version of the Secret has been applied</td>
 </tr>
 <tr>
 <td><code>PendingDependencies</code></td>
@@ -4989,7 +4989,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td>Update Secret</td>
-<td>Password hash changes → <code>ALTER USER SET PASSWORD</code></td>
+<td>Secret's <code>resourceVersion</code> changes → <code>ALTER USER SET PASSWORD</code></td>
 </tr>
 <tr>
 <td><code>kubectl delete</code></td>
@@ -5013,7 +5013,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <li>Standard <code>Role</code> + <code>RoleBinding</code> patterns apply — no <code>ClusterRole</code> required.</li>
 <li>Reuse of role definitions across clusters is achieved via Kustomize / Helm templating at the manifest layer, not by sharing a single CR.</li>
 </ul>
-<p>If you need a true multi-tenant pattern (one shared Neo4j cluster, per-team user manifests in team namespaces), open an issue — the design has a documented extension path that has been deliberately deferred until there is demand.</p>
+<p>If you need a true multi-tenant pattern (one shared Neo4j cluster, per-team user manifests in team namespaces), open an issue.</p>
 <h2 id="rbac-for-the-crds-themselves">RBAC for the CRDs themselves<a class="headerlink" href="#rbac-for-the-crds-themselves" title="Anchor link to this section">&para;</a></h2>
 <p>Grant teams permission to manage their users without granting cluster admin:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">rbac.authorization.k8s.io/v1</span>
@@ -5034,7 +5034,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <p><strong>Symptom</strong>: <code>PendingDependencies</code> condition stuck on a <code>Neo4jUser</code>.</p>
 <p>Check that the referenced custom role's <code>Neo4jRole</code> CR exists in the same namespace and points at the same <code>clusterRef</code>. Built-in role names are case-sensitive (<code>reader</code>, not <code>Reader</code>).</p>
 <p><strong>Symptom</strong>: Password updates not picked up.</p>
-<p>Confirm the Secret's <code>data.&lt;key&gt;</code> (default <code>password</code>) actually changed; <code>kubectl describe</code> the user and look for the <code>PasswordRotated</code> event. The controller hashes the bytes — re-applying an identical secret value is a no-op.</p>
+<p>Confirm the Secret's <code>data.&lt;key&gt;</code> (default <code>password</code>) actually changed; <code>kubectl describe</code> the user and look for the <code>PasswordRotated</code> event. The controller detects rotation from the Secret being written (its <code>resourceVersion</code>), not from the password value — if <code>kubectl apply</code> reports the Secret <code>unchanged</code>, nothing was written and there is nothing to rotate. Any write to the Secret, even a label edit, re-applies the password once; that is harmless.</p>
 <p><strong>Symptom</strong>: <code>validation failed: ... privilege statement must end with TO &lt;role&gt;</code>.</p>
 <p>Each entry in <code>Neo4jRole.spec.privileges</code> must end with <code>TO &lt;spec.name&gt;</code> so the operator can derive the matching <code>REVOKE</code>. The role name must match exactly (case-sensitive).</p>
 <p><strong>Symptom</strong>: <code>PrivilegesSynced</code> is <code>Unknown</code> with reason <code>UnattributedPrivileges</code>.</p>
@@ -5074,11 +5074,11 @@ Learn mode, the default, never creates them.</p>
 <p>The user/role controllers reuse the same connection helper as <code>Neo4jDatabase</code>. If <code>Neo4jDatabase</code> works against the cluster, these will too. If neither works, check the cluster's <code>spec.auth.adminSecret</code> and TLS configuration.</p>
 <p><strong>Symptom</strong>: <code>RoleSyncFailed</code> events with <code>Neo.ClientError.Cluster.NotALeader</code> on a multi-server cluster.</p>
 <p>Admin commands (<code>GRANT</code>, <code>REVOKE</code>, <code>CREATE/DROP ROLE</code>, etc.) must execute on the cluster leader. The operator uses the Neo4j routing scheme (<code>neo4j://</code>/<code>neo4j+s://</code>) so the driver auto-routes writes to the leader; if you see <code>NotALeader</code> errors anyway, the most likely cause is a stuck routing table on the operator's Bolt client (e.g. immediately after a manual leader rotation). The next reconcile (≤30s) refreshes the routing table and the operation succeeds.</p>
-<p>If the errors are persistent — not transient — check that <code>dbms.routing.getRoutingTable</code> is reachable from the operator pod (it normally is for any Enterprise 5.26+ cluster). Older operator versions used the direct <code>bolt://</code> scheme and produced this error symptom continuously on multi-server clusters; if you see persistent <code>NotALeader</code> events, ensure the operator image is up to date.</p>
+<p>If the errors are persistent — not transient — check that <code>dbms.routing.getRoutingTable</code> is reachable from the operator pod (it normally is for any Enterprise 5.26+ cluster).</p>
 <h2 id="limits-and-non-goals">Limits and non-goals<a class="headerlink" href="#limits-and-non-goals" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>Cluster admin user safety</strong>: the operator refuses to manage usernames matching reserved keywords (<code>system</code>). The bootstrap admin user (defined by <code>cluster.spec.auth.adminSecret</code>) is technically manageable, but doing so is risky — a misconfigured <code>Neo4jUser</code> could lock the operator out of its own cluster. Prefer leaving it alone.</li>
-<li><strong>Auto-generated passwords</strong>: not supported in v1; you must provide a Secret. (Tracked as a future enhancement.)</li>
+<li><strong>Auto-generated passwords</strong>: not supported; you must provide a Secret.</li>
 <li><strong>Cypher-injection of role/user names</strong>: the operator quotes all identifiers with backticks and uses parameters for password and provider IDs. Special characters in names are safe.</li>
 <li><strong>Cross-cluster role reuse via a single CR</strong>: not supported. Use Kustomize / Helm to template the same <code>Neo4jRole</code> into multiple namespaces.</li>
 </ul>

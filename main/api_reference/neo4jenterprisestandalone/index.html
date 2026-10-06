@@ -2724,10 +2724,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#plugin-management-no-embedded-plugins-field" class="md-nav__link">
+  <a href="#plugin-management" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Plugin management (no embedded plugins field)
+        Plugin management
       
     </span>
   </a>
@@ -4830,10 +4830,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#plugin-management-no-embedded-plugins-field" class="md-nav__link">
+  <a href="#plugin-management" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Plugin management (no embedded plugins field)
+        Plugin management
       
     </span>
   </a>
@@ -5753,11 +5753,10 @@ For the full type definition — including the optional <code>provision</code> b
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">autoPauseOnFailure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">       </span><span class="c1"># Block upgrade if health check fails</span>
 </span></code></pre></div>
 <p>For the full type definition see <a href="../neo4jenterprisecluster/#upgradestrategyspec"><code>UpgradeStrategySpec</code></a>.</p>
-<h4 id="plugin-management-no-embedded-plugins-field">Plugin management (no embedded <code>plugins</code> field)<a class="headerlink" href="#plugin-management-no-embedded-plugins-field" title="Anchor link to this section">&para;</a></h4>
-<p>There is <strong>no</strong> <code>spec.plugins</code> field on <code>Neo4jEnterpriseStandalone</code> — the embedded
-plugin configuration was removed. Use separate Neo4jPlugin resources for all
-plugin management:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Instead of embedded plugins, use Neo4jPlugin CRD</span>
+<h4 id="plugin-management">Plugin management<a class="headerlink" href="#plugin-management" title="Anchor link to this section">&para;</a></h4>
+<p>There is <strong>no</strong> <code>spec.plugins</code> field on <code>Neo4jEnterpriseStandalone</code>. Use
+separate Neo4jPlugin resources for all plugin management:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="c1"># Plugins are installed with the Neo4jPlugin CRD</span>
 </span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
 </span><span id="__span-12-4"><a id="__codelineno-12-4" name="__codelineno-12-4" href="#__codelineno-12-4"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -5836,7 +5835,7 @@ matching what cert-manager-issued Secrets contain). The operator runs an
 init container that copies the JDK's default <code>cacerts</code> to a writable JKS,
 imports each supplied CA with the Secret name as the keytool alias, and sets
 <code>-Djavax.net.ssl.trustStore=/truststore/truststore.jks</code> on the JVM.</p>
-<p>The legacy singular <code>spec.auth.trustStore</code> continues to work and is folded
+<p>The legacy singular <code>spec.auth.trustStore</code> is also folded
 into the same JKS at reconcile time. See the
 <a href="../neo4jenterprisecluster/#trustedcasecret">shared TrustedCASecret reference</a>
 for full details and a cert-manager example.</p>
@@ -5939,7 +5938,7 @@ changes meaning under a running deployment.</p>
 <p>Detailed conditions about the deployment state.</p>
 <h4 id="endpoints-endpointstatus"><code>endpoints</code> (EndpointStatus)<a class="headerlink" href="#endpoints-endpointstatus" title="Anchor link to this section">&para;</a></h4>
 <p>Connection endpoints for the Neo4j instance. The bolt scheme reflects the TLS configuration: <code>bolt+s://</code> when TLS is enabled, <code>bolt://</code> when disabled. <code>connectionExamples</code> is populated from <code>spec.service.type</code> and the LoadBalancer-assigned external IP (when applicable).</p>
-<p>Endpoints are resolved against the <code>{name}-client</code> Service. Connection strings saved against the legacy <code>{name}-service</code> name still resolve this release (it remains as a deprecated ClusterIP-only alias) but will stop working next release — update them to <code>{name}-client</code>.</p>
+<p>Endpoints are resolved against the <code>{name}-client</code> Service. <code>{name}-service</code> also resolves (a ClusterIP-only alias) but is deprecated; use <code>{name}-client</code>.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-22-1"><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="c1"># TLS disabled, ClusterIP</span>
 </span><span id="__span-22-2"><a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="nt">endpoints</span><span class="p">:</span>
 </span><span id="__span-22-3"><a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="w">  </span><span class="nt">bolt</span><span class="p">:</span><span class="w"> </span><span class="s">"bolt://standalone-neo4j-client.default.svc.cluster.local:7687"</span>
@@ -6032,7 +6031,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-24-7"><a id="__codelineno-24-7" name="__codelineno-24-7" href="#__codelineno-24-7"></a><span class="w">  </span><span class="nt">lastHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-20T10:30:00Z"</span>
 </span></code></pre></div>
 <h4 id="diagnostics-standalonediagnosticsstatus"><code>diagnostics</code> (StandaloneDiagnosticsStatus)<a class="headerlink" href="#diagnostics-standalonediagnosticsstatus" title="Anchor link to this section">&para;</a></h4>
-<p>Live diagnostics collected from <code>SHOW DATABASES</code>, <code>SHOW USERS</code> and <code>SHOW ROLES</code> when <code>spec.monitoring.enabled=true</code> and the standalone is in <code>Ready</code> phase. Updated on every reconcile cycle. Collection errors are stored in <code>diagnostics.collectionError</code> and never block reconciliation.</p>
+<p>Live diagnostics collected from <code>SHOW DATABASES</code>, <code>SHOW USERS</code> and <code>SHOW ROLES</code> while the standalone is in <code>Ready</code> phase. On by default; <code>spec.monitoring.enabled: false</code> turns it off. Updated on every reconcile cycle. Collection errors are stored in <code>diagnostics.collectionError</code> and never block reconciliation.</p>
 <table>
 <thead>
 <tr>
@@ -6617,7 +6616,7 @@ changes meaning under a running deployment.</p>
 <li><strong>Authentication</strong>: Always use adminSecret for secure credential management</li>
 <li><strong>TLS</strong>: Enable TLS for production deployments using cert-manager</li>
 <li><strong>Backup Strategy</strong>: Implement regular backups with appropriate retention policies</li>
-<li><strong>Plugin Management</strong>: Use Neo4jPlugin CRD instead of deprecated embedded configuration</li>
+<li><strong>Plugin Management</strong>: Use Neo4jPlugin CRD for plugin installation</li>
 <li><strong>Database Management</strong>: Use Neo4jDatabase CRD for automated database creation and schema setup</li>
 <li><strong>Monitoring</strong>: Enable query monitoring for performance insights</li>
 <li><strong>Configuration</strong>: Use Neo4j 5.26+ configuration syntax (server.<em> instead of dbms.connector.</em>)</li>

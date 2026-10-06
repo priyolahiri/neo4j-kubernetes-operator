@@ -2895,17 +2895,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#version-specific-behavior_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Version-Specific Behavior
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#reconciliation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4629,17 +4618,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#version-specific-behavior_1" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Version-Specific Behavior
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#reconciliation" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5584,31 +5562,18 @@
 <ul>
 <li>Standard <code>CREATE DATABASE</code> syntax with <code>TOPOLOGY</code> clause</li>
 <li>Seed URI support via CloudSeedProvider</li>
+<li>No point-in-time recovery for seed URIs</li>
 <li>No <code>DEFAULT LANGUAGE CYPHER</code> clause: <code>defaultCypherLanguage: "25"</code> is rejected by validation, and <code>"5"</code> is accepted but omitted from the statement (every database runs Cypher 5)</li>
+<li>Supports all topology and option features</li>
 <li>Compatible with both cluster and standalone deployments</li>
 </ul>
-<p><strong>Neo4j 2025.x</strong>:</p>
+<p><strong>Neo4j CalVer (2025.x and later)</strong>:</p>
 <ul>
-<li>Enhanced <code>CREATE DATABASE</code> with <code>DEFAULT LANGUAGE CYPHER</code> support, applied on every create path</li>
+<li>Enhanced <code>CREATE DATABASE</code> with <code>DEFAULT LANGUAGE CYPHER</code> support (<code>defaultCypherLanguage</code> <code>"5"</code> and <code>"25"</code>), applied on every create path</li>
 <li>Point-in-time recovery for seed URIs (<code>restoreUntil</code>)</li>
-<li>Advanced seed configuration options</li>
-<li>Same compatibility with cluster and standalone deployments</li>
-</ul>
-<h3 id="version-specific-behavior_1">Version-Specific Behavior<a class="headerlink" href="#version-specific-behavior_1" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Neo4j 5.26.x</strong>:</p>
-<ul>
-<li>Standard CREATE DATABASE syntax</li>
-<li>Seed URI support with CloudSeedProvider</li>
-<li>No <code>DEFAULT LANGUAGE CYPHER</code> clause (<code>defaultCypherLanguage: "25"</code> is rejected; <code>"5"</code> has no effect)</li>
-<li>No point-in-time recovery for seed URIs</li>
-<li>Supports all topology and option features</li>
-</ul>
-<p><strong>Neo4j 2025.x</strong>:</p>
-<ul>
-<li>Supports <code>defaultCypherLanguage</code> (<code>"5"</code> and <code>"25"</code>)</li>
-<li>Enhanced seed URI support with point-in-time recovery (<code>restoreUntil</code>)</li>
+<li>Advanced seed configuration options and additional database options</li>
 <li>Enhanced topology management</li>
-<li>Additional database options available</li>
+<li>Same compatibility with cluster and standalone deployments</li>
 </ul>
 <h3 id="reconciliation">Reconciliation<a class="headerlink" href="#reconciliation" title="Anchor link to this section">&para;</a></h3>
 <p>The operator creates the database if it is missing, then observes it:</p>
@@ -5640,7 +5605,7 @@
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="database-creation-fails">Database Creation Fails<a class="headerlink" href="#database-creation-fails" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Check operator logs</strong>:
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator<span class="w"> </span>deployment/neo4j-operator-controller-manager
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager
 </span></code></pre></div></p>
 <p><strong>Common Issues</strong>:</p>
 <ul>
@@ -5725,7 +5690,7 @@
 </span><span id="__span-14-7"><a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">  </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span>-d<span class="w"> </span>&lt;db-name&gt;<span class="w"> </span><span class="s2">"&lt;test-statement&gt;"</span>
 </span><span id="__span-14-8"><a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a>
 </span><span id="__span-14-9"><a id="__codelineno-14-9" name="__codelineno-14-9" href="#__codelineno-14-9"></a><span class="c1"># Check operator logs for import errors</span>
-</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"initial.*data"</span>
+</span><span id="__span-14-10"><a id="__codelineno-14-10" name="__codelineno-14-10" href="#__codelineno-14-10"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>deployment/neo4j-operator-controller-manager<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"initial.*data"</span>
 </span></code></pre></div></p>
 <p><strong>Common Issues</strong>:</p>
 <ul>

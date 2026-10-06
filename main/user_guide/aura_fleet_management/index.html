@@ -4361,7 +4361,7 @@ no copy-paste.</p>
 <p class="admonition-title">Verified against a live Aura account (2026-07-31)</p>
 <p>The whole provisioning path — deployment registration, token minting,
 rotation and cleanup — has been driven end-to-end against a real Aura
-organization. That verification found and fixed four silent bugs; see
+organization. See
 <a href="../aura_orchestration/#verification-status">Aura Orchestration → Verification status</a>.</p>
 </div>
 <p>Set <code>spec.auraFleetManagement.provision</code> instead of <code>tokenSecretRef</code> (the two are
@@ -4387,9 +4387,7 @@ mutually exclusive):</p>
    (override with <code>provision.tokenSecretName</code>). The Secret is owned by the CR, so
    it is garbage-collected with it.</li>
 <li>Registers that token over Bolt exactly as the manual flow does — reading it
-   back out of the Secret from step 2. There is no <code>tokenSecretRef</code> to point at
-   (the two are mutually exclusive), so the registration phase resolves the
-   provisioned Secret name itself.</li>
+   back out of the Secret from step 2.</li>
 </ol>
 <p>The Aura deployment ID is pinned to the CR in the
 <code>neo4j.com/external-fleet-deployment-id</code> annotation. <strong>Do not remove it</strong> — it is
@@ -4559,7 +4557,7 @@ a reconcile.</p>
 </span></code></pre></div>
 <p>A failure to <em>patch the plugin onto the StatefulSet</em> is reported separately, as <code>AuraFleetManagementPluginPatchFailed</code>.</p>
 <p><strong>Other plugins disappear after enabling Fleet Management</strong></p>
-<p>This should not happen with current operator versions (the additive merge strategy prevents it). If you observe it, verify the operator is up to date and check:</p>
+<p>This should not happen (the additive merge strategy prevents it). If you observe it, check:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="c1"># Inspect the full NEO4J_PLUGINS value</span>
 </span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>statefulset<span class="w"> </span>my-cluster-server<span class="w"> </span><span class="se">\</span>
 </span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_PLUGINS")].value}'</span>

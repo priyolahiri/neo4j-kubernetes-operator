@@ -4246,7 +4246,6 @@ cluster <em>into</em> the Aura console for monitoring. <strong>Aura Orchestratio
 opposite direction: the operator acts as a <strong>control plane</strong> that provisions
 and manages <strong>Aura-hosted</strong> instances. The two are complementary.</p>
 </div>
-<p>Design details and rationale: <code>docs/design/aura-orchestration.md</code>.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
 <ol>
 <li>An Aura account and a <strong>project</strong> (the API calls it <code>tenant</code>).</li>
@@ -4313,11 +4312,6 @@ and manages <strong>Aura-hosted</strong> instances. The two are complementary.</
 <p>Every one of these CRDs talks to a <strong>live cloud API</strong>, so what matters is not
 only whether the code compiles but whether its request shapes are what Aura
 actually accepts. The table below says exactly that, per surface.</p>
-<p>Some of these clients were first written from the published OpenAPI spec and later
-corrected once they were exercised against a real account. Unit tests alone did
-not surface those corrections, because they asserted the client matched the spec
-rather than the API. The table therefore records live verification separately from
-test coverage.</p>
 <table>
 <thead>
 <tr>
@@ -4362,7 +4356,7 @@ test coverage.</p>
 <td><code>AuraIPFilter</code></td>
 <td>v2beta1</td>
 <td>✅ 2026-08-01</td>
-<td>Request shapes corrected against the live API (create, update and delete).</td>
+<td>Create, update and delete confirmed.</td>
 </tr>
 <tr>
 <td><code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code></td>
@@ -4380,7 +4374,7 @@ test coverage.</p>
 <td><code>AuraInvite</code></td>
 <td>v2beta1</td>
 <td>✅ 2026-08-01</td>
-<td>Request body corrected against the live API; an organization role is required on every invite.</td>
+<td>An organization role is required on every invite.</td>
 </tr>
 <tr>
 <td><code>spec.auraFleetManagement</code> (on a self-managed cluster)</td>
@@ -4398,10 +4392,10 @@ KMS key (AWS KMS / GCP Cloud KMS / Azure Key Vault) with IAM grants to Aura,
 which cannot be created disposably.</p>
 <p>Its client shape comes from the <strong>published v1 OpenAPI spec</strong> and has not been
 confirmed against the API. Treat <code>AuraCustomerManagedKey</code> as <strong>unproven</strong> and
-verify it in a non-production project before relying on it. The one part that
-<em>is</em> pinned by a test is the adoption logic — the v1 CMK <strong>list</strong> endpoint
-returns only <code>id</code>/<code>name</code>/<code>tenant_id</code>, so a filter cannot be matched on
-<code>key_id</code>/<code>region</code>/<code>cloud_provider</code> from a list entry.</p>
+verify it in a non-production project before relying on it. On adoption,
+note that the v1 CMK <strong>list</strong> endpoint returns only <code>id</code>/<code>name</code>/<code>tenant_id</code>,
+so a filter cannot be matched on <code>key_id</code>/<code>region</code>/<code>cloud_provider</code> from a
+list entry.</p>
 <p>If you do exercise it, please report what you find so this table can be
 updated.</p>
 </div>
@@ -4511,8 +4505,7 @@ can only hold databases beyond its own built-in one if it was created as
 multi-database, and Aura fixes that at creation — picking a Business Critical
 or dedicated tier is <em>not</em> on its own enough (though it is necessary: only
 <code>business-critical</code> and <code>enterprise-db</code> support the flag at all). There is no way to convert an
-existing instance, so an instance created without the flag (including every
-instance created by earlier operator versions) can never host an
+existing instance, so an instance created without the flag can never host an
 <code>AuraDatabase</code>. Setting it moves the create call to the Aura <strong>v2beta1</strong> API,
 which needs an organization ID and accepts fewer fields — see
 <a href="../../api_reference/aurainstance/#multi-database-instances">Multi-database instances</a>.</p>
@@ -4644,7 +4637,7 @@ CRDs at an instance. Those CRDs are for self-managed clusters/standalone only
 <p>The CRDs in this section use the Aura API <strong>v2beta1</strong>, an unstable beta whose
 contract can change without a version bump. Some request bodies are not fully
 documented upstream and are best-effort. Validate against your account before
-relying on them in production. See <code>docs/design/aura-orchestration.md</code>.</p>
+relying on them in production.</p>
 </div>
 <h3 id="databases">Databases<a class="headerlink" href="#databases" title="Anchor link to this section">&para;</a></h3>
 <p>Model a database on an instance with <code>AuraDatabase</code>. It references the
@@ -4776,7 +4769,8 @@ reports <code>NotAMember</code> / <code>CreateNotPermitted</code> instead.</p>
 them: <code>organization-*</code> for org roles, <code>project-*</code> for project roles, and
 <code>namespace-*</code> for the project part of an <strong>invite</strong> body — Aura spells the same
 concepts differently on those two endpoints. <code>AuraInvite.spec.organizationRole</code>
-optionally grants an org role alongside a project-scoped (<code>namespace-*</code>) invite.</p>
+grants an org role alongside a project-scoped (<code>namespace-*</code>) invite, and is
+required there.</p>
 <p>Field references:
 <a href="../../api_reference/aurainvite/"><code>AuraInvite</code></a>,
 <a href="../../api_reference/auraorganizationmember/"><code>AuraOrganizationMember</code></a>,
@@ -4811,8 +4805,7 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
 <li><strong><code>multiDatabase</code> is fixed at creation.</strong> Only an instance created with
   <code>multiDatabase: true</code> can host <code>AuraDatabase</code> resources, only
   <code>business-critical</code> and <code>enterprise-db</code> support it, and Aura offers no way to
-  convert an existing instance. Instances created by operator versions before
-  this field existed are single-database for good.</li>
+  convert an existing instance.</li>
 <li><strong>Every invite carries an organization role.</strong> Aura has no project-only
   invitation, so an <code>AuraInvite</code> scoping someone to a project must also set
   <code>spec.organizationRole</code>.</li>
@@ -4844,9 +4837,11 @@ or more instances — model that with <code>instanceRefs</code>:</p>
 <p class="admonition-title">Beta / best-effort</p>
 <p>IP filtering is only exposed on the Aura API <strong>v2beta1</strong>, an unstable beta
 (breaking changes are allowed without a version bump). This CRD is
-best-effort: the client shape follows the official v2beta1 <code>IpFilter</code> schema,
-but v2beta1 may change without a version bump. The rest of Aura orchestration
-uses the stable v1 API. See <code>docs/design/aura-orchestration.md</code>.</p>
+best-effort: the client shape follows the live API, which differs from the
+published v2beta1 <code>IpFilter</code> schema in places (see the
+<a href="../../api_reference/auraipfilter/"><code>AuraIPFilter</code> reference</a>), and v2beta1
+may change without a version bump. It is not the only v2beta1 surface — see
+<a href="#verification-status">Verification status</a> for the API each CRD uses.</p>
 </div>
 <h2 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Anchor link to this section">&para;</a></h2>
 <p>The operator exports Prometheus metrics for its Aura API traffic on the standard
