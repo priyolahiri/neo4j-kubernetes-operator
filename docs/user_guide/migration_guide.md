@@ -233,8 +233,12 @@ them. `neo4j_operator_` followed by: `backup_size_bytes`,
 
 ## Upgrading from v1.18.x
 
-No CRD changes. Nothing to do before upgrading; the behaviour changes below
-take effect on the first reconcile.
+Apply the new CRDs with the operator: they add `Neo4jRestore.spec.source.sourceDatabase`,
+`Neo4jBackup.spec.options.splitArchivePartSize`, and status fields the
+operator now records (`Neo4jBackup` `status.history[].artifactType`). Without
+them those status fields are dropped on write, and a standalone restores PVC
+backups offline, as before. The behaviour changes below take effect on the
+first reconcile.
 
 ### Behaviour changes
 
@@ -276,8 +280,42 @@ take effect on the first reconcile.
   now keeps the last address it reported, and series a cluster no longer
   reports are withdrawn.
 
+- **A standalone restores online** (rule 108). A `Neo4jRestore` into a
+  `Neo4jEnterpriseStandalone` used to stop the instance and run `neo4j-admin`,
+  taking every database offline to restore one. It now runs
+  `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }` against the
+  running instance, like a cluster restore: only the restored database is
+  unavailable, and `stopCluster: true` is ignored (an event says so). A few
+  restores still run offline, and still need `stopCluster: true`:
+  point-in-time, `source.type: storage`, a PVC backup whose artifact is a
+  differential or of unrecorded type, and cloud storage by pod identity. See
+  [Restore to a Standalone Instance](guides/backup_restore.md#restore-to-a-standalone-instance).
+  - A standalone restoring from **cloud storage with static credentials** now
+    fetches the seed from its own pods, which need the credentials Secret in
+    `spec.extraEnvFrom` (and, for MinIO, the endpoint in `spec.env`) — or the
+    `neo4j.com/auto-inherit-seed-creds: "true"` annotation, which projects
+    them at the cost of one restart. Without either, the restore fails with a
+    message saying exactly that.
+  - **PVC backups taken before this upgrade** carry no recorded type, so a
+    standalone restores them offline — unless the backup's `backupType` is
+    `FULL`. Runs after the upgrade record it.
+- **Cluster restores run their hooks.** `spec.options.preRestore` and
+  `postRestore` were ignored on clusters; they now run before the restore is
+  issued and once the database is online, as on a standalone. A failing
+  post-restore hook fails the restore. Check any cluster `Neo4jRestore` that
+  carries hooks before re-running it.
+- **A cluster refuses a PVC differential.** Seeding one created the database
+  and left it offline (*"not part of a valid backup chain"*), to be dropped by
+  hand. The restore now fails first, naming the artifact. Take PVC backups
+  that clusters restore from with `backupType: FULL`, or keep them on cloud
+  storage, whose seed provider reads the whole chain.
+
 ### New, no action needed
 
+- `Neo4jBackup` `status.history[].artifactType` (and `databaseArtifacts[].type`):
+  `FULL` or `DIFF`, read from each run's log. `Neo4jRestore`
+  `status.resolvedSource.artifactType` carries it into the restore.
+- An all-databases restore records `status.completionTime`.
 - **A standalone restores into a new database name.** It used to look for the
   *target* name's files and fail; the tutorial's "restore into a new
   database" step could not work on a standalone. Standalone restores from a

@@ -58,7 +58,7 @@
   {
     "id": "proc-restore-job",
     "name": "Neo4j Restore Job",
-    "description": "Creating a Neo4jRestore CR resolves a backup source and drives either a standalone offline neo4j-admin Job, a cluster in-place Cypher recreate, or a per-database all-databases restore loop, then brings the restored database(s) back online.",
+    "description": "Creating a Neo4jRestore CR resolves a backup source and restores online — a Cypher recreate/create with a seedURI, or a per-database all-databases loop — on clusters and on standalones, falling back to an offline neo4j-admin Job only for a standalone restore that cannot be seeded online (rule 108), then brings the restored database(s) online and runs post-restore hooks.",
     "triggerKind": "api",
     "triggerRefId": "ent-neo4jrestore",
     "moduleId": "mod-backup-restore",
@@ -85,18 +85,23 @@
       },
       {
         "refKind": "function",
+        "refId": "sf-route-restore-path",
+        "note": "Decides online vs offline from the pinned source: a cluster is always online; a standalone goes offline only when its server cannot fetch the seed"
+      },
+      {
+        "refKind": "function",
         "refId": "sf-cluster-cypher-restore",
-        "note": "Cluster targets: issues dbms.recreateDatabase and polls until online"
+        "note": "Clusters and most standalone restores: runs pre-restore hooks, issues dbms.recreateDatabase or CREATE DATABASE with a seedURI, polls until online, runs post-restore hooks"
       },
       {
         "refKind": "function",
         "refId": "sf-restore-all-databases",
-        "note": "All-databases cluster restores: recreates one database per reconcile pass from the backup's per-database artifact map"
+        "note": "All-databases restores (cluster or standalone): recreates one database per reconcile pass from the backup's per-database artifact map"
       },
       {
         "refKind": "function",
         "refId": "sf-create-restore-job",
-        "note": "Standalone targets: scales the instance to 0 and runs an offline neo4j-admin restore Job"
+        "note": "Offline standalone restores only (point-in-time, storage path, PVC differential, cloud by pod identity): scales the instance to 0 and runs an offline neo4j-admin restore Job"
       },
       {
         "refKind": "event",

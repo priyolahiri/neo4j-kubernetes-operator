@@ -1,12 +1,16 @@
 # ============================================================
 # Restore from a Neo4jBackup reference.
 #
-# NOTE on hooks: spec.options.{preRestore,postRestore} hooks run ONLY when
-# instanceRef targets a Neo4jEnterpriseStandalone (the Job-based restore path).
-# Cluster targets restore via Cypher (seedURI) and never invoke hooks.
-#   - preRestore Cypher hooks run BEFORE the instance is stopped
-#     (so statements like CALL db.checkpoint() hit a live Bolt endpoint).
-#   - postRestore hooks run AFTER the restored database is registered/started.
+# Clusters and standalones both restore ONLINE: only the restored database is
+# unavailable, the instance keeps running, and stopCluster is not needed. (A
+# standalone falls back to an offline neo4j-admin Job, which needs
+# stopCluster: true, for point-in-time restores, source.type storage, PVC
+# differentials and cloud storage by pod identity — see the backup guide.)
+#
+# Hooks (spec.options.{preRestore,postRestore}) run on every target:
+#   - preRestore hooks run BEFORE the restore is issued (Cypher like
+#     CALL db.checkpoint() hits a live Bolt endpoint).
+#   - postRestore hooks run once the restored database is online.
 # ============================================================
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
@@ -17,7 +21,7 @@ metadata:
     restore-type: backup-reference
 spec:
   # Matches the CR created by examples/standalone/single-node-standalone.yaml —
-  # change to YOUR instance name. (Hooks are standalone-only.)
+  # change to YOUR instance name.
   instanceRef: standalone-neo4j
   database: neo4j
   source:
@@ -29,20 +33,15 @@ spec:
     replaceExisting: true
     preRestore:
       cypherStatements:
-        - "CALL db.checkpoint()"   # flush pending writes before the instance stops
+        - "CALL db.checkpoint()"   # flush pending writes before the restore
     postRestore:
       cypherStatements:
         - "CALL db.awaitIndexes()"
         - "CALL dbms.security.clearAuthCache()"
-  # stopCluster: true scales the standalone down for an offline restore and
-  # brings it back up afterwards. With stopCluster: false the operator REFUSES
-  # to restore while server pods are running (it never writes into a live PVC).
-  stopCluster: true
   timeout: "1h"
 
 ---
-# More complex restore with job hooks (standalone target — job hooks, like all
-# hooks, only run on the standalone Job-based restore path).
+# More complex restore with a post-restore validation Job hook.
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jRestore
 metadata:
@@ -82,5 +81,4 @@ spec:
                     name: neo4j-admin-secret
                     key: password
         timeout: "10m"
-  stopCluster: true
   timeout: "2h"

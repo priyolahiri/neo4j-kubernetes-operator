@@ -397,7 +397,7 @@
     "name": "Ensure PVC Seed Proxy",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Idempotently creates the busybox-httpd Deployment, Service, and ingress-restricting NetworkPolicy that expose a backup PVC over HTTP so Neo4j's URLConnectionSeedProvider can seed a database from it during a restore.",
+    "description": "Idempotently creates the busybox-httpd Deployment, Service, and NetworkPolicy that expose a backup PVC over HTTP so Neo4j's URLConnectionSeedProvider can seed a database from it during a restore; the policy admits only the target's server pods (a cluster's neo4j.com/cluster label, a standalone's app label). The provider fetches one file, so only a FULL artifact can be seeded this way.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -834,7 +834,7 @@
     "name": "Record Backup Run Outcome",
     "serverUnitId": "su-neo4jbackup",
     "operation": "business_action",
-    "description": "recordOneShotBackupRun() / reconcileScheduledHistory() observe a completed Job's conditions, parse its pod log, and append a BackupRun to status.history, deferring finalization until restore-critical artifact filenames are captured.",
+    "description": "recordOneShotBackupRun() / reconcileScheduledHistory() observe a completed Job's conditions, parse its pod log, and append a BackupRun to status.history, deferring finalization until restore-critical artifact filenames are captured, including each artifact's FULL/DIFF type (status.history[].artifactType, databaseArtifacts[].type).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -853,7 +853,7 @@
     "name": "Parse Backup Pod Log",
     "serverUnitId": "su-neo4jbackup",
     "operation": "business_action",
-    "description": "neo4jbackup_log_parser.go's regex-based parsers extract per-shard/per-database .backup filenames, sizes, and neo4j-admin backup validate results from a completed backup pod's stdout.",
+    "description": "neo4jbackup_log_parser.go's regex-based parsers extract per-shard/per-database .backup filenames, sizes, whether each artifact is FULL or DIFF (from neo4j-admin's 'full/differential backup of database' lines; an AUTO run that fell back to a full is FULL), and neo4j-admin backup validate results from a completed backup pod's stdout.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -885,6 +885,7 @@
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
+      "sf-route-restore-path",
       "sf-start-restore"
     ],
     "emitsEventIds": [],
@@ -896,14 +897,15 @@
     "name": "Start Restore",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startRestore() validates the request, pins the resolved backup source onto status, and branches to the cluster Cypher path, the all-databases path, or the standalone Job path (stopping the instance first when spec.stopCluster is set).",
+    "description": "startRestore() validates the request, pins the resolved backup source onto status, and routes it: online (Cypher recreate/create with a seedURI, or the all-databases loop) for every cluster and for most standalone restores; the offline neo4j-admin Job (stopping the instance first when spec.stopCluster is set) only for a standalone restore that cannot be seeded online — point-in-time, a source.type storage path, a PVC artifact not known to be FULL, cloud storage by pod identity, or a Job restore already holding the instance (rule 108). The offline path emits an event naming the reason.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
-      "sf-resolve-backup-chain",
-      "sf-create-restore-job",
       "sf-cluster-cypher-restore",
-      "sf-restore-all-databases"
+      "sf-create-restore-job",
+      "sf-resolve-backup-chain",
+      "sf-restore-all-databases",
+      "sf-route-restore-path"
     ],
     "emitsEventIds": [
       "ev-restore-started",
@@ -914,11 +916,27 @@
     "moduleId": "mod-backup-restore"
   },
   {
+    "id": "sf-route-restore-path",
+    "name": "Route Restore Online or Offline",
+    "serverUnitId": "su-neo4jrestore",
+    "operation": "resolver",
+    "description": "standaloneOfflineReason() / restoreRunsOffline() / restoreOnJobPath() (restore_target.go) decide, from the pinned status.resolvedSource, whether a restore runs online or takes the offline neo4j-admin Job: a cluster never takes the Job; a standalone does only for point-in-time, source.type storage, an unrecorded artifact, a PVC artifact not known to be FULL, cloud storage with no credentialsSecretRef, or a Job restore that already holds its neo4j.com/restore-in-progress marker. The reason is reported in the refusal and the RestoreStarted event (rule 108).",
+    "readsFieldIds": [
+      "f-neo4jrestore-status-resolved-source-artifact-type",
+      "f-neo4jrestore-stop-cluster"
+    ],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
+  },
+  {
     "id": "sf-create-restore-job",
-    "name": "Create Standalone Restore Job",
+    "name": "Create Offline Standalone Restore Job",
     "serverUnitId": "su-neo4jrestore",
     "operation": "job",
-    "description": "createRestoreJob() builds and creates the offline `neo4j-admin database restore` Job used for Neo4jEnterpriseStandalone targets (neo4j-admin restore --overwrite-destination is documented as unsafe on clusters). --from-path names the exact artifact whenever it is known (backupPath ending in .backup, or the pinned snapshot's recorded file or per-database entry for the source database) — the only form neo4j-admin restores under a different name; otherwise it globs the source database's newest file (PVC) or passes the cloud directory (same name only).",
+    "description": "createRestoreJob() builds and creates the offline `neo4j-admin database restore` Job used only for a Neo4jEnterpriseStandalone restore that cannot run online (rule 108: point-in-time, a source.type storage path, a PVC differential or untyped artifact, cloud storage by pod identity) (neo4j-admin restore --overwrite-destination is documented as unsafe on clusters). --from-path names the exact artifact whenever it is known (backupPath ending in .backup, or the pinned snapshot's recorded file or per-database entry for the source database) — the only form neo4j-admin restores under a different name; otherwise it globs the source database's newest file (PVC) or passes the cloud directory (same name only).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -928,15 +946,18 @@
   },
   {
     "id": "sf-cluster-cypher-restore",
-    "name": "Cluster In-Place Cypher Restore",
+    "name": "Online Cypher Restore",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startClusterCypherRestore() issues dbms.[cluster.]recreateDatabase against a live cluster and polls SHOW DATABASE until every allocation is online, per the documented cluster restore-via-recreate procedure (never a Job on cluster targets).",
+    "description": "startClusterCypherRestore() restores one database online against the running DBMS — on a cluster and on a standalone (rule 108): dbms.[cluster.]recreateDatabase with a seedURI over an existing database, CREATE DATABASE … OPTIONS {seedURI} for a new one, then polls SHOW DATABASE until every allocation is online. Target-specific plumbing (StatefulSet name, pod labels for the seed proxy's NetworkPolicy, the CR that carries seed spec.env/extraEnvFrom) comes from restoreTarget. It refuses a PVC differential before creating anything (the seed proxy serves one file over HTTP; Neo4j refuses a DIFF without its chain), runs pre-restore hooks before issuing and post-restore hooks once online; never a Job on cluster targets.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
     "emitsEventIds": [
+      "ev-restore-completed",
+      "ev-restore-failed",
       "ev-restore-from-chain-parent",
+      "ev-restore-started",
       "ev-seed-endpoint-not-projected"
     ],
     "subscribesEventIds": [],
@@ -947,7 +968,7 @@
     "name": "All-Databases Restore Loop",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startAllDatabasesRestore() drives one per-database CREATE/recreate-with-seedURI action per reconcile pass from the resolved backup's per-database artifact map, tracking progress in status.databaseResults; property-sharded families are excluded and must restore via their own Neo4jShardedDatabase CR.",
+    "description": "startAllDatabasesRestore() drives one per-database CREATE/recreate-with-seedURI action per reconcile pass from the resolved backup's per-database artifact map, on clusters and standalones, tracking progress in status.databaseResults; runs pre-restore hooks once per attempt (neo4j.com/restore-pre-hooks-ran) and post-restore hooks before Completed, refuses a database whose PVC artifact is a DIFF, and stamps status.completionTime. Property-sharded families are excluded and must restore via their own Neo4jShardedDatabase CR.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
