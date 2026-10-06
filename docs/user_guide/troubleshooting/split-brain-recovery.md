@@ -272,7 +272,7 @@ neo4j_operator_split_brain_detected_total{cluster_name, namespace}
 neo4j_operator_cluster_healthy{cluster_name, namespace}
 # Server counts: role="desired" (spec.topology.servers) and role="ready" (StatefulSet readyReplicas)
 neo4j_operator_cluster_replicas_total{cluster_name, namespace, role}
-# Per server: 1 = Enabled + Available, 0 = degraded (needs spec.monitoring.enabled and a Ready cluster)
+# Per server: 1 = Enabled + Available, 0 = degraded (collected once the cluster has formed, also while a server is down)
 neo4j_operator_server_health{cluster_name, namespace, server_name, server_address, k8s_cluster}
 
 # Alert rules

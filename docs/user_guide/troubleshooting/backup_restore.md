@@ -371,7 +371,7 @@ Or, set the annotation `neo4j.com/auto-inherit-seed-creds=true` on the cluster o
 
 #### Symptom: Standalone restore reports `Failed` with "cannot run against a running standalone (it restores offline: …)"
 
-**Cause:** this standalone restore cannot run online — the message names why (a point-in-time restore, a `source.type: storage` path, cloud storage by pod identity on a standalone without `spec.podServiceAccountAnnotations`) — so it runs `neo4j-admin` through a Job, which needs the instance stopped.
+**Cause:** this standalone restore cannot run online — the message names why (a point-in-time restore that cannot run online, a `source.type: storage` path, cloud storage by pod identity on a standalone without `spec.podServiceAccountAnnotations`, a backup run with no recorded artifact) — so it runs `neo4j-admin` through a Job, which needs the instance stopped.
 
 **Fix:** set `spec.stopCluster: true`. The operator stops the standalone for the restore and starts it again afterwards; every database on it is offline meanwhile.
 
@@ -409,7 +409,7 @@ See [Property Sharding](../property_sharding.md) for details.
 
 #### Symptom: Sharded database `Failed` with "holds differential backups of …"
 
-**Cause:** the `Neo4jShardedDatabase`'s `seedBackupRef` names a PVC backup whose latest run holds a differential of one or more shards. From a PVC, Neo4j seeds a sharded database only from a full backup of every shard, and a differential cannot be merged into one. On a PVC, `backupType: AUTO` takes full backups of a sharded database, so this comes from an explicit `backupType: DIFF`, an all-databases backup, or a run from before the operator did that. The backup raised a `BackupShardedDifferential` warning for each.
+**Cause:** the `Neo4jShardedDatabase`'s `seedBackupRef` names a PVC backup whose latest run holds a differential of one or more shards. From a PVC, Neo4j seeds a sharded database only from a full backup of every shard, and a differential cannot be merged into one. On a PVC, `backupType: AUTO` takes full backups of a sharded database, so this comes from an explicit `backupType: DIFF` or an all-databases backup; `status.history[].shardArtifacts[].type` shows which shards are `DIFF`.
 
 **Fix:** let the backup take a full run: remove `backupType: DIFF`, or create a one-shot `Neo4jBackup` with `spec.shardedDatabase` and point `seedBackupRef` at it. The sharded database retries and seeds once a full run lands. To keep differentials, back sharded databases up to cloud storage, where they seed directly.
 
@@ -603,7 +603,7 @@ validate_backup
 
 ## Emergency Recovery
 
-For full disaster recovery (corrupted primary, restore to a new cluster from latest backup), follow the standard restore flow in the [Backup & Restore guide § Restore Operations](../guides/backup_restore.md#restore-operations). The normal `Neo4jRestore` CR with `source.type: backup` + `instanceRef` pointing at a fresh cluster IS the emergency procedure — there's no separate path. Use `spec.options.replaceExisting: true` to overwrite existing data. To roll back to a specific timestamp before the corruption: on a standalone target use `Neo4jRestore` with `source.type: pitr` and `source.pointInTime`; on a cluster target use a `Neo4jDatabase` with `spec.seedConfig.restoreUntil` (cluster `Neo4jRestore` PITR is rejected — see [PITR Issues](#point-in-time-recovery-pitr-issues)).
+For full disaster recovery (corrupted primary, restore to a new cluster from latest backup), follow the standard restore flow in the [Backup & Restore guide § Restore Operations](../guides/backup_restore.md#restore-operations). The normal `Neo4jRestore` CR with `source.type: backup` + `instanceRef` pointing at a fresh cluster IS the emergency procedure — there's no separate path. Use `spec.options.replaceExisting: true` to overwrite existing data. To roll back to a specific timestamp before the corruption, use a `Neo4jRestore` with `source.type: backup`, `source.pointInTime` and a new `spec.database` name: on CalVer, from cloud storage, it runs online on a cluster or a standalone; otherwise a standalone restores offline and a cluster fails, naming the reason. See [Point-in-Time Recovery](../guides/backup_restore.md#point-in-time-recovery-pitr).
 
 ## See Also
 

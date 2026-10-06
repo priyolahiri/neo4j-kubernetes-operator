@@ -449,7 +449,7 @@ kubectl describe neo4jenterprisecluster property-sharding-cluster
 kubectl describe neo4jshardeddatabase products-sharded-db
 
 # View operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 
 # Check individual database status
 kubectl exec property-sharding-cluster-server-0 -- \
@@ -477,8 +477,11 @@ databases (`products-g000`, `products-p000`, …).
 > recreates standard databases only; recover each sharded family by re-applying
 > its `Neo4jShardedDatabase` with `spec.seedBackupRef` pointing at that same backup
 > (add `spec.seedSourceDatabase` to restore under a different name) — not `Neo4jRestore`.
-> A dedicated `shardedDatabase`-scoped `Neo4jBackup` per family is also available if you
-> prefer per-family lifecycles.
+> This holds for cloud storage. On a PVC only a run whose shards are all full backups can
+> seed a sharded database, and an all-databases backup's runs after the first hold
+> differentials — so on a PVC, back each sharded database up with its own
+> `shardedDatabase`-scoped `Neo4jBackup`, which takes full backups there
+> ([Restoring a sharded database](#restoring-a-sharded-database)).
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1

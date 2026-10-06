@@ -55,7 +55,7 @@ kubectl logs -l app=<standalone-name>
 kubectl get events --sort-by=.metadata.creationTimestamp
 
 # Check operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 ```
 
 ### Common Port Forwarding Commands
@@ -316,6 +316,34 @@ kubectl logs <cluster-name>-server-1
    # Check that only the discovery (headless) service carries the clustering label
    kubectl get svc -l neo4j.com/cluster=<cluster-name> -o yaml | grep -A 3 -B 3 "neo4j.com/clustering"
    ```
+
+#### Problem: A server is down (`Degraded`)
+
+**Symptoms:**
+- The cluster is still `Ready` but its `Degraded` condition is `True`, naming
+  the missing servers.
+- After the grace period (5 minutes; operator flag
+  `--server-unavailable-grace`, Helm `serverUnavailableGrace`) the phase turns
+  `Degraded`: `status.ready` is `false` and a `ClusterDegraded` Warning event is
+  raised.
+- With a majority of servers lost, the phase is `Forming` with a
+  `ClusterQuorumLost` Warning.
+
+The cluster keeps serving while it has a majority: users, roles, databases and
+backups keep reconciling against it. A rolling image upgrade or a plugin install
+waits until every server is back.
+
+**Diagnosis:**
+```bash
+kubectl get neo4jenterprisecluster <cluster-name> \
+  -o jsonpath='{.status.phase}{"\n"}{range .status.conditions[?(@.type=="Degraded")]}{.message}{"\n"}{end}'
+kubectl get pods -l neo4j.com/cluster=<cluster-name>
+kubectl describe pod <cluster-name>-server-<n>      # why the missing server is not running
+kubectl neo4j diagnose Neo4jEnterpriseCluster/<cluster-name>
+```
+
+**Solution:** bring the named server back (fix what keeps its pod from
+running). See [Server availability](../../api_reference/neo4jenterprisecluster.md#server-availability).
 
 #### Problem: Scaling Issues
 ```bash
@@ -628,7 +656,7 @@ kubectl get events --field-selector involvedObject.name=<database-name>
 kubectl describe neo4jdatabase <database-name>
 
 # Check operator logs for seed URI specific errors
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i seed
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i seed
 ```
 
 **Common seed URI issues:**
@@ -699,7 +727,7 @@ kubectl get events -w --field-selector involvedObject.name=<database-name>
 1. **Check Cluster Connectivity:**
    ```bash
    # Ensure operator can connect to Neo4j cluster
-   kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i "connection failed"
+   kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i "connection failed"
    ```
 
 2. **Large Backup Restoration:**
@@ -731,7 +759,7 @@ kubectl exec -it <cluster-pod> -- cypher-shell -u neo4j -p <password> -d <databa
    kubectl get neo4jdatabase <database-name> -o jsonpath='{.status.dataImported}'
 
    # Check for import errors in operator logs
-   kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator | grep -i "initial data\|import"
+   kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i "initial data\|import"
    ```
 
 2. **Seed URI Data Not Restored:**
@@ -791,7 +819,7 @@ When filing an issue, include the output of:
 kubectl get neo4jenterprisecluster,neo4jenterprisestandalone -A
 kubectl get pods,svc,pvc -l app.kubernetes.io/name=neo4j
 kubectl get events --sort-by=.metadata.creationTimestamp | tail -30
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator --tail=200
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=200
 kubectl describe nodes | grep -A 5 "Allocated resources:"
 ```
 

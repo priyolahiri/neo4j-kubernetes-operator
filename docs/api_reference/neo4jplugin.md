@@ -602,7 +602,7 @@ config:
 ## Plugin Status Phases
 
 - **Pending**: Plugin resource created, waiting for processing
-- **Waiting**: Waiting for deployment to be ready
+- **Waiting**: Waiting for the deployment to be ready — on a cluster, also while any server is unavailable (`Degraded`), since installing restarts every server
 - **Installing**: Plugin installation in progress
 - **Ready**: Plugin successfully installed and active
 - **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs)

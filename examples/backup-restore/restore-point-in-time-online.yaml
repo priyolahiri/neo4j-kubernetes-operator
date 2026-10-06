@@ -1,0 +1,33 @@
+# Point-in-time restore, ONLINE — on a cluster or a standalone.
+#
+# Restores the database as it was at `pointInTime` into a NEW database, while
+# every other database stays online. The operator picks the backup run that
+# holds that moment (the earliest that started at or after it, shown in
+# status.resolvedSource.backupStartedAt) and creates the database from it with
+# Neo4j's seedRestoreUntil.
+#
+# It runs online when:
+#   • the target runs CalVer (Neo4j 5.26 has no seedRestoreUntil);
+#   • the Neo4jBackup is in cloud storage (S3, GCS, Azure — not a PVC);
+#   • spec.database does not exist yet;
+#   • a backup run started at or after pointInTime.
+# Otherwise a standalone restores offline (set stopCluster: true) and a cluster
+# fails, naming the reason. Compare the restored database with the live one and
+# copy back what was lost.
+#
+# The server pods fetch the backup themselves: give them the backup's
+# credentials (spec.extraEnvFrom on the cluster, or the
+# neo4j.com/auto-inherit-seed-creds: "true" annotation), or a workload identity
+# (spec.podServiceAccountAnnotations).
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jRestore
+metadata:
+  name: orders-before-incident
+spec:
+  instanceRef: production-cluster      # a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone
+  database: orders-asof-1229           # must not exist yet
+  source:
+    type: backup
+    backupRef: orders-backup           # a Neo4jBackup in S3, GCS or Azure
+    pointInTime: "2026-10-06T12:29:00Z"
+  timeout: "30m"                       # raise for large stores

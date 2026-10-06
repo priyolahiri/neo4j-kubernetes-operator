@@ -145,7 +145,7 @@ spec:
 # kubectl describe neo4jshardeddatabase basic-sharded-db
 #
 # View operator logs:
-# kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+# kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 #
 # Monitor resource usage:
 # kubectl top pods -l app.kubernetes.io/name=basic-sharding-cluster --containers

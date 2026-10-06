@@ -153,7 +153,7 @@ kubectl port-forward svc/<your-cluster-name>-client 7474:7474 &
 ### Debugging Commands
 ```bash
 # View operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 
 # Check database events
 kubectl get events --field-selector involvedObject.name=my-database

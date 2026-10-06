@@ -22,7 +22,7 @@ helm install neo4j-operator neo4j-operator/neo4j-operator \
 **Pin to a specific version**:
 ```bash
 helm install neo4j-operator neo4j-operator/neo4j-operator \
-  --version 1.18.0 \
+  --version 1.19.0 \
   --namespace neo4j-operator-system \
   --create-namespace
 ```
@@ -71,12 +71,12 @@ Helm 3.8 or later is required for OCI support.
 
 ```bash
 helm install neo4j-operator oci://ghcr.io/priyolahiri/charts/neo4j-operator \
-  --version 1.18.0 \
+  --version 1.19.0 \
   --namespace neo4j-operator-system \
   --create-namespace
 ```
 
-Use the chart version without the `v` prefix (for example, `1.18.0`).
+Use the chart version without the `v` prefix (for example, `1.19.0`).
 
 ### Method 3: Quick Install from GitHub Release
 
@@ -91,7 +91,7 @@ For environments where running `helm` is inconvenient, every release also publis
 > `${RELEASE_VERSION}`).
 
 ```bash
-RELEASE_VERSION=v1.18.0  # Replace with desired version
+RELEASE_VERSION=v1.19.0  # Replace with desired version
 
 kubectl apply --server-side -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${RELEASE_VERSION}/neo4j-kubernetes-operator-complete.yaml
 ```
@@ -140,7 +140,7 @@ bundle (server-side). It includes the updated CRDs, and the operator
 Deployment rolls to the new image automatically:
 
 ```bash
-RELEASE_VERSION=v1.18.0  # The version you are upgrading to
+RELEASE_VERSION=v1.19.0  # The version you are upgrading to
 
 kubectl apply --server-side -f https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/${RELEASE_VERSION}/neo4j-kubernetes-operator-complete.yaml
 ```
@@ -159,7 +159,7 @@ git checkout $LATEST_TAG    # or omit to test main
 helm install neo4j-operator ./charts/neo4j-operator \
   --namespace neo4j-operator-system \
   --create-namespace \
-  --set image.tag="${LATEST_TAG#v}"   # e.g. 1.18.0 — see note below
+  --set image.tag="${LATEST_TAG#v}"   # e.g. 1.19.0 — see note below
 ```
 
 > **You must set `image.tag` for a from-clone install.** In the repository,
@@ -217,7 +217,7 @@ commonLabels:
   team: database
 images:
 - name: ghcr.io/priyolahiri/neo4j-kubernetes-operator
-  newTag: v1.18.0
+  newTag: v1.19.0
 ```
 
 ```bash
@@ -249,7 +249,7 @@ kubectl apply -k .
               - name: manager
                 env:
                 - name: OPERATOR_VERSION
-                  value: v1.18.0
+                  value: v1.19.0
     ```
 
     This is a strategic merge patch, matched on the container and variable
@@ -290,7 +290,7 @@ kubectl get pods -n neo4j-operator-system
 kubectl get crd | grep neo4j
 
 # View operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 ```
 
 Expected output:
@@ -374,7 +374,7 @@ If you haven't cloned the repository, apply an example straight from the raw
 file URL at a release tag (no download or extract step needed):
 
 ```bash
-RELEASE_VERSION=v1.18.0  # Replace with your installed version
+RELEASE_VERSION=v1.19.0  # Replace with your installed version
 
 # Create admin secret (required for Neo4j authentication)
 kubectl create secret generic neo4j-admin-secret \
@@ -497,10 +497,10 @@ make install
 #### 2. Operator Pod Not Starting
 ```bash
 # Check operator logs
-kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 
 # Check operator pod events
-kubectl describe pod -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl describe pod -n neo4j-operator-system -l control-plane=controller-manager
 ```
 
 #### 3. RBAC Permission Issues
@@ -519,7 +519,7 @@ If the operator pod shows `ImagePullBackOff` or `ErrImagePull`:
 
 ```bash
 # Check pod events for image pull errors
-kubectl describe pod -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator
+kubectl describe pod -n neo4j-operator-system -l control-plane=controller-manager
 
 # Verify image exists and is accessible
 docker pull ghcr.io/priyolahiri/neo4j-kubernetes-operator:latest
@@ -552,8 +552,8 @@ gh release list --repo priyolahiri/neo4j-kubernetes-operator
 # Or visit: https://github.com/priyolahiri/neo4j-kubernetes-operator/releases
 
 # Ensure you're using the correct version format (with 'v' prefix)
-# Correct: v1.18.0
-# Incorrect: 1.18.0
+# Correct: v1.19.0
+# Incorrect: 1.19.0
 ```
 
 ### Installation Requirements
