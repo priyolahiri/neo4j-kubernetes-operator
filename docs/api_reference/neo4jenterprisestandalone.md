@@ -422,6 +422,30 @@ extraEnvFrom:
       name: aws-backup-creds
 ```
 
+#### `podServiceAccountAnnotations` (map[string]string)
+
+Binds the Neo4j pod to a cloud role (Workload Identity), so the server can
+fetch a seed from cloud storage without a credentials Secret. The operator
+creates a ServiceAccount named `<name>-neo4j` carrying these annotations and
+runs the pod under it. That covers an online `Neo4jRestore` from a backup with
+no `credentialsSecretRef`, and a `Neo4jDatabase` `seedURI`. Same field as
+[`Neo4jEnterpriseCluster.spec.podServiceAccountAnnotations`](neo4jenterprisecluster.md).
+
+- Unset (the default), the pod runs under the namespace's `default`
+  ServiceAccount and the operator creates none.
+- Setting, changing or removing it restarts the pod once, because identity
+  webhooks inject credentials when a pod is created. An online restore waits
+  for that restart.
+- Removing it deletes the ServiceAccount once the pod no longer uses it.
+- The operator owns only the keys listed; annotations added to the
+  ServiceAccount by hand are kept.
+
+```yaml
+podServiceAccountAnnotations:
+  eks.amazonaws.com/role-arn: arn:aws:iam::123456789012:role/neo4j-seed   # AWS IRSA
+  # iam.gke.io/gcp-service-account: neo4j-seed@my-project.iam.gserviceaccount.com   # GKE WI
+```
+
 #### Pod scheduling and security (standard Kubernetes pass-throughs)
 
 These top-level fields are passed through unchanged to the Neo4j pod spec.
@@ -892,7 +916,7 @@ spec:
     backupRef: dev-neo4j-backup
   options:
     replaceExisting: true
-  stopCluster: true                # S3 by pod identity: a standalone restores it offline (see the Neo4jRestore reference)
+  stopCluster: true                # S3 by pod identity: offline unless the standalone sets podServiceAccountAnnotations
 EOF
 ```
 
@@ -1149,7 +1173,7 @@ spec:
     backupRef: cluster-migration-backup
   options:
     replaceExisting: true            # the new standalone already has a default `neo4j` database
-  stopCluster: true                  # S3 by pod identity: restored offline (see the Neo4jRestore reference)
+  stopCluster: true                  # S3 by pod identity: offline unless the standalone sets podServiceAccountAnnotations
 EOF
 ```
 

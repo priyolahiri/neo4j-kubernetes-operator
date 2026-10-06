@@ -142,6 +142,16 @@ func TestMissingObjectStoreEnv_WorkloadIdentityDefersToTheServer(t *testing.T) {
 		require.Equal(t, []string{"AWS_REGION"},
 			missingObjectStoreEnv(withSA(nil), nil, "s3://bucket/chain/"))
 	})
+
+	t.Run("a standalone bound to a cloud role", func(t *testing.T) {
+		standalone := func(annotations map[string]string) ResolvedTarget {
+			return ResolvedTarget{Found: true, Standalone: &neo4jv1beta1.Neo4jEnterpriseStandalone{
+				Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{PodServiceAccountAnnotations: annotations},
+			}}
+		}
+		require.Empty(t, missingObjectStoreEnv(standalone(map[string]string{workloadIdentityAnnotations[0]: "role"}), nil, "s3://bucket/chain/"))
+		require.Equal(t, []string{"AWS_REGION"}, missingObjectStoreEnv(standalone(nil), nil, "s3://bucket/chain/"))
+	})
 }
 
 // source.credentialsSecretRef now projects. Two properties matter more than the

@@ -159,7 +159,7 @@ func TestRestoreRunsOffline(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			restore := tc.restore()
-			assert.Equal(t, tc.offline, restoreRunsOffline(restore, tc.cluster), standaloneOfflineReason(restore))
+			assert.Equal(t, tc.offline, restoreRunsOffline(restore, tc.cluster, nil), standaloneOfflineReason(restore, nil))
 		})
 	}
 }
@@ -168,7 +168,7 @@ func TestRestoreRunsOffline(t *testing.T) {
 // finishing it online would talk Bolt to an instance with no pods.
 func TestRestoreOnJobPath_FinishesAJobRestoreItAlreadyHolds(t *testing.T) {
 	restore := pinnedBackupRestore("s3", neo4jv1beta1.ResolvedRestoreSource{ArtifactFilename: "neo4j-1.backup"})
-	require.False(t, restoreRunsOffline(restore, false), "on its own this restore would run online")
+	require.False(t, restoreRunsOffline(restore, false, nil), "on its own this restore would run online")
 
 	held := minimalStandaloneForRestore("sa", "ns")
 	held.Annotations = map[string]string{RestoreInProgressAnnotation: "r"}

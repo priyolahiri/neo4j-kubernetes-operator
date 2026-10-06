@@ -848,14 +848,15 @@ var workloadIdentityAnnotations = []string{
 // usesWorkloadIdentity reports whether the target's server pods run under a
 // ServiceAccount bound to a cloud role.
 func usesWorkloadIdentity(target ResolvedTarget) bool {
-	if target.Cluster == nil {
-		// Standalone has no podServiceAccountAnnotations field, so there is
-		// nothing to detect. It reads as "no", which only ever makes the
-		// caller more conservative.
-		return false
+	var annotations map[string]string
+	switch {
+	case target.Cluster != nil:
+		annotations = target.Cluster.Spec.PodServiceAccountAnnotations
+	case target.Standalone != nil:
+		annotations = target.Standalone.Spec.PodServiceAccountAnnotations
 	}
 	for _, key := range workloadIdentityAnnotations {
-		if _, ok := target.Cluster.Spec.PodServiceAccountAnnotations[key]; ok {
+		if _, ok := annotations[key]; ok {
 			return true
 		}
 	}

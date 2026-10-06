@@ -3566,6 +3566,13 @@ func (in *Neo4jEnterpriseStandaloneSpec) DeepCopyInto(out *Neo4jEnterpriseStanda
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.PodServiceAccountAnnotations != nil {
+		in, out := &in.PodServiceAccountAnnotations, &out.PodServiceAccountAnnotations
+		*out = make(map[string]string, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
+	}
 	if in.NodeSelector != nil {
 		in, out := &in.NodeSelector, &out.NodeSelector
 		*out = make(map[string]string, len(*in))

@@ -415,6 +415,13 @@
         "type": "string",
         "isNullable": true,
         "note": "The resolved server default Cypher language, recorded once (new CalVer deployment -> CYPHER_25, LTS -> CYPHER_5, existing -> what its ConfigMap already runs) so an operator upgrade never changes it."
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-pod-service-account-annotations",
+        "name": "spec.podServiceAccountAnnotations",
+        "type": "map",
+        "isNullable": true,
+        "note": "Workload Identity annotations for an operator-managed `<name>-neo4j` ServiceAccount the pod runs under, created only while set; setting, changing or removing it restarts the pod once. Lets a cloud restore without a credentials Secret run online."
       }
     ]
   },

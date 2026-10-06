@@ -300,12 +300,13 @@ Cloud backup Jobs need permission to write to your bucket. The operator supports
 | Operation | Runs on | Bind the IAM role to |
 |---|---|---|
 | `Neo4jBackup`, and a standalone `Neo4jRestore` that runs offline (Job paths) | a backup/restore **Job pod** | the operator-managed `neo4j-backup-sa` / `neo4j-restore-sa` — via `cloud.identity.autoCreate.annotations` on the CR |
-| Online `Neo4jRestore` (Cypher path, clusters and standalones), `Neo4jDatabase` `seedURI`, sharded `seedBackupRef` seeding | the Neo4j **server pods** (the JVM fetches the seed itself) | the **cluster's server pods' ServiceAccount** — the Job SA annotation does nothing here |
+| Online `Neo4jRestore` (Cypher path, clusters and standalones), `Neo4jDatabase` `seedURI`, sharded `seedBackupRef` seeding | the Neo4j **server pods** (the JVM fetches the seed itself) | the **server pods' ServiceAccount** (cluster or standalone) — the Job SA annotation does nothing here |
 
 **Annotating the server pods' ServiceAccount (Workload Identity):** set
-`spec.podServiceAccountAnnotations` on the `Neo4jEnterpriseCluster` — the
-operator stamps them onto the ServiceAccount the Neo4j pods run under, so the
-JVM assumes the role for the seed fetch:
+`spec.podServiceAccountAnnotations` on the `Neo4jEnterpriseCluster` or
+`Neo4jEnterpriseStandalone` — the operator stamps them onto the ServiceAccount
+the Neo4j pods run under (a standalone's is `<name>-neo4j`, created only while
+the field is set), so the JVM assumes the role for the seed fetch:
 
 ```yaml
 spec:
@@ -314,11 +315,13 @@ spec:
     # iam.gke.io/gcp-service-account: neo4j-seed@my-project.iam.gserviceaccount.com   # GKE WI
 ```
 
-Set it **before** the pods start (or roll the StatefulSet after adding it) so
-the identity webhook injects the credentials at pod admission. (Standalone
-pods don't support this yet, so a standalone restore from cloud storage with no
-`credentialsSecretRef` runs offline, through the restore Job, whose
-ServiceAccount carries the identity.)
+The identity webhook injects the credentials at pod admission, so the pods must
+start after the annotation is there. On a cluster, set it **before** the pods
+start (or roll the StatefulSet after adding it). A standalone restarts its pod
+whenever the field is set, changed or removed, and an online restore waits for
+that restart. A standalone without it restores from cloud storage with no
+`credentialsSecretRef` offline, through the restore Job, whose ServiceAccount
+carries the identity.
 
 With **static credentials** the equivalent split applies: Job paths read the Secret referenced by `credentialsSecretRef`; the seedURI paths need the same Secret projected onto the server pods via the cluster/standalone CR's `spec.extraEnvFrom` (the operator checks this and emits a copy-pasteable fix, or auto-patches under the `neo4j.com/auto-inherit-seed-creds: "true"` annotation).
 
@@ -1064,7 +1067,7 @@ Restores run **online**, against the running DBMS: only the database being resto
 |---|---|---|
 | `Neo4jEnterpriseCluster` (standard DB) | Cypher over Bolt — no Job | `dbms.recreateDatabase(name, {seedURI})` if the DB exists, otherwise `CREATE DATABASE name OPTIONS { seedURI } WAIT` |
 | `Neo4jEnterpriseStandalone` | The same Cypher over Bolt — no Job, no downtime for the other databases | as above |
-| `Neo4jEnterpriseStandalone`, [offline cases](#restore-to-a-standalone-instance) (point-in-time, `source.type: storage`, cloud by pod identity) | Kubernetes Job; stops the instance | `neo4j-admin database restore --from-path=<latest-file-in-chain>` followed by `CREATE/START DATABASE` |
+| `Neo4jEnterpriseStandalone`, [offline cases](#restore-to-a-standalone-instance) (point-in-time, `source.type: storage`, cloud by pod identity without `spec.podServiceAccountAnnotations`) | Kubernetes Job; stops the instance | `neo4j-admin database restore --from-path=<latest-file-in-chain>` followed by `CREATE/START DATABASE` |
 | `Neo4jShardedDatabase` (sharded) | Rejected with actionable error | Use `Neo4jShardedDatabase.spec.replaceExisting: true` + `force: true` instead — see [Property Sharding](../property_sharding.md) |
 
 > **Restoring one database from an instance-wide backup** (`allDatabases: true`) works on both kinds: that backup stores one `.backup` artifact *per database* and records each in `status.history[].databaseArtifacts`, and the operator seeds from the one for `spec.database` (or `source.sourceDatabase`). If the backup's latest run did not record the database, the restore fails with a message naming the other ways in: a `database`-scoped backup, or `source.type: storage` pointing at the exact `.backup` file.
@@ -1251,7 +1254,7 @@ instance — every database is offline until it is back:
 |---|---|
 | Point-in-time (`source.type: pitr`, or `source.pointInTime`) | `dbms.recreateDatabase` has no restore-until option |
 | `source.type: storage` | the path may be a directory or part of a backup chain; only `neo4j-admin` resolves those |
-| Cloud storage with no `credentialsSecretRef` (Workload Identity, node IAM) | standalone pods cannot carry a workload identity; the restore Job's ServiceAccount can |
+| Cloud storage with no `credentialsSecretRef` (Workload Identity, node IAM), on a standalone without `spec.podServiceAccountAnnotations` | its pod has no workload identity; the restore Job's ServiceAccount does. Set the field on the standalone to restore online instead |
 
 These need `stopCluster: true` — with `false` the operator refuses while pods
 are running, and the message names the case. The Job path then:

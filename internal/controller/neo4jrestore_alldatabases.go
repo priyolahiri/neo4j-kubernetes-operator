@@ -362,6 +362,9 @@ func (r *Neo4jRestoreReconciler) ensureClusterSeedConfigReady(
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
 		}
 	}
+	if res, ready := r.awaitSeedIdentity(ctx, restore, target, storage); !ready {
+		return res, false, nil
+	}
 	return ctrl.Result{}, true, nil
 }
 

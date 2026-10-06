@@ -4891,6 +4891,24 @@ spec:
                   type: string
                 description: Node selector for pod scheduling
                 type: object
+              podServiceAccountAnnotations:
+                additionalProperties:
+                  type: string
+                description: |-
+                  PodServiceAccountAnnotations are annotations applied to an
+                  operator-managed ServiceAccount (`<name>-neo4j`) that the Neo4j pod runs
+                  under. Use this for cloud Workload Identity so the Neo4j JVM can assume
+                  a cloud role when it fetches a seed itself — an online Neo4jRestore from
+                  cloud storage without a credentialsSecretRef, or a Neo4jDatabase
+                  seedURI — e.g. "eks.amazonaws.com/role-arn" (AWS IRSA) or
+                  "iam.gke.io/gcp-service-account" (GKE Workload Identity).
+
+                  Unset, the pod runs under the namespace's default ServiceAccount and
+                  the operator creates none. Setting, changing or removing it restarts
+                  the pod once, so the identity is injected into a new pod. The operator
+                  owns only the keys listed here; annotations added to the
+                  ServiceAccount out-of-band are kept.
+                type: object
               remoteAliasKeystore:
                 description: |-
                   RemoteAliasKeystore configures the keystore Neo4j uses to encrypt the

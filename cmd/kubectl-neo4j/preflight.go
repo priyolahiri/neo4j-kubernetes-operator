@@ -367,6 +367,11 @@ func resolveReplicaTargetEnv(ctx context.Context, c client.Client, ns, name stri
 			names[e.Name] = true
 		}
 		addLive(name)
+		for _, key := range workloadIdentitySAAnnotations {
+			if _, ok := standalone.Spec.PodServiceAccountAnnotations[key]; ok {
+				return "standalone " + name, names, true
+			}
+		}
 		return "standalone " + name, names, false
 	}
 	return "", names, false

@@ -91,7 +91,7 @@ Lifecycle and hardening:
 
 Use cloud-native authentication mechanisms that don't require explicit credentials.
 
-> **Where the identity must be bound:** `CREATE DATABASE … OPTIONS { seedURI }` runs inside the Neo4j JVM **on the server pods** — not in a backup/restore Job. Under pod identity (IRSA / GKE Workload Identity / Azure Workload Identity) the IAM binding therefore goes on the **server pods' ServiceAccount**, not on the `neo4j-backup-sa` used by backup Jobs (`Neo4jBackup`'s `cloud.identity.autoCreate.annotations` only annotates the Job SA and has no effect on seeding).
+> **Where the identity must be bound:** `CREATE DATABASE … OPTIONS { seedURI }` runs inside the Neo4j JVM **on the server pods** — not in a backup/restore Job. Under pod identity (IRSA / GKE Workload Identity / Azure Workload Identity) the IAM binding therefore goes on the **server pods' ServiceAccount** (`spec.podServiceAccountAnnotations` on the cluster or standalone), not on the `neo4j-backup-sa` used by backup Jobs (`Neo4jBackup`'s `cloud.identity.autoCreate.annotations` only annotates the Job SA and has no effect on seeding).
 
 **AWS S3:**
 
