@@ -150,10 +150,12 @@ spec:
 
 **Supported versions:**
 
-- **Semver**: 5.26.0, 5.26.1 (5.26.x is the last semver LTS — no 5.27+ exists)
-- **Calver**: 2025.01.0, 2025.06.1, 2026.01.0+
+- **Semver**: any 5.26.x (5.26.x is the last semver LTS — no 5.27+ exists)
+- **Calver**: 2025.01.0 and later; each operator release validates one anchor CalVer, and newer ones are best-effort
 
-### 2. Pod Startup Issues
+See [Supported Neo4j Versions](../version_support.md) for what each track guarantees.
+
+### 3. Pod Startup Issues
 
 #### Problem: Pods Stuck in Pending State
 
@@ -224,7 +226,7 @@ kubectl logs <pod-name> --previous
    kubectl get secret <license-secret> -o yaml
    ```
 
-### 3. Connectivity Issues
+### 4. Connectivity Issues
 
 #### Problem: Cannot Connect to Neo4j
 ```bash
@@ -244,7 +246,7 @@ kubectl describe svc <service-name>
    # For clusters
    service: <cluster-name>-client
 
-   # For standalone (`<standalone-name>-service` still resolves this release
+   # For standalone (`<standalone-name>-service` also resolves
    # but is deprecated — use `-client`)
    service: <standalone-name>-client
    ```
@@ -262,7 +264,7 @@ kubectl describe svc <service-name>
    kubectl describe certificate <cert-name>
    ```
 
-### 4. Cluster-Specific Issues
+### 5. Cluster-Specific Issues
 
 #### Problem: Cluster Formation Fails
 ```bash
@@ -292,8 +294,6 @@ kubectl logs <cluster-name>-server-1
    # dbms.cluster.endpoints=<cluster>-server-0.<cluster>-headless.<ns>.svc.cluster.local:6000,...
    ```
 
-   **If K8S or wrong ports appear**: upgrade to the latest operator version — this was fixed in favour of LIST discovery.
-
 2. **Verify Cluster Topology:**
    ```bash
    # Ensure minimum topology requirements
@@ -306,7 +306,7 @@ kubectl logs <cluster-name>-server-1
    kubectl exec -it <pod-name> -- nslookup <cluster-name>-headless
 
    # Test V2 cluster port connectivity (port 6000 carries both V2 discovery
-   # and tcp-tx; port 5000 was V1-only and is never used by this operator).
+   # and tcp-tx; port 5000 is V1-only and is never used by this operator).
    kubectl exec -it <pod-name> -- nc -zv localhost 6000
    kubectl exec -it <pod-name> -- nc -zv localhost 7000  # RAFT
    ```
@@ -342,7 +342,7 @@ kubectl get events | grep -i scale
          memory: "2Gi"
    ```
 
-### 5. Standalone-Specific Issues
+### 6. Standalone-Specific Issues
 
 #### Problem: Standalone Pod Won't Start
 ```bash
@@ -381,7 +381,7 @@ kubectl apply -f standalone.yaml
 kubectl apply -f restore.yaml
 ```
 
-### 6. Performance Issues
+### 7. Performance Issues
 
 #### Problem: Slow Query Performance
 ```bash
@@ -421,7 +421,7 @@ kubectl port-forward svc/<cluster-name>-metrics 2004:2004
    kubectl exec -it <pod-name> -- dd if=/dev/zero of=/data/test bs=1M count=1000
    ```
 
-### 7. Storage Issues
+### 8. Storage Issues
 
 #### Problem: PVC Issues
 
@@ -472,7 +472,7 @@ kubectl exec -it <pod-name> -- neo4j-admin database check neo4j
    kubectl apply -f restore-from-backup.yaml
    ```
 
-### 8. Backup and Restore Issues
+### 9. Backup and Restore Issues
 
 #### Problem: Backup Job fails to start (ServiceAccount / permission errors)
 Backups run as Kubernetes Jobs that execute `neo4j-admin` directly against a database — they do NOT exec into the Neo4j pods. Each Job runs under the `neo4j-backup-sa` ServiceAccount, which the operator creates automatically in the backup's namespace (and stamps with any workload-identity annotations from `spec.storage.cloud.identity.autoCreate.annotations`).
@@ -504,7 +504,7 @@ Neo4j 5.26+ requires backup destination path to exist. The operator's backup Job
 kubectl logs -n <ns> job/<job-name>
 ```
 
-### 9. Security Issues
+### 10. Security Issues
 
 #### Problem: Authentication Failures
 ```bash
@@ -581,7 +581,7 @@ kubectl logs -n cert-manager deployment/cert-manager
 
    See [Split-Brain Recovery Guide](../troubleshooting/split-brain-recovery.md) for detailed recovery procedures.
 
-### 10. Database Creation Issues
+### 11. Database Creation Issues
 
 #### Problem: Neo4jDatabase Creation Fails
 ```bash

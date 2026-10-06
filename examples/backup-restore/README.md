@@ -196,7 +196,7 @@ kubectl logs job/<backup-name>-backup
 kubectl logs job/<restore-name>-restore
 
 # Operator logs
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
 ```
 
 ### Debug Issues

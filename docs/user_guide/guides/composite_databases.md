@@ -209,9 +209,7 @@ rejected with a message saying so.
 
 A username and password are stored on the alias. Neo4j encrypts them in the
 system database, which is why this mode needs a keystore on the deployment.
-This mode works on both the 5.26 LTS and CalVer. (Up to v1.16.0 the operator
-sent it with a `CYPHER 25` directive that 5.26 rejects, so on 5.26 it never
-got past `25 is not a valid option for cypher version`.) Neo4j requires a
+This mode works on both the 5.26 LTS and CalVer. Neo4j requires a
 secure scheme for any remote alias: `neo4j+s://`, or `neo4j+ssc://` to accept
 a self-signed certificate.
 

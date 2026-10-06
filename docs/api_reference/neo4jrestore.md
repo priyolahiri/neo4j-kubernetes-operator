@@ -63,8 +63,6 @@ kubectl exec <instance>-0 -c neo4j -- bash -c \
 | `stopCluster` | `bool` | ❌ | **Offline standalone restores only** — online restores (every cluster restore, and most standalone ones) ignore it, with an event on a standalone. `true` scales the instance down before the restore Job (mounting the data PVC `neo4j-data-{name}-0` directly) and scales it back up after. With `false`, the operator **refuses** to run the Job while any server pod is running — it never writes into a live data volume — and says why the restore is offline. See [the offline cases](#stopcluster-and-offline-restore-standalone-targets). |
 | `timeout` | `string` | ❌ | Go duration (e.g. `"30m"`, `"2h"`). For **online** restores (clusters, and most standalone ones) this bounds the online-convergence wait after `dbms.recreateDatabase` is issued (default **5m** when unset) — raise it for multi-GB stores seeded from object storage. For **PVC-backed online restores** it also bounds the wait for the backup-seed-proxy Deployment to become Ready (default **3m** when unset); on expiry the restore fails with the proxy pod's condition (e.g. an RWO backup PVC still attached elsewhere). |
 
-> The pre-v1.13 top-level `clusterRef`, `databaseName`, and `force` fields were deprecated in v1.13 and **removed in v1.14**. Use `instanceRef`, `database`, and `options.replaceExisting` respectively.
-
 **Target compatibility**: `instanceRef` can reference either:
 
 - `Neo4jEnterpriseCluster` — for HA cluster restore operations
@@ -160,11 +158,11 @@ Additional restore execution options.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `replaceExisting` | `bool` | ❌ | Confirm restoring **over an existing database** (default: `false`). Required before the operator overwrites existing contents on **either** target: cluster restores issue the destructive `dbms.recreateDatabase`; standalone restores pass `--overwrite-destination` to `neo4j-admin`. |
+| `replaceExisting` | `bool` | ❌ | Confirm restoring **over an existing database** (default: `false`). Required before the operator overwrites existing contents on **either** target: online restores issue the destructive `dbms.recreateDatabase`; offline standalone restores pass `--overwrite-destination` to `neo4j-admin`. |
 | `additionalArgs` | `[]string` | ❌ | Additional arguments passed verbatim to `neo4j-admin database restore` |
 | `tempPath` | `string` | ❌ | Local directory for temporary files during restore. When `tempStorage` is configured this is set automatically to the mount path; only set manually if you mount your own volume by other means. |
 | `tempStorage` | [`TempStorageSpec`](#tempstoragespec) | ❌ | Provisions a PVC for temporary staging files during cloud restores. Without it, cloud restores use the container's ephemeral disk (may be too small for large databases). The operator mounts the PVC and passes `--temp-path` automatically. |
-| `resources` | `corev1.ResourceRequirements` | ❌ | CPU/memory requests + limits on the restore Job's container. When unset, the operator applies a Burstable default (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory). **Standalone restores only** — cluster targets use the Cypher path (no Job) and ignore this field. |
+| `resources` | `corev1.ResourceRequirements` | ❌ | CPU/memory requests + limits on the restore Job's container. When unset, the operator applies a Burstable default (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory). **Offline standalone restores only** — online restores (every cluster restore, and most standalone ones) use Cypher, run no Job, and ignore this field. |
 | `preRestore` | [`RestoreHooks`](#restorehooks) | ❌ | Executed **before anything is restored** (offline, before the instance is stopped), so Cypher hooks (e.g. `CALL db.checkpoint()`) hit a live Bolt endpoint. Once per attempt, including for an all-databases restore. |
 | `postRestore` | [`RestoreHooks`](#restorehooks) | ❌ | Executed once the restored database is online (offline: after the restore Job succeeds **and** `CREATE`/`START DATABASE` ran), so Cypher hooks target a live database. A failing hook fails the restore. |
 
@@ -184,7 +182,7 @@ Hooks to run before or after the restore, on every target — online and offline
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `job` | [`RestoreHookJob`](#restorehookjob) | ❌ | Kubernetes Job to run as a hook. The hook Job runs in its own pod — commands like `cypher-shell` must be pointed at the instance's service explicitly (e.g. `cypher-shell -a neo4j://<standalone>-client:7687 …`), otherwise they dial localhost inside the hook pod. |
-| `cypherStatements` | `[]string` | ❌ | Cypher statements the operator executes over Bolt against the standalone instance (pre-restore: before the instance is stopped; post-restore: after the database is registered/started) |
+| `cypherStatements` | `[]string` | ❌ | Cypher statements the operator executes over Bolt against the target cluster or standalone (pre-restore: before the restore is issued — offline, before the instance is stopped; post-restore: once the restored database is online) |
 
 ### RestoreHookJob
 
@@ -343,7 +341,7 @@ The operator emits a `RestoreStarted` event naming the case.
 
 When `spec.stopCluster: true`:
 
-1. The operator scales the target StatefulSet down to 0 replicas (recording the original replica count so re-entries don't lose it).
+1. The operator scales the target StatefulSet down to 0 replicas (recording the original replica count).
 2. The restore Job is created with the standalone's actual data PVC (`neo4j-data-{name}-0`) mounted into the container, enabling direct offline file-level restore.
 3. After the restore Job succeeds, the StatefulSet is scaled back up. If the restore fails after the scale-down (hook failure, Job-create failure), the operator scales the instance back up rather than leaving it stranded at 0 replicas.
 4. The operator then issues `CREATE DATABASE` or `START DATABASE` as described above.
@@ -600,8 +598,8 @@ kubectl get neo4jrestore production-pitr-restore -o jsonpath='{.status.phase}'
 # Check restore statistics
 kubectl get neo4jrestore production-pitr-restore -o jsonpath='{.status.stats}'
 
-# Monitor restore Job logs (standalone targets only — cluster targets restore
-# via Cypher and create no Job; follow the operator log instead)
+# Monitor restore Job logs (offline standalone restores only — online restores
+# create no Job; `kubectl describe neo4jrestore` shows their progress instead)
 kubectl logs -n neo4j job/production-pitr-restore-restore --follow
 
 # Check completion time
@@ -610,24 +608,12 @@ kubectl get neo4jrestore production-pitr-restore -o jsonpath='{.status.completio
 
 ## Version-Specific Notes
 
-### Neo4j 5.26.x
-
-- Restore command: `neo4j-admin database restore`
-- Key flags: `--from-path` (source), `--overwrite-destination` (not `--force`)
-- PITR flag: `--restore-until` in RFC3339 format
-- Automatic database state management via `STOP DATABASE` / `START DATABASE`
-
-### Neo4j 2025.x (CalVer)
-
-- Same restore command structure as 5.26.x
-- Enhanced metadata restoration
-- Additional `--restore-until` precision for PITR scenarios
+- **Online restore procedure:** `dbms.cluster.recreateDatabase` on 5.26.x and 2025.02–2025.03, `dbms.recreateDatabase` on 2025.04+ — the operator picks the right one from the image version.
+- **Offline (`neo4j-admin`) restore:** the same on every supported version — `neo4j-admin database restore --from-path=… [--overwrite-destination] [--restore-until=…]`, followed by `CREATE DATABASE` or `START DATABASE`.
 
 ## Version Requirements
 
-- **Neo4j Version**: 5.26.0+ (semver) or 2025.01.0+ (CalVer)
-- **Kubernetes**: 1.19+
-- **Operator**: Latest version with restore support
+- **Neo4j Version**: 5.26.x or CalVer 2025.x+ (see [Supported Neo4j Versions](../user_guide/version_support.md))
 
 ## Related Resources
 

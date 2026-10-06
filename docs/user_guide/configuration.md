@@ -13,7 +13,7 @@ The full CRD specifications, which detail every possible configuration field, ca
 
 Below are some of the most important fields you will use to configure your cluster. For a complete list, please consult the API reference.
 
-*   `spec.image`: The Neo4j Docker image to use. Requires Neo4j Enterprise 5.26+ or 2025.x. You can specify the repository (e.g., `neo4j`), tag (e.g., `5.26-enterprise`), pull policy, and pull secrets for private registries.
+*   `spec.image`: The Neo4j Docker image to use. Requires Neo4j Enterprise 5.26.x (LTS) or CalVer 2025.x and later (see [Supported Neo4j Versions](version_support.md)). You can specify the repository (e.g., `neo4j`), tag (e.g., `5.26-enterprise`), pull policy, and pull secrets for private registries.
 
 #### Private Registry / Image Pull Secrets
 
@@ -47,11 +47,12 @@ The `pullSecrets` field accepts a list of secret names. Secrets must exist in th
 *   Backups: Use the separate `Neo4jBackup` CRD for backup management — see the [Backup and Restore guide](guides/backup_restore.md).
 *   `spec.monitoring`: Enable monitoring, Prometheus metrics exposure, and query logging.
 
-> **Live Diagnostics:** When `enabled: true` and the cluster is `Ready`, the operator
-> automatically runs `SHOW SERVERS` and `SHOW DATABASES` and writes results to
-> `status.diagnostics`. Two new conditions, `ServersHealthy` and `DatabasesHealthy`,
+> **Live Diagnostics:** Once the cluster has formed (and while a server is down),
+> the operator runs `SHOW SERVERS` and `SHOW DATABASES` and writes results to
+> `status.diagnostics`. Two conditions, `ServersHealthy` and `DatabasesHealthy`,
 > reflect cluster health without requiring `kubectl exec`. See the
 > [Monitoring Guide](guides/monitoring.md#live-cluster-diagnostics) for full details.
+> This is on by default; only `spec.monitoring.enabled: false` turns it off.
 
 *   **Plugin management**: Use separate Neo4jPlugin CRDs to install plugins like APOC, GDS, Bloom, GenAI, and N10s. The operator automatically handles Neo4j 5.26+ compatibility requirements (see [Neo4jPlugin API Reference](../api_reference/neo4jplugin.md)).
 *   `spec.mcp`: Optional Neo4j MCP server deployment for client integrations (HTTP or STDIO). Requires the APOC plugin via Neo4jPlugin; HTTP uses per-request auth and supports Service/Ingress/Route exposure with optional TLS.

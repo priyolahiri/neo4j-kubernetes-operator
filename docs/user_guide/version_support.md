@@ -11,18 +11,21 @@ the database it manages**, so you can plan upgrades on your own schedule.
 |---|---|---|
 | **Mission-critical, strict change control, SLAs** | **5.26 LTS** (`neo4j:5.26-enterprise`) | Feature-stable, fixes-only, longest support lifecycle. Nothing new churns under you. |
 | **Want the latest features; agile / non-mission-critical** | the **operator-validated CalVer anchor** (named in each operator release, e.g. `2026.08`) | Newest capabilities, validated by the operator's CI. |
-
-!!! note "One feature needs more than the anchor"
-
-    **Cross-cluster replication requires Neo4j 2026.08+ on the DOWNSTREAM
-    cluster** — the version that introduced `CREATE REPLICA DATABASE`. It is the
-    only capability with a floor above the validated anchor, so a deployment
-    sitting on the anchor cannot host a replica: the `Neo4jReplicaDatabase` CR
-    fails with `ReplicaVersionTooOld`, naming both the requirement and the
-    version it found. The upstream has no such floor (2025.01+ is enough) and
-    must not be newer than the downstream. See
-    [Cross-Cluster Replication](guides/cross_cluster_replication.md).
 | **Evaluating / dev / test** | either | CalVer for newest features, LTS for stability. |
+
+!!! note "Features with their own version floor"
+
+    - **Cross-cluster replication** needs Neo4j 2026.08+ on the **downstream**
+      cluster — the version that introduced `CREATE REPLICA DATABASE`. The
+      validated anchor meets it; the 5.26 LTS does not. On an older image the
+      `Neo4jReplicaDatabase` CR fails with `ReplicaVersionTooOld`, naming both
+      the requirement and the version it found. The upstream has no such floor
+      (2025.01+ is enough) and must not be newer than the downstream. See
+      [Cross-Cluster Replication](guides/cross_cluster_replication.md).
+    - **Split backup archives** (`Neo4jBackup` `spec.options.splitArchivePartSize`)
+      need Neo4j 2026.09+, newer than the current anchor. On an older target the
+      backup is refused with a message naming the field and the image. See
+      [Split backup archives](guides/backup_restore.md#split-backup-archives).
 
 Enterprise Edition images only — Community is not supported. Versions older than
 5.26 (4.x, 5.0–5.25) are not supported.
@@ -145,7 +148,7 @@ release-workflow gates:
 | Unit suite + drift gate | Code behavior pinned by ~thousands of unit tests; CRDs, RBAC, Helm chart, and OLM bundle are regenerated and diffed — published manifests always match the code | Every PR, and again on the release tag (**blocking**) |
 | Core integration suite | Reconcile contracts (cluster formation, standalone lifecycle, databases, backups) against real Neo4j on Kubernetes — on **both** supported lines (5.26 LTS *and* the pinned CalVer) | Every runtime-affecting PR |
 | Extended integration suite | The full matrix: scaling with drain, split-brain recovery, the complete backup/restore matrix (PVC, cloud, chains, hooks), sharding | On demand (manual dispatch) — not triggered by the tag |
-| Install-confidence gate | Five legs on a fresh cluster: Helm install in cluster **and** namespace-scoped RBAC modes (with a live smoke deployment), Helm upgrade **from the previous published release** including the mandatory CRD refresh, documented-order uninstall with live resources, and the kubectl server-side-apply path | Inside the release pipeline — `build-and-push` is blocked until it passes (**blocking**) |
+| Install-confidence gate | Five legs on a fresh cluster: Helm install in cluster **and** namespace-scoped RBAC modes (with a live smoke deployment), Helm upgrade **from the previous published release** including the mandatory CRD refresh, documented-order uninstall with live resources, and the kubectl server-side-apply path | Inside the release pipeline — release images are not built or pushed until it passes (**blocking**) |
 | Signed supply chain | Multi-arch (`amd64`/`arm64`) images signed with Sigstore Cosign keyless signing; OLM bundle validated with operator-sdk | Every release |
 
 Verify an image signature yourself:
@@ -167,27 +170,6 @@ cosign verify ghcr.io/priyolahiri/neo4j-kubernetes-operator:<tag> \
   can defer to SCCs (`podSecurityContextEnabled: false`).
 - **NetworkPolicy**: enforced policies require a CNI that implements them
   (e.g. Calico, Cilium); Flannel ignores NetworkPolicies silently.
-
-## For maintainers
-
-**Validation gates in code:**
-
-- **Hard-reject** (version validator): anything older than the current LTS
-  (pre-5.26 today) or a line past its Neo4j EOL.
-- **Allow, don't block** "newer than the validated anchor" within a supported
-  track — a brand-new CalVer must not be rejected the day it ships.
-- **CI anchors:** integration suites run `5.26-enterprise` + the latest CalVer.
-  Invariant: *exactly two* anchors steady-state; a transition window may run three.
-
-**When the next LTS lands**, the change is small and contained — touch:
-
-- the version validator's allowed/minimum set (`internal/validation/`),
-- the CI matrix anchors (`.github/workflows/integration.yml`, `integration-tests.yml`),
-- the "Supported Neo4j versions" line in `CLAUDE.md`,
-- the matrix at the top of this page.
-
-At the *old* LTS's EOL, raising the floor also lets you delete its now-dead
-version gates (e.g. the SemVer-only discovery paths once 5.26 is dropped).
 
 ## FAQ
 

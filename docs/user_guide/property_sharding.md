@@ -227,19 +227,12 @@ Sharding does **not** set the server's default Cypher language. Neo4j docs
 suggest `db.query.default_language=CYPHER_25`, but it is not needed: a sharded
 database's graph shard and property shards inherit the **parent database's**
 language, not the server's, and the operator creates every sharded database
-with `SET DEFAULT LANGUAGE CYPHER 25` (measured on 2026.06.0, including a
-cluster with the server-wide setting removed). The server default is yours to
+with `SET DEFAULT LANGUAGE CYPHER 25`. The server default is yours to
 set with `spec.serverDefaultCypherLanguage`, as on any other cluster.
 
 !!! note "Upgrading a sharding cluster"
-    Operator releases up to v1.16.0 set `db.query.default_language=CYPHER_25`
-    server-wide whenever sharding was enabled. An existing sharding cluster
-    keeps it: the operator records what the cluster already runs in
-    `status.effectiveCypherLanguage` and keeps writing it, so upgrading changes
-    nothing and restarts nothing. Set `spec.serverDefaultCypherLanguage:
-    CYPHER_5` if you want databases created from then on to default to
-    Cypher 5 — Neo4j fixes a database's language when it is created, so
-    existing databases keep theirs either way.
+    If you are upgrading a sharding cluster from v1.16.x or earlier, see the
+    [Upgrade Guide](migration_guide.md#sharding-no-longer-sets-the-servers-cypher-language).
 
 #### Optional Performance Tuning
 
@@ -475,17 +468,16 @@ with `spec.instanceRef` (the cluster) + `spec.shardedDatabase` set to the
 resolves the logical database name (`spec.name`, e.g. `products`) from that resource.
 A single backup captures every shard consistently in one `neo4j-admin database backup`
 invocation via a `{logical-name}*` glob — you do **not** list the individual shard
-databases (`products-g000`, `products-p000`, …). (The pre-v1.14 `spec.target.kind:
-ShardedDatabase` form was removed in v1.14 — use `instanceRef` + `shardedDatabase`.)
+databases (`products-g000`, `products-p000`, …).
 
-> ℹ️ An **all-databases** backup (`spec.allDatabases`) now **catalogues** each sharded
+> ℹ️ An **all-databases** backup (`spec.allDatabases`) **catalogues** each sharded
 > family's per-shard artifacts in `status.history[].shardedFamilies` (family names also
 > in `shardedDatabasesExcluded`, with a warning event) — so one all-databases backup
 > *is* a restorable source for sharded databases too. The all-databases *restore loop*
-> still recreates standard databases only; recover each sharded family by re-applying
+> recreates standard databases only; recover each sharded family by re-applying
 > its `Neo4jShardedDatabase` with `spec.seedBackupRef` pointing at that same backup
 > (add `spec.seedSourceDatabase` to restore under a different name) — not `Neo4jRestore`.
-> A dedicated `shardedDatabase`-scoped `Neo4jBackup` per family is still available if you
+> A dedicated `shardedDatabase`-scoped `Neo4jBackup` per family is also available if you
 > prefer per-family lifecycles.
 
 ```yaml

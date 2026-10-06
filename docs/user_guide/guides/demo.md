@@ -119,7 +119,7 @@ Creates a `Neo4jEnterpriseStandalone` with:
 Creates a `Neo4jEnterpriseCluster` with:
 
 - 3 servers, `tls.mode: cert-manager`
-- `monitoring.enabled: true` for live diagnostics
+- `monitoring.enabled: true` for the Prometheus metrics endpoint (live diagnostics are on by default)
 - Verifies cluster formation with `SHOW SERVERS`
 
 ### Part 3: External Access

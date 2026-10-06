@@ -292,9 +292,7 @@ Neo4j 2026.x rejects `http://` for every `dbms.security.oidc.<name>.*` URI
 at config-parse time. There is no insecure-mode override. Self-hosted IDPs
 without TLS need a TLS-terminating proxy plus the proxy's CA in
 [`spec.trustedCASecrets`](../user_guide/security.md#jvm-truststore-for-internal-cas)
-so Neo4j trusts the issued certificate. The integration test in
-[`test/integration/neo4jauthrule_test.go`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/test/integration/neo4jauthrule_test.go)
-shows this end-to-end with cert-manager + nginx + mock-oauth2-server.
+so Neo4j trusts the issued certificate.
 
 ## See also
 

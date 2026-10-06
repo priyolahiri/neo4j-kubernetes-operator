@@ -212,12 +212,10 @@ The snippets below show the recommended `Neo4jDatabase.spec.topology` for each e
 
 ### Development Environment
 ```yaml
-# Neo4jEnterpriseCluster
-spec:
-  topology:
-    servers: 1
+# Neo4jEnterpriseStandalone — single node (a Neo4jEnterpriseCluster needs at least 2 servers)
+kind: Neo4jEnterpriseStandalone
 
-# Neo4jDatabase (standalone dev — no cluster needed)
+# Neo4jDatabase (standalone dev — no cluster needed; topology is ignored on a standalone)
 spec:
   topology:
     primaries: 1
@@ -416,6 +414,6 @@ kubectl exec -it my-cluster-server-0 -c neo4j -- neo4j-admin database check neo4
 
 ## Conclusion
 
-Choosing the right Neo4j cluster topology requires balancing fault tolerance, performance, and resource costs. While the operator now allows even numbers of primary nodes, odd numbers are strongly recommended for production environments to ensure optimal fault tolerance and avoid split-brain scenarios.
+Choosing the right Neo4j cluster topology requires balancing fault tolerance, performance, and resource costs. While the operator allows even numbers of primary nodes, odd numbers are strongly recommended for production environments to ensure optimal fault tolerance and avoid split-brain scenarios.
 
 For most production workloads, 3 or 5 primary nodes provide the best balance of availability and resource efficiency, supplemented with read replicas as needed for performance scaling.

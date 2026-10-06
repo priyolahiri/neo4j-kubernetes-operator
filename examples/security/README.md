@@ -44,12 +44,11 @@ each `Neo4jEnterpriseCluster` / `Neo4jEnterpriseStandalone` when
 
 - Pod / container `SecurityContext` (RunAsNonRoot, drop ALL caps,
   RuntimeDefault seccomp) is applied to cluster, standalone, backup,
-  restore, and plugin pods. See `internal/resources/security_context.go`.
+  restore, and plugin pods.
 - TLS for Bolt is opt-in via `spec.tls.mode: cert-manager` on the cluster
   / standalone CR. When enabled, the operator sets
   `server.bolt.tls_level=REQUIRED` and rejects plain `bolt://` clients.
 - Plugin supply chain: `Neo4jPlugin.spec.source.checksum` is required for
   `type=url` and `type=custom`; SHA1/MD5 are rejected. See
   [`docs/api_reference/neo4jplugin.md`](../../docs/api_reference/neo4jplugin.md#supply-chain).
-- Operator RBAC: the controller no longer requests `pods/exec` (stale from
-  the old sidecar-exec backup architecture, removed May 2026).
+- Operator RBAC: the controller does not request `pods/exec`.

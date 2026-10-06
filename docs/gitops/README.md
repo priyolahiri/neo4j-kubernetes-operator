@@ -43,8 +43,7 @@ ArgoCD shows as Progressing. See
 
 Health checks are configured for **all 27 CRDs** in the `neo4j.neo4j.com`
 group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
-replication) and all 12 Aura CRDs. `make check-crd-catalog` fails the build if a
-CRD is added without one.
+replication) and all 12 Aura CRDs.
 
 **Self-managed CRDs** key off `status.phase`, per the table above.
 

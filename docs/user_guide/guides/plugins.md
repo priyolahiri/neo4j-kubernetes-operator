@@ -232,7 +232,7 @@ Two `Neo4jPlugin` CRs in the same namespace targeting the same `clusterRef` with
 
 `spec.config` is a string map of plugin settings. Where each entry lands depends on the plugin:
 
-- **APOC** (and APOC Extended): settings are applied as **environment variables**, not `neo4j.conf` — Neo4j 5.26+ no longer reads APOC settings from the config file. `apoc.export.file.enabled: "true"` becomes `NEO4J_APOC_EXPORT_FILE_ENABLED=true` on the StatefulSet.
+- **APOC** (and APOC Extended): settings are applied as **environment variables**, not `neo4j.conf` — Neo4j 5.26+ does not read APOC settings from the config file. `apoc.export.file.enabled: "true"` becomes `NEO4J_APOC_EXPORT_FILE_ENABLED=true` on the StatefulSet.
 - **GDS, Bloom, GenAI, and others**: settings flow through Neo4j configuration — the ConfigMap for standalone targets, runtime configuration for clusters.
 - **Procedure allowlisting** (`dbms.security.procedures.unrestricted`, allowlists) always goes through `neo4j.conf`-level configuration, for APOC too — that's what `spec.security` drives.
 

@@ -137,7 +137,7 @@ Adopted built-in roles are never dropped on CR delete; only their privileges are
 
 ### Password rotation
 
-Update the Secret. The operator detects a change in the password's SHA-256 hash (stored in `status.passwordSecretHash`) and issues `ALTER USER ... SET PASSWORD ...` automatically:
+Update the Secret. The operator detects that the Secret changed and issues `ALTER USER ... SET PASSWORD ...` automatically. `status.passwordSecretHash` is an opaque change token derived from the Secret's namespace, name, key and `resourceVersion` — not from the password itself:
 
 ```bash
 kubectl create secret generic analytics-reader-creds \
@@ -431,7 +431,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 |---|---|
 | `Ready` | User exists in Neo4j, password and roles in sync |
 | `RolesSynced` | Granted roles equal `spec.roles` (PUBLIC excluded) |
-| `PasswordSynced` | Last-applied password hash matches the Secret |
+| `PasswordSynced` | The password from the current version of the Secret has been applied |
 | `PendingDependencies` | One or more `spec.roles` reference custom roles that don't yet exist |
 | `ClusterNotReady` | `spec.clusterRef` exists but is not in `Ready` phase |
 
@@ -472,7 +472,7 @@ prod       analytics-reader  prod-cluster  Ready   True   false  3m
 |---|---|
 | Apply CR | Controller adds finalizer; creates user/role on next reconcile |
 | Update spec | Diffed against live state; only changed fields trigger Cypher |
-| Update Secret | Password hash changes → `ALTER USER SET PASSWORD` |
+| Update Secret | Secret's `resourceVersion` changes → `ALTER USER SET PASSWORD` |
 | `kubectl delete` | Finalizer-protected: controller drops user/role first (unless `deletionPolicy: Retain`) |
 | Cluster not Ready | `ClusterNotReady` condition; reconcile requeued every 30s |
 | Referenced role missing | `PendingDependencies` condition; requeue when role lands |
@@ -487,7 +487,7 @@ All three CRDs are **namespace-scoped** with same-namespace `clusterRef` only. T
 - Standard `Role` + `RoleBinding` patterns apply — no `ClusterRole` required.
 - Reuse of role definitions across clusters is achieved via Kustomize / Helm templating at the manifest layer, not by sharing a single CR.
 
-If you need a true multi-tenant pattern (one shared Neo4j cluster, per-team user manifests in team namespaces), open an issue — the design has a documented extension path that has been deliberately deferred until there is demand.
+If you need a true multi-tenant pattern (one shared Neo4j cluster, per-team user manifests in team namespaces), open an issue.
 
 ## RBAC for the CRDs themselves
 
@@ -518,7 +518,7 @@ Check that the referenced custom role's `Neo4jRole` CR exists in the same namesp
 
 **Symptom**: Password updates not picked up.
 
-Confirm the Secret's `data.<key>` (default `password`) actually changed; `kubectl describe` the user and look for the `PasswordRotated` event. The controller hashes the bytes — re-applying an identical secret value is a no-op.
+Confirm the Secret's `data.<key>` (default `password`) actually changed; `kubectl describe` the user and look for the `PasswordRotated` event. The controller detects rotation from the Secret being written (its `resourceVersion`), not from the password value — if `kubectl apply` reports the Secret `unchanged`, nothing was written and there is nothing to rotate. Any write to the Secret, even a label edit, re-applies the password once; that is harmless.
 
 **Symptom**: `validation failed: ... privilege statement must end with TO <role>`.
 
@@ -575,12 +575,12 @@ The user/role controllers reuse the same connection helper as `Neo4jDatabase`. I
 
 Admin commands (`GRANT`, `REVOKE`, `CREATE/DROP ROLE`, etc.) must execute on the cluster leader. The operator uses the Neo4j routing scheme (`neo4j://`/`neo4j+s://`) so the driver auto-routes writes to the leader; if you see `NotALeader` errors anyway, the most likely cause is a stuck routing table on the operator's Bolt client (e.g. immediately after a manual leader rotation). The next reconcile (≤30s) refreshes the routing table and the operation succeeds.
 
-If the errors are persistent — not transient — check that `dbms.routing.getRoutingTable` is reachable from the operator pod (it normally is for any Enterprise 5.26+ cluster). Older operator versions used the direct `bolt://` scheme and produced this error symptom continuously on multi-server clusters; if you see persistent `NotALeader` events, ensure the operator image is up to date.
+If the errors are persistent — not transient — check that `dbms.routing.getRoutingTable` is reachable from the operator pod (it normally is for any Enterprise 5.26+ cluster).
 
 ## Limits and non-goals
 
 - **Cluster admin user safety**: the operator refuses to manage usernames matching reserved keywords (`system`). The bootstrap admin user (defined by `cluster.spec.auth.adminSecret`) is technically manageable, but doing so is risky — a misconfigured `Neo4jUser` could lock the operator out of its own cluster. Prefer leaving it alone.
-- **Auto-generated passwords**: not supported in v1; you must provide a Secret. (Tracked as a future enhancement.)
+- **Auto-generated passwords**: not supported; you must provide a Secret.
 - **Cypher-injection of role/user names**: the operator quotes all identifiers with backticks and uses parameters for password and provider IDs. Special characters in names are safe.
 - **Cross-cluster role reuse via a single CR**: not supported. Use Kustomize / Helm to template the same `Neo4jRole` into multiple namespaces.
 

@@ -35,7 +35,7 @@ kubectl logs -n neo4j-operator-system -l app.kubernetes.io/name=neo4j-operator -
 
 ### Upgrade phases and resumability
 
-The upgrade runs as a requeue-driven state machine whose state is persisted in
+The upgrade runs as a state machine whose state is persisted in
 `status.upgradeStatus`, so you can follow it with `kubectl` and it survives
 operator restarts:
 
@@ -54,9 +54,7 @@ each per-pod step is bounded by `upgradeTimeout`/`healthCheckTimeout`).
 
 **Resumability.** Because the phase and partition are persisted in status, an
 operator restart (or leader change) mid-upgrade resumes exactly where it left
-off — already-rolled pods are not rolled again. Upgrades that were interrupted
-under an older operator version (`phase: InProgress`) are adopted and resumed
-automatically.
+off — already-rolled pods are not rolled again.
 
 **Changing the target mid-upgrade.** If you patch `spec.image.tag` again while
 an upgrade is running, the state machine retargets to the new image: pods not

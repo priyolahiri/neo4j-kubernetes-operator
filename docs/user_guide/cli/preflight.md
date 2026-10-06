@@ -27,7 +27,7 @@ Shape only: no bucket, registry or endpoint was contacted.
 1 of 1 resource(s) would fail on a precondition.
 ```
 
-A manifest that names its own `metadata.namespace` is checked **there** — that is where `kubectl apply` will put it, and it decides the pod-security level and where Secrets are looked up. `-n` (or your kubeconfig's namespace) applies only to manifests that omit one. Before v1.17.0 the flag won even over a namespace written in the file, so a standalone bound for a `restricted` namespace could pass a check it would fail on apply.
+A manifest that names its own `metadata.namespace` is checked **there** — that is where `kubectl apply` will put it, and it decides the pod-security level and where Secrets are looked up. `-n` (or your kubeconfig's namespace) applies only to manifests that omit one.
 
 ## What it checks
 
@@ -96,7 +96,7 @@ The cloud is detected from a node's `spec.providerID`, which the kubelet sets �
 
 An AWS load balancer is handed out as a **hostname**, not an IP. Resolving it would be reachability, so preflight reports the hostname as unchecked and gives you the `dig` command rather than implying it looked.
 
-This replaces the ritual the troubleshooting guide documents today — `kubectl run backup-auth-check --image=amazon/aws-cli …`, in three vendor variants — which you only reach for **after** a backup has already failed.
+This replaces the ritual the troubleshooting guide documents — `kubectl run backup-auth-check --image=amazon/aws-cli …`, in three vendor variants — which you only reach for **after** a backup has already failed.
 
 ## What it does not check
 

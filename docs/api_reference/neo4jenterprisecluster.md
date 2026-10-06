@@ -14,7 +14,7 @@ The `Neo4jEnterpriseCluster` Custom Resource Definition (CRD) manages Neo4j Ente
 
 ## Architecture
 
-**Server-Based Architecture**: `Neo4jEnterpriseCluster` uses a unified server-based architecture introduced in Neo4j 5.26.x:
+**Server-Based Architecture**: `Neo4jEnterpriseCluster` uses a unified server-based architecture:
 
 - **Single StatefulSet**: `{cluster-name}-server` with configurable replica count
 - **Server Pods**: Named `{cluster-name}-server-0`, `{cluster-name}-server-1`, etc.
@@ -243,8 +243,7 @@ Specifies role constraints for individual servers.
 
 Used by the legacy singular `spec.auth.trustStore` field. New configurations
 should prefer the plural [`TrustedCASecret`](#trustedcasecret) list at
-`spec.trustedCASecrets`; both fields are merged at reconcile time so
-backward compatibility is preserved.
+`spec.trustedCASecrets`; both fields are merged at reconcile time.
 
 | Field | Type | Description |
 |---|---|---|
@@ -350,7 +349,7 @@ not parse policy config to wire up filesystem mounts automatically.
 | `renewBefore` | `*string` | Renewal window before expiry (e.g., `"360h"`) |
 | `subject` | [`*CertificateSubject`](#certificatesubject) | Certificate subject fields |
 | `usages` | `[]string` | Certificate usages (max 32 entries, each from the cert-manager key-usage list, e.g. `digital signature`, `key encipherment`, `server auth`, `client auth`). When set it **replaces** the operator defaults and must include both `server auth` and `client auth` (CEL rule and validator) — Neo4j needs both EKUs for its mutual-TLS posture. Omit to use the defaults. |
-| `strictPeerValidation` | `*bool` | Intra-cluster TLS posture. **Default: `true`** (Neo4j's canonical production posture). When `true`, the operator emits `dbms.ssl.policy.cluster.trust_all=false`, `client_auth=REQUIRE` (mutual TLS), and `verify_hostname=true`, and projects the cert-manager Secret's `ca.crt` to `/ssl/trusted/ca.crt` as the trust anchor. When `false`, reverts to the legacy `trust_all=true` + `client_auth=NONE` posture — Neo4j's own docs flag this as *"debugging only, since it does not offer security."* The opt-out exists for external issuers that do not populate `ca.crt` in their Secret output. See the [TLS Configuration Guide](../user_guide/tls_configuration.md) for details. |
+| `strictPeerValidation` | `*bool` | Intra-cluster TLS posture. **Default: `true`** (Neo4j's canonical production posture). When `true`, the operator emits `dbms.ssl.policy.cluster.trust_all=false`, `client_auth=REQUIRE` (mutual TLS), and `verify_hostname=true`, and projects the cert-manager Secret's `ca.crt` to `/ssl/trusted/ca.crt` as the trust anchor. When `false`, the operator emits `trust_all=true` + `client_auth=NONE` instead — Neo4j's own docs flag this as *"debugging only, since it does not offer security."* The opt-out exists for external issuers that do not populate `ca.crt` in their Secret output. See the [TLS Configuration Guide](../user_guide/tls_configuration.md) for details. |
 | `additionalClusterTrustCAs` | `[]`[`TrustedCASecret`](#trustedcasecret) | Peer clusters' CA certificates, each projected as its own file directly into `/ssl/trusted/` (the cluster SSL policy's trust directory — Neo4j scans every file present there, not one fixed filename) alongside this cluster's own CA. Required for mutual TLS when replicating across clusters with different CAs — the normal case for [`crossClusterReplication`](#crossclusterreplicationspec) — since `trustedCASecrets` above is a JVM-wide truststore that `dbms.ssl.policy.cluster.*` never reads. Must be set on **both** clusters, each trusting the other's CA. **This list is the access-control list for the exposed port**, so removing a decommissioned peer's CA is a revocation step, not housekeeping. Read only when `mode` is `cert-manager` — setting it without the mode is rejected rather than silently ignored. Only relevant when `strictPeerValidation` is `true`. |
 
 ### IssuerRef
@@ -406,11 +405,9 @@ both RBAC modes, because ESO (not this operator) performs the cluster-scoped rea
 
 !!! note "Minimum External Secrets Operator version: v0.17.0"
 
-    The operator emits `apiVersion: external-secrets.io/v1`. ESO **v0.17.0** stopped serving
-    the older `v1beta1`, and this operator previously emitted that older version — so on
-    ESO ≥ 0.17 every emitted `ExternalSecret` was rejected. If you are on ESO < 0.17.0,
+    The operator emits `apiVersion: external-secrets.io/v1`. If you are on ESO < 0.17.0,
     upgrade ESO (its own [migration guide](https://external-secrets.io/latest/guides/v1beta1/)
-    covers the path) rather than pinning an older operator.
+    covers the path).
 
 | Field | Type | Description |
 |---|---|---|
@@ -557,8 +554,7 @@ spec:
 ---
 # status.crossClusterReplication.addresses on `prod`, once ready, becomes
 # spec.source.addresses on the downstream Neo4jReplicaDatabase — see
-# docs/api_reference/neo4jreplicadatabase.md and
-# docs/design/cross-cluster-replication.md §6.
+# docs/api_reference/neo4jreplicadatabase.md.
 ```
 
 ---
@@ -755,8 +751,7 @@ last-write-wins config semantics give audit the final value. User
 
 Controls operator emission of a Kubernetes NetworkPolicy that hardens
 ingress to the Neo4j server pods. Most importantly, closes the backup
-port (6362) to non-backup pods — Neo4j security checklist gap addressed
-in issue #128.
+port (6362) to non-backup pods.
 
 | Field | Type | Description |
 |---|---|---|
@@ -919,7 +914,7 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | `effectiveCypherLanguage` | `string` | The server default Cypher version the operator resolved (see `spec.serverDefaultCypherLanguage`), recorded once so an unset spec never changes meaning under a running cluster |
 | `auraFleetManagement` | `object` | State of the Aura Fleet Management integration (when `spec.auraFleetManagement.enabled=true`) |
 | `observedGeneration` | `int64` | Last observed generation |
-| `diagnostics` | [`*DiagnosticsStatus`](#diagnosticsstatus) | Live diagnostics collected when `spec.monitoring.enabled=true` and cluster is `Ready`. |
+| `diagnostics` | [`*DiagnosticsStatus`](#diagnosticsstatus) | Live diagnostics, collected once the cluster has formed (also while it is degraded) unless `spec.monitoring.enabled: false`. |
 | `crossClusterReplication` | [`*CrossClusterReplicationStatus`](#crossclusterreplicationspec) | State of the network-mode CCDR exposure proxy, when `spec.crossClusterReplication.enabled` is `true`. |
 | `internalAddresses` | `[]string` | Ready-to-paste `<pod-fqdn>:6000` list for a downstream `Neo4jReplicaDatabase` on this **same** Kubernetes cluster (`source.upstreamClusterRef`, or pasted directly into `source.addresses`). Always populated — no proxy, no LoadBalancer needed — but not routable from a genuinely separate Kubernetes cluster; use `crossClusterReplication` for that. |
 
@@ -928,8 +923,8 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 Service endpoints and connection information populated by the controller on
 every status update. Schema is shared between `Neo4jEnterpriseCluster` and
 `Neo4jEnterpriseStandalone`; both controllers resolve URLs against the
-`{name}-client` ClusterIP (the legacy standalone `{name}-service` name remains
-as a deprecated alias for one release).
+`{name}-client` ClusterIP (on a standalone, `{name}-service` also resolves but
+is deprecated; use `{name}-client`).
 
 | Field | Type | Description |
 |---|---|---|
@@ -978,10 +973,10 @@ Detailed upgrade progress tracking.
 
 | Field | Type | Description |
 |---|---|---|
-| `phase` | `string` | Upgrade state-machine phase (schema enum `Pending`, `Staging`, `InProgress`, `Rolling`, `Stabilizing`, `Verifying`, `Paused`, `Completed`, `Failed`): `Staging` (target pod template applied, pod restarts frozen) → `Rolling` (servers restarted one at a time, highest ordinal first) → `Stabilizing` (health, consensus and replication gate) → `Verifying` (per-server version check) → `Completed`. `Paused` and `Failed` are terminal until operator/user action. `InProgress` is a legacy value from older operator versions, resumed as `Staging`; `Pending` is reserved |
+| `phase` | `string` | Upgrade state-machine phase (schema enum `Pending`, `Staging`, `InProgress`, `Rolling`, `Stabilizing`, `Verifying`, `Paused`, `Completed`, `Failed`): `Staging` (target pod template applied, pod restarts frozen) → `Rolling` (servers restarted one at a time, highest ordinal first) → `Stabilizing` (health, consensus and replication gate) → `Verifying` (per-server version check) → `Completed`. `Paused` and `Failed` are terminal until operator/user action. `InProgress` is resumed as `Staging`; `Pending` is reserved |
 | `startTime` | `*metav1.Time` | When the upgrade started |
 | `stepStartTime` | `*metav1.Time` | Anchor for the per-step timeout (`upgradeTimeout` per Rolling step, `stabilizationTimeout`, `healthCheckTimeout`); reset on every phase transition and partition advance |
-| `phaseStartTime` | `*metav1.Time` | When the current phase began; reset only when the phase changes (unlike `stepStartTime`, which also restarts on every partition advance inside `Rolling`). It is the anchor `neo4j_operator_upgrade_duration_seconds` is measured from. Absent on an upgrade that began under an older operator version |
+| `phaseStartTime` | `*metav1.Time` | When the current phase began; reset only when the phase changes (unlike `stepStartTime`, which also restarts on every partition advance inside `Rolling`). It is the anchor `neo4j_operator_upgrade_duration_seconds` is measured from |
 | `currentPartition` | `*int32` | StatefulSet `RollingUpdate` partition most recently applied; servers with ordinal >= partition have been rolled to the target version. Used to resume after an operator restart |
 | `completionTime` | `*metav1.Time` | When the upgrade completed |
 | `currentStep` | `string` | Current upgrade step description |
@@ -1017,7 +1012,7 @@ Server-specific upgrade progress.
 
 ### DiagnosticsStatus
 
-Live diagnostics collected from `SHOW SERVERS` and `SHOW DATABASES` when `spec.monitoring.enabled=true` and the cluster is in `Ready` phase. Updated on every reconcile cycle.
+Live diagnostics collected from `SHOW SERVERS` and `SHOW DATABASES` once the cluster has formed, including while it is degraded with a server down. On by default; `spec.monitoring.enabled: false` turns it off. Updated on every reconcile cycle.
 
 | Field | Type | Description |
 |---|---|---|
@@ -1190,7 +1185,7 @@ spec:
 ### Create Scheduled Backup (Separate Resource)
 
 ```yaml
-# Note: Backups are now managed via Neo4jBackup CRD
+# Backups are managed via the Neo4jBackup CRD
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jBackup
 metadata:
@@ -1499,7 +1494,7 @@ kubectl get pods -l neo4j.com/cluster=my-cluster
 kubectl describe pod my-cluster-server-0
 
 # Check operator logs
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
 
 # Verify split-brain detection
 kubectl get events --field-selector reason=SplitBrainDetected
@@ -1508,9 +1503,6 @@ kubectl get events --field-selector reason=SplitBrainDetected
 ### Resource Conflicts
 
 ```bash
-# Check resource version conflicts
-kubectl get events --field-selector reason=UpdateConflict
-
 # Force reconciliation with a no-op annotation change
 kubectl annotate neo4jenterprisecluster my-cluster \
   troubleshooting.neo4j.com/reconcile="$(date +%s)" --overwrite

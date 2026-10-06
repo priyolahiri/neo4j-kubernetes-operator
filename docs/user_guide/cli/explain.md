@@ -47,7 +47,7 @@ CompositeDatabaseNameBlocked (reason)
     error never mentions ordering. The CR's message names the alias to drop ...
 ```
 
-The reason you are most likely to meet right after upgrading to v1.17.0 is `UnattributedPrivileges`: every existing `Neo4jRole` reports it, because learn mode cannot attribute privileges that were on the role before it started. It is not a fault — nothing was revoked and access is unchanged — and `kubectl neo4j explain UnattributedPrivileges` says how to clear it. The full story is in [Learn mode](../user_role_management.md#learn-mode-default).
+The reason you are most likely to meet right after upgrading is `UnattributedPrivileges`: every existing `Neo4jRole` reports it, because learn mode cannot attribute privileges that were on the role before it started. It is not a fault — nothing was revoked and access is unchanged — and `kubectl neo4j explain UnattributedPrivileges` says how to clear it. The full story is in [Learn mode](../user_role_management.md#learn-mode-default).
 
 Only reasons that are *not* guessable get an entry. A reason that restates its condition needs none, and a list padded with those would rot without helping anyone.
 

@@ -28,24 +28,20 @@ and standalone.
 
 Notes:
 
-- **The client-facing Service is `{name}-client` for both kinds.** Standalone
-  deployments previously used `{name}-service`; that name still resolves as a
-  deprecated ClusterIP-only alias (annotated `neo4j.com/deprecated-alias-of`;
-  still created as of v1.17.0) and will be removed in a future release — update any saved
+- **The client-facing Service is `{name}-client` for both kinds.** On a
+  standalone, `{name}-service` also resolves, as a
+  deprecated ClusterIP-only alias (annotated `neo4j.com/deprecated-alias-of`)
+  that will be removed in a future release — update any saved
   connection strings, NetworkPolicies, and dashboards to `{name}-client` now.
   A pod's stable address is always
   `{name}-0.{name}-headless.<namespace>.svc.cluster.local`.
-- **External exposure moves to `{name}-client` on upgrade**: `spec.service`
+- **External exposure is on `{name}-client`**: `spec.service`
   settings (`type: LoadBalancer` / `NodePort`, annotations,
-  `loadBalancerSourceRanges`) are now applied to the standalone `{name}-client`
-  Service, not the alias. A pre-existing LoadBalancer external IP therefore
-  **re-provisions once** when you upgrade — expect a new external IP/hostname
-  and update DNS accordingly.
-- **One-time TLS pod restart**: with `spec.tls` enabled, the issued certificate
-  now carries SANs for both the `{name}-client` and legacy `{name}-service`
-  names. After the certificate is re-issued on upgrade, the operator
-  automatically restarts the standalone pod once so the running server presents
-  the new SANs.
+  `loadBalancerSourceRanges`) are applied to the standalone `{name}-client`
+  Service, not the alias.
+- **TLS SANs**: with `spec.tls` enabled, the issued certificate
+  carries SANs for both the `{name}-client` and deprecated `{name}-service`
+  names.
 - **The standalone headless service exposes `bolt`/`http`/`backup` (and `https`
   under TLS)** for direct per-pod addressing, mirroring the cluster headless
   service. It does **not** expose the clustering ports (`6000/7000/7688/7689`):

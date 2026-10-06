@@ -71,7 +71,7 @@ templating the database name into every client.
 
 ### Cross-cluster replication failover
 
-The case that motivated this CRD. A replica created as `foo-replica` keeps that
+A replica created as `foo-replica` keeps that
 name through promotion, so DR clients would otherwise have to change connection
 strings mid-incident. An alias avoids that entirely:
 

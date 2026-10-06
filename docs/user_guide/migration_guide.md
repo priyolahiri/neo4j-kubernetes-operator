@@ -242,7 +242,7 @@ first reconcile.
 
 ### Behaviour changes
 
-- **A cluster that loses a server stays `Ready`** (#444). It used to drop to
+- **A cluster that loses a server stays `Ready`**. It used to drop to
   `Forming` on any one pod restart, which paused every `Neo4jUser`,
   `Neo4jRole`, `Neo4jDatabase`, `Neo4jBackup` and the rest until the server
   came back, and left a cluster whose server never came back `Forming` for
@@ -315,8 +315,7 @@ first reconcile.
   `status.resolvedSource.artifactType` carries it into the restore.
 - An all-databases restore records `status.completionTime`.
 - **A standalone restores into a new database name.** It used to look for the
-  *target* name's files and fail; the tutorial's "restore into a new
-  database" step could not work on a standalone. Standalone restores from a
+  *target* name's files and fail. Standalone restores from a
   `backupRef` now read the run's recorded artifact, as cluster restores
   always have. New `Neo4jRestore.spec.source.sourceDatabase` picks one
   database out of an all-databases backup to restore under `spec.database`,

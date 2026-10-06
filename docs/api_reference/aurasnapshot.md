@@ -4,7 +4,7 @@
 
 The `AuraSnapshot` Custom Resource Definition (CRD) takes an on-demand snapshot of an [`AuraInstance`](aurainstance.md) — the Aura equivalent of `Neo4jBackup`. Restore is a separate [`AuraRestore`](aurarestore.md) CR.
 
-Three behaviours confirmed against the live API that are easy to misread:
+Three behaviours that are easy to misread:
 
 - **`status.profile` is `AdHoc` for snapshots this CRD takes**, and `Scheduled` for the automatic ones Aura makes on its own. Listing an instance's snapshots shows both.
 - **`status.exportable` means "exportable *now*"** — it is `false` while the snapshot runs and flips to `true` on completion. It is not a property of the finished snapshot decided up front.

@@ -197,6 +197,28 @@ so there's no single shared variable):
 
 Bump both in the same PR — the bump is itself a tested change.
 
+### Neo4j version support: validation gates and the next LTS
+
+The user-facing policy is [Supported Neo4j Versions](../user_guide/version_support.md).
+What enforces it:
+
+- **Hard-reject** (version validator): anything older than the current LTS
+  (pre-5.26 today) or a line past its Neo4j EOL.
+- **Allow, don't block** "newer than the validated anchor" within a supported
+  track — a brand-new CalVer must not be rejected the day it ships.
+- **CI anchors:** integration suites run `5.26-enterprise` + the latest CalVer.
+  Invariant: *exactly two* anchors steady-state; a transition window may run three.
+
+**When the next LTS lands**, the change is small and contained — touch:
+
+- the version validator's allowed/minimum set (`internal/validation/`),
+- the CI matrix anchors (`.github/workflows/integration.yml`, `integration-tests.yml`),
+- the "Supported Neo4j versions" line in `CLAUDE.md`,
+- the matrix at the top of [Supported Neo4j Versions](../user_guide/version_support.md).
+
+At the *old* LTS's EOL, raising the floor also lets you delete its now-dead
+version gates (e.g. the SemVer-only discovery paths once 5.26 is dropped).
+
 ## Install Confidence
 
 **`scripts/install-confidence.sh` — the install/upgrade/uninstall matrix on a

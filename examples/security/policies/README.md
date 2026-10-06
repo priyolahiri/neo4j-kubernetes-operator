@@ -33,8 +33,7 @@ No. By design:
   the `status` subresource and Kyverno does not validate those, so
   status updates from the operator are never gated by these policies.
 - **Defence in depth** — policy 01 (enterprise image) duplicates the
-  operator's inline validator (CLAUDE.md guarantees community images are
-  rejected). Even if Kyverno is missing or disabled, the operator still
+  operator's inline validator, which rejects community images. Even if Kyverno is missing or disabled, the operator still
   rejects the CR. The Kyverno pass just surfaces the same error at
   admission time so users see it before a reconcile.
 
@@ -113,8 +112,7 @@ unset; production deployments should set `spec.monitoring.enabled: true`.
 - They do not check `Neo4jBackup`, `Neo4jRestore`, `Neo4jDatabase`,
   `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jPlugin`, or
   `Neo4jAuthRule` CRs. The validation those CRs need is already inline
-  in the controllers (`internal/validation/`; the project has no admission
-  webhooks — see `docs/knowledge/invariants.md`).
+  in the controllers (the project has no admission webhooks).
 - Pattern matching uses Kyverno v1 syntax. If you are on an older
   Kyverno version (<1.10) the `=(field)` conditional anchor and the
   multi-kind `match.any.resources.kinds` form may need adjustment.

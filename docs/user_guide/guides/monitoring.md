@@ -69,11 +69,11 @@ scrape_configs:
           - <cluster>-metrics.<namespace>.svc.cluster.local:2004
 ```
 
-Note: for standalone deployments, scrape `<standalone>-client.<namespace>.svc.cluster.local:2004` (the metrics port is added to the same Service that serves Bolt/HTTP). Scrape configs still pointing at the legacy `<standalone>-service` name keep working this release, but that alias is deprecated and will be removed next release — switch to `-client`.
+Note: for standalone deployments, scrape `<standalone>-client.<namespace>.svc.cluster.local:2004` (the metrics port is added to the same Service that serves Bolt/HTTP). `<standalone>-service` also resolves, but that alias is deprecated — use `-client`.
 
 ### Operator's own metrics (TokenReview-authenticated)
 
-The Neo4j *operator* exposes its own Prometheus metrics on port 8080 of the operator pod. As of v1.10 the operator's metrics endpoint defaults to **HTTPS with TokenReview-based authentication** (`metrics.secure=true` in the helm chart) — anonymous scrapes are rejected with 401/403. To scrape the operator's own metrics:
+The Neo4j *operator* exposes its own Prometheus metrics on port 8080 of the operator pod. The operator's metrics endpoint defaults to **HTTPS with TokenReview-based authentication** (`metrics.secure=true` in the helm chart) — anonymous scrapes are rejected with 401/403. To scrape the operator's own metrics:
 
 1. Bind a ServiceAccount to the `metrics-reader` ClusterRole the operator ships:
    ```bash
@@ -96,7 +96,7 @@ The Neo4j *operator* exposes its own Prometheus metrics on port 8080 of the oper
 
 The `ServiceMonitor` template wires `scheme: https`, `tlsConfig.insecureSkipVerify: true` (controller-runtime serves a self-signed cert by default; swap for a cert-manager bundle in production), and the bearer token reference automatically when `metrics.secure=true`.
 
-Set `metrics.secure=false` in helm values to revert to plain HTTP without authn — closes the door on the November 2025 security review #5 remediation, but is sometimes required for legacy scrapers that can't carry bearer tokens.
+Set `metrics.secure=false` in helm values to serve plain HTTP without authn — this drops the authentication above, but is sometimes required for legacy scrapers that can't carry bearer tokens.
 
 ## Customizing metrics settings
 
@@ -167,7 +167,7 @@ The operator handles plugin installation and token registration automatically. S
 
 ## Complete Metrics Reference
 
-The operator registers the following Prometheus metrics. All metrics use the prefix `neo4j_operator_` (composed from the `neo4j_operator` subsystem in `internal/metrics/metrics.go`).
+The operator registers the following Prometheus metrics. All metrics use the prefix `neo4j_operator_`.
 
 ### Build metadata
 
@@ -265,8 +265,9 @@ Emitted by the [Aura orchestration](../aura_orchestration.md) controllers for ev
 
 ## Live Cluster Diagnostics
 
-When the cluster is in `Ready` phase, the operator automatically collects live
-diagnostics by running `SHOW SERVERS` and `SHOW DATABASES` against the cluster.
+Once the cluster has formed — and while it is degraded with a server down — the
+operator collects live diagnostics by running `SHOW SERVERS` and `SHOW DATABASES`
+against the cluster.
 Collection is on by default — it runs when `spec.monitoring` is omitted or
 `spec.monitoring.enabled: true`, and is skipped only when you set
 `spec.monitoring.enabled: false`. Results are written to `status.diagnostics`
@@ -283,9 +284,8 @@ spec:
     enabled: true
 ```
 
-The operator creates a Neo4j client connection for diagnostics only after the cluster
-reaches `Ready` phase. No extra configuration is needed — diagnostics run automatically
-on every reconcile cycle.
+The operator connects for diagnostics once the cluster has formed. No extra
+configuration is needed — diagnostics run automatically on every reconcile cycle.
 
 ### Viewing Diagnostic Status
 

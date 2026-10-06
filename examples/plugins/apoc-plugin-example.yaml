@@ -1,5 +1,5 @@
 # APOC Plugin Example - Environment Variable Configuration (Neo4j 5.26+)
-# APOC configuration no longer supported in neo4j.conf, uses environment variables only
+# APOC configuration is not supported in neo4j.conf; uses environment variables only
 
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin

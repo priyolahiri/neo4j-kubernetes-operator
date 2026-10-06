@@ -22,8 +22,7 @@ Key implementation details:
 - For PVC storage, `--to-path` uses the local path within the mounted PVC.
 - RBAC: Only a `neo4j-backup-sa` ServiceAccount is created. No Role or RoleBinding is created because the backup Job requires no Kubernetes API access.
 - Retention: cloud storage (S3/GCS/Azure) is pruned by **your bucket's lifecycle rules**, not the operator. For PVC storage, the operator runs a cleanup Job **only when the Neo4jBackup CR is deleted** — see [RetentionPolicy](#retentionpolicy).
-- **Scope:** set `spec.instanceRef` (the deployment — a cluster **or** a standalone) plus exactly one scope field: `spec.database` (a single database), `spec.shardedDatabase` (the name of a `Neo4jShardedDatabase` CR), or `spec.allDatabases: true` (every user database; the `system` database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. `spec.allDatabases` produces one `.backup` artifact per database (recorded in `status.history[].databaseArtifacts`) and is restorable cluster-wide via `Neo4jRestore.spec.allDatabases` (closes [#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222)).
-- The legacy `spec.target` block (`kind`/`name`/`clusterRef`) was deprecated in v1.13 and **removed in v1.14**. Use `spec.instanceRef` + a scope field instead.
+- **Scope:** set `spec.instanceRef` (the deployment — a cluster **or** a standalone) plus exactly one scope field: `spec.database` (a single database), `spec.shardedDatabase` (the name of a `Neo4jShardedDatabase` CR), or `spec.allDatabases: true` (every user database; the `system` database is excluded). The operator resolves cluster-vs-standalone itself — topology is not part of the API. `spec.allDatabases` produces one `.backup` artifact per database (recorded in `status.history[].databaseArtifacts`) and is restorable cluster-wide via `Neo4jRestore.spec.allDatabases`.
 
 ## Spec
 
@@ -85,7 +84,7 @@ Defines where to store backups.
 
 ### CloudBlock
 
-Cloud provider configuration. This type lives on `StorageLocation` as `storage.cloud` — it carries both per-storage credentials and workload-identity setup. (The top-level `spec.cloud` field was removed in v1.14; nest it under `storage.cloud` instead.)
+Cloud provider configuration. This type lives on `StorageLocation` as `storage.cloud` — it carries both per-storage credentials and workload-identity setup.
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
@@ -193,7 +192,7 @@ PVC configuration for local storage.
 |-------|------|----------|-------------|
 | `storageClassName` | `string` | ❌ | Storage class name for dynamic provisioning (used only when the operator creates the PVC, i.e. `size` is set and the PVC does not exist) |
 | `name` | `string` | ✅ (for `type: pvc`) | Name of the PVC to use. Always required: the validator rejects a PVC backup without it. If the PVC does not exist and `size` is set, the operator creates it under this name (without an owner reference, so it survives deletion of the CR) |
-| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`); omit to reference an externally provisioned PVC. Must be a valid Kubernetes quantity greater than zero — validation refuses anything else, and the controller reports phase `Invalid` (naming this field) rather than relying on that check |
+| `size` | `string` | ❌ | Size for a new PVC (e.g., `"100Gi"`); omit to reference an externally provisioned PVC. Must be a valid Kubernetes quantity greater than zero — validation refuses anything else, and the controller reports phase `Invalid` (naming this field) |
 
 ### RetentionPolicy
 
@@ -203,7 +202,7 @@ Backup retention configuration.
 |-------|------|----------|-------------|
 | `maxAge` | `string` | ❌ | Maximum age of artifacts to retain. A **single** unit of `d` (days), `h` (hours), `m` (minutes), or `s` (seconds) — e.g. `"30d"`, `"168h"`, `"90m"`. Compound values (`"1h30m"`) and `"4w"` are **rejected** by the validator (the runtime applies exactly what validates). |
 | `maxCount` | `int32` | ❌ | Maximum number of `.backup` artifacts to retain |
-| `deletePolicy` | `string` | ❌ | `"Delete"` (default, and the only accepted value). Expired PVC-stored artifacts are pruned by the delete-time cleanup Job; for cloud storage, retention is delegated to bucket lifecycle rules. (The `"Archive"` value was removed in v1.14.) |
+| `deletePolicy` | `string` | ❌ | `"Delete"` (default, and the only accepted value). Expired PVC-stored artifacts are pruned by the delete-time cleanup Job; for cloud storage, retention is delegated to bucket lifecycle rules. |
 
 When `retention` is set it must contain `maxAge` and/or `maxCount` — an empty `retention: {}` is rejected (`phase: Invalid`) — and `maxCount` may not be negative.
 
@@ -220,15 +219,15 @@ Fine-grained backup execution options.
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `resources` | [`*corev1.ResourceRequirements`](https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/) | ❌ | CPU/memory requests + limits on the backup Job's container. When unset, the operator applies a Burstable default (request 100m CPU / 512Mi memory, limit 1 CPU / 2Gi memory) sized for small databases and CI. Tune upward for large production databases. |
-| `compress` | `*bool` | ❌ | Compress the backup (default: `true`). Pointer type so an explicit `false` survives updates (a plain bool would silently snap back to the default). |
+| `compress` | `*bool` | ❌ | Compress the backup (default: `true`). |
 | `backupType` | `string` | ❌ | Backup type: `"FULL"`, `"DIFF"`, `"AUTO"` (default) |
 | `preferDiffAsParent` | `bool` | ❌ | Use the latest differential backup as the parent when creating a new differential backup (default: `false`). Maps to `--prefer-diff-as-parent`. **Requires CalVer 2025.04+** — an error is returned at runtime if the target version does not support this flag. |
 | `tempPath` | `string` | ❌ | Local directory path for temporary files during backup. When `tempStorage` is configured, this is set automatically. Only set manually if you are mounting your own volume. Maps to `--temp-path`. Must be an **absolute** path restricted to `A-Z a-z 0-9 . _ / -` (validator-enforced). The directory must already exist in the container — for staging, prefer `tempStorage`, which mounts a volume at the path. |
 | `tempStorage` | [`*TempStorageSpec`](#tempstoragespec) | ❌ | Provisions a PVC for temporary staging files during cloud backups. The operator mounts this PVC and passes `--temp-path` automatically. Recommended for large databases to avoid filling ephemeral disk. |
 | `pageCache` | `string` | ❌ | Page cache size hint (e.g., `"4G"`). Must match pattern `^[0-9]+[KMG]?$` |
-| `validate` | `*bool` | ❌ | When `true`, runs `neo4j-admin backup validate` against the artifacts **after** the backup succeeds, recording per-shard recoverability into `status.history[].validation`. Appended with `\|\| true` so validate failures don't fail the Job (the backup already succeeded). Pointer type preserves an explicit `true` or `false` across updates; nil (default) skips validate. Requires a CalVer (2025.x+) Neo4j image — on 5.26 the `neo4j-admin backup validate` subcommand does not exist, so the option has no effect and `validation` stays empty. |
+| `validate` | `*bool` | ❌ | When `true`, runs `neo4j-admin backup validate` against the artifacts **after** the backup succeeds, recording per-shard recoverability into `status.history[].validation`. Appended with `\|\| true` so validate failures don't fail the Job (the backup already succeeded). Unset (default) skips validate. Requires a CalVer (2025.x+) Neo4j image — on 5.26 the `neo4j-admin backup validate` subcommand does not exist, so the option has no effect and `validation` stays empty. |
 | `parallelDownload` | `bool` | ❌ | Enable parallel download for remote backups |
-| `remoteAddressResolution` | `*bool` | ❌ | Resolve remote addresses via the cluster discovery service (useful in multi-homed environments). Pointer type: when unset and the backup is `shardedDatabase`-scoped on Neo4j 2025.09+, the operator defaults this to `true` to match the canonical upstream sharded-backup invocation; otherwise unset. Set explicitly (`true` or `false`) to override in either direction. |
+| `remoteAddressResolution` | `*bool` | ❌ | Resolve remote addresses via the cluster discovery service (useful in multi-homed environments). When unset and the backup is `shardedDatabase`-scoped on Neo4j 2025.09+, the operator defaults this to `true` to match the canonical upstream sharded-backup invocation; otherwise unset. Set explicitly (`true` or `false`) to override in either direction. |
 | `skipRecovery` | `bool` | ❌ | Skip the recovery step after backup |
 | `includeMetadata` | `string` | ❌ | Controls which metadata is included in the backup. Values: `"all"` (default), `"none"`, `"users"`, `"roles"`. Requires Neo4j 5.26+. |
 | `parallelRecovery` | `bool` | ❌ | Enable multi-threaded transaction application during backup |

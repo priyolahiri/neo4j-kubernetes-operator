@@ -5,11 +5,11 @@
 > because it needs a real cloud KMS key (AWS KMS / GCP Cloud KMS / Azure Key
 > Vault) with IAM grants to Aura, which cannot be created disposably. Its shape
 > comes from the published v1 OpenAPI spec — and on this API, spec-derived
-> contracts have repeatedly proven wrong in ways unit tests could not catch.
+> contracts have repeatedly proven wrong.
 > **Verify in a non-production project before relying on it.** See
 > [Verification status](../user_guide/aura_orchestration.md#verification-status).
 >
-> One behaviour *is* test-pinned: the v1 CMK **list** endpoint returns only
+> Adoption: the v1 CMK **list** endpoint returns only
 > `id`, `name` and `tenant_id`, so adoption narrows on `name` and then confirms
 > with a per-key `GET` — a key can never be matched on
 > `keyId`/`region`/`cloudProvider` from a list entry.

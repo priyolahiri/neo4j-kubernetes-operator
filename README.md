@@ -73,12 +73,12 @@ kubectl apply -f https://raw.githubusercontent.com/priyolahiri/neo4j-kubernetes-
 > above use `"eval"`; set `"yes"` for a licensed production deployment.
 
 Access the Neo4j browser (use the Service that matches what you deployed —
-standalone Services are `<name>-service`, cluster client Services are
-`<name>-client`):
+standalone and cluster client Services are both `<name>-client`; a standalone's
+older `<name>-service` name is a deprecated alias):
 
 ```bash
 # Standalone (single-node-standalone → standalone-neo4j):
-kubectl port-forward svc/standalone-neo4j-service 7474:7474 7687:7687
+kubectl port-forward svc/standalone-neo4j-client 7474:7474 7687:7687
 
 # OR cluster (minimal-cluster):
 kubectl port-forward svc/minimal-cluster-client 7474:7474 7687:7687

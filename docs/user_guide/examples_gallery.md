@@ -170,7 +170,7 @@ Declarative user, role, and access management via `Neo4jUser`, `Neo4jRole`, `Neo
 
 | Example | What it shows | Notable fields |
 |---|---|---|
-| [`apoc-plugin-example.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/plugins/apoc-plugin-example.yaml) | APOC with env-var-based configuration (the 5.26+ way — APOC config no longer lives in `neo4j.conf`) | `config.apoc.*` → `NEO4J_APOC_*` env vars |
+| [`apoc-plugin-example.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/plugins/apoc-plugin-example.yaml) | APOC with env-var-based configuration (the 5.26+ way — APOC config does not live in `neo4j.conf`) | `config.apoc.*` → `NEO4J_APOC_*` env vars |
 | [`gds-plugin-example.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/plugins/gds-plugin-example.yaml) | Graph Data Science with automatic procedure allowlisting | `source.type: community`, `gds.enterprise.license_file` |
 | [`bloom-plugin-example.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/plugins/bloom-plugin-example.yaml) | Bloom with its required `neo4j.conf` settings | `dbms.bloom.license_file`, role restriction |
 | [`genai-plugin-example.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/plugins/genai-plugin-example.yaml) | GenAI plugin for vector embeddings and AI integrations (download needs internet egress) | `name: genai`, `source.type: official` |

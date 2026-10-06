@@ -85,8 +85,8 @@ spec:
 > | `dbms.ssl.policy.cluster.verify_hostname` | `true` | explicit (Neo4j default differs across 5.26 / 2025.x) |
 > | `server.bolt.tls_level` | `REQUIRED` | plain `bolt://` connections are rejected |
 >
-> Set `spec.tls.strictPeerValidation: false` to revert the cluster SSL
-> policy to the legacy `trust_all=true` + `client_auth=NONE` posture.
+> Set `spec.tls.strictPeerValidation: false` to switch the cluster SSL
+> policy to `trust_all=true` + `client_auth=NONE`.
 > This is the only legitimate override path — useful when an external
 > issuer doesn't populate `ca.crt` in the Secret it issues. Neo4j's own
 > documentation flags `trust_all=true` as *"debugging only, since it
@@ -129,7 +129,7 @@ For OIDC providers, reference them as `oidc-<name>` where `<name>` matches a key
 
 If you omit `authenticationProviders`, the operator defaults to `["native"]`.
 
-Both lists are written as given into `dbms.security.authentication_providers` and `dbms.security.authorization_providers`. The values Neo4j documents for them, on the 5.26 LTS and on CalVer alike, are `native`, `ldap`, `oidc-<name>`, and `plugin-<name>` for an auth plugin or add-on such as [Kerberos](#kerberos-authentication). Any other name is refused. The older names `oidc` (without a provider name), `kerberos`, `jwt`, `saml` and `custom`, which earlier operator versions accepted, still validate but raise a `ValidationWarning` event naming what to use instead.
+Both lists are written as given into `dbms.security.authentication_providers` and `dbms.security.authorization_providers`. The values Neo4j documents for them, on the 5.26 LTS and on CalVer alike, are `native`, `ldap`, `oidc-<name>`, and `plugin-<name>` for an auth plugin or add-on such as [Kerberos](#kerberos-authentication). Any other name is refused. The names `oidc` (without a provider name), `kerberos`, `jwt`, `saml` and `custom` are deprecated: they still validate but raise a `ValidationWarning` event naming what to use instead.
 
 ### Native Authentication
 
@@ -276,7 +276,7 @@ Wiring up an OIDC provider — especially when used as an ABAC authorization pro
 | 3. Authorization providers | `spec.auth.authorizationProviders` | include `oidc-<name>` | `entries must exist in dbms.security.authorization_providers. Invalid values: oidc-<name>` |
 | 4. ABAC provider list (only for `Neo4jAuthRule`) | `spec.config["dbms.security.abac.authorization_providers"]` | the prefixed name `oidc-<name>` (NOT bare `<name>`) | `entries must be a valid OIDC authorization provider` *or* `entries must exist in dbms.security.authorization_providers` |
 
-A complete worked example for ABAC is at [`examples/users-roles/07-authrule-abac.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/users-roles/07-authrule-abac.yaml); the integration test fixtures show the same pattern with a self-signed CA at [`test/integration/neo4jauthrule_test.go`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/test/integration/neo4jauthrule_test.go).
+A complete worked example for ABAC is at [`examples/users-roles/07-authrule-abac.yaml`](https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/users-roles/07-authrule-abac.yaml).
 
 #### Single Provider (Okta)
 
@@ -452,7 +452,7 @@ spec:
 
 #### `spec.auth.trustStore` — single-CA legacy form (deprecated)
 
-The pre-existing singular field still works for backward compatibility. The
+The singular field still works. The
 operator folds it into the same truststore alongside `trustedCASecrets` at
 reconcile time. New configurations should use `trustedCASecrets`.
 
@@ -577,7 +577,7 @@ Short TTL = changes propagate faster. Long TTL = better performance. Setting to 
 
 Kerberos is **not currently supported through operator-typed configuration**. Neo4j implements Kerberos via the separate [Neo4j Kerberos Add-On](https://neo4j.com/docs/kerberos-add-on/current/), which uses its own `conf/kerberos.conf` file (not `neo4j.conf`), a Kerberos plugin JAR in `/plugins/`, and an external `krb5.conf` — a configuration shape that doesn't fit the operator's `spec.config` / typed-field model cleanly.
 
-You can in principle assemble it by hand using `spec.extraVolumes` to mount the plugin JAR + `kerberos.conf` + `krb5.conf`, plus `spec.auth.authenticationProviders: [plugin-Neo4j-Kerberos, native]`. We haven't shipped a worked example; follow [issue #137](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/137) for progress on a proper walkthrough.
+You can in principle assemble it by hand using `spec.extraVolumes` to mount the plugin JAR + `kerberos.conf` + `krb5.conf`, plus `spec.auth.authenticationProviders: [plugin-Neo4j-Kerberos, native]`. We haven't shipped a worked example.
 
 For the canonical Neo4j-side setup, see the upstream add-on documentation:
 [neo4j.com/docs/kerberos-add-on/current/](https://neo4j.com/docs/kerberos-add-on/current/).
@@ -640,7 +640,7 @@ upstream defaults (both on).
 - **PII in query parameters**: set `audit.parameterLogging: false` if parameter values themselves are sensitive (passwords passed as params). Query shapes remain logged.
 - **High-volume successful logins**: `audit.logSuccessfulAuthentication: false` keeps failed logins (the security-relevant signal) while suppressing successful ones.
 - **`spec.monitoring` overlap**: when both set `db.logs.query.obfuscate_literals`, `spec.audit` wins (audit emits last). Direct `spec.config` overrides still win over both.
-- **Not typed-exposed yet**: log4j JSON format, file rotation tuning, `db.logs.query.transaction.enabled`, `max_parameter_length`, `obfuscate_errors`, HTTP/GC logs. Set these via `spec.config` directly; track [#128](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/128) for typed-field requests.
+- **Not typed-exposed yet**: log4j JSON format, file rotation tuning, `db.logs.query.transaction.enabled`, `max_parameter_length`, `obfuscate_errors`, HTTP/GC logs. Set these via `spec.config` directly.
 
 ## Network Security
 
@@ -921,8 +921,7 @@ spec:
 > `Neo4jEnterpriseStandalone` that sets `spec.tls.externalSecrets.enabled=true`
 > or `spec.auth.externalSecrets.enabled=true` will fail with a clear
 > RBAC-denied error when the operator tries to create the `ExternalSecret`.
-> The default-off posture follows the November 2025 security review's
-> recommendation to keep the operator's RBAC blast radius narrow for
+> The default is off to keep the operator's RBAC blast radius narrow for
 > deployments that don't actually use the integration.
 
 ```yaml

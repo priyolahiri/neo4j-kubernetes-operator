@@ -9,8 +9,7 @@ Common backup and restore failures and their fixes. For the feature overview and
     annotation — and `kubectl neo4j explain Neo4jBackup/<name>` decodes the phase of one that
     has already failed. See the [CLI guide](../cli/index.md).
 
-    The credential checks below are written as `kubectl run` probes because they were the only
-    way to run them before `preflight` existed. `preflight` covers the *shape* of the same
+    The credential checks below are written as `kubectl run` probes. `preflight` covers the *shape* of the same
     problems without a probe pod; reach for a probe when you need to prove the credentials
     actually work against the bucket, which preflight deliberately does not claim to do.
 
@@ -307,11 +306,15 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
 
 **Diagnosis:**
 ```bash
-# Check restore job logs (standalone restore Job name: <neo4jrestore-name>-restore)
-kubectl logs job/production-restore-restore
+# The restore's status and events say which path it took and what failed
+kubectl describe neo4jrestore production-restore
 
-# Check target cluster logs during restore
-kubectl logs target-cluster-server-0 | grep -i restore
+# Online restores (the default): the database's own status names the cause
+kubectl exec target-cluster-server-0 -c neo4j -- cypher-shell -u neo4j -p <password> \
+  "SHOW DATABASE <name> YIELD name, currentStatus, statusMessage"
+
+# Offline standalone restores only: the restore Job's log
+kubectl logs job/production-restore-restore
 ```
 
 **Common Solutions:**
@@ -329,7 +332,7 @@ kubectl logs target-cluster-server-0 | grep -i restore
    # Overwrite the existing same-named database with the replaceExisting flag.
    spec:
      options:
-       replaceExisting: true  # cluster: destructive recreate; standalone: --overwrite-destination=true
+       replaceExisting: true  # online: destructive recreate; offline standalone: --overwrite-destination=true
    ```
 
 3. **Version Incompatibility**:
@@ -339,34 +342,47 @@ kubectl logs target-cluster-server-0 | grep -i restore
    kubectl exec target-cluster-server-0 -- neo4j version
    ```
 
-#### Symptom: Cluster restore reports `Failed` with "server pods can't reach the seed source"
+#### Symptom: Restore reports `Failed` with "server pods can't reach the seed source"
 
-The `Neo4jRestore` message reads `cluster "<name>"'s server pods can't reach the seed source: missing <credentials and/or endpoint settings>. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation neo4j.com/auto-inherit-seed-creds="true" …`, and a `SeedEndpointNotProjected` Warning event carries the same text.
+The `Neo4jRestore` message reads `cluster "<name>"'s server pods can't reach the seed source: missing <credentials and/or endpoint settings>. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation neo4j.com/auto-inherit-seed-creds="true" …` (with `standalone "<name>"` on a standalone), and a `SeedEndpointNotProjected` Warning event carries the same text.
 
-**Cause:** the cluster pods need the cloud credentials Secret projected via `spec.extraEnvFrom` so the JVM's AWS/GCP/Azure SDK can authenticate the `seedURI` fetch from `CloudSeedProvider`.
+**Cause:** an online restore from cloud storage makes the Neo4j server pods fetch the seed, so they need the cloud credentials Secret projected via `spec.extraEnvFrom` (and, for MinIO / S3-compatible stores, the endpoint in `spec.env`).
 
 **Fix:**
 
 ```yaml
-# On the Neo4jEnterpriseCluster CR:
+# On the Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone CR:
 spec:
   extraEnvFrom:
     - secretRef:
         name: <your-backup-creds-secret>
 ```
 
-Or, set the annotation `neo4j.com/auto-inherit-seed-creds=true` on the cluster CR — the operator will patch `extraEnvFrom` automatically (triggers a rolling restart so Neo4j picks up the env vars).
+Or, set the annotation `neo4j.com/auto-inherit-seed-creds=true` on the cluster or standalone CR — the operator patches `extraEnvFrom` (and the endpoint) automatically, which triggers one rolling restart so Neo4j picks up the env vars.
 
-#### Symptom: Cluster restore stuck in `Running`, no Job created
+#### Symptom: Restore reports `Failed` with "is a differential (DIFF) backup on a PVC, which cannot be seeded online"
 
-**Expected.** Cluster Neo4jRestore targets use the Cypher path (`dbms.recreateDatabase` or `CREATE DATABASE OPTIONS{seedURI}`) — no Job is spawned. Check the operator log:
+**Cause:** the restore would seed from a PVC backup whose latest run is a differential. A PVC seed is served to Neo4j over HTTP as one file, and Neo4j cannot apply a differential without the rest of its chain. With `backupType: AUTO` (the default), every scheduled run after the first is a differential.
+
+**Fix:** restore from a `Neo4jBackup` that takes full backups (`spec.options.backupType: FULL`), or keep the backups on cloud storage, whose seed provider reads the whole chain. (A standalone restores a PVC differential offline instead of refusing it — see the next symptom.)
+
+#### Symptom: Standalone restore reports `Failed` with "cannot run against a running standalone (it restores offline: …)"
+
+**Cause:** this standalone restore cannot run online — the message names why (a point-in-time restore, a `source.type: storage` path, a PVC differential, cloud storage by pod identity) — so it runs `neo4j-admin` through a Job, which needs the instance stopped.
+
+**Fix:** set `spec.stopCluster: true`. The operator stops the standalone for the restore and starts it again afterwards; every database on it is offline meanwhile.
+
+#### Symptom: Restore stuck in `Running`, no Job created
+
+**Expected.** Online restores — every cluster restore and most standalone ones — use Cypher (`dbms.recreateDatabase` or `CREATE DATABASE OPTIONS{seedURI}`); no Job is spawned. The restore's events show the seed URI it issued, and the database's status shows how seeding is going:
 
 ```bash
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager \
-  | grep -E "Cluster Cypher restore|recreateDatabase|CREATE DATABASE"
+kubectl describe neo4jrestore <name>     # "Online restore into …", "Online restore seed failed"
+kubectl exec <server-pod> -c neo4j -- cypher-shell -u neo4j -p <password> \
+  "SHOW DATABASE <name> YIELD name, currentStatus, statusMessage"
 ```
 
-If you see `No seed providers found to satisfy the provided uri 's3://...'`, the cluster doesn't have the cloud creds projected — see the section above.
+If the status message is `No seed providers found to satisfy the provided uri 's3://...'`, the server pods don't have the cloud creds projected — see the first symptom above. The restore fails once `spec.timeout` (default 5m) passes without the database coming online; raise it for large stores.
 
 #### Symptom: Sharded DB restore rejected with "use Neo4jShardedDatabase.spec.replaceExisting"
 

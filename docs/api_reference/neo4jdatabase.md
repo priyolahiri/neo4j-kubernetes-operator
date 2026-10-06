@@ -567,32 +567,18 @@ To control the default database topology at cluster creation time without using 
 
 - Standard `CREATE DATABASE` syntax with `TOPOLOGY` clause
 - Seed URI support via CloudSeedProvider
+- No point-in-time recovery for seed URIs
 - No `DEFAULT LANGUAGE CYPHER` clause: `defaultCypherLanguage: "25"` is rejected by validation, and `"5"` is accepted but omitted from the statement (every database runs Cypher 5)
+- Supports all topology and option features
 - Compatible with both cluster and standalone deployments
 
-**Neo4j 2025.x**:
+**Neo4j CalVer (2025.x and later)**:
 
-- Enhanced `CREATE DATABASE` with `DEFAULT LANGUAGE CYPHER` support, applied on every create path
+- Enhanced `CREATE DATABASE` with `DEFAULT LANGUAGE CYPHER` support (`defaultCypherLanguage` `"5"` and `"25"`), applied on every create path
 - Point-in-time recovery for seed URIs (`restoreUntil`)
-- Advanced seed configuration options
-- Same compatibility with cluster and standalone deployments
-
-### Version-Specific Behavior
-
-**Neo4j 5.26.x**:
-
-- Standard CREATE DATABASE syntax
-- Seed URI support with CloudSeedProvider
-- No `DEFAULT LANGUAGE CYPHER` clause (`defaultCypherLanguage: "25"` is rejected; `"5"` has no effect)
-- No point-in-time recovery for seed URIs
-- Supports all topology and option features
-
-**Neo4j 2025.x**:
-
-- Supports `defaultCypherLanguage` (`"5"` and `"25"`)
-- Enhanced seed URI support with point-in-time recovery (`restoreUntil`)
+- Advanced seed configuration options and additional database options
 - Enhanced topology management
-- Additional database options available
+- Same compatibility with cluster and standalone deployments
 
 ### Reconciliation
 
@@ -627,7 +613,7 @@ The operator creates the database if it is missing, then observes it:
 
 **Check operator logs**:
 ```bash
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
 ```
 
 **Common Issues**:
@@ -723,7 +709,7 @@ kubectl exec <target-pod> -c neo4j -- \
   cypher-shell -u neo4j -p <password> -d <db-name> "<test-statement>"
 
 # Check operator logs for import errors
-kubectl logs -n neo4j-operator deployment/neo4j-operator-controller-manager | grep -i "initial.*data"
+kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "initial.*data"
 ```
 
 **Common Issues**:

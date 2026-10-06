@@ -16,7 +16,7 @@ By default (`spec.installMode: Managed`) the Neo4jPlugin controller uses Neo4j's
 
 ### Environment Variable Only Plugins
 **APOC & APOC Extended**: Configuration via environment variables only
-- **Reason**: APOC settings no longer supported in `neo4j.conf` in Neo4j 5.26+
+- **Reason**: APOC settings are not supported in `neo4j.conf` in Neo4j 5.26+
 - **Example**: `apoc.export.file.enabled` becomes `NEO4J_APOC_EXPORT_FILE_ENABLED`
 
 ### Neo4j Config Plugins
@@ -26,18 +26,16 @@ By default (`spec.installMode: Managed`) the Neo4jPlugin controller uses Neo4j's
 
 ## Architecture Compatibility
 
-The Neo4jPlugin controller has been updated to work with the current server-based architecture:
+The Neo4jPlugin controller works with the server-based architecture, for both deployment types:
 
 ### Neo4jEnterpriseCluster Support
 - **StatefulSet Naming**: Uses `{cluster-name}-server` pattern
 - **Pod Labels**: `app.kubernetes.io/name=neo4j`, `app.kubernetes.io/instance={cluster-name}`
-- **Neo4j Client**: Uses `NewClientForEnterprise()` method
-- **Replica Count**: Based on `cluster.Spec.Topology.Servers`
+- **Replica Count**: Based on `spec.topology.servers`
 
-### Neo4jEnterpriseStandalone Support ✅ NEW
+### Neo4jEnterpriseStandalone Support
 - **StatefulSet Naming**: Uses `{standalone-name}` pattern
 - **Pod Labels**: `app={standalone-name}`
-- **Neo4j Client**: Uses `NewClientForEnterpriseStandalone()` method
 - **Replica Count**: Always 1
 
 ## Examples
@@ -57,7 +55,7 @@ spec:
     type: official
   config:
     # These settings become environment variables (NEO4J_APOC_*)
-    # APOC configuration no longer supported in neo4j.conf in Neo4j 5.26+
+    # APOC configuration is not supported in neo4j.conf in Neo4j 5.26+
     apoc.export.file.enabled: "true"
     apoc.import.file.enabled: "true"
     apoc.load.json.enabled: "true"
@@ -271,21 +269,9 @@ kubectl get statefulset <cluster-name>-server -o jsonpath='{.spec.template.spec.
 - **n10s** (neosemantics): RDF and semantic web support
 - **graphql**: GraphQL endpoint generation
 
-## Key Improvements
-
-✅ **Neo4j 5.26+ Compatible**: Proper APOC environment variable configuration
-✅ **Plugin-Type Aware**: Automatic configuration based on plugin requirements
-✅ **Security Auto-Configuration**: Required procedure security settings applied automatically
-✅ **Neo4j Best Practices**: Uses official `NEO4J_PLUGINS` environment variable approach
-✅ **No External Dependencies**: Eliminates job-based installation and PVC requirements
-✅ **Automatic Plugin Management**: Neo4j handles plugin download and installation
-✅ **Dual Deployment Support**: Supports both cluster and standalone deployments
-✅ **Dependency Handling**: Automatically includes plugin dependencies
-✅ **Smart Configuration**: Environment variables for APOC, neo4j.conf for others
-
 ## Technical Details
 
-The plugin controller now:
+The plugin controller:
 
 1. **Detects deployment type** automatically (cluster vs standalone)
 2. **Uses correct StatefulSet names**:
