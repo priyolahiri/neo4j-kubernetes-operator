@@ -4977,7 +4977,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <td><code>string</code></td>
 <td>No</td>
 <td>-</td>
-<td>Names a <code>Neo4jBackup</code> CR (same namespace) whose most-recent Succeeded run seeds this database. Resolved to a concrete seed URI at reconcile time. Mutually exclusive with <code>seedURI</code> and <code>seedURIs</code>. If the referenced backup has no Succeeded run yet, the database stays in <code>Pending</code> and the reconciler requeues</td>
+<td>Names a <code>Neo4jBackup</code> CR (same namespace) whose most-recent Succeeded run seeds this database. Resolved to a concrete seed URI at reconcile time. Mutually exclusive with <code>seedURI</code> and <code>seedURIs</code>. If the referenced backup has no Succeeded run yet, the database stays in <code>Pending</code> and the reconciler requeues. From a PVC, every shard of that run must be a full backup: a run holding a differential shard fails the database until a full run lands (<a href="../../user_guide/property_sharding/#restoring-a-sharded-database">why</a>). From cloud storage, differentials seed directly; the cluster needs the backup's credentials and endpoint, which the <code>neo4j.com/auto-inherit-seed-creds: "true"</code> annotation lets the operator add</td>
 </tr>
 <tr>
 <td><code>seedSourceDatabase</code></td>

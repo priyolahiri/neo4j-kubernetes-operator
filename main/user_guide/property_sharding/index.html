@@ -1197,6 +1197,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Backup and Recovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#restoring-a-sharded-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restoring a sharded database
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4500,6 +4517,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Backup and Recovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#restoring-a-sharded-database" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restoring a sharded database
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -5112,17 +5146,39 @@ prefer per-family lifecycles.</p>
 </span><span id="__span-25-20"><a id="__codelineno-25-20" name="__codelineno-25-20" href="#__codelineno-25-20"></a><span class="w">    </span><span class="nt">maxCount</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">10</span>
 </span><span id="__span-25-21"><a id="__codelineno-25-21" name="__codelineno-25-21" href="#__codelineno-25-21"></a>
 </span><span id="__span-25-22"><a id="__codelineno-25-22" name="__codelineno-25-22" href="#__codelineno-25-22"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-25-23"><a id="__codelineno-25-23" name="__codelineno-25-23" href="#__codelineno-25-23"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTO</span><span class="w">               </span><span class="c1"># FULL | DIFF | AUTO</span>
+</span><span id="__span-25-23"><a id="__codelineno-25-23" name="__codelineno-25-23" href="#__codelineno-25-23"></a><span class="w">    </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">FULL</span><span class="w">               </span><span class="c1"># on a PVC, only full runs can seed a sharded database</span>
 </span><span id="__span-25-24"><a id="__codelineno-25-24" name="__codelineno-25-24" href="#__codelineno-25-24"></a><span class="w">    </span><span class="nt">validate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">                 </span><span class="c1"># optional per-shard recoverability check</span>
 </span></code></pre></div>
 <p>The per-shard <code>.backup</code> artifacts produced by the run are recorded in
 <code>status.history[].shardArtifacts[]</code> (one entry per shard, e.g. <code>products-g000</code>,
 <code>products-p000</code>). When <code>options.validate: true</code>, per-shard recoverability is
 surfaced under <code>status.history[].validation</code>.</p>
+<h3 id="restoring-a-sharded-database">Restoring a sharded database<a class="headerlink" href="#restoring-a-sharded-database" title="Anchor link to this section">&para;</a></h3>
 <p>To restore a sharded database from a backup, seed a new <code>Neo4jShardedDatabase</code>
 via <code>spec.seedBackupRef</code> (referencing this <code>Neo4jBackup</code> CR), or perform a
 destructive in-place restore with <code>spec.replaceExisting: true</code> + <code>spec.force: true</code>
-(see the field reference above).</p>
+(see the field reference above). The seed is the backup's latest successful run.</p>
+<p><strong>From a PVC, every shard of that run must be a full backup.</strong> The operator
+serves the PVC to Neo4j over HTTP, and over HTTP Neo4j seeds a sharded database
+only from a full backup of each shard. A differential cannot be turned into one
+either: merging a shard's chain loses the sharding information the seed needs.
+So:</p>
+<ul>
+<li>Back sharded databases up to a PVC with <code>options.backupType: FULL</code>. With
+  <code>AUTO</code>, the default, every run after the first holds a differential of the
+  graph shard. Each such run raises a <code>BackupShardedDifferential</code> warning, and
+  each run's shard types are in <code>status.history[].shardArtifacts[].type</code>.</li>
+<li>A <code>seedBackupRef</code> whose latest run holds a differential shard fails at once,
+  naming the shards. It retries: once a full run of that backup lands, the
+  database seeds from it.</li>
+</ul>
+<p><strong>From cloud storage, differentials seed directly</strong>: Neo4j reads the whole chain
+from the bucket. The cluster's server pods fetch it themselves, so they need the
+backup's credentials Secret — and, for MinIO or another S3-compatible store, its
+endpoint. Put them on the cluster (<code>spec.extraEnvFrom</code>, <code>spec.env</code>), or annotate
+the cluster with <code>neo4j.com/auto-inherit-seed-creds: "true"</code> and the operator
+adds both, at the cost of one rolling restart. Without either, the database fails
+and names what is missing.</p>
 <h2 id="performance-and-sizing">Performance and Sizing<a class="headerlink" href="#performance-and-sizing" title="Anchor link to this section">&para;</a></h2>
 <p>Queries hitting only the graph shard (structure + graph properties) are fastest; cross-shard queries touching property shards add latency proportional to result-set size. For sizing, see the dedicated <a href="../guides/resource_sizing/">Resource Sizing guide</a>. Sharded clusters benefit from low-latency networking (&lt;10ms inter-pod for transaction-log sync, &lt;5ms for query responsiveness) — co-locate pods in the same zone where possible.</p>
 <p><strong>Storage planning</strong>: total ≈ graph-shard size + (property-shards × avg property data per shard) + ~20% transaction-log + index overhead. Each property shard has its own transaction log; size accordingly.</p>

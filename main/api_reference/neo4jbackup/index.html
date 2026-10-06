@@ -5393,6 +5393,11 @@
 <td><code>int64</code></td>
 <td>Artifact size in bytes. Zero if not parseable.</td>
 </tr>
+<tr>
+<td><code>type</code></td>
+<td><code>string</code></td>
+<td><code>FULL</code> or <code>DIFF</code>, read from the Job's Pod log; empty when the log did not say. A sharded database seeds from a PVC only when every shard of the run is <code>FULL</code> — see <a href="../../user_guide/property_sharding/#restoring-a-sharded-database">Restoring a sharded database</a>.</td>
+</tr>
 </tbody>
 </table>
 <h3 id="shardedfamilyartifacts">ShardedFamilyArtifacts<a class="headerlink" href="#shardedfamilyartifacts" title="Anchor link to this section">&para;</a></h3>

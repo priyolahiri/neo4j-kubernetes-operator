@@ -4465,9 +4465,10 @@ them. <code>neo4j_operator_</code> followed by: <code>backup_size_bytes</code>,
 <h2 id="upgrading-from-v118x">Upgrading from v1.18.x<a class="headerlink" href="#upgrading-from-v118x" title="Anchor link to this section">&para;</a></h2>
 <p>Apply the new CRDs with the operator: they add <code>Neo4jRestore.spec.source.sourceDatabase</code>,
 <code>Neo4jBackup.spec.options.splitArchivePartSize</code>, and status fields the
-operator now records (<code>Neo4jBackup</code> <code>status.history[].artifactType</code>). Without
-them those status fields are dropped on write; restores still work, merging
-the chain of every PVC artifact they cannot tell is a full backup. The behaviour changes below take effect on the
+operator now records (<code>Neo4jBackup</code> <code>status.history[].artifactType</code> and
+<code>shardArtifacts[].type</code>). Without them those status fields are dropped on
+write; restores still work, merging the chain of every PVC artifact they
+cannot tell is a full backup. The behaviour changes below take effect on the
 first reconcile.</p>
 <h3 id="behaviour-changes_1">Behaviour changes<a class="headerlink" href="#behaviour-changes_1" title="Anchor link to this section">&para;</a></h3>
 <ul>
@@ -4538,6 +4539,21 @@ first reconcile.</p>
   as a full backup. The merge needs scratch space about the size of the chain
   (an <code>emptyDir</code> unless you set <code>spec.options.tempStorage</code>) and time: the
   restore waits up to <code>spec.timeout</code>, 30 minutes by default while merging.</li>
+<li><strong>Sharded databases still need full PVC backups.</strong> A sharded database
+  seeds from a PVC only when every shard of the run is a full backup, and
+  a differential cannot be merged into one. A <code>seedBackupRef</code> whose latest
+  run holds a differential shard used to fail inside Neo4j after the seed
+  proxy started; it now fails at once, naming the shards, and seeds once a
+  full run lands. Each sharded PVC run that writes a differential raises a
+  <code>BackupShardedDifferential</code> warning. If you back sharded databases up to a
+  PVC with <code>backupType: AUTO</code> (the default), switch to <code>FULL</code>; cloud storage
+  seeds differentials. See
+  <a href="../property_sharding/#restoring-a-sharded-database">Restoring a sharded database</a>.</li>
+<li><strong>A sharded seed from MinIO gets its endpoint.</strong> Seeding a sharded database
+  from S3-compatible storage under <code>neo4j.com/auto-inherit-seed-creds</code> added
+  only the credentials to the cluster, so Neo4j went to AWS for the bucket.
+  The operator now adds the endpoint too, in the same rolling restart, and
+  waits for it before seeding.</li>
 </ul>
 <h3 id="new-no-action-needed_2">New, no action needed<a class="headerlink" href="#new-no-action-needed_2" title="Anchor link to this section">&para;</a></h3>
 <ul>

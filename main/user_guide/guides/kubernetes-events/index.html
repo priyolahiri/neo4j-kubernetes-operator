@@ -2127,17 +2127,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#users-roles-and-role-bindings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Users, Roles and Role Bindings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#auth-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4119,17 +4108,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#users-roles-and-role-bindings" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Users, Roles and Role Bindings
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#auth-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4466,6 +4444,11 @@ and alerting systems.</p>
 <td>An all-databases backup captured property-sharded database(s) as per-shard artifacts; an all-databases restore does not recreate them — restore each from the same backup via its <code>Neo4jShardedDatabase</code> CR with <code>spec.seedBackupRef</code></td>
 </tr>
 <tr>
+<td><code>BackupShardedDifferential</code></td>
+<td>Warning</td>
+<td>A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run (prefer <code>backupType: FULL</code> for sharded backups on a PVC, or cloud storage)</td>
+</tr>
+<tr>
 <td><code>BackupValidateUnsupported</code></td>
 <td>Warning</td>
 <td><code>options.validate</code> has no effect: <code>neo4j-admin backup validate</code> needs a CalVer (2025.x+) image</td>
@@ -4752,9 +4735,13 @@ and alerting systems.</p>
 <td>Normal</td>
 <td>Waiting for the PVC <code>backup-seed-proxy</code> Deployment to become Ready before seeding</td>
 </tr>
+<tr>
+<td>### Users, Roles and Role Bindings</td>
+<td></td>
+<td></td>
+</tr>
 </tbody>
 </table>
-<h3 id="users-roles-and-role-bindings">Users, Roles and Role Bindings<a class="headerlink" href="#users-roles-and-role-bindings" title="Anchor link to this section">&para;</a></h3>
 <p>Emitted on <code>Neo4jUser</code>, <code>Neo4jRole</code> and <code>Neo4jRoleBinding</code> objects.</p>
 <table>
 <thead>
