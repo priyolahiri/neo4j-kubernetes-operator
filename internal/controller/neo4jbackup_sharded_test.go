@@ -407,6 +407,11 @@ func TestBuildBackupCommand_ShardedDatabase_EmitsFlagsWithNilOptions(t *testing.
 	if !strings.Contains(cmd, `"products*"`) {
 		t.Errorf("expected quoted glob \"products*\" in cmd, got: %q", cmd)
 	}
+	// AUTO (here: no options at all) takes a full backup of a sharded
+	// database on a PVC — a differential could never seed one (rule 110).
+	if !strings.Contains(cmd, "--type=FULL") {
+		t.Errorf("expected --type=FULL for a sharded backup on a PVC, got: %q", cmd)
+	}
 }
 
 // TestShardedShardNamePattern pins the per-shard regex used to filter

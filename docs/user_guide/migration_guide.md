@@ -324,9 +324,14 @@ first reconcile.
   run holds a differential shard used to fail inside Neo4j after the seed
   proxy started; it now fails at once, naming the shards, and seeds once a
   full run lands. Each sharded PVC run that writes a differential raises a
-  `BackupShardedDifferential` warning. If you back sharded databases up to a
-  PVC with `backupType: AUTO` (the default), switch to `FULL`; cloud storage
-  seeds differentials. See
+  `BackupShardedDifferential` warning.
+- **`backupType: AUTO` takes full backups of a sharded database on a PVC.**
+  A `Neo4jBackup` with `spec.shardedDatabase` and PVC storage used to write a
+  differential on every run after the first, and none of those can seed a
+  sharded database. `AUTO` (the default) now takes a full backup on every run
+  there. Expect each run to be as large as the first; size the PVC and
+  `spec.retention` for it. An explicit `DIFF` still writes differentials, and
+  cloud storage keeps `AUTO` as it was, since it seeds differentials. See
   [Restoring a sharded database](property_sharding.md#restoring-a-sharded-database).
 - **A sharded seed from MinIO gets its endpoint.** Seeding a sharded database
   from S3-compatible storage under `neo4j.com/auto-inherit-seed-creds` added

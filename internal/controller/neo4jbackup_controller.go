@@ -1523,10 +1523,10 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 
 	cmd := neo4j.GetBackupCommand(version, dbName, toPath, allDatabases, fromAddresses)
 
+	if t := effectiveBackupType(backup); t != "" {
+		cmd += " --type=" + t
+	}
 	if backup.Spec.Options != nil {
-		if backup.Spec.Options.BackupType != "" {
-			cmd += " --type=" + backup.Spec.Options.BackupType
-		}
 		if !backup.Spec.Options.CompressEffective() {
 			cmd += " --compress=false"
 		}
@@ -2017,7 +2017,7 @@ func (r *Neo4jBackupReconciler) cleanupBackupArtifacts(ctx context.Context, back
 	// PVC storage: create a cleanup Job using alpine. Warn when the CR can
 	// produce differential artifacts: filename-level pruning can orphan DIFFs
 	// whose parent FULL ages out (see buildRetentionScript).
-	if backup.Spec.Options == nil || backup.Spec.Options.BackupType != "FULL" {
+	if effectiveBackupType(backup) != backupArtifactFull {
 		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupRetentionCaveat,
 			"Retention pruning on a chain that may contain differential artifacts can orphan DIFFs whose parent FULL ages out; prefer backupType=FULL with retention, or prune via neo4j-admin backup aggregate")
 	}
@@ -2299,6 +2299,26 @@ func (r *Neo4jBackupReconciler) recordShardedExclusion(backup *neo4jv1beta1.Neo4
 		fmt.Sprintf("all-databases backup captured property-sharded database(s) %s as per-shard artifacts (status.shardedFamilies); they are NOT recreated by an all-databases restore — restore each from THIS backup via its Neo4jShardedDatabase CR with spec.seedBackupRef: %s", strings.Join(families, ", "), backup.Name))
 }
 
+// effectiveBackupType is the --type a backup Job passes neo4j-admin: the
+// spec's backupType, except that AUTO — the default, also when unset — takes
+// a full backup of a sharded database stored on a PVC. A differential shard
+// there can never seed a sharded database (rule 110), so AUTO would make
+// every run after the first unrestorable. An explicit DIFF is kept, and
+// warned about after the run. An all-databases backup keeps AUTO: its one
+// neo4j-admin run covers every database, and forcing it full would make every
+// database's backup full.
+func effectiveBackupType(backup *neo4jv1beta1.Neo4jBackup) string {
+	t := ""
+	if backup.Spec.Options != nil {
+		t = backup.Spec.Options.BackupType
+	}
+	if (t == "" || t == "AUTO") && backup.Spec.Storage.Type == "pvc" &&
+		backup.Spec.Scope() == neo4jv1beta1.BackupTargetKindShardedDatabase {
+		return backupArtifactFull
+	}
+	return t
+}
+
 // warnShardedPVCDifferential warns when a run wrote differential shard
 // backups to a PVC: no sharded database can be seeded from them (rule 110),
 // which a DR plan otherwise finds out only when it needs the backup.
@@ -2310,8 +2330,12 @@ func (r *Neo4jBackupReconciler) warnShardedPVCDifferential(backup *neo4jv1beta1.
 	if len(diffs) == 0 {
 		return
 	}
+	fix := "Remove options.backupType: DIFF — AUTO and FULL take full backups of a sharded database on a PVC"
+	if backup.Spec.Scope() == neo4jv1beta1.BackupTargetKindCluster {
+		fix = "An all-databases backup's shards follow its backupType; back the sharded database up with its own Neo4jBackup (spec.shardedDatabase), which takes full backups on a PVC"
+	}
 	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupShardedDifferential,
-		fmt.Sprintf("run %s wrote differential backups of %s to a PVC, which cannot seed a sharded database: over HTTP, Neo4j seeds one only from a full backup of every shard. Set options.backupType: FULL for sharded backups on a PVC, or keep them in cloud storage, where differentials seed directly", run.RunID, strings.Join(diffs, ", ")))
+		fmt.Sprintf("run %s wrote differential backups of %s to a PVC, which cannot seed a sharded database: over HTTP, Neo4j seeds one only from a full backup of every shard. %s, or keep them in cloud storage, where differentials seed directly", run.RunID, strings.Join(diffs, ", "), fix))
 }
 
 // recordOneShotBackupRun records a terminal Job's run into status.history and

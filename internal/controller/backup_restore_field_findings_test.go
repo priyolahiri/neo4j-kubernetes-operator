@@ -78,6 +78,9 @@ func TestBuildBackupCommand_TempPathGetsMkdirPrelude(t *testing.T) {
 	if !strings.Contains(cmd, "--temp-path='/tmp/neo4j-backup-staging'") {
 		t.Errorf("expected quoted --temp-path; got: %q", cmd)
 	}
+	if strings.Contains(cmd, "--type=") {
+		t.Errorf("a one-database backup with no backupType leaves neo4j-admin's default; got: %q", cmd)
+	}
 }
 
 // #255: `neo4j-admin backup validate` exists only on CalVer images. On 5.26
