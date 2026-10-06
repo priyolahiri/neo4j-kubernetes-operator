@@ -322,7 +322,7 @@ kubectl describe neo4jenterprisecluster your-cluster-name
 kubectl logs -l neo4j.com/cluster=your-cluster-name
 
 # Check operator logs
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 ```
 
 ## Directory Structure

@@ -613,7 +613,7 @@ The operator creates the database if it is missing, then observes it:
 
 **Check operator logs**:
 ```bash
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 ```
 
 **Common Issues**:
@@ -709,7 +709,7 @@ kubectl exec <target-pod> -c neo4j -- \
   cypher-shell -u neo4j -p <password> -d <db-name> "<test-statement>"
 
 # Check operator logs for import errors
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "initial.*data"
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i "initial.*data"
 ```
 
 **Common Issues**:

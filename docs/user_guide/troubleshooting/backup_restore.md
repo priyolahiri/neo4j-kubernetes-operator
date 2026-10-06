@@ -35,7 +35,7 @@ kubectl get neo4jbackup
 kubectl describe neo4jbackup production-backup
 
 # Check operator logs for backup controller errors
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i backup
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i backup
 ```
 
 **Common Causes & Solutions:**
@@ -269,7 +269,7 @@ kubectl get neo4jrestore
 kubectl describe neo4jrestore production-restore
 
 # Check operator logs
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i restore
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i restore
 ```
 
 **Common Solutions:**
@@ -536,7 +536,7 @@ groups:
 kubectl logs -f job/production-backup-latest | grep -E "(ERROR|WARN|SUCCESS)"
 
 # Set up log alerts
-kubectl logs -f -n neo4j-operator-system deployment/neo4j-operator-controller-manager | \
+kubectl logs -f -n neo4j-operator-system -l control-plane=controller-manager | \
   grep -i "backup.*failed" --line-buffered | \
   while read line; do
     echo "BACKUP ALERT: $line"
