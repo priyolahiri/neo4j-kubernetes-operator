@@ -96,6 +96,15 @@ func (t restoreTarget) extraEnvFrom() []corev1.EnvFromSource {
 	return t.cluster.Spec.ExtraEnvFrom
 }
 
+// image is the Neo4j image the target's servers run; the seed proxy merges
+// backup chains with the same version's neo4j-admin.
+func (t restoreTarget) image() neo4jv1beta1.ImageSpec {
+	if t.standalone != nil {
+		return t.standalone.Spec.Image
+	}
+	return t.cluster.Spec.Image
+}
+
 // statefulSetName is the StatefulSet running the target's Neo4j servers: a
 // cluster's `<name>-server`, a standalone's `<name>`.
 func (t restoreTarget) statefulSetName() string {
@@ -187,12 +196,12 @@ func restoreRunsOffline(restore *neo4jv1beta1.Neo4jRestore, isTrueCluster bool) 
 //   - from a Neo4jBackup (`source.type: backup`) that recorded the artifact
 //     for every database restored: a `source.type: storage` path may be a
 //     directory, which only neo4j-admin resolves;
-//   - from a PVC, FULL artifacts only: the server fetches a PVC seed over
-//     HTTP through the seed proxy, one file, and Neo4j refuses a DIFF on its
-//     own ("not part of a valid backup chain") — `backupType: AUTO`, the
-//     default, makes every scheduled run after the first a DIFF.
+//   - from cloud storage, with a credentialsSecretRef: the server pods hold
+//     no workload identity of their own.
 //
-// neo4j-admin restores every one of these, so they keep the Job.
+// A differential on a PVC restores online: the seed proxy merges its chain
+// into one full artifact first (rule 109). neo4j-admin restores every case
+// above, so they keep the Job.
 func standaloneOfflineReason(restore *neo4jv1beta1.Neo4jRestore) string {
 	if restore.Spec.Source.Type == "pitr" || restore.Spec.Source.PointInTime != nil {
 		return "a point-in-time restore cannot be seeded online (dbms.recreateDatabase has no restore-until option)"
@@ -214,16 +223,6 @@ func standaloneOfflineReason(restore *neo4jv1beta1.Neo4jRestore) string {
 	for _, a := range artifacts {
 		if a.Filename == "" {
 			return fmt.Sprintf("Neo4jBackup %q did not record the artifact for database %q", snap.BackupRef, a.Database)
-		}
-		if snap.Storage.Type != "pvc" {
-			continue
-		}
-		switch a.Type {
-		case backupArtifactFull:
-		case backupArtifactDiff:
-			return fmt.Sprintf("%s is a differential (DIFF) backup on a PVC; the server would fetch it over HTTP as one file, without the rest of its chain", a.Filename)
-		default:
-			return fmt.Sprintf("Neo4jBackup %q did not record whether %s is a FULL or a DIFF backup (backups taken before the operator recorded it); a DIFF on a PVC cannot be seeded over HTTP", snap.BackupRef, a.Filename)
 		}
 	}
 	return ""
@@ -253,20 +252,6 @@ func restoreSeedArtifacts(restore *neo4jv1beta1.Neo4jRestore, snap *neo4jv1beta1
 		}
 	}
 	return artifacts
-}
-
-// pvcDiffSeedRefusal explains why an online restore cannot seed artifact from
-// a PVC when the backup recorded it as a DIFF, or returns "" otherwise. The
-// seed proxy serves the one file over HTTP, and Neo4j refuses a differential
-// without the rest of its chain ("not part of a valid backup chain") — after
-// creating the database, which is left offline. A cluster has no Job to fall
-// back to, so it refuses before creating anything; a standalone never gets
-// here with a DIFF (standaloneOfflineReason sends it to the Job).
-func pvcDiffSeedRefusal(storageType, filename, artifactType string) string {
-	if storageType != "pvc" || artifactType != backupArtifactDiff {
-		return ""
-	}
-	return fmt.Sprintf("%s is a differential (DIFF) backup on a PVC, which cannot be seeded online: the seed proxy serves it to the server over HTTP as one file, and Neo4j refuses a differential without the rest of its chain. Restore from a FULL backup (a Neo4jBackup with spec.options.backupType: FULL), or keep the backups this restores from on cloud storage, whose seed provider reads the whole chain", filename)
 }
 
 // restoreOnJobPath is restoreRunsOffline plus one case it cannot see: a Job

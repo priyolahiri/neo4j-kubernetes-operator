@@ -129,7 +129,16 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		dirURI = strings.TrimRight(dirURI, "/")
 		seedURIFor = func(filename string) string { return dirURI + "/" + filename }
 	case "pvc":
-		if res, ready, err := r.ensurePVCSeedProxyReady(ctx, restore, storage, target.podLabels()); !ready {
+		// Every database the backup did not record as a full backup has its
+		// chain merged by the proxy first (rule 109).
+		var seeds []seedArtifact
+		for _, a := range snap.DatabaseArtifacts {
+			if !strings.EqualFold(a.Database, "system") {
+				seeds = append(seeds, newSeedArtifact(snap.BackupPath, a.Filename, a.Type, a.Database))
+			}
+		}
+		merge := newSeedMergePlan(target.image(), restore.Spec.Options, seeds)
+		if res, ready, err := r.ensurePVCSeedProxyReady(ctx, restore, storage, target.podLabels(), merge); !ready {
 			return res, err
 		}
 		seedURIFor = func(filename string) string {
@@ -172,17 +181,6 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 
 		switch res.Phase {
 		case "", StatusPending:
-			// A DIFF on a PVC fails inside Neo4j after the database is
-			// created; refuse it here instead (pvcDiffSeedRefusal).
-			for _, a := range snap.DatabaseArtifacts {
-				if a.Database != db {
-					continue
-				}
-				if msg := pvcDiffSeedRefusal(storage.Type, fname, a.Type); msg != "" {
-					r.markDatabaseResult(ctx, restore, db, StatusFailed, msg)
-					return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-				}
-			}
 			// Issue the create/recreate exactly ONCE, then flip to Running and
 			// persist BEFORE returning — re-issuing would wipe a partially-seeded
 			// database. Re-entry finds Running and only polls (below).
@@ -378,6 +376,7 @@ func (r *Neo4jRestoreReconciler) ensurePVCSeedProxyReady(
 	restore *neo4jv1beta1.Neo4jRestore,
 	storage neo4jv1beta1.StorageLocation,
 	peers map[string]string,
+	merge *seedMergePlan,
 ) (ctrl.Result, bool, error) {
 	logger := log.FromContext(ctx)
 	if storage.PVC == nil || storage.PVC.Name == "" {
@@ -386,7 +385,7 @@ func (r *Neo4jRestoreReconciler) ensurePVCSeedProxyReady(
 		return ctrl.Result{}, false, fmt.Errorf("%s", msg)
 	}
 
-	proxyAvailable, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, restore, restore.Name, storage.PVC.Name)
+	proxyAvailable, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, restore, restore.Name, storage.PVC.Name, merge)
 	if err != nil {
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("ensure PVC seed proxy: %v", err))
 		return ctrl.Result{}, false, fmt.Errorf("ensure PVC seed proxy: %w", err)
@@ -399,15 +398,17 @@ func (r *Neo4jRestoreReconciler) ensurePVCSeedProxyReady(
 
 	if !proxyAvailable {
 		// Bounded wait (#227): a proxy that can never start (RWO backup PVC
-		// attached elsewhere, unpullable image) must not requeue forever.
+		// attached elsewhere, unpullable image) must not requeue forever. A
+		// failed merge never heals: fail at once with its reason.
+		if why := pvcSeedProxyMergeFailure(ctx, r.Client, restore.Namespace, restore.Name); why != "" {
+			msg := "the seed proxy could not merge the backup chain: " + why
+			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+			return ctrl.Result{}, false, nil
+		}
 		waitStart, haveAnchor := r.seedProxyWaitStart(ctx, restore)
 		diagnosis := pvcSeedProxyDiagnosis(ctx, r.Client, restore.Namespace, restore.Name)
-		budget := seedProxyWaitTimeout
-		if restore.Spec.Timeout != "" {
-			if d, perr := time.ParseDuration(restore.Spec.Timeout); perr == nil && d > 0 {
-				budget = d
-			}
-		}
+		budget := seedProxyBudget(restore, merge != nil)
 		if haveAnchor && time.Since(waitStart) > budget {
 			msg := fmt.Sprintf("backup-seed-proxy Deployment did not become Ready within %s: %s — a common cause is the backup PVC (%s) being ReadWriteOnce and still attached elsewhere; fix the cause and re-trigger by bumping the spec",
 				budget, diagnosis, storage.PVC.Name)

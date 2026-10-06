@@ -360,15 +360,18 @@ spec:
 
 Or, set the annotation `neo4j.com/auto-inherit-seed-creds=true` on the cluster or standalone CR — the operator patches `extraEnvFrom` (and the endpoint) automatically, which triggers one rolling restart so Neo4j picks up the env vars.
 
-#### Symptom: Restore reports `Failed` with "is a differential (DIFF) backup on a PVC, which cannot be seeded online"
+#### Symptom: Restore reports `Failed` with "the seed proxy could not merge the backup chain"
 
-**Cause:** the restore would seed from a PVC backup whose latest run is a differential. A PVC seed is served to Neo4j over HTTP as one file, and Neo4j cannot apply a differential without the rest of its chain. With `backupType: AUTO` (the default), every scheduled run after the first is a differential.
+**Cause:** the restore seeds from a PVC backup whose artifact is (or may be) a differential, so the seed proxy merges its chain into one full backup first — and that failed. The message carries neo4j-admin's reason. Common causes:
 
-**Fix:** restore from a `Neo4jBackup` that takes full backups (`spec.options.backupType: FULL`), or keep the backups on cloud storage, whose seed provider reads the whole chain. (A standalone restores a PVC differential offline instead of refusing it — see the next symptom.)
+- **A link of the chain is gone** (*"Unable to find valid backup chain"*): the full backup the differential builds on was deleted — by hand, or by retention pruning that removed a full whose differentials remained.
+- **The scratch space ran out** (*"cannot copy … to the scratch volume"*): merging copies the chain first. Set `spec.options.tempStorage` to at least the chain's size.
+
+**Fix:** address the cause and re-trigger the restore by changing its spec, or restore from a run whose chain is complete.
 
 #### Symptom: Standalone restore reports `Failed` with "cannot run against a running standalone (it restores offline: …)"
 
-**Cause:** this standalone restore cannot run online — the message names why (a point-in-time restore, a `source.type: storage` path, a PVC differential, cloud storage by pod identity) — so it runs `neo4j-admin` through a Job, which needs the instance stopped.
+**Cause:** this standalone restore cannot run online — the message names why (a point-in-time restore, a `source.type: storage` path, cloud storage by pod identity) — so it runs `neo4j-admin` through a Job, which needs the instance stopped.
 
 **Fix:** set `spec.stopCluster: true`. The operator stops the standalone for the restore and starts it again afterwards; every database on it is offline meanwhile.
 

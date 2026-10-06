@@ -110,7 +110,7 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		v := validation.NewBackupValidator()
-		return v.Validate(&obj), append(v.NoEffectWarnings(&obj), v.Warnings(&obj)...), nil, nil
+		return v.Validate(&obj), v.NoEffectWarnings(&obj), nil, nil
 	}},
 	"Neo4jPlugin": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jPlugin

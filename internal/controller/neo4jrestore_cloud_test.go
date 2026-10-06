@@ -1009,7 +1009,7 @@ func TestPVCSeedProxyLifecycle(t *testing.T) {
 	}
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(restore).Build()
 
-	available, err := ensurePVCSeedProxyResources(context.Background(), fc, scheme, restore, restore.Name, "backup-pvc")
+	available, err := ensurePVCSeedProxyResources(context.Background(), fc, scheme, restore, restore.Name, "backup-pvc", nil)
 	require.NoError(t, err)
 	assert.False(t, available, "freshly created proxy is not yet ready")
 	require.NoError(t, ensurePVCSeedProxyNetworkPolicy(context.Background(), fc, scheme, restore, restore.Name, clusterPodLabels("prod")))
@@ -1040,7 +1040,7 @@ func TestPVCSeedProxyLifecycle(t *testing.T) {
 	// Idempotent teardown + name-length validation.
 	require.NoError(t, teardownPVCSeedProxyResources(context.Background(), fc, "ns", "r"))
 	longName := strings.Repeat("x", 60)
-	_, err = ensurePVCSeedProxyResources(context.Background(), fc, scheme, restore, longName, "backup-pvc")
+	_, err = ensurePVCSeedProxyResources(context.Background(), fc, scheme, restore, longName, "backup-pvc", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "63-character")
 }

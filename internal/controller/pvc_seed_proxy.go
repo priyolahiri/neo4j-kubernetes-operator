@@ -114,6 +114,9 @@ func escapeURLPathSegments(p string) string {
 // `ownerName` overrides the proxy resource-name suffix when needed (e.g.
 // the Neo4jRestore controller wants the proxy named after the restore CR,
 // not the cluster). Defaults to `owner.GetName()` when empty.
+//
+// A non-nil `merge` makes the proxy merge backup chains before serving them
+// (seedMergePlan); nil serves the PVC as it is.
 func ensurePVCSeedProxyResources(
 	ctx context.Context,
 	c client.Client,
@@ -121,6 +124,7 @@ func ensurePVCSeedProxyResources(
 	owner client.Object,
 	ownerName string,
 	backupPVCName string,
+	merge *seedMergePlan,
 ) (proxyAvailable bool, err error) {
 	if backupPVCName == "" {
 		return false, fmt.Errorf("PVC seed proxy requires a backup PVC name; got empty")
@@ -150,7 +154,7 @@ func ensurePVCSeedProxyResources(
 		return false, fmt.Errorf("get proxy Deployment: %w", getErr)
 	}
 	if apierrors.IsNotFound(getErr) {
-		dep := buildPVCSeedProxyDeployment(owner, ownerName, backupPVCName)
+		dep := buildPVCSeedProxyDeployment(owner, ownerName, backupPVCName, merge)
 		if err := controllerutil.SetControllerReference(owner, dep, scheme); err != nil {
 			return false, fmt.Errorf("set owner reference on proxy Deployment: %w", err)
 		}
@@ -305,8 +309,10 @@ func ensurePVCSeedProxyService(
 // Pod template:
 //   - mounts the backup PVC RO at /backup,
 //   - uid/gid 1000 + readOnlyRootFilesystem on the httpd container,
-//   - exposes :8080.
-func buildPVCSeedProxyDeployment(owner client.Object, ownerName, backupPVCName string) *appsv1.Deployment {
+//   - exposes :8080,
+//   - with a merge plan, an init container that merges the chains first and
+//     httpd serving the merged artifacts (applySeedMerge).
+func buildPVCSeedProxyDeployment(owner client.Object, ownerName, backupPVCName string, merge *seedMergePlan) *appsv1.Deployment {
 	replicas := int32(1)
 	labels := map[string]string{
 		"app.kubernetes.io/name":       "backup-seed-proxy",
@@ -318,7 +324,7 @@ func buildPVCSeedProxyDeployment(owner client.Object, ownerName, backupPVCName s
 	runAsNonRoot := true
 	runAsUser := int64(1000)
 
-	return &appsv1.Deployment{
+	dep := &appsv1.Deployment{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      pvcSeedProxyName(ownerName),
 			Namespace: owner.GetNamespace(),
@@ -391,6 +397,10 @@ func buildPVCSeedProxyDeployment(owner client.Object, ownerName, backupPVCName s
 			},
 		},
 	}
+	if merge != nil {
+		applySeedMerge(&dep.Spec.Template.Spec, merge)
+	}
+	return dep
 }
 
 // pvcSeedProxyDiagnosis assembles a human-actionable summary of WHY the

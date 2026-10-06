@@ -426,12 +426,6 @@
     "moduleId": "mod-backup-restore"
   },
   {
-    "id": "ev-backup-restore-caveat",
-    "name": "BackupRestoreCaveat",
-    "description": "Warns that a valid PVC Neo4jBackup's runs will be differentials (scheduled AUTO, DIFF, or chainFromBackup) that a Neo4jRestore cannot seed online: a cluster refuses one, a standalone restores it offline. Also printed by kubectl neo4j validate.",
-    "moduleId": "mod-backup-restore"
-  },
-  {
     "id": "ev-backup-sharded-databases-excluded",
     "name": "BackupShardedDatabasesExcluded",
     "description": "An all-databases backup captured property-sharded databases as per-shard artifacts (status.shardedFamilies) that its own all-databases restore path cannot recreate; each must restore via its Neo4jShardedDatabase CR.",
