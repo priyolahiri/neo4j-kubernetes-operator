@@ -5373,6 +5373,10 @@ func (in *ResolvedRestoreSource) DeepCopyInto(out *ResolvedRestoreSource) {
 		in, out := &in.BackupCreatedAt, &out.BackupCreatedAt
 		*out = (*in).DeepCopy()
 	}
+	if in.BackupStartedAt != nil {
+		in, out := &in.BackupStartedAt, &out.BackupStartedAt
+		*out = (*in).DeepCopy()
+	}
 	if in.DatabaseArtifacts != nil {
 		in, out := &in.DatabaseArtifacts, &out.DatabaseArtifacts
 		*out = make([]DatabaseArtifact, len(*in))

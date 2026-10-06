@@ -1183,6 +1183,14 @@ spec:
                       BackupRef is the Neo4jBackup name this source was resolved from
                       (provenance only).
                     type: string
+                  backupStartedAt:
+                    description: |-
+                      BackupStartedAt is when the resolved run started. With
+                      spec.source.pointInTime the restore resolves the earliest Succeeded run
+                      that started at or after it — that run holds every transaction before
+                      the point in time — rather than the most recent one.
+                    format: date-time
+                    type: string
                   databaseArtifacts:
                     description: |-
                       DatabaseArtifacts is the per-database `.backup` map pinned for an

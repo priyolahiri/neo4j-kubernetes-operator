@@ -79,7 +79,7 @@ Defines the source of the backup to restore from.
 | `storage` | [`StorageLocation`](#storagelocation) | ❌ | Direct storage location (used when `type="storage"`). The cloud backend — `s3`, `gcs`, `azure`, or `pvc` — is selected on `storage.type` inside this struct, *not* on the outer `source.type`. |
 | `backupPath` | `string` | conditional | Specific backup path within the storage location. **Required (non-empty) when `type="storage"`** — the controller fails the restore otherwise; for cluster targets it must be the exact `.backup` file. On a standalone it may be the directory or the exact `.backup` file; restoring under a different name from a cloud directory needs the exact file. Not used for `type="backup"` (resolved from the `Neo4jBackup`). |
 | `sourceDatabase` | `string` | ❌ | The database to take from the backup when it is not `spec.database` — restoring under a different name. Needed only when the backup holds more than one database (an `allDatabases` backup, or a storage directory); a backup of one database already says which it is, and naming a different one is refused. Defaults to `spec.database`. Not allowed with `spec.allDatabases`, or as `system`. |
-| `pointInTime` | `*metav1.Time` | ❌ | Recovery point in RFC3339 format; maps to `--restore-until`. **Standalone targets only** — a cluster target rejects it (use a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`). |
+| `pointInTime` | `*metav1.Time` | ❌ | Recovery point in RFC3339 format. With `type: backup` the restore resolves the run that holds it (the earliest that started at or after it). On CalVer, from cloud storage, into a database that does not exist, it runs **online** on a cluster or a standalone (`CREATE DATABASE … OPTIONS {seedRestoreUntil}`). Otherwise a standalone restores offline (`neo4j-admin … --restore-until`) and a cluster refuses, naming the reason. See [Point-in-Time Recovery](../user_guide/guides/backup_restore.md#point-in-time-recovery-pitr). |
 | `pitr` | [`PITRConfig`](#pitrconfig) | conditional | Full PITR configuration. **Required when `type="pitr"`**, together with `pitr.baseBackup` and/or `pointInTime`. |
 
 **Valid `type` values:**
@@ -130,7 +130,7 @@ source:
         provider: aws
 ```
 
-> **Note:** `source.type: pitr` (the `--restore-until` path) applies only to a `Neo4jEnterpriseStandalone` target. For cluster point-in-time recovery, create a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`. The operator rejects `source.type: pitr` against a cluster target with an actionable error.
+> **Note:** `source.type: pitr` (the `--restore-until` path) applies only to a `Neo4jEnterpriseStandalone` target; the operator rejects it on a cluster. On a cluster, use `type: backup` with `pointInTime` (online, CalVer, cloud storage, a new database), or a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`.
 
 ### PITRConfig
 
@@ -283,7 +283,8 @@ Storage backend configuration (shared with `Neo4jBackup`).
 | `databaseArtifacts` | `[]DatabaseArtifact` | Per-database `.backup` map pinned from the resolved backup's latest Succeeded run, driving an all-databases restore (`spec.allDatabases`). Empty for single-database restores. |
 | `shardedDatabasesExcluded` | `[]string` | Logical property-sharded databases the all-databases **restore loop** does not recreate (carried forward from `Neo4jBackup` `status.history[].shardedDatabasesExcluded`). The restore surfaces these (`RestoreShardedDatabasesNotCovered` warning) — but they **are** restorable from the same backup: re-apply each one's `Neo4jShardedDatabase` CR with `spec.seedBackupRef` pointing at this backup (its per-shard files are in the backup's `shardedFamilies`). Empty otherwise. |
 | `resolvedAt` | `*metav1.Time` | When the `backupRef` was first dereferenced |
-| `backupCreatedAt` | `*metav1.Time` | Completion time of the resolved most-recent Succeeded run, captured at resolution so restore provenance survives deletion of the source `Neo4jBackup` CR |
+| `backupCreatedAt` | `*metav1.Time` | Completion time of the resolved Succeeded run, captured at resolution so restore provenance survives deletion of the source `Neo4jBackup` CR |
+| `backupStartedAt` | `*metav1.Time` | When the resolved run started. With `source.pointInTime` the restore resolves the earliest run that started at or after it, which holds every transaction before it |
 
 ### RestoreStats
 
@@ -331,7 +332,7 @@ An online restore has no separate bring-up step: the Cypher restore (`CREATE DAT
 
 | Case | Why |
 |---|---|
-| Point-in-time (`source.type: pitr`, or `source.pointInTime`) | `dbms.recreateDatabase` has no restore-until option |
+| Point-in-time that cannot run online: Neo4j 5.26, a PVC backup, a database that exists, or `source.type: pitr` | only `neo4j-admin` restores those to a point in time |
 | `source.type: storage` | the path may be a directory or part of a chain; only `neo4j-admin` resolves those |
 | Cloud storage with no `credentialsSecretRef`, on a standalone without `spec.podServiceAccountAnnotations` | its pod has no workload identity; the Job's ServiceAccount does |
 
@@ -463,7 +464,7 @@ spec:
 
 ### Point-in-Time Recovery (PITR)
 
-> **Note:** `source.type: pitr` applies only to a `Neo4jEnterpriseStandalone` target. For cluster point-in-time recovery, create a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`. The operator rejects `source.type: pitr` against a cluster target with an actionable error.
+> **Note:** `source.type: pitr` applies only to a `Neo4jEnterpriseStandalone` target. A cluster restores to a point in time online with `type: backup` and `pointInTime` — see [Point-in-Time Recovery](../user_guide/guides/backup_restore.md#point-in-time-recovery-pitr).
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1

@@ -122,8 +122,8 @@ seeds it from the backup over Cypher — online, no downtime, and your original
 
     The same: a standalone restores online too, and its other databases stay
     available throughout. A few restores run **offline** through
-    `neo4j-admin`, which stops the instance — point-in-time restores, for
-    example. Those need `stopCluster: true`, and the restore's status names
+    `neo4j-admin`, which stops the instance — a point-in-time restore over a
+    database that exists, for example. Those need `stopCluster: true`, and the restore's status names
     the reason. See
     [Restore to a Standalone Instance](#restore-to-a-standalone-instance).
 
@@ -1067,7 +1067,7 @@ Restores run **online**, against the running DBMS: only the database being resto
 |---|---|---|
 | `Neo4jEnterpriseCluster` (standard DB) | Cypher over Bolt — no Job | `dbms.recreateDatabase(name, {seedURI})` if the DB exists, otherwise `CREATE DATABASE name OPTIONS { seedURI } WAIT` |
 | `Neo4jEnterpriseStandalone` | The same Cypher over Bolt — no Job, no downtime for the other databases | as above |
-| `Neo4jEnterpriseStandalone`, [offline cases](#restore-to-a-standalone-instance) (point-in-time, `source.type: storage`, cloud by pod identity without `spec.podServiceAccountAnnotations`) | Kubernetes Job; stops the instance | `neo4j-admin database restore --from-path=<latest-file-in-chain>` followed by `CREATE/START DATABASE` |
+| `Neo4jEnterpriseStandalone`, [offline cases](#restore-to-a-standalone-instance) (point-in-time that cannot run online, `source.type: storage`, cloud by pod identity without `spec.podServiceAccountAnnotations`) | Kubernetes Job; stops the instance | `neo4j-admin database restore --from-path=<latest-file-in-chain>` followed by `CREATE/START DATABASE` |
 | `Neo4jShardedDatabase` (sharded) | Rejected with actionable error | Use `Neo4jShardedDatabase.spec.replaceExisting: true` + `force: true` instead — see [Property Sharding](../property_sharding.md) |
 
 > **Restoring one database from an instance-wide backup** (`allDatabases: true`) works on both kinds: that backup stores one `.backup` artifact *per database* and records each in `status.history[].databaseArtifacts`, and the operator seeds from the one for `spec.database` (or `source.sourceDatabase`). If the backup's latest run did not record the database, the restore fails with a message naming the other ways in: a `database`-scoped backup, or `source.type: storage` pointing at the exact `.backup` file.
@@ -1200,7 +1200,7 @@ spec:
 >
 > ⚠️ **Restore is destructive and overwrites in place.** With `options.replaceExisting: true` the target database's current data is replaced by the backup. Re-running a restore — including after re-creating a deleted Backup CR — re-seeds and overwrites again. Treat every restore as a destructive operation against the named database.
 
-> **Which run a restore picks**: both cluster and standalone restores read the **latest successful artifact of the referenced `Neo4jBackup` CR**, by its recorded filename (an offline standalone restore falls back to the newest `<database>-*.backup` in that CR's directory only for a backup that recorded none). In a FULL+DIFF chain, reference the **DIFF CR** for the latest state or the **FULL CR** to roll back to the last full snapshot — restoring via the FULL CR does *not* apply the newer diffs (and emits a `RestoreFromChainParent` warning). To pin to an arbitrary earlier run, set `source.type: storage` with `backupPath` pointing at the exact `.backup` file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning).
+> **Which run a restore picks**: both cluster and standalone restores read the **latest successful artifact of the referenced `Neo4jBackup` CR**, by its recorded filename (an offline standalone restore falls back to the newest `<database>-*.backup` in that CR's directory only for a backup that recorded none). In a FULL+DIFF chain, reference the **DIFF CR** for the latest state or the **FULL CR** to roll back to the last full snapshot — restoring via the FULL CR does *not* apply the newer diffs (and emits a `RestoreFromChainParent` warning). To pin to an arbitrary earlier run, set `source.type: storage` with `backupPath` pointing at the exact `.backup` file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning). With `source.pointInTime`, a restore picks the run that holds that moment instead: the earliest that started at or after it ([Point-in-Time Recovery](#point-in-time-recovery-pitr)).
 
 #### Restoring under a different name
 
@@ -1252,7 +1252,7 @@ instance — every database is offline until it is back:
 
 | Case | Why it cannot run online |
 |---|---|
-| Point-in-time (`source.type: pitr`, or `source.pointInTime`) | `dbms.recreateDatabase` has no restore-until option |
+| Point-in-time that cannot run [online](#online-from-a-backup-in-cloud-storage): Neo4j 5.26, a PVC backup, a database that exists, or `source.type: pitr` | only `neo4j-admin` restores those to a point in time |
 | `source.type: storage` | the path may be a directory or part of a backup chain; only `neo4j-admin` resolves those |
 | Cloud storage with no `credentialsSecretRef` (Workload Identity, node IAM), on a standalone without `spec.podServiceAccountAnnotations` | its pod has no workload identity; the restore Job's ServiceAccount does. Set the field on the standalone to restore online instead |
 
@@ -1276,11 +1276,68 @@ Pre/post restore hooks run on both paths — see [Restore with Hooks](#restore-w
 
 ### Point-in-Time Recovery (PITR)
 
-PITR restores your database to a specific point in time from a base backup. The operator runs `neo4j-admin database restore --restore-until="<pointInTime>"` against the base backup (`source.pitr.baseBackup`); the transaction logs it replays come from that backup chain. `source.pitr.logStorage` is accepted by the CRD but the restore command does not read it (a `pvc` log storage is only mounted at `/transaction-logs`), so the examples below omit it.
+PITR restores a database as it was at a given moment. It works two ways.
 
-> **Note:** `source.type: pitr` (the `--restore-until` path) applies only to a `Neo4jEnterpriseStandalone` target. For cluster point-in-time recovery, create a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`. The operator rejects `source.type: pitr` against a cluster target with an actionable error.
+#### Online, from a backup in cloud storage
 
-#### PITR Configuration
+On a cluster or a standalone running CalVer, restore a `Neo4jBackup` in cloud
+storage into a **new** database with `source.pointInTime`:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jRestore
+metadata:
+  name: orders-before-incident
+spec:
+  instanceRef: production-cluster      # a cluster or a standalone
+  database: orders-asof-1229           # a database that does not exist yet
+  source:
+    type: backup
+    backupRef: orders-backup           # backs up to S3, GCS or Azure
+    pointInTime: "2026-10-06T12:29:00Z"
+```
+
+The operator picks the backup run that holds the point in time: the earliest
+successful run that **started** at or after it (`status.resolvedSource.backupStartedAt`).
+It creates the database from that run with Neo4j's `seedRestoreUntil`, so Neo4j
+replays the run's chain and stops at the point in time. Nothing else is stopped,
+and every other database stays online.
+
+It runs online only when all of these hold:
+
+- **The target runs CalVer.** Neo4j 5.26 has no `seedRestoreUntil`.
+- **The backup is in cloud storage.** A PVC backup reaches Neo4j over HTTP
+  through the seed proxy, and Neo4j applies a point in time only to cloud seeds.
+- **The database does not exist yet.** `seedRestoreUntil` is an option of
+  `CREATE DATABASE`; recreating a database cannot stop at a point in time.
+  Restore under a new name, compare, and copy back what was lost.
+- **A run started at or after the point in time.** Otherwise no backup is
+  known to hold every transaction up to it. Take a backup, or pick an earlier
+  point.
+
+When one does not hold, a standalone restores offline instead (below; it needs
+`stopCluster: true`). A cluster cannot, so the restore fails and names the
+reason. The decision is made once, when the restore starts, and the restore
+records it in the `neo4j.com/point-in-time-path` annotation.
+
+#### Offline, with neo4j-admin (standalones)
+
+The offline path runs `neo4j-admin database restore --restore-until="<pointInTime>"`.
+It stops the standalone, so every database on it is offline until it is back.
+It covers what the online path cannot: Neo4j 5.26, PVC backups, a database that
+exists, and `source.type: pitr`.
+
+With `source.type: pitr` the base backup comes from `source.pitr.baseBackup`,
+and the transaction logs it replays come from that backup chain.
+`source.pitr.logStorage` is accepted by the CRD but the restore command does not
+read it (a `pvc` log storage is only mounted at `/transaction-logs`), so the
+examples below omit it.
+
+> **Note:** `source.type: pitr` applies only to a `Neo4jEnterpriseStandalone`
+> target; the operator rejects it on a cluster. On a cluster, use the online
+> path above, or a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`.
+
+##### PITR Configuration
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -1304,7 +1361,7 @@ spec:
 
 **Best for:** Compliance requirements, precise recovery to a moment before a bad event.
 
-#### PITR with Storage-Based Base Backup
+##### PITR with Storage-Based Base Backup
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1

@@ -263,22 +263,32 @@ func TestValidateRestore_RejectsSystemDatabase(t *testing.T) {
 // The pointInTime-on-a-cluster refusal names the field the user actually set
 // (spec.instanceRef). It used to say "clusterRef", which was removed in v1.14, so
 // a user fixing the manifest went looking for a field that is not in the schema.
+// A single database from a backupRef is not refused: a cluster restores it to a
+// point in time online (decidePointInTimePath checks the rest).
 func TestValidateRestore_PointInTimeOnClusterNamesInstanceRef(t *testing.T) {
-	r := restoreWithBackupRef("pit-restore", "default", "some-backup")
-	r.Spec.InstanceRef = "prod-cluster"
-	pit := metav1.NewTime(time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC))
-	r.Spec.Source.PointInTime = &pit
-	r.Status.ResolvedSource = &neo4jv1beta1.ResolvedRestoreSource{
-		BackupRef:  "some-backup",
-		Storage:    pvcStorage("backup-storage"),
-		BackupPath: "some-backup/",
+	pitRestore := func() *neo4jv1beta1.Neo4jRestore {
+		r := restoreWithBackupRef("pit-restore", "default", "some-backup")
+		r.Spec.InstanceRef = "prod-cluster"
+		pit := metav1.NewTime(time.Date(2026, 6, 11, 10, 0, 0, 0, time.UTC))
+		r.Spec.Source.PointInTime = &pit
+		r.Status.ResolvedSource = &neo4jv1beta1.ResolvedRestoreSource{
+			BackupRef:  "some-backup",
+			Storage:    pvcStorage("backup-storage"),
+			BackupPath: "some-backup/",
+		}
+		return r
 	}
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "prod-cluster", Namespace: "default"},
 	}
-	rec := newResolvedSourceReconciler(t, r, cluster)
 
-	err := rec.validateRestore(context.Background(), r)
+	single := pitRestore()
+	require.NoError(t, newResolvedSourceReconciler(t, single, cluster).validateRestore(context.Background(), single))
+
+	all := pitRestore()
+	all.Spec.AllDatabases = true
+	all.Spec.Database = ""
+	err := newResolvedSourceReconciler(t, all, cluster).validateRestore(context.Background(), all)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "instanceRef")
 	assert.NotContains(t, err.Error(), "clusterRef")
