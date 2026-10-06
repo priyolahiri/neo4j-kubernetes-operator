@@ -29,7 +29,7 @@ done
 ```bash
 kubectl get events --field-selector reason=SplitBrainDetected -A
 kubectl get events --field-selector reason=SplitBrainRepaired -A
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager -f \
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager -f \
   | grep -i splitbrain
 ```
 
@@ -86,7 +86,7 @@ Monitor operator logs for split-brain detection:
 
 ```bash
 # Check for split-brain detection logs
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager | grep -i "split.*brain"
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i "split.*brain"
 
 # Expected detection logs:
 # Starting split-brain detection   cluster=production-cluster expectedServers=3
@@ -304,7 +304,7 @@ Set up log monitoring for split-brain events:
 
 ```bash
 # Alert on split-brain detection logs
-kubectl logs -f -n neo4j-operator-system deployment/neo4j-operator-controller-manager | \
+kubectl logs -f -n neo4j-operator-system -l control-plane=controller-manager | \
   grep -E "(split.*brain|Split.*Brain)" --line-buffered | \
   while read line; do
     echo "ALERT: $line"
@@ -358,13 +358,15 @@ fi
 
 1. **Check Operator Logs**:
    ```bash
-   kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager --tail=100
+   kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=100
    ```
 
 2. **Verify RBAC Permissions**:
    ```bash
-   kubectl auth can-i get pods --as=system:serviceaccount:neo4j-operator-system:neo4j-operator-controller-manager
-   kubectl auth can-i list pods --as=system:serviceaccount:neo4j-operator-system:neo4j-operator-controller-manager
+   # The operator's ServiceAccount is neo4j-operator for a Helm release named neo4j-operator,
+   # neo4j-operator-controller-manager for a kubectl-apply install
+   kubectl auth can-i get pods --as=system:serviceaccount:neo4j-operator-system:neo4j-operator
+   kubectl auth can-i list pods --as=system:serviceaccount:neo4j-operator-system:neo4j-operator
    ```
    The detector reaches each server over Bolt, so the operator does not need (and does not have) `pods/exec`.
 

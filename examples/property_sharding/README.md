@@ -214,7 +214,7 @@ kubectl describe neo4jenterprisecluster <name>
 
 **Sharded database creation failed**:
 ```bash
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 # Look for sharded database controller errors
 ```
 
@@ -227,7 +227,7 @@ kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manag
 ### Debugging Commands
 ```bash
 # Check operator logs
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 
 # Check cluster formation
 kubectl exec <cluster>-server-0 -- \

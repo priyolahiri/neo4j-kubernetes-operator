@@ -102,7 +102,7 @@ kubectl get deployments -n neo4j-operator-system  # for prod deployments
 kubectl get deployments -n neo4j-operator-dev     # for dev deployments
 
 # Check operator logs
-kubectl logs -f deployment/neo4j-operator-controller-manager -n <namespace>
+kubectl logs -f -l control-plane=controller-manager -n <namespace>
 
 # Verify CRDs are installed
 kubectl get crd | grep neo4j

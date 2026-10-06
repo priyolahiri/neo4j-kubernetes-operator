@@ -1494,7 +1494,7 @@ kubectl get pods -l neo4j.com/cluster=my-cluster
 kubectl describe pod my-cluster-server-0
 
 # Check operator logs
-kubectl logs -n neo4j-operator-system deployment/neo4j-operator-controller-manager
+kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1
 
 # Verify split-brain detection
 kubectl get events --field-selector reason=SplitBrainDetected
