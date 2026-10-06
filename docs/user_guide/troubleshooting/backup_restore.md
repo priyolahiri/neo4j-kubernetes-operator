@@ -371,7 +371,7 @@ Or, set the annotation `neo4j.com/auto-inherit-seed-creds=true` on the cluster o
 
 #### Symptom: Standalone restore reports `Failed` with "cannot run against a running standalone (it restores offline: …)"
 
-**Cause:** this standalone restore cannot run online — the message names why (a point-in-time restore, a `source.type: storage` path, cloud storage by pod identity) — so it runs `neo4j-admin` through a Job, which needs the instance stopped.
+**Cause:** this standalone restore cannot run online — the message names why (a point-in-time restore, a `source.type: storage` path, cloud storage by pod identity on a standalone without `spec.podServiceAccountAnnotations`) — so it runs `neo4j-admin` through a Job, which needs the instance stopped.
 
 **Fix:** set `spec.stopCluster: true`. The operator stops the standalone for the restore and starts it again afterwards; every database on it is offline meanwhile.
 

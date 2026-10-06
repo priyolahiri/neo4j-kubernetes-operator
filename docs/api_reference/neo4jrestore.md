@@ -333,7 +333,7 @@ An online restore has no separate bring-up step: the Cypher restore (`CREATE DAT
 |---|---|
 | Point-in-time (`source.type: pitr`, or `source.pointInTime`) | `dbms.recreateDatabase` has no restore-until option |
 | `source.type: storage` | the path may be a directory or part of a chain; only `neo4j-admin` resolves those |
-| Cloud storage with no `credentialsSecretRef` | a standalone's pods cannot carry a workload identity; the Job's ServiceAccount can |
+| Cloud storage with no `credentialsSecretRef`, on a standalone without `spec.podServiceAccountAnnotations` | its pod has no workload identity; the Job's ServiceAccount does |
 
 The operator emits a `RestoreStarted` event naming the case.
 

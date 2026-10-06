@@ -450,7 +450,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	// An all-databases one runs a multi-database `neo4j-admin database
 	// restore` and handleRestoreSuccess brings every database online via
 	// registerAllDatabasesAfterRestore.
-	if reason := standaloneOfflineReason(restore); reason != "" && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
+	if reason := standaloneOfflineReason(restore, r.restoreStandalone(ctx, restore)); reason != "" && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
 		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
 			fmt.Sprintf("Restoring offline with neo4j-admin, which stops standalone %q: %s", cluster.Name, reason))
 	}
@@ -2464,7 +2464,7 @@ func (r *Neo4jRestoreReconciler) refuseRestoreIfPodsRunning(ctx context.Context,
 		// Most standalone restores run online now (rule 108); say why this
 		// one doesn't, or the stopCluster requirement reads as arbitrary.
 		why := ""
-		if reason := standaloneOfflineReason(restore); reason != "" {
+		if reason := standaloneOfflineReason(restore, r.restoreStandalone(ctx, restore)); reason != "" {
 			why = fmt.Sprintf(" (it restores offline: %s)", reason)
 		}
 		return fmt.Errorf("restore %q cannot run against a running standalone%s: %d server pod(s) of %q are still present. Set spec.stopCluster=true to let the operator stop the instance for the restore, or scale it to 0 manually before applying this restore",
@@ -3117,6 +3117,9 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 					fmt.Sprintf("Waiting for %s %q pods to roll out the S3 endpoint %s", target.kind(), target.name(), seedEndpointEnvVar))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
+		}
+		if res, ready := r.awaitSeedIdentity(ctx, restore, target, storage); !ready {
+			return res, nil
 		}
 	case "pvc":
 		// Cluster + PVC restore: spawn the in-cluster HTTP proxy in front

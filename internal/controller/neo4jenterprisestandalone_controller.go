@@ -116,6 +116,7 @@ const (
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterprisestandalones/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jenterprisestandalones/finalizers,verbs=update
 //+kubebuilder:rbac:groups=apps,resources=deployments,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auraproviderconfigs,verbs=get;list;watch
 //+kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch
@@ -301,9 +302,19 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		return ctrl.Result{}, nil
 	}
 
+	// The pod's workload-identity ServiceAccount must exist before a pod
+	// that references it is admitted (spec.podServiceAccountAnnotations).
+	if err := r.ensureStandaloneServiceAccount(ctx, standalone); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile StatefulSet
 	if err := r.reconcileStatefulSet(ctx, standalone); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile StatefulSet: %w", err)
+	}
+
+	if err := r.cleanupStandaloneServiceAccount(ctx, standalone); err != nil {
+		return ctrl.Result{}, err
 	}
 
 	// Reconcile Ingress (if configured)
@@ -1767,7 +1778,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(ctx context.Cont
 		updateStrategy.Type = appsv1.OnDeleteStatefulSetStrategyType
 	}
 
-	return &appsv1.StatefulSet{
+	sts := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      standalone.Name,
 			Namespace: standalone.Namespace,
@@ -1869,6 +1880,8 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(ctx context.Cont
 			},
 		},
 	}
+	applyStandalonePodIdentity(standalone, &sts.Spec.Template)
+	return sts
 }
 
 // setFailedStatus records a terminal "Failed" phase, refetching the latest

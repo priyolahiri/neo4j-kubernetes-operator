@@ -46,7 +46,7 @@
     "name": "Reconcile Standalone",
     "serverUnitId": "su-neo4jenterprisestandalone",
     "operation": "business_action",
-    "description": "Top-level standalone reconcile: validates the spec (including admin-secret password shape), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check on image-tag drift, and updates status once the StatefulSet reports one ready replica.",
+    "description": "Top-level standalone reconcile: validates the spec (including admin-secret password shape), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check on image-tag drift, and updates status once the StatefulSet reports one ready replica. With spec.podServiceAccountAnnotations it creates the `<name>-neo4j` ServiceAccount before the StatefulSet and runs the pod under it, and deletes it once the field is removed and no pod uses it.",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -940,7 +940,7 @@
     "name": "Route Restore Online or Offline",
     "serverUnitId": "su-neo4jrestore",
     "operation": "resolver",
-    "description": "standaloneOfflineReason() / restoreRunsOffline() / restoreOnJobPath() (restore_target.go) decide, from the pinned status.resolvedSource, whether a restore runs online or takes the offline neo4j-admin Job: a cluster never takes the Job; a standalone does only for point-in-time, source.type storage, an unrecorded artifact, cloud storage with no credentialsSecretRef, or a Job restore that already holds its neo4j.com/restore-in-progress marker. The reason is reported in the refusal and the RestoreStarted event (rule 108).",
+    "description": "standaloneOfflineReason() / restoreRunsOffline() / restoreOnJobPath() (restore_target.go) decide, from the pinned status.resolvedSource, whether a restore runs online or takes the offline neo4j-admin Job: a cluster never takes the Job; a standalone does only for point-in-time, source.type storage, an unrecorded artifact, cloud storage with no credentialsSecretRef, or a Job restore that already holds its neo4j.com/restore-in-progress marker. The reason is reported in the refusal and the RestoreStarted event (rule 108). A standalone with spec.podServiceAccountAnnotations restores from cloud storage without a credentialsSecretRef online; a restore stays on the path it started on (restore-in-progress marker → Job, cypher-restore-issued or databaseResults → online).",
     "readsFieldIds": [
       "f-neo4jrestore-status-resolved-source-artifact-type",
       "f-neo4jrestore-stop-cluster"
@@ -969,7 +969,7 @@
     "name": "Online Cypher Restore",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startClusterCypherRestore() restores one database online against the running DBMS — on a cluster and on a standalone (rule 108): dbms.[cluster.]recreateDatabase with a seedURI over an existing database, CREATE DATABASE … OPTIONS {seedURI} for a new one, then polls SHOW DATABASE until every allocation is online. Target-specific plumbing (StatefulSet name, pod labels for the seed proxy's NetworkPolicy, the CR that carries seed spec.env/extraEnvFrom) comes from restoreTarget. A PVC differential is merged by the seed proxy first (the proxy serves one file over HTTP; Neo4j refuses a DIFF without its chain); it runs pre-restore hooks before issuing and post-restore hooks once online; never a Job on cluster targets.",
+    "description": "startClusterCypherRestore() restores one database online against the running DBMS — on a cluster and on a standalone (rule 108): dbms.[cluster.]recreateDatabase with a seedURI over an existing database, CREATE DATABASE … OPTIONS {seedURI} for a new one, then polls SHOW DATABASE until every allocation is online. Target-specific plumbing (StatefulSet name, pod labels for the seed proxy's NetworkPolicy, the CR that carries seed spec.env/extraEnvFrom) comes from restoreTarget. A PVC differential is merged by the seed proxy first (the proxy serves one file over HTTP; Neo4j refuses a DIFF without its chain); it runs pre-restore hooks before issuing and post-restore hooks once online; never a Job on cluster targets. Into a standalone by pod identity, awaitSeedIdentity() holds the seed until the pod runs under its identity ServiceAccount.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -988,7 +988,7 @@
     "name": "All-Databases Restore Loop",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startAllDatabasesRestore() drives one per-database CREATE/recreate-with-seedURI action per reconcile pass from the resolved backup's per-database artifact map, on clusters and standalones, tracking progress in status.databaseResults; runs pre-restore hooks once per attempt (neo4j.com/restore-pre-hooks-ran) and post-restore hooks before Completed, has the seed proxy merge each database's PVC chain that is not recorded as FULL, and stamps status.completionTime. Property-sharded families are excluded and must restore via their own Neo4jShardedDatabase CR.",
+    "description": "startAllDatabasesRestore() drives one per-database CREATE/recreate-with-seedURI action per reconcile pass from the resolved backup's per-database artifact map, on clusters and standalones, tracking progress in status.databaseResults; runs pre-restore hooks once per attempt (neo4j.com/restore-pre-hooks-ran) and post-restore hooks before Completed, has the seed proxy merge each database's PVC chain that is not recorded as FULL, and stamps status.completionTime. Property-sharded families are excluded and must restore via their own Neo4jShardedDatabase CR. Into a standalone by pod identity, awaitSeedIdentity() holds the seed until the pod runs under its identity ServiceAccount.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

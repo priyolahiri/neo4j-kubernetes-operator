@@ -551,4 +551,18 @@ func TestPreflightReplica(t *testing.T) {
 		assert.Equal(t, markWarning, got[0].mark)
 		assert.Contains(t, got[0].what, "cloud role")
 	})
+
+	t.Run("a standalone's cloud role counts too", func(t *testing.T) {
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+			ObjectMeta: metav1.ObjectMeta{Name: "dr-cluster", Namespace: "dr"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{PodServiceAccountAnnotations: map[string]string{
+				"eks.amazonaws.com/role-arn": "arn:aws:iam::1234:role/dr",
+			}},
+		}
+		c := testClient(t, standalone)
+		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", ""))
+		require.Len(t, got, 1)
+		assert.Equal(t, markWarning, got[0].mark)
+		assert.Contains(t, got[0].what, "cloud role")
+	})
 }

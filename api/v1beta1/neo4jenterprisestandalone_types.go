@@ -60,6 +60,22 @@ type Neo4jEnterpriseStandaloneSpec struct {
 	// +optional
 	ExtraEnvFrom []corev1.EnvFromSource `json:"extraEnvFrom,omitempty"`
 
+	// PodServiceAccountAnnotations are annotations applied to an
+	// operator-managed ServiceAccount (`<name>-neo4j`) that the Neo4j pod runs
+	// under. Use this for cloud Workload Identity so the Neo4j JVM can assume
+	// a cloud role when it fetches a seed itself — an online Neo4jRestore from
+	// cloud storage without a credentialsSecretRef, or a Neo4jDatabase
+	// seedURI — e.g. "eks.amazonaws.com/role-arn" (AWS IRSA) or
+	// "iam.gke.io/gcp-service-account" (GKE Workload Identity).
+	//
+	// Unset, the pod runs under the namespace's default ServiceAccount and
+	// the operator creates none. Setting, changing or removing it restarts
+	// the pod once, so the identity is injected into a new pod. The operator
+	// owns only the keys listed here; annotations added to the
+	// ServiceAccount out-of-band are kept.
+	// +optional
+	PodServiceAccountAnnotations map[string]string `json:"podServiceAccountAnnotations,omitempty"`
+
 	// Node selector for pod scheduling
 	NodeSelector map[string]string `json:"nodeSelector,omitempty"`
 

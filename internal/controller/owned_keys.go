@@ -143,9 +143,10 @@ func applyOwnedMetadata(obj client.Object, desiredAnnotations, desiredLabels map
 // config-restart/config-hash stamps, plugin-init markers, service-mesh
 // injection) are preserved. Shared by the cluster and standalone controllers.
 var operatorManagedPodAnnotations = map[string]struct{}{
-	"prometheus.io/scrape": {},
-	"prometheus.io/port":   {},
-	"prometheus.io/path":   {},
+	"prometheus.io/scrape":          {},
+	"prometheus.io/port":            {},
+	"prometheus.io/path":            {},
+	standalonePodIdentityAnnotation: {},
 }
 
 // mergePodTemplateAnnotations preserves foreign pod-template annotations from

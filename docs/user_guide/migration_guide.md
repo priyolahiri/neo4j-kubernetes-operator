@@ -285,9 +285,11 @@ first reconcile.
   `Neo4jEnterpriseStandalone` no longer stops the instance: it runs
   `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }` against
   it, so only the restored database is unavailable, and `stopCluster: true` is
-  ignored. Point-in-time restores, `source.type: storage` and cloud storage
-  by pod identity still restore offline and need `stopCluster: true`; a
-  restore already running offline when you upgrade finishes offline. See
+  ignored. Point-in-time restores and `source.type: storage` still restore
+  offline and need `stopCluster: true`, as does cloud storage by pod identity
+  unless the standalone sets the new `spec.podServiceAccountAnnotations`
+  (below). A restore already running offline when you upgrade finishes
+  offline. See
   [Restore to a Standalone Instance](guides/backup_restore.md#restore-to-a-standalone-instance).
   - From **cloud storage with static credentials**, the standalone's own pods
     now fetch the seed. They need the credentials Secret in `spec.extraEnvFrom`
@@ -325,6 +327,12 @@ first reconcile.
 
 ### New, no action needed
 
+- `Neo4jEnterpriseStandalone.spec.podServiceAccountAnnotations` binds a
+  standalone's pod to a cloud role (Workload Identity), as the cluster field
+  does: the operator creates a `<name>-neo4j` ServiceAccount carrying them and
+  runs the pod under it, so a restore from cloud storage without a credentials
+  Secret runs online. Standalones that do not set it are not restarted by the
+  upgrade. Apply the new CRDs to use it.
 - `Neo4jBackup` `status.history[].artifactType` (and `databaseArtifacts[].type`):
   `FULL` or `DIFF`, read from each run's log. `Neo4jRestore`
   `status.resolvedSource.artifactType` carries it into the restore.
