@@ -162,7 +162,7 @@ spec:
 | `force` | `boolean` | No | false | Confirms the destructive `replaceExisting` operation. The validator rejects `replaceExisting: true` without `force: true` so an accidental flip can't destroy data |
 | `seedURI` | `string` | No | - | Seed URI for creating the sharded database |
 | `seedURIs` | `map[string]string` | No | - | Seed URIs keyed by shard name |
-| `seedBackupRef` | `string` | No | - | Names a `Neo4jBackup` CR (same namespace) whose most-recent Succeeded run seeds this database. Resolved to a concrete seed URI at reconcile time. Mutually exclusive with `seedURI` and `seedURIs`. If the referenced backup has no Succeeded run yet, the database stays in `Pending` and the reconciler requeues |
+| `seedBackupRef` | `string` | No | - | Names a `Neo4jBackup` CR (same namespace) whose most-recent Succeeded run seeds this database. Resolved to a concrete seed URI at reconcile time. Mutually exclusive with `seedURI` and `seedURIs`. If the referenced backup has no Succeeded run yet, the database stays in `Pending` and the reconciler requeues. From a PVC, every shard of that run must be a full backup: a run holding a differential shard fails the database until a full run lands ([why](../user_guide/property_sharding.md#restoring-a-sharded-database)). From cloud storage, differentials seed directly; the cluster needs the backup's credentials and endpoint, which the `neo4j.com/auto-inherit-seed-creds: "true"` annotation lets the operator add |
 | `seedSourceDatabase` | `string` | No | - | Seed source database name for metadata lookup |
 | `seedConfig` | `SeedConfiguration` | No | - | Seed configuration for initialization |
 | `seedCredentials` | `SeedCredentials` | No | - | Credentials for seed URI access |

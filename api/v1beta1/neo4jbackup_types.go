@@ -510,6 +510,13 @@ type ShardArtifact struct {
 	// not parseable. Use `humanize.IBytes` or equivalent on the consumer
 	// side for display.
 	Size int64 `json:"size,omitempty"`
+
+	// Type is FULL or DIFF (see BackupRun.ArtifactType); empty when the log
+	// did not say. A sharded database seeds from a PVC only when every shard
+	// is a full backup, so a run with a DIFF shard is refused as its seed.
+	// +kubebuilder:validation:Enum=FULL;DIFF
+	// +optional
+	Type string `json:"type,omitempty"`
 }
 
 // ShardedFamilyArtifacts records the per-shard `.backup` files for one

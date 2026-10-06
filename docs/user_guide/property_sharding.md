@@ -503,7 +503,7 @@ spec:
     maxCount: 10
 
   options:
-    backupType: AUTO               # FULL | DIFF | AUTO
+    backupType: FULL               # on a PVC, only full runs can seed a sharded database
     validate: true                 # optional per-shard recoverability check
 ```
 
@@ -512,10 +512,34 @@ The per-shard `.backup` artifacts produced by the run are recorded in
 `products-p000`). When `options.validate: true`, per-shard recoverability is
 surfaced under `status.history[].validation`.
 
+### Restoring a sharded database
+
 To restore a sharded database from a backup, seed a new `Neo4jShardedDatabase`
 via `spec.seedBackupRef` (referencing this `Neo4jBackup` CR), or perform a
 destructive in-place restore with `spec.replaceExisting: true` + `spec.force: true`
-(see the field reference above).
+(see the field reference above). The seed is the backup's latest successful run.
+
+**From a PVC, every shard of that run must be a full backup.** The operator
+serves the PVC to Neo4j over HTTP, and over HTTP Neo4j seeds a sharded database
+only from a full backup of each shard. A differential cannot be turned into one
+either: merging a shard's chain loses the sharding information the seed needs.
+So:
+
+- Back sharded databases up to a PVC with `options.backupType: FULL`. With
+  `AUTO`, the default, every run after the first holds a differential of the
+  graph shard. Each such run raises a `BackupShardedDifferential` warning, and
+  each run's shard types are in `status.history[].shardArtifacts[].type`.
+- A `seedBackupRef` whose latest run holds a differential shard fails at once,
+  naming the shards. It retries: once a full run of that backup lands, the
+  database seeds from it.
+
+**From cloud storage, differentials seed directly**: Neo4j reads the whole chain
+from the bucket. The cluster's server pods fetch it themselves, so they need the
+backup's credentials Secret — and, for MinIO or another S3-compatible store, its
+endpoint. Put them on the cluster (`spec.extraEnvFrom`, `spec.env`), or annotate
+the cluster with `neo4j.com/auto-inherit-seed-creds: "true"` and the operator
+adds both, at the cost of one rolling restart. Without either, the database fails
+and names what is missing.
 
 ## Performance and Sizing
 

@@ -666,6 +666,15 @@ spec:
                               side for display.
                             format: int64
                             type: integer
+                          type:
+                            description: |-
+                              Type is FULL or DIFF (see BackupRun.ArtifactType); empty when the log
+                              did not say. A sharded database seeds from a PVC only when every shard
+                              is a full backup, so a run with a DIFF shard is refused as its seed.
+                            enum:
+                            - FULL
+                            - DIFF
+                            type: string
                         required:
                         - shardName
                         type: object
@@ -738,6 +747,15 @@ spec:
                                     side for display.
                                   format: int64
                                   type: integer
+                                type:
+                                  description: |-
+                                    Type is FULL or DIFF (see BackupRun.ArtifactType); empty when the log
+                                    did not say. A sharded database seeds from a PVC only when every shard
+                                    is a full backup, so a run with a DIFF shard is refused as its seed.
+                                  enum:
+                                  - FULL
+                                  - DIFF
+                                  type: string
                               required:
                               - shardName
                               type: object

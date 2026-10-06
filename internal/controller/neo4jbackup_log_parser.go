@@ -186,8 +186,10 @@ func parseArtifactTypesFromLog(logContent string) map[string]string {
 }
 
 // recordArtifactTypes stamps FULL or DIFF onto the artifacts a run recorded:
-// its single-database ArtifactFilename (database dbName) and every entry of
-// DatabaseArtifacts.
+// its single-database ArtifactFilename (database dbName), every entry of
+// DatabaseArtifacts, and every shard — of a sharded run, or of a sharded
+// family an all-databases run catalogued. A shard is a database of its own
+// (`<family>-g000`, `-pNNN`) and neo4j-admin logs its type under that name.
 func recordArtifactTypes(run *neo4jv1beta1.BackupRun, logContent, dbName string) {
 	types := parseArtifactTypesFromLog(logContent)
 	if run.ArtifactFilename != "" {
@@ -196,6 +198,37 @@ func recordArtifactTypes(run *neo4jv1beta1.BackupRun, logContent, dbName string)
 	for i := range run.DatabaseArtifacts {
 		run.DatabaseArtifacts[i].Type = types[run.DatabaseArtifacts[i].Database]
 	}
+	for i := range run.ShardArtifacts {
+		run.ShardArtifacts[i].Type = types[run.ShardArtifacts[i].ShardName]
+	}
+	for f := range run.ShardedFamilies {
+		for i := range run.ShardedFamilies[f].ShardArtifacts {
+			a := &run.ShardedFamilies[f].ShardArtifacts[i]
+			a.Type = types[a.ShardName]
+		}
+	}
+}
+
+// differentialShards names the shards recorded as DIFF. An untyped shard is
+// not named: the log did not say, and Neo4j still checks it when seeding.
+func differentialShards(artifacts []neo4jv1beta1.ShardArtifact) []string {
+	var out []string
+	for _, a := range artifacts {
+		if a.Type == backupArtifactDiff {
+			out = append(out, a.ShardName)
+		}
+	}
+	return out
+}
+
+// runDifferentialShards names the shards a run recorded as DIFF, in a sharded
+// run and in every family an all-databases run catalogued.
+func runDifferentialShards(run *neo4jv1beta1.BackupRun) []string {
+	out := differentialShards(run.ShardArtifacts)
+	for _, f := range run.ShardedFamilies {
+		out = append(out, differentialShards(f.ShardArtifacts)...)
+	}
+	return out
 }
 
 // parseShardedFamiliesExcludedFromLog scans the same all-databases backup log

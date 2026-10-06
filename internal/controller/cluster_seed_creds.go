@@ -23,8 +23,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-
-	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
 const (
@@ -184,20 +182,4 @@ func EnsureSeedCredsProjected(
 		return false, fmt.Errorf("auto-inherit seed credentials Secret %q onto %s %q: %w", credsSecretName, target.TargetKindLabel(), target.GetName(), err)
 	}
 	return patched, nil
-}
-
-// EnsureClusterHasSeedCreds is the cluster-typed wrapper kept for callers
-// that still pass a concrete *Neo4jEnterpriseCluster. Delegates to
-// EnsureSeedCredsProjected.
-//
-// Deprecated: prefer EnsureSeedCredsProjected for new callers; this
-// wrapper exists so the sharded-DB controller's existing call site doesn't
-// need to change to use the interface.
-func EnsureClusterHasSeedCreds(
-	ctx context.Context,
-	c client.Client,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	credsSecretName string,
-) (autoInherited bool, err error) {
-	return EnsureSeedCredsProjected(ctx, c, cluster, credsSecretName)
 }
