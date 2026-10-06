@@ -5029,7 +5029,7 @@
 <td><code>backupType</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Backup type: <code>"FULL"</code>, <code>"DIFF"</code>, <code>"AUTO"</code> (default)</td>
+<td>Backup type: <code>"FULL"</code>, <code>"DIFF"</code>, <code>"AUTO"</code> (default). On PVC storage, prefer <code>"FULL"</code> for backups you will restore from: a <code>Neo4jRestore</code> cannot seed a PVC differential online, and the operator raises a <code>BackupRestoreCaveat</code> Warning event when this backup's runs will be differentials</td>
 </tr>
 <tr>
 <td><code>preferDiffAsParent</code></td>

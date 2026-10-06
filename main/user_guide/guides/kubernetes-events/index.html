@@ -4456,6 +4456,11 @@ and alerting systems.</p>
 <td>Database creation failed during a restore operation</td>
 </tr>
 <tr>
+<td><code>BackupRestoreCaveat</code></td>
+<td>Warning</td>
+<td>A PVC backup whose runs will be differentials (scheduled with <code>backupType: AUTO</code>, <code>backupType: DIFF</code>, or <code>chainFromBackup</code>): a <code>Neo4jRestore</code> cannot seed them online — a cluster refuses one, a standalone restores it offline. Set <code>backupType: FULL</code> for backups you restore from, or use cloud storage</td>
+</tr>
+<tr>
 <td><code>BackupRetentionCaveat</code></td>
 <td>Warning</td>
 <td>Retention pruning is configured on a CR whose chain may contain differential artifacts; pruning can orphan DIFFs whose parent FULL ages out (prefer <code>backupType: FULL</code> with retention)</td>

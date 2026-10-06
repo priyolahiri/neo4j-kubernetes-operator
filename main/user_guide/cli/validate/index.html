@@ -4178,6 +4178,8 @@
 <li>storage, image, and licence-acceptance requirements</li>
 <li>advisory topology warnings — even server counts, two-server clusters with
   limited fault tolerance, all-PRIMARY or all-SECONDARY mode constraints</li>
+<li>advisory backup warnings — a PVC <code>Neo4jBackup</code> whose runs will be
+  differentials, which no <code>Neo4jRestore</code> can seed online</li>
 </ul>
 <p>The two are complementary. In CI, run both.</p>
 <h3 id="what-gets-checked-and-what-doesnt">What gets checked, and what doesn't<a class="headerlink" href="#what-gets-checked-and-what-doesnt" title="Anchor link to this section">&para;</a></h3>

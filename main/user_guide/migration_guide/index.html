@@ -4542,6 +4542,9 @@ first reconcile.</p>
 </ul>
 <h3 id="new-no-action-needed_2">New, no action needed<a class="headerlink" href="#new-no-action-needed_2" title="Anchor link to this section">&para;</a></h3>
 <ul>
+<li>A <code>BackupRestoreCaveat</code> Warning event (and a <code>kubectl neo4j validate</code>
+  warning) on a PVC <code>Neo4jBackup</code> whose runs will be differentials, which no
+  <code>Neo4jRestore</code> can seed online.</li>
 <li><code>Neo4jBackup</code> <code>status.history[].artifactType</code> (and <code>databaseArtifacts[].type</code>):
   <code>FULL</code> or <code>DIFF</code>, read from each run's log. <code>Neo4jRestore</code>
   <code>status.resolvedSource.artifactType</code> carries it into the restore.</li>
