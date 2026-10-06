@@ -41,19 +41,21 @@ import (
 // pass and requeues — never blocking the worker on the asynchronous seed (the
 // same non-blocking contract the single-database cluster path holds, #218/#227).
 //
-// This path drives CLUSTER targets only (cloud s3/gcs/azure or PVC-backed
-// backups; the PVC path uses the in-cluster seed proxy). STANDALONE
-// all-databases restore (#288) takes the offline Job path instead — the
-// dispatch in startRestore gates this function on isTrueCluster, so a
-// standalone never reaches here. The isTrueCluster guard below is therefore
-// defensive (a direct call would still be rejected with an actionable message).
+// This path drives clusters and standalones alike (cloud s3/gcs/azure or
+// PVC-backed backups; the PVC path uses the in-cluster seed proxy). Only a
+// point-in-time standalone restore still takes the offline Job (rule 108).
 func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 	ctx context.Context,
 	restore *neo4jv1beta1.Neo4jRestore,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	isTrueCluster bool,
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
+
+	target, err := r.getRestoreTarget(ctx, restore)
+	if err != nil {
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Target lookup failed: %v", err))
+		return ctrl.Result{}, err
+	}
 
 	// The resolved source (pinned by ensureResolvedBackupSource, issue #188)
 	// carries the per-database artifact map. Without it we can't enumerate.
@@ -89,13 +91,22 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			"shardedDatabases", snap.ShardedDatabasesExcluded, "backupRef", snap.BackupRef)
 	}
 
-	// Bounded scope for this release.
-	if !isTrueCluster {
-		msg := "all-databases restore currently supports cluster targets only; for a standalone, restore each database individually with spec.database"
-		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-		return ctrl.Result{}, fmt.Errorf("%s", msg)
-	}
 	storage := *snap.Storage
+
+	// Pre-restore hooks, once per attempt, before anything is seeded. The
+	// annotation guard matters here: this function is re-entered on every
+	// requeue while it waits for credentials or the proxy.
+	if restore.Spec.Options != nil && restore.Spec.Options.PreRestore != nil &&
+		restore.Annotations[AnnotationRestorePreHooksRan] != "true" {
+		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PreRestore, hookPhasePreRestore); err != nil {
+			logger.Error(err, "Pre-restore hooks failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Pre-restore hooks failed: %v", err))
+			return ctrl.Result{}, err
+		}
+		if err := r.markRestorePreHooksRan(ctx, restore); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 
 	// Initialize per-database results once (idempotent across reconciles).
 	r.ensureDatabaseResults(restore, dbs)
@@ -107,7 +118,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 	var seedURIFor func(filename string) string
 	switch storage.Type {
 	case "s3", "gcs", "azure":
-		if res, ready, err := r.ensureClusterSeedConfigReady(ctx, restore, cluster, storage); !ready {
+		if res, ready, err := r.ensureClusterSeedConfigReady(ctx, restore, target, storage); !ready {
 			return res, err
 		}
 		dirURI, err := buildSeedURIFromBackupStorage(storage, snap.BackupPath)
@@ -118,7 +129,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		dirURI = strings.TrimRight(dirURI, "/")
 		seedURIFor = func(filename string) string { return dirURI + "/" + filename }
 	case "pvc":
-		if res, ready, err := r.ensurePVCSeedProxyReady(ctx, restore, storage); !ready {
+		if res, ready, err := r.ensurePVCSeedProxyReady(ctx, restore, storage, target.podLabels()); !ready {
 			return res, err
 		}
 		seedURIFor = func(filename string) string {
@@ -130,10 +141,10 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		return ctrl.Result{}, fmt.Errorf("%s", msg)
 	}
 
-	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+	neo4jClient, err := r.targetClient(target)
 	if err != nil {
-		logger.Error(err, "Failed to connect to cluster for all-databases restore")
-		r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting to connect to cluster: %v", err))
+		logger.Error(err, "Failed to connect for all-databases restore", "kind", target.kind())
+		r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting to connect to %s %q: %v", target.kind(), target.name(), err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 	defer func() { _ = neo4jClient.Close() }()
@@ -255,6 +266,13 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			fmt.Sprintf("%d of %d databases failed to restore; see status.databaseResults", failed, len(restore.Status.DatabaseResults)))
 		return ctrl.Result{}, nil
 	}
+	if restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
+		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PostRestore, hookPhasePostRestore); err != nil {
+			logger.Error(err, "Post-restore hooks failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Post-restore hooks failed: %v", err))
+			return ctrl.Result{}, err
+		}
+	}
 	r.updateRestoreStatus(ctx, restore, StatusCompleted,
 		fmt.Sprintf("Restored %d databases", len(restore.Status.DatabaseResults)))
 	return ctrl.Result{}, nil
@@ -268,7 +286,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 func (r *Neo4jRestoreReconciler) ensureClusterSeedConfigReady(
 	ctx context.Context,
 	restore *neo4jv1beta1.Neo4jRestore,
-	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
+	target restoreTarget,
 	storage neo4jv1beta1.StorageLocation,
 ) (ctrl.Result, bool, error) {
 	credsSecret := ""
@@ -277,28 +295,28 @@ func (r *Neo4jRestoreReconciler) ensureClusterSeedConfigReady(
 	}
 	hasCustomEndpoint := storage.Type == "s3" && storage.Cloud != nil && storage.Cloud.EndpointURL != ""
 
-	projected, missing, projErr := r.projectClusterSeedConfig(ctx, cluster, credsSecret, storage.Cloud)
+	projected, missing, projErr := r.projectSeedConfig(ctx, target, credsSecret, storage.Cloud)
 	if projErr != nil {
 		if stderrors.Is(projErr, errSeedConfigNotAutoInherited) {
-			msg := fmt.Sprintf("cluster %q's server pods can't reach the seed source: missing %s. The server JVM fetches each seed itself. Provide these on the cluster CR, or set annotation %s=\"true\" to let the operator inject them (one rolling restart).",
-				cluster.Name, strings.Join(missing, "; "), AutoInheritSeedCredsAnnotation)
+			msg := fmt.Sprintf("%s %q's server pods can't reach the seed source: missing %s. The server JVM fetches each seed itself. Provide these on the %s CR, or set annotation %s=\"true\" to let the operator inject them (one rolling restart).",
+				target.kind(), target.name(), strings.Join(missing, "; "), target.kind(), AutoInheritSeedCredsAnnotation)
 			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
 			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected, msg)
 			return ctrl.Result{}, false, nil
 		}
 		r.updateRestoreStatus(ctx, restore, StatusPending,
-			fmt.Sprintf("Retrying projection of seed configuration onto cluster %q: %v", cluster.Name, projErr))
+			fmt.Sprintf("Retrying projection of seed configuration onto %s %q: %v", target.kind(), target.name(), projErr))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
 	}
 	if projected {
 		r.updateRestoreStatus(ctx, restore, StatusPending,
-			fmt.Sprintf("Projected seed configuration onto cluster %q; waiting for the rolling restart", cluster.Name))
+			fmt.Sprintf("Projected seed configuration onto %s %q; waiting for the rolling restart", target.kind(), target.name()))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
 	}
 	if credsSecret != "" {
-		rolled, rErr := r.seedCredsRolledOut(ctx, cluster, credsSecret)
+		rolled, rErr := r.seedCredsRolledOut(ctx, target, credsSecret)
 		if rErr != nil || !rolled {
-			msg := fmt.Sprintf("Waiting for cluster %q server pods to roll out seed credentials Secret %q", cluster.Name, credsSecret)
+			msg := fmt.Sprintf("Waiting for %s %q pods to roll out seed credentials Secret %q", target.kind(), target.name(), credsSecret)
 			if rErr != nil {
 				msg += fmt.Sprintf(" (rollout check pending: %v)", rErr)
 			}
@@ -310,10 +328,10 @@ func (r *Neo4jRestoreReconciler) ensureClusterSeedConfigReady(
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, false, nil
 		}
 	}
-	if hasCustomEndpoint && clusterSpecEnvHasSeedEndpoint(cluster) {
-		rolled, rErr := r.specEnvEndpointRolledOut(ctx, cluster)
+	if hasCustomEndpoint && envHasSeedEndpoint(target.env()) {
+		rolled, rErr := r.specEnvEndpointRolledOut(ctx, target)
 		if rErr != nil || !rolled {
-			msg := fmt.Sprintf("Waiting for cluster %q server pods to roll out the S3 endpoint", cluster.Name)
+			msg := fmt.Sprintf("Waiting for %s %q pods to roll out the S3 endpoint", target.kind(), target.name())
 			if rErr != nil {
 				msg += fmt.Sprintf(" (rollout check pending: %v)", rErr)
 			}
@@ -337,6 +355,7 @@ func (r *Neo4jRestoreReconciler) ensurePVCSeedProxyReady(
 	ctx context.Context,
 	restore *neo4jv1beta1.Neo4jRestore,
 	storage neo4jv1beta1.StorageLocation,
+	peers map[string]string,
 ) (ctrl.Result, bool, error) {
 	logger := log.FromContext(ctx)
 	if storage.PVC == nil || storage.PVC.Name == "" {
@@ -350,9 +369,9 @@ func (r *Neo4jRestoreReconciler) ensurePVCSeedProxyReady(
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("ensure PVC seed proxy: %v", err))
 		return ctrl.Result{}, false, fmt.Errorf("ensure PVC seed proxy: %w", err)
 	}
-	// Restrict the proxy (which serves the whole backup PVC) to the target
-	// cluster's server pods (#219). Best-effort: only enforcing CNIs apply it.
-	if npErr := ensurePVCSeedProxyNetworkPolicy(ctx, r.Client, r.Scheme, restore, restore.Name, restore.Spec.InstanceRef); npErr != nil {
+	// Restrict the proxy (which serves the whole backup PVC) to the target's
+	// Neo4j pods (#219). Best-effort: only enforcing CNIs apply it.
+	if npErr := ensurePVCSeedProxyNetworkPolicy(ctx, r.Client, r.Scheme, restore, restore.Name, peers); npErr != nil {
 		logger.Error(npErr, "Failed to ensure seed-proxy NetworkPolicy (non-fatal)")
 	}
 

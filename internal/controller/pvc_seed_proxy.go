@@ -187,14 +187,15 @@ func teardownPVCSeedProxyResources(ctx context.Context, c client.Client, namespa
 	return nil
 }
 
-// ensurePVCSeedProxyNetworkPolicy restricts proxy ingress to the target
-// cluster's server pods on the proxy port (#219): without it, busybox httpd
-// serves the ENTIRE backup PVC (directory listings included) to any pod in
-// the cluster. Effective only on enforcing CNIs; harmless no-op elsewhere.
-// targetClusterName may be empty (unknown target) — then no policy is
-// emitted, preserving previous behavior.
-func ensurePVCSeedProxyNetworkPolicy(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, ownerName, targetClusterName string) error {
-	if targetClusterName == "" {
+// ensurePVCSeedProxyNetworkPolicy restricts proxy ingress to the target's
+// Neo4j pods on the proxy port (#219): without it, busybox httpd serves the
+// ENTIRE backup PVC (directory listings included) to any pod in the cluster.
+// peers selects those pods — clusterPodLabels for a cluster, `app: <name>` for
+// a standalone, whose pods do not carry the cluster label. Effective only on
+// enforcing CNIs; harmless no-op elsewhere. No peers (unknown target) emits no
+// policy, preserving previous behavior.
+func ensurePVCSeedProxyNetworkPolicy(ctx context.Context, c client.Client, scheme *runtime.Scheme, owner client.Object, ownerName string, peers map[string]string) error {
+	if len(peers) == 0 {
 		return nil
 	}
 	name := pvcSeedProxyName(ownerName)
@@ -228,7 +229,7 @@ func ensurePVCSeedProxyNetworkPolicy(ctx context.Context, c client.Client, schem
 					From: []networkingv1.NetworkPolicyPeer{
 						{
 							PodSelector: &metav1.LabelSelector{
-								MatchLabels: map[string]string{"neo4j.com/cluster": targetClusterName},
+								MatchLabels: peers,
 							},
 						},
 					},

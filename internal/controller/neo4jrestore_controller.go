@@ -150,6 +150,12 @@ const (
 	// the restore Completed before the seed even started.
 	AnnotationCypherRestoreObservedOffline = "neo4j.com/cypher-restore-observed-offline"
 
+	// AnnotationRestorePreHooksRan records that an all-databases online
+	// restore has run its pre-restore hooks for this attempt, so the requeues
+	// that wait for credentials or the seed proxy do not run them again.
+	// Cleared with the other one-shot markers on a fresh attempt.
+	AnnotationRestorePreHooksRan = "neo4j.com/restore-pre-hooks-ran"
+
 	// cypherRestoreOnlineTimeout bounds how long pollClusterRestoreOnline will
 	// wait (across requeues) for an asynchronously-recreated database to
 	// converge to online before marking the restore Failed.
@@ -267,20 +273,20 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Check if restore is running.
 	// checkRestoreProgress drives Job-based and single-seedURI restores. The
-	// routing here forks all-databases by topology:
-	//   - CLUSTER all-databases owns all of its requeue passes via
+	// routing here forks all-databases by path:
+	//   - An ONLINE all-databases restore owns all of its requeue passes via
 	//     startAllDatabasesRestore (its own per-database state machine in
 	//     status.databaseResults), so it must NOT be routed here — the single-DB
 	//     progress checker would hijack it and fail resolving a single artifact
 	//     from a kind:Cluster backup. It falls through to startRestore, which
 	//     re-enters startAllDatabasesRestore.
-	//   - STANDALONE all-databases uses the offline Job machinery (#288), so its
-	//     Running passes DO poll here, exactly like a single-database standalone
-	//     restore.
+	//   - An OFFLINE all-databases restore (point-in-time into a standalone,
+	//     rule 108) uses the Job machinery (#288), so its Running passes DO
+	//     poll here, exactly like a single-database Job restore.
 	if restore.Status.Phase == StatusRunning {
 		routeToProgress := !restore.Spec.AllDatabases
 		if restore.Spec.AllDatabases {
-			if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && !isCluster {
+			if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && restoreRunsOffline(restore, isCluster) {
 				routeToProgress = true
 			}
 		}
@@ -394,34 +400,36 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		return res, err
 	}
 
-	// Cluster targets bypass the Job + `neo4j-admin restore` path entirely
-	// (the docs flag it as unsafe on clusters — `--overwrite-destination`
-	// "is not safe on a cluster since clusters have additional state that
-	// would be inconsistent with the restored database"). Use the Cypher
-	// path documented at:
+	// Restores run ONLINE against the live DBMS — `dbms.recreateDatabase` for
+	// an existing database, `CREATE DATABASE … OPTIONS {seedURI}` for a new one
+	// — on clusters and standalones alike (rule 108). On a cluster the
+	// neo4j-admin Job is not an option at all (`--overwrite-destination` "is
+	// not safe on a cluster", rule 75); on a standalone it stopped the whole
+	// instance, so every database went offline to restore one. Only a
+	// point-in-time restore into a standalone still takes the Job below:
+	// recreate has no restore-until option.
 	//   https://neo4j.com/docs/operations-manual/current/clustering/databases/#restore-database-using-uri-approach
-	//   https://neo4j.com/docs/operations-manual/current/clustering/databases/#restore-database-using-recreate-procedure
-	// Standalone targets keep the existing Job-based flow.
+	//   https://neo4j.com/docs/operations-manual/current/database-administration/standard-databases/recreate-database/
 	isTrueCluster, _, lookupErr := r.isRestoreTargetTrueCluster(ctx, restore)
 	if lookupErr != nil {
 		logger.Error(lookupErr, "Failed to determine target type")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Target lookup failed: %v", lookupErr))
 		return ctrl.Result{}, lookupErr
 	}
-	// All-databases restore (#222/#288). CLUSTER targets drive one per-database
-	// in-place Cypher restore per pass via the resolved per-database artifact map
-	// (its own requeue-driven state machine in status.databaseResults). STANDALONE
-	// targets fall through to the offline Job path below — buildRestoreCommand
-	// branches to a multi-database `neo4j-admin database restore` command, and
-	// handleRestoreSuccess brings every database online via
-	// registerAllDatabasesAfterRestore.
-	if restore.Spec.AllDatabases && isTrueCluster {
-		return r.startAllDatabasesRestore(ctx, restore, cluster, isTrueCluster)
-	}
-
-	if isTrueCluster {
+	if !restoreRunsOffline(restore, isTrueCluster) {
+		// All-databases restore (#222/#288) drives one per-database online
+		// restore per pass from the resolved per-database artifact map (its own
+		// requeue-driven state machine in status.databaseResults).
+		if restore.Spec.AllDatabases {
+			return r.startAllDatabasesRestore(ctx, restore, cluster)
+		}
 		return r.startClusterCypherRestore(ctx, restore, cluster)
 	}
+
+	// Offline Job path: a point-in-time restore into a standalone. An
+	// all-databases one runs a multi-database `neo4j-admin database restore`
+	// and handleRestoreSuccess brings every database online via
+	// registerAllDatabasesAfterRestore.
 
 	// Check if database exists and handle accordingly. Skipped when THIS
 	// restore already stopped the instance on a previous reconcile (re-entry
@@ -534,16 +542,16 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 		return r.pollClusterRestoreOnline(ctx, restore, cluster)
 	}
 
-	// Defense-in-depth: a true-cluster restore never creates a Job (rule 75) —
-	// it restores via Cypher. If we reach here in Running without the
+	// Defense-in-depth: an online restore never creates a Job (rules 75, 108)
+	// — it restores via Cypher. If we reach here in Running without the
 	// cypher-restore-issued annotation (e.g. an operator restart landed between
 	// persisting Running and stamping the annotation), the Job lookup below
 	// would NotFound and wrongly fail + tear down an active restore. Re-drive
-	// the cluster Cypher path instead — it is idempotent (guarded by the
-	// annotation) and re-issues the recreate / re-checks the database. The
-	// standalone path (which DOES use a Job) is unaffected: isRestoreTargetTrueCluster
-	// returns false for it, so a TTL-collected standalone Job still fails terminally.
-	if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
+	// the online path instead — it is idempotent (guarded by the annotation)
+	// and re-issues the recreate / re-checks the database. The offline path
+	// (a point-in-time restore into a standalone, which DOES use a Job) is
+	// unaffected, so a TTL-collected Job still fails terminally.
+	if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && !restoreRunsOffline(restore, isCluster) {
 		return r.startClusterCypherRestore(ctx, restore, cluster)
 	}
 
@@ -1315,10 +1323,9 @@ const seedEndpointEnvVar = "AWS_ENDPOINT_URL_S3"
 // caller builds the actionable Failed message from the returned missing list.
 var errSeedConfigNotAutoInherited = fmt.Errorf("cluster seed configuration not auto-inheritable")
 
-// clusterHasSecretEnvFrom reports whether the cluster already projects the
-// named Secret via spec.extraEnvFrom.
-func clusterHasSecretEnvFrom(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, secretName string) bool {
-	for _, ef := range cluster.Spec.ExtraEnvFrom {
+// hasSecretEnvFrom reports whether envFrom already projects the named Secret.
+func hasSecretEnvFrom(envFrom []corev1.EnvFromSource, secretName string) bool {
+	for _, ef := range envFrom {
 		if ef.SecretRef != nil && ef.SecretRef.Name == secretName {
 			return true
 		}
@@ -1326,12 +1333,12 @@ func clusterHasSecretEnvFrom(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, secre
 	return false
 }
 
-// projectClusterSeedConfig ensures the cluster's server pods will have BOTH
-// the seed-credentials Secret (spec.extraEnvFrom) and, for MinIO/S3-compatible
+// projectSeedConfig ensures the target's Neo4j pods will have BOTH the
+// seed-credentials Secret (spec.extraEnvFrom) and, for MinIO/S3-compatible
 // stores, the custom endpoint + path-style JVM opt (spec.env) needed to fetch
-// a seedURI — applying every missing piece in a SINGLE cluster Update so the
-// cluster controller performs exactly ONE rolling restart (projecting creds
-// and endpoint in separate Updates made the STS roll twice).
+// a seedURI — applying every missing piece in a SINGLE Update of the cluster or
+// standalone CR so its controller performs exactly ONE rolling restart
+// (projecting creds and endpoint in separate Updates made the STS roll twice).
 //
 // Returns:
 //   - (false, nil, nil)               nothing missing (already projected, or
@@ -1341,18 +1348,18 @@ func clusterHasSecretEnvFrom(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, secre
 //   - (false, missing, errSeedConfigNotAutoInherited)  missing + not opted in:
 //     caller sets Failed naming `missing`.
 //   - (false, nil, other)              transient (conflict on the patch).
-func (r *Neo4jRestoreReconciler) projectClusterSeedConfig(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, credsSecret string, cloud *neo4jv1beta1.CloudBlock) (bool, []string, error) {
-	needCreds := credsSecret != "" && !clusterHasSecretEnvFrom(cluster, credsSecret)
+func (r *Neo4jRestoreReconciler) projectSeedConfig(ctx context.Context, target restoreTarget, credsSecret string, cloud *neo4jv1beta1.CloudBlock) (bool, []string, error) {
+	needCreds := credsSecret != "" && !hasSecretEnvFrom(target.extraEnvFrom(), credsSecret)
 	customEndpoint := cloud != nil && cloud.EndpointURL != ""
 	needEndpoint := customEndpoint &&
-		!clusterSpecEnvHasSeedEndpoint(cluster) &&
-		!r.endpointReachableViaEnvFrom(ctx, cluster)
+		!envHasSeedEndpoint(target.env()) &&
+		!r.endpointReachableViaEnvFrom(ctx, target.object().GetNamespace(), target.extraEnvFrom())
 
 	if !needCreds && !needEndpoint {
 		return false, nil, nil
 	}
 
-	if cluster.GetAnnotations()[AutoInheritSeedCredsAnnotation] != "true" {
+	if target.annotations()[AutoInheritSeedCredsAnnotation] != "true" {
 		var missing []string
 		if needCreds {
 			missing = append(missing, fmt.Sprintf("credentials Secret %q (project it via spec.extraEnvFrom)", credsSecret))
@@ -1363,51 +1370,39 @@ func (r *Neo4jRestoreReconciler) projectClusterSeedConfig(ctx context.Context, c
 		return false, missing, errSeedConfigNotAutoInherited
 	}
 
-	patched := false
-	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
-			return err
-		}
+	patched, err := r.updateTargetSpec(ctx, target, func(env *[]corev1.EnvVar, envFrom *[]corev1.EnvFromSource, annotations map[string]string) bool {
 		changed := false
-		if needCreds && !clusterHasSecretEnvFrom(latest, credsSecret) {
-			latest.Spec.ExtraEnvFrom = append(latest.Spec.ExtraEnvFrom, corev1.EnvFromSource{
+		if needCreds && !hasSecretEnvFrom(*envFrom, credsSecret) {
+			*envFrom = append(*envFrom, corev1.EnvFromSource{
 				SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: credsSecret}},
 			})
 			changed = true
 		}
-		if needEndpoint && !clusterSpecEnvHasSeedEndpoint(latest) {
-			env := latest.Spec.Env
-			env = append(env, corev1.EnvVar{Name: seedEndpointEnvVar, Value: cloud.EndpointURL})
+		if needEndpoint && !envHasSeedEndpoint(*env) {
+			e := append(*env, corev1.EnvVar{Name: seedEndpointEnvVar, Value: cloud.EndpointURL})
 			if cloud.ForcePathStyle {
 				const opt = "-Daws.s3.forcePathStyle=true"
 				found := false
-				for i := range env {
-					if env[i].Name == "JAVA_TOOL_OPTIONS" {
-						if !strings.Contains(env[i].Value, "aws.s3.forcePathStyle") {
-							env[i].Value = strings.TrimSpace(env[i].Value + " " + opt)
+				for i := range e {
+					if e[i].Name == "JAVA_TOOL_OPTIONS" {
+						if !strings.Contains(e[i].Value, "aws.s3.forcePathStyle") {
+							e[i].Value = strings.TrimSpace(e[i].Value + " " + opt)
 						}
 						found = true
 						break
 					}
 				}
 				if !found {
-					env = append(env, corev1.EnvVar{Name: "JAVA_TOOL_OPTIONS", Value: opt})
+					e = append(e, corev1.EnvVar{Name: "JAVA_TOOL_OPTIONS", Value: opt})
 				}
 			}
-			latest.Spec.Env = env
+			*env = e
 			changed = true
 		}
-		if !changed {
-			patched = false
-			return nil // another reconcile beat us to it
+		if changed {
+			annotations[AutoInheritedFromAnnotation] = "seed-config"
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
-		latest.Annotations[AutoInheritedFromAnnotation] = "seed-config"
-		patched = true
-		return r.Update(ctx, latest)
+		return changed // false: another reconcile beat us to it
 	})
 	if err != nil {
 		return false, nil, err
@@ -1415,10 +1410,10 @@ func (r *Neo4jRestoreReconciler) projectClusterSeedConfig(ctx context.Context, c
 	return patched, nil, nil
 }
 
-// clusterSpecEnvHasSeedEndpoint reports whether the cluster's spec.env already
-// carries AWS_ENDPOINT_URL_S3 (set by the user or projected by the operator).
-func clusterSpecEnvHasSeedEndpoint(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	for _, e := range cluster.Spec.Env {
+// envHasSeedEndpoint reports whether spec.env already carries
+// AWS_ENDPOINT_URL_S3 (set by the user or projected by the operator).
+func envHasSeedEndpoint(env []corev1.EnvVar) bool {
+	for _, e := range env {
 		if e.Name == seedEndpointEnvVar {
 			return true
 		}
@@ -1430,12 +1425,12 @@ func clusterSpecEnvHasSeedEndpoint(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 // to the pods via a projected extraEnvFrom Secret/ConfigMap. Unreadable
 // sources return true (conservative — assume the user provided it rather than
 // trigger a spurious restart/error on an incomplete view).
-func (r *Neo4jRestoreReconciler) endpointReachableViaEnvFrom(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	for _, ef := range cluster.Spec.ExtraEnvFrom {
+func (r *Neo4jRestoreReconciler) endpointReachableViaEnvFrom(ctx context.Context, namespace string, envFrom []corev1.EnvFromSource) bool {
+	for _, ef := range envFrom {
 		prefix := ef.Prefix
 		if ef.SecretRef != nil {
 			s := &corev1.Secret{}
-			if err := r.Get(ctx, types.NamespacedName{Name: ef.SecretRef.Name, Namespace: cluster.Namespace}, s); err != nil {
+			if err := r.Get(ctx, types.NamespacedName{Name: ef.SecretRef.Name, Namespace: namespace}, s); err != nil {
 				return true
 			}
 			for k := range s.Data {
@@ -1446,7 +1441,7 @@ func (r *Neo4jRestoreReconciler) endpointReachableViaEnvFrom(ctx context.Context
 		}
 		if ef.ConfigMapRef != nil {
 			cm := &corev1.ConfigMap{}
-			if err := r.Get(ctx, types.NamespacedName{Name: ef.ConfigMapRef.Name, Namespace: cluster.Namespace}, cm); err != nil {
+			if err := r.Get(ctx, types.NamespacedName{Name: ef.ConfigMapRef.Name, Namespace: namespace}, cm); err != nil {
 				return true
 			}
 			for k := range cm.Data {
@@ -1459,12 +1454,12 @@ func (r *Neo4jRestoreReconciler) endpointReachableViaEnvFrom(ctx context.Context
 	return false
 }
 
-// specEnvEndpointRolledOut reports whether the server StatefulSet's pod
+// specEnvEndpointRolledOut reports whether the target's StatefulSet pod
 // template carries AWS_ENDPOINT_URL_S3 as a container env var AND every pod is
 // on the updated, ready revision.
-func (r *Neo4jRestoreReconciler) specEnvEndpointRolledOut(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, error) {
+func (r *Neo4jRestoreReconciler) specEnvEndpointRolledOut(ctx context.Context, target restoreTarget) (bool, error) {
 	sts := &appsv1.StatefulSet{}
-	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name + "-server", Namespace: cluster.Namespace}, sts); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: target.statefulSetName(), Namespace: target.object().GetNamespace()}, sts); err != nil {
 		return false, err
 	}
 	hasEnv := false
@@ -2719,14 +2714,17 @@ func (r *Neo4jRestoreReconciler) runRestoreHooks(ctx context.Context, restore *n
 	logger := log.FromContext(ctx)
 	logger.Info("Running restore hooks", "restore", restore.Name, "phase", phase)
 
-	// Execute Cypher statements if any. Hooks only run on the standalone
-	// Job path (the cluster Cypher path never invokes them), so the Bolt
-	// client must target the standalone's service — createNeo4jClient
-	// builds the cluster "<name>-client" routing URI, which doesn't exist
-	// for a standalone target and made every Cypher hook fail (#218, the
-	// #187 service-naming class).
+	// Execute Cypher statements if any. Hooks run on both restore paths (the
+	// online path used to skip them), so the Bolt client targets whatever
+	// spec.instanceRef is: a standalone's `<name>-service` or a cluster's
+	// `<name>-client` (#187: using the cluster URI for a standalone made every
+	// Cypher hook fail, #218).
 	if len(hooks.CypherStatements) > 0 {
-		neo4jClient, err := r.newStandaloneRestoreClient(ctx, restore)
+		target, err := r.getRestoreTarget(ctx, restore)
+		if err != nil {
+			return fmt.Errorf("failed to resolve restore target for hooks: %w", err)
+		}
+		neo4jClient, err := r.targetClient(target)
 		if err != nil {
 			return fmt.Errorf("failed to create Neo4j client for hooks: %w", err)
 		}
@@ -2938,12 +2936,19 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		return r.pollClusterRestoreOnline(ctx, restore, cluster)
 	}
 
+	// The cluster or standalone being restored into (rule 108): the Bolt
+	// client, seed-config projection, rollout checks and proxy policy differ.
+	target, err := r.getRestoreTarget(ctx, restore)
+	if err != nil {
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Target lookup failed: %v", err))
+		return ctrl.Result{}, err
+	}
+
 	// Resolve backupRef → storage + per-CR shared directory. Prefer the pinned
 	// snapshot (issue #188): startRestore pins it before we get here, so a
 	// Neo4jBackup CR deleted after that point doesn't break a re-driven restore.
 	var storage neo4jv1beta1.StorageLocation
 	var backupPath string
-	var err error
 	if snap := resolvedBackupSnapshot(restore); snap != nil {
 		storage, backupPath = *snap.Storage, snap.BackupPath
 	} else {
@@ -3035,44 +3040,44 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		}
 		hasCustomEndpoint := storage.Type == "s3" && storage.Cloud != nil && storage.Cloud.EndpointURL != ""
 
-		// Project creds + endpoint in ONE cluster Update so the cluster
-		// controller does a single rolling restart.
-		projected, missing, projErr := r.projectClusterSeedConfig(ctx, cluster, credsSecret, storage.Cloud)
+		// Project creds + endpoint in ONE Update of the cluster or standalone
+		// CR so its controller does a single rolling restart.
+		projected, missing, projErr := r.projectSeedConfig(ctx, target, credsSecret, storage.Cloud)
 		if projErr != nil {
 			if stderrors.Is(projErr, errSeedConfigNotAutoInherited) {
-				msg := fmt.Sprintf("cluster %q's server pods can't reach the seed source: missing %s. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation %s=\"true\" to let the operator inject them (triggers one rolling restart).",
-					cluster.Name, strings.Join(missing, "; "), AutoInheritSeedCredsAnnotation)
+				msg := fmt.Sprintf("%s %q's server pods can't reach the seed source: missing %s. The server JVM fetches the seed itself. Provide these on the %s CR, or set annotation %s=\"true\" to let the operator inject them (triggers one rolling restart).",
+					target.kind(), target.name(), strings.Join(missing, "; "), target.kind(), AutoInheritSeedCredsAnnotation)
 				r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
 				r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected, msg)
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
-			logger.Error(projErr, "Failed to project seed configuration onto cluster")
+			logger.Error(projErr, "Failed to project seed configuration onto the target")
 			r.updateRestoreStatus(ctx, restore, StatusPending,
-				fmt.Sprintf("Retrying projection of seed configuration onto cluster %q: %v", cluster.Name, projErr))
+				fmt.Sprintf("Retrying projection of seed configuration onto %s %q: %v", target.kind(), target.name(), projErr))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		if projected {
-			logger.Info("Projected seed configuration onto cluster; waiting for a single rolling restart", "cluster", cluster.Name)
+			logger.Info("Projected seed configuration; waiting for a single rolling restart", "kind", target.kind(), "name", target.name())
 			r.updateRestoreStatus(ctx, restore, StatusPending,
-				fmt.Sprintf("Projected seed configuration (credentials/endpoint) onto cluster %q; waiting for the rolling restart", cluster.Name))
+				fmt.Sprintf("Projected seed configuration (credentials/endpoint) onto %s %q; waiting for the rolling restart", target.kind(), target.name()))
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 
 		// Combined rollout gate — both creds (if any) and a spec.env-projected
 		// endpoint (if any) must have reached the pods before we seed.
 		if credsSecret != "" {
-			rolledOut, rolloutErr := r.seedCredsRolledOut(ctx, cluster, credsSecret)
+			rolledOut, rolloutErr := r.seedCredsRolledOut(ctx, target, credsSecret)
 			if rolloutErr != nil || !rolledOut {
 				r.updateRestoreStatus(ctx, restore, StatusPending,
-					fmt.Sprintf("Waiting for cluster %q server pods to roll out seed credentials Secret %q", cluster.Name, credsSecret))
+					fmt.Sprintf("Waiting for %s %q pods to roll out seed credentials Secret %q", target.kind(), target.name(), credsSecret))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
 		}
-		if hasCustomEndpoint && clusterSpecEnvHasSeedEndpoint(cluster) {
-			rolled, rErr := r.specEnvEndpointRolledOut(ctx, cluster)
+		if hasCustomEndpoint && envHasSeedEndpoint(target.env()) {
+			rolled, rErr := r.specEnvEndpointRolledOut(ctx, target)
 			if rErr != nil || !rolled {
 				r.updateRestoreStatus(ctx, restore, StatusPending,
-					fmt.Sprintf("Waiting for cluster %q server pods to roll out the S3 endpoint %s", cluster.Name, seedEndpointEnvVar))
+					fmt.Sprintf("Waiting for %s %q pods to roll out the S3 endpoint %s", target.kind(), target.name(), seedEndpointEnvVar))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
 		}
@@ -3081,7 +3086,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		// of the backup PVC, build a single-file seedURI against it. The
 		// cluster's seed_from_uri_providers default (rule 74) includes
 		// URLConnectionSeedProvider so http:// URIs are accepted.
-		uri, result, perr := r.resolveClusterPVCRestoreURI(ctx, restore, storage, backupPath)
+		uri, result, perr := r.resolveClusterPVCRestoreURI(ctx, restore, storage, backupPath, target.podLabels())
 		if perr != nil {
 			r.updateRestoreStatus(ctx, restore, StatusFailed, perr.Error())
 			return ctrl.Result{}, perr
@@ -3093,16 +3098,16 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		}
 		seedURI = uri
 	default:
-		err := fmt.Errorf("cluster restore does not support storage type %q (expected s3, gcs, azure, or pvc)", storage.Type)
+		err := fmt.Errorf("online restore does not support storage type %q (expected s3, gcs, azure, or pvc)", storage.Type)
 		r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
 		return ctrl.Result{}, err
 	}
 
-	// Open a Bolt connection to the cluster.
-	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+	// Open a Bolt connection to the cluster or standalone.
+	neo4jClient, err := r.targetClient(target)
 	if err != nil {
-		logger.Error(err, "Failed to create Neo4j client for cluster Cypher restore")
-		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to connect to cluster: %v", err))
+		logger.Error(err, "Failed to create Neo4j client for the online restore")
+		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to connect to %s %q: %v", target.kind(), target.name(), err))
 		return ctrl.Result{}, err
 	}
 	defer func() { _ = neo4jClient.Close() }()
@@ -3130,9 +3135,28 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	// Completed. A crash before either leaves the CR in its prior phase, so
 	// re-entry flows through startRestore → startClusterCypherRestore (which is
 	// idempotent, guarded by the annotation).
+	// Pre-restore hooks run against the live target, once, right before the
+	// restore is issued — the online path skipped them entirely, which a
+	// standalone that used to restore through the Job would lose.
+	if restore.Spec.Options != nil && restore.Spec.Options.PreRestore != nil {
+		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PreRestore, hookPhasePreRestore); err != nil {
+			logger.Error(err, "Pre-restore hooks failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Pre-restore hooks failed: %v", err))
+			return ctrl.Result{}, err
+		}
+	}
+
+	// A standalone restores online now; stopCluster no longer applies to it
+	// (only a point-in-time restore still runs the offline Job). Say so once
+	// instead of silently ignoring the field.
+	if target.isStandalone() && restore.Spec.StopCluster {
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
+			fmt.Sprintf("spec.stopCluster is ignored: standalone %q is restored online and its other databases stay available (only a point-in-time restore stops the instance)", target.name()))
+	}
+
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-		fmt.Sprintf("Cluster Cypher restore: database %q (%s), seedURI=%s",
-			restore.Spec.Database, ternaryString(exists, "recreate", "create"), seedURI))
+		fmt.Sprintf("Online restore into %s %q: database %q (%s), seedURI=%s",
+			target.kind(), target.name(), restore.Spec.Database, ternaryString(exists, "recreate", "create"), seedURI))
 
 	if exists {
 		// Recreating an EXISTING database wipes and replaces its contents —
@@ -3142,8 +3166,8 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		// database with backup contents.
 		if !restoreOverwriteConfirmed(restore) {
 			msg := fmt.Sprintf(
-				"database %q already exists on the target cluster; a restore would WIPE and replace it. Set spec.options.replaceExisting=true to confirm, or restore to a different database",
-				restore.Spec.Database)
+				"database %q already exists on the target %s; a restore would WIPE and replace it. Set spec.options.replaceExisting=true to confirm, or restore to a different database",
+				restore.Spec.Database, target.kind())
 			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
 			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
 			return ctrl.Result{}, fmt.Errorf("%s", msg)
@@ -3205,7 +3229,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		// declaring false success or burning the full poll budget.
 		msg := fmt.Sprintf("Database %q was created but the seed FAILED: %s — fix the cause, DROP DATABASE %s IF EXISTS, and re-trigger the restore",
 			restore.Spec.Database, failMsg, restore.Spec.Database)
-		logger.Error(nil, "Cluster Cypher restore seed failed", "statusMessage", failMsg)
+		logger.Error(nil, "Online restore seed failed", "statusMessage", failMsg)
 		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
 		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
 		return ctrl.Result{}, nil
@@ -3223,12 +3247,25 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
+	return r.completeOnlineRestore(ctx, restore, cluster, fmt.Sprintf("seedURI=%s", seedURI))
+}
+
+// completeOnlineRestore finishes an online restore whose database is online:
+// post-restore hooks (which the online path used to skip), then Completed.
+func (r *Neo4jRestoreReconciler) completeOnlineRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, detail string) (ctrl.Result, error) {
+	if restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
+		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PostRestore, hookPhasePostRestore); err != nil {
+			log.FromContext(ctx).Error(err, "Post-restore hooks failed")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Post-restore hooks failed: %v", err))
+			return ctrl.Result{}, err
+		}
+	}
 	completion := metav1.Now()
 	restore.Status.CompletionTime = &completion
 	r.updateRestoreStatus(ctx, restore, StatusCompleted,
-		fmt.Sprintf("Database %q restored via cluster Cypher path (seedURI=%s)", restore.Spec.Database, seedURI))
+		fmt.Sprintf("Database %q restored online (%s)", restore.Spec.Database, detail))
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
-		fmt.Sprintf("Cluster Cypher restore completed for database %q", restore.Spec.Database))
+		fmt.Sprintf("Online restore completed for database %q", restore.Spec.Database))
 	return ctrl.Result{}, nil
 }
 
@@ -3288,6 +3325,33 @@ func cypherRestoreOnlineAcceptable(restore *neo4jv1beta1.Neo4jRestore, now time.
 	return now.Sub(issuedAt) >= cypherRestoreStaleOnlineGrace
 }
 
+// markRestorePreHooksRan stamps AnnotationRestorePreHooksRan (conflict-retried)
+// on the CR and the in-memory object.
+func (r *Neo4jRestoreReconciler) markRestorePreHooksRan(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) error {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		if latest.Annotations[AnnotationRestorePreHooksRan] == "true" {
+			return nil
+		}
+		if latest.Annotations == nil {
+			latest.Annotations = map[string]string{}
+		}
+		latest.Annotations[AnnotationRestorePreHooksRan] = "true"
+		return r.Update(ctx, latest)
+	})
+	if err != nil {
+		return err
+	}
+	if restore.Annotations == nil {
+		restore.Annotations = map[string]string{}
+	}
+	restore.Annotations[AnnotationRestorePreHooksRan] = "true"
+	return nil
+}
+
 // markCypherRestoreObservedOffline stamps the observed-offline annotation
 // (idempotent, conflict-retried) once a poll has seen the database not fully
 // online — proof the asynchronous recreate took effect.
@@ -3331,11 +3395,13 @@ func (r *Neo4jRestoreReconciler) clearCypherRestoreIssued(ctx context.Context, r
 		}
 		_, hasIssued := latest.Annotations[AnnotationCypherRestoreIssued]
 		_, hasOffline := latest.Annotations[AnnotationCypherRestoreObservedOffline]
-		if !hasIssued && !hasOffline {
+		_, hasHooks := latest.Annotations[AnnotationRestorePreHooksRan]
+		if !hasIssued && !hasOffline && !hasHooks {
 			return nil
 		}
 		delete(latest.Annotations, AnnotationCypherRestoreIssued)
 		delete(latest.Annotations, AnnotationCypherRestoreObservedOffline)
+		delete(latest.Annotations, AnnotationRestorePreHooksRan)
 		return r.Update(ctx, latest)
 	})
 	if err != nil {
@@ -3343,6 +3409,7 @@ func (r *Neo4jRestoreReconciler) clearCypherRestoreIssued(ctx context.Context, r
 	}
 	delete(restore.Annotations, AnnotationCypherRestoreIssued)
 	delete(restore.Annotations, AnnotationCypherRestoreObservedOffline)
+	delete(restore.Annotations, AnnotationRestorePreHooksRan)
 	return nil
 }
 
@@ -3407,7 +3474,11 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 	}
 	expired := time.Now().After(deadline)
 
-	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
+	var neo4jClient *neo4j.Client
+	target, err := r.getRestoreTarget(ctx, restore)
+	if err == nil {
+		neo4jClient, err = r.targetClient(target)
+	}
 	if err != nil {
 		// The cluster may be mid roll/unreachable transiently. Tolerate until
 		// the deadline, then fail.
@@ -3441,13 +3512,7 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 				"database", restore.Spec.Database, "grace", cypherRestoreStaleOnlineGrace.String())
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
-		completion := metav1.Now()
-		restore.Status.CompletionTime = &completion
-		r.updateRestoreStatus(ctx, restore, StatusCompleted,
-			fmt.Sprintf("Database %q restored via cluster Cypher path (%d/%d allocations online)", restore.Spec.Database, online, total))
-		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted,
-			fmt.Sprintf("Cluster Cypher restore completed for database %q", restore.Spec.Database))
-		return ctrl.Result{}, nil
+		return r.completeOnlineRestore(ctx, restore, cluster, fmt.Sprintf("%d/%d allocations online", online, total))
 	}
 
 	// Stamp the offline observation ONLY on a positive answer from SHOW
@@ -3470,7 +3535,7 @@ func (r *Neo4jRestoreReconciler) pollClusterRestoreOnline(ctx context.Context, r
 			fmt.Sprintf("Restore did not converge to online within %s (%d/%d allocations online); last status: %s — increase spec.timeout for large stores",
 				budget, online, total, detail))
 		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed,
-			fmt.Sprintf("Cluster Cypher restore for database %q did not converge online", restore.Spec.Database))
+			fmt.Sprintf("Online restore for database %q did not converge online", restore.Spec.Database))
 		return ctrl.Result{}, nil
 	}
 
@@ -3499,6 +3564,7 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 	restore *neo4jv1beta1.Neo4jRestore,
 	storage neo4jv1beta1.StorageLocation,
 	backupsPath string,
+	peers map[string]string,
 ) (string, ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -3573,9 +3639,10 @@ func (r *Neo4jRestoreReconciler) resolveClusterPVCRestoreURI(
 	proxyAvailable, err := ensurePVCSeedProxyResources(ctx, r.Client, r.Scheme, restore, restore.Name, storage.PVC.Name)
 	if err == nil {
 		// Restrict the proxy (which serves the whole backup PVC) to the
-		// target cluster's server pods (#219). Best-effort: only enforcing
-		// CNIs apply it.
-		if npErr := ensurePVCSeedProxyNetworkPolicy(ctx, r.Client, r.Scheme, restore, restore.Name, restore.Spec.InstanceRef); npErr != nil {
+		// target's Neo4j pods (#219) — selected by `peers`, since a
+		// standalone's pods do not carry the cluster label. Best-effort: only
+		// enforcing CNIs apply it.
+		if npErr := ensurePVCSeedProxyNetworkPolicy(ctx, r.Client, r.Scheme, restore, restore.Name, peers); npErr != nil {
 			log.FromContext(ctx).Error(npErr, "Failed to ensure seed-proxy NetworkPolicy (non-fatal)")
 		}
 	}
@@ -3867,9 +3934,9 @@ func (r *Neo4jRestoreReconciler) newStandaloneRestoreClient(ctx context.Context,
 // fetch fails (#190). The template-has-Secret check is essential: a fully
 // rolled-out OLD template (without the creds) is also "ready", so readiness
 // alone is not enough.
-func (r *Neo4jRestoreReconciler) seedCredsRolledOut(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, secretName string) (bool, error) {
+func (r *Neo4jRestoreReconciler) seedCredsRolledOut(ctx context.Context, target restoreTarget, secretName string) (bool, error) {
 	sts := &appsv1.StatefulSet{}
-	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name + "-server", Namespace: cluster.Namespace}, sts); err != nil {
+	if err := r.Get(ctx, types.NamespacedName{Name: target.statefulSetName(), Namespace: target.object().GetNamespace()}, sts); err != nil {
 		return false, err
 	}
 	if !podTemplateReferencesSecretEnvFrom(&sts.Spec.Template, secretName) {

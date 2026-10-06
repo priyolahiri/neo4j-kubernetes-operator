@@ -1012,7 +1012,7 @@ func TestPVCSeedProxyLifecycle(t *testing.T) {
 	available, err := ensurePVCSeedProxyResources(context.Background(), fc, scheme, restore, restore.Name, "backup-pvc")
 	require.NoError(t, err)
 	assert.False(t, available, "freshly created proxy is not yet ready")
-	require.NoError(t, ensurePVCSeedProxyNetworkPolicy(context.Background(), fc, scheme, restore, restore.Name, "prod"))
+	require.NoError(t, ensurePVCSeedProxyNetworkPolicy(context.Background(), fc, scheme, restore, restore.Name, clusterPodLabels("prod")))
 
 	np := &networkingv1.NetworkPolicy{}
 	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "backup-seed-proxy-r", Namespace: "ns"}, np))

@@ -248,7 +248,7 @@ func TestSeedCredsRolledOut(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			cluster := minimalClusterForRestore("c", ns)
 			r := newRestoreTestReconciler(t, cluster, tc.sts)
-			got, err := r.seedCredsRolledOut(ctx, cluster, secret)
+			got, err := r.seedCredsRolledOut(ctx, restoreTarget{cluster: cluster}, secret)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
@@ -257,7 +257,7 @@ func TestSeedCredsRolledOut(t *testing.T) {
 	t.Run("StatefulSet missing returns error", func(t *testing.T) {
 		cluster := minimalClusterForRestore("c", ns)
 		r := newRestoreTestReconciler(t, cluster)
-		_, err := r.seedCredsRolledOut(ctx, cluster, secret)
+		_, err := r.seedCredsRolledOut(ctx, restoreTarget{cluster: cluster}, secret)
 		require.Error(t, err)
 	})
 }
