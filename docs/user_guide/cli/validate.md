@@ -88,6 +88,8 @@ What it adds is everything that lives in the operator's validators *beyond* the 
 - storage, image, and licence-acceptance requirements
 - advisory topology warnings — even server counts, two-server clusters with
   limited fault tolerance, all-PRIMARY or all-SECONDARY mode constraints
+- advisory backup warnings — a PVC `Neo4jBackup` whose runs will be
+  differentials, which no `Neo4jRestore` can seed online
 
 The two are complementary. In CI, run both.
 

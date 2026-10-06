@@ -182,6 +182,12 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{}, nil
 	}
 
+	// Caveats about a valid spec — e.g. PVC differentials no restore can seed
+	// online. Advisory, never blocking.
+	for _, warning := range backupValidator.Warnings(backup) {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupRestoreCaveat, warning)
+	}
+
 	// Publish the exact directory a downstream replica should pull from, and
 	// surface the limit this mode cannot enforce. For cloud storage the
 	// operator never prunes — retention is delegated to bucket lifecycle

@@ -75,6 +75,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `RestoreFailed` | Warning | Restore operation failed |
 | `RestoreFromChainParent` | Warning | `source.backupRef` points at a FULL+DIFF chain parent; the restore seeds from its latest full snapshot, not the latest chain state |
 | `DatabaseCreateFailed` | Warning | Database creation failed during a restore operation |
+| `BackupRestoreCaveat` | Warning | A PVC backup whose runs will be differentials (scheduled with `backupType: AUTO`, `backupType: DIFF`, or `chainFromBackup`): a `Neo4jRestore` cannot seed them online — a cluster refuses one, a standalone restores it offline. Set `backupType: FULL` for backups you restore from, or use cloud storage |
 | `BackupRetentionCaveat` | Warning | Retention pruning is configured on a CR whose chain may contain differential artifacts; pruning can orphan DIFFs whose parent FULL ages out (prefer `backupType: FULL` with retention) |
 | `BackupShardedDatabasesExcluded` | Warning | An all-databases backup captured property-sharded database(s) as per-shard artifacts; an all-databases restore does not recreate them — restore each from the same backup via its `Neo4jShardedDatabase` CR with `spec.seedBackupRef` |
 | `BackupValidateUnsupported` | Warning | `options.validate` has no effect: `neo4j-admin backup validate` needs a CalVer (2025.x+) image |
