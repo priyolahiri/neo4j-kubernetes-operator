@@ -4895,7 +4895,7 @@
 <td><code>pointInTime</code></td>
 <td><code>*metav1.Time</code></td>
 <td>❌</td>
-<td>Recovery point in RFC3339 format; maps to <code>--restore-until</code>. <strong>Standalone targets only</strong> — a cluster target rejects it (use a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>).</td>
+<td>Recovery point in RFC3339 format. With <code>type: backup</code> the restore resolves the run that holds it (the earliest that started at or after it). On CalVer, from cloud storage, into a database that does not exist, it runs <strong>online</strong> on a cluster or a standalone (<code>CREATE DATABASE … OPTIONS {seedRestoreUntil}</code>). Otherwise a standalone restores offline (<code>neo4j-admin … --restore-until</code>) and a cluster refuses, naming the reason. See <a href="../../user_guide/guides/backup_restore/#point-in-time-recovery-pitr">Point-in-Time Recovery</a>.</td>
 </tr>
 <tr>
 <td><code>pitr</code></td>
@@ -4966,7 +4966,7 @@
 </span><span id="__span-1-35"><a id="__codelineno-1-35" name="__codelineno-1-35" href="#__codelineno-1-35"></a><span class="w">        </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws</span>
 </span></code></pre></div>
 <blockquote>
-<p><strong>Note:</strong> <code>source.type: pitr</code> (the <code>--restore-until</code> path) applies only to a <code>Neo4jEnterpriseStandalone</code> target. For cluster point-in-time recovery, create a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>. The operator rejects <code>source.type: pitr</code> against a cluster target with an actionable error.</p>
+<p><strong>Note:</strong> <code>source.type: pitr</code> (the <code>--restore-until</code> path) applies only to a <code>Neo4jEnterpriseStandalone</code> target; the operator rejects it on a cluster. On a cluster, use <code>type: backup</code> with <code>pointInTime</code> (online, CalVer, cloud storage, a new database), or a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>.</p>
 </blockquote>
 <h3 id="pitrconfig">PITRConfig<a class="headerlink" href="#pitrconfig" title="Anchor link to this section">&para;</a></h3>
 <p>Point-in-time recovery configuration for advanced restore scenarios.</p>
@@ -5518,7 +5518,12 @@
 <tr>
 <td><code>backupCreatedAt</code></td>
 <td><code>*metav1.Time</code></td>
-<td>Completion time of the resolved most-recent Succeeded run, captured at resolution so restore provenance survives deletion of the source <code>Neo4jBackup</code> CR</td>
+<td>Completion time of the resolved Succeeded run, captured at resolution so restore provenance survives deletion of the source <code>Neo4jBackup</code> CR</td>
+</tr>
+<tr>
+<td><code>backupStartedAt</code></td>
+<td><code>*metav1.Time</code></td>
+<td>When the resolved run started. With <code>source.pointInTime</code> the restore resolves the earliest run that started at or after it, which holds every transaction before it</td>
 </tr>
 </tbody>
 </table>
@@ -5615,8 +5620,8 @@
 </thead>
 <tbody>
 <tr>
-<td>Point-in-time (<code>source.type: pitr</code>, or <code>source.pointInTime</code>)</td>
-<td><code>dbms.recreateDatabase</code> has no restore-until option</td>
+<td>Point-in-time that cannot run online: Neo4j 5.26, a PVC backup, a database that exists, or <code>source.type: pitr</code></td>
+<td>only <code>neo4j-admin</code> restores those to a point in time</td>
 </tr>
 <tr>
 <td><code>source.type: storage</code></td>
@@ -5741,7 +5746,7 @@
 </span></code></pre></div>
 <h3 id="point-in-time-recovery-pitr">Point-in-Time Recovery (PITR)<a class="headerlink" href="#point-in-time-recovery-pitr" title="Anchor link to this section">&para;</a></h3>
 <blockquote>
-<p><strong>Note:</strong> <code>source.type: pitr</code> applies only to a <code>Neo4jEnterpriseStandalone</code> target. For cluster point-in-time recovery, create a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>. The operator rejects <code>source.type: pitr</code> against a cluster target with an actionable error.</p>
+<p><strong>Note:</strong> <code>source.type: pitr</code> applies only to a <code>Neo4jEnterpriseStandalone</code> target. A cluster restores to a point in time online with <code>type: backup</code> and <code>pointInTime</code> — see <a href="../../user_guide/guides/backup_restore/#point-in-time-recovery-pitr">Point-in-Time Recovery</a>.</p>
 </blockquote>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>

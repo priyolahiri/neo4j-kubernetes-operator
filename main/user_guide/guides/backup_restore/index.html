@@ -2434,6 +2434,29 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#online-from-a-backup-in-cloud-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Online, from a backup in cloud storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#offline-with-neo4j-admin-standalones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline, with neo4j-admin (standalones)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Offline, with neo4j-admin (standalones)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#pitr-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2452,6 +2475,11 @@
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -5586,6 +5614,29 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#online-from-a-backup-in-cloud-storage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Online, from a backup in cloud storage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#offline-with-neo4j-admin-standalones" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline, with neo4j-admin (standalones)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Offline, with neo4j-admin (standalones)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#pitr-configuration" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5604,6 +5655,11 @@
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
         
@@ -6019,8 +6075,8 @@ seeds it from the backup over Cypher — online, no downtime, and your original
 <p class="admonition-title">On a <code>Neo4jEnterpriseStandalone</code></p>
 <p>The same: a standalone restores online too, and its other databases stay
 available throughout. A few restores run <strong>offline</strong> through
-<code>neo4j-admin</code>, which stops the instance — point-in-time restores, for
-example. Those need <code>stopCluster: true</code>, and the restore's status names
+<code>neo4j-admin</code>, which stops the instance — a point-in-time restore over a
+database that exists, for example. Those need <code>stopCluster: true</code>, and the restore's status names
 the reason. See
 <a href="#restore-to-a-standalone-instance">Restore to a Standalone Instance</a>.</p>
 </div>
@@ -6975,7 +7031,7 @@ operator-side rule protects you here.</p>
 <td>as above</td>
 </tr>
 <tr>
-<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time, <code>source.type: storage</code>, cloud by pod identity without <code>spec.podServiceAccountAnnotations</code>)</td>
+<td><code>Neo4jEnterpriseStandalone</code>, <a href="#restore-to-a-standalone-instance">offline cases</a> (point-in-time that cannot run online, <code>source.type: storage</code>, cloud by pod identity without <code>spec.podServiceAccountAnnotations</code>)</td>
 <td>Kubernetes Job; stops the instance</td>
 <td><code>neo4j-admin database restore --from-path=&lt;latest-file-in-chain&gt;</code> followed by <code>CREATE/START DATABASE</code></td>
 </tr>
@@ -7091,7 +7147,7 @@ resolves the path for you — prefer it.)</p>
 <p><strong>Restoring after the <code>Neo4jBackup</code> CR is deleted.</strong> A <code>source.type: backup</code> restore <strong>pins</strong> the backup's storage location onto its own <code>status.resolvedSource</code> the first time it resolves the reference. From that point on the restore reads the snapshot, so deleting the <code>Neo4jBackup</code> CR mid-restore (or while it retries) does <strong>not</strong> break it — the operator already knows where the artifacts are.</p>
 <p>If you create a <strong>new</strong> restore <em>after</em> the Backup CR is gone, there's nothing to resolve, so <code>source.type: backup</code> fails with an error pointing you here. Restore directly from the artifacts with <strong><code>source.type: storage</code></strong> (above): set <code>source.storage</code> to the backup's location and point <code>backupPath</code> at the exact <code>.backup</code> file (cluster) or the directory (standalone). You do <strong>not</strong> need to — and should <strong>not</strong> — re-create the Backup CR: re-creating it triggers a fresh backup Job that writes into the same chain directory, which can shadow the artifact you wanted to restore.</p>
 <p>⚠️ <strong>Restore is destructive and overwrites in place.</strong> With <code>options.replaceExisting: true</code> the target database's current data is replaced by the backup. Re-running a restore — including after re-creating a deleted Backup CR — re-seeds and overwrites again. Treat every restore as a destructive operation against the named database.</p>
-<p><strong>Which run a restore picks</strong>: both cluster and standalone restores read the <strong>latest successful artifact of the referenced <code>Neo4jBackup</code> CR</strong>, by its recorded filename (an offline standalone restore falls back to the newest <code>&lt;database&gt;-*.backup</code> in that CR's directory only for a backup that recorded none). In a FULL+DIFF chain, reference the <strong>DIFF CR</strong> for the latest state or the <strong>FULL CR</strong> to roll back to the last full snapshot — restoring via the FULL CR does <em>not</em> apply the newer diffs (and emits a <code>RestoreFromChainParent</code> warning). To pin to an arbitrary earlier run, set <code>source.type: storage</code> with <code>backupPath</code> pointing at the exact <code>.backup</code> file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning).</p>
+<p><strong>Which run a restore picks</strong>: both cluster and standalone restores read the <strong>latest successful artifact of the referenced <code>Neo4jBackup</code> CR</strong>, by its recorded filename (an offline standalone restore falls back to the newest <code>&lt;database&gt;-*.backup</code> in that CR's directory only for a backup that recorded none). In a FULL+DIFF chain, reference the <strong>DIFF CR</strong> for the latest state or the <strong>FULL CR</strong> to roll back to the last full snapshot — restoring via the FULL CR does <em>not</em> apply the newer diffs (and emits a <code>RestoreFromChainParent</code> warning). To pin to an arbitrary earlier run, set <code>source.type: storage</code> with <code>backupPath</code> pointing at the exact <code>.backup</code> file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning). With <code>source.pointInTime</code>, a restore picks the run that holds that moment instead: the earliest that started at or after it (<a href="#point-in-time-recovery-pitr">Point-in-Time Recovery</a>).</p>
 </blockquote>
 <h4 id="restoring-under-a-different-name">Restoring under a different name<a class="headerlink" href="#restoring-under-a-different-name" title="Anchor link to this section">&para;</a></h4>
 <p>Set <code>spec.database</code> to the new name. From a backup of <strong>one</strong> database that is all it takes — the operator knows which file to read. From a backup that holds several (an <code>allDatabases</code> backup, or a <code>source.type: storage</code> directory), also say which database to take:</p>
@@ -7139,8 +7195,8 @@ instance — every database is offline until it is back:</p>
 </thead>
 <tbody>
 <tr>
-<td>Point-in-time (<code>source.type: pitr</code>, or <code>source.pointInTime</code>)</td>
-<td><code>dbms.recreateDatabase</code> has no restore-until option</td>
+<td>Point-in-time that cannot run <a href="#online-from-a-backup-in-cloud-storage">online</a>: Neo4j 5.26, a PVC backup, a database that exists, or <code>source.type: pitr</code></td>
+<td>only <code>neo4j-admin</code> restores those to a point in time</td>
 </tr>
 <tr>
 <td><code>source.type: storage</code></td>
@@ -7170,57 +7226,105 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </blockquote>
 <hr />
 <h3 id="point-in-time-recovery-pitr">Point-in-Time Recovery (PITR)<a class="headerlink" href="#point-in-time-recovery-pitr" title="Anchor link to this section">&para;</a></h3>
-<p>PITR restores your database to a specific point in time from a base backup. The operator runs <code>neo4j-admin database restore --restore-until="&lt;pointInTime&gt;"</code> against the base backup (<code>source.pitr.baseBackup</code>); the transaction logs it replays come from that backup chain. <code>source.pitr.logStorage</code> is accepted by the CRD but the restore command does not read it (a <code>pvc</code> log storage is only mounted at <code>/transaction-logs</code>), so the examples below omit it.</p>
-<blockquote>
-<p><strong>Note:</strong> <code>source.type: pitr</code> (the <code>--restore-until</code> path) applies only to a <code>Neo4jEnterpriseStandalone</code> target. For cluster point-in-time recovery, create a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>. The operator rejects <code>source.type: pitr</code> against a cluster target with an actionable error.</p>
-</blockquote>
-<h4 id="pitr-configuration">PITR Configuration<a class="headerlink" href="#pitr-configuration" title="Anchor link to this section">&para;</a></h4>
+<p>PITR restores a database as it was at a given moment. It works two ways.</p>
+<h4 id="online-from-a-backup-in-cloud-storage">Online, from a backup in cloud storage<a class="headerlink" href="#online-from-a-backup-in-cloud-storage" title="Anchor link to this section">&para;</a></h4>
+<p>On a cluster or a standalone running CalVer, restore a <code>Neo4jBackup</code> in cloud
+storage into a <strong>new</strong> database with <code>source.pointInTime</code>:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-53-1"><a id="__codelineno-53-1" name="__codelineno-53-1" href="#__codelineno-53-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-53-2"><a id="__codelineno-53-2" name="__codelineno-53-2" href="#__codelineno-53-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
 </span><span id="__span-53-3"><a id="__codelineno-53-3" name="__codelineno-53-3" href="#__codelineno-53-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-53-4"><a id="__codelineno-53-4" name="__codelineno-53-4" href="#__codelineno-53-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr-restore</span>
+</span><span id="__span-53-4"><a id="__codelineno-53-4" name="__codelineno-53-4" href="#__codelineno-53-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders-before-incident</span>
 </span><span id="__span-53-5"><a id="__codelineno-53-5" name="__codelineno-53-5" href="#__codelineno-53-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-53-6"><a id="__codelineno-53-6" name="__codelineno-53-6" href="#__codelineno-53-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">recovery-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (PITR is standalone-only)</span>
-</span><span id="__span-53-7"><a id="__codelineno-53-7" name="__codelineno-53-7" href="#__codelineno-53-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-db</span>
+</span><span id="__span-53-6"><a id="__codelineno-53-6" name="__codelineno-53-6" href="#__codelineno-53-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-cluster</span><span class="w">      </span><span class="c1"># a cluster or a standalone</span>
+</span><span id="__span-53-7"><a id="__codelineno-53-7" name="__codelineno-53-7" href="#__codelineno-53-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders-asof-1229</span><span class="w">           </span><span class="c1"># a database that does not exist yet</span>
 </span><span id="__span-53-8"><a id="__codelineno-53-8" name="__codelineno-53-8" href="#__codelineno-53-8"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-53-9"><a id="__codelineno-53-9" name="__codelineno-53-9" href="#__codelineno-53-9"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr</span>
-</span><span id="__span-53-10"><a id="__codelineno-53-10" name="__codelineno-53-10" href="#__codelineno-53-10"></a><span class="w">    </span><span class="nt">pointInTime</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-04T12:30:00Z"</span>
-</span><span id="__span-53-11"><a id="__codelineno-53-11" name="__codelineno-53-11" href="#__codelineno-53-11"></a><span class="w">    </span><span class="nt">pitr</span><span class="p">:</span>
-</span><span id="__span-53-12"><a id="__codelineno-53-12" name="__codelineno-53-12" href="#__codelineno-53-12"></a><span class="w">      </span><span class="nt">baseBackup</span><span class="p">:</span>
-</span><span id="__span-53-13"><a id="__codelineno-53-13" name="__codelineno-53-13" href="#__codelineno-53-13"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
-</span><span id="__span-53-14"><a id="__codelineno-53-14" name="__codelineno-53-14" href="#__codelineno-53-14"></a><span class="w">        </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daily-backup</span>
-</span><span id="__span-53-15"><a id="__codelineno-53-15" name="__codelineno-53-15" href="#__codelineno-53-15"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-53-16"><a id="__codelineno-53-16" name="__codelineno-53-16" href="#__codelineno-53-16"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-53-17"><a id="__codelineno-53-17" name="__codelineno-53-17" href="#__codelineno-53-17"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-53-9"><a id="__codelineno-53-9" name="__codelineno-53-9" href="#__codelineno-53-9"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
+</span><span id="__span-53-10"><a id="__codelineno-53-10" name="__codelineno-53-10" href="#__codelineno-53-10"></a><span class="w">    </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">orders-backup</span><span class="w">           </span><span class="c1"># backs up to S3, GCS or Azure</span>
+</span><span id="__span-53-11"><a id="__codelineno-53-11" name="__codelineno-53-11" href="#__codelineno-53-11"></a><span class="w">    </span><span class="nt">pointInTime</span><span class="p">:</span><span class="w"> </span><span class="s">"2026-10-06T12:29:00Z"</span>
 </span></code></pre></div>
-<p><strong>Best for:</strong> Compliance requirements, precise recovery to a moment before a bad event.</p>
-<h4 id="pitr-with-storage-based-base-backup">PITR with Storage-Based Base Backup<a class="headerlink" href="#pitr-with-storage-based-base-backup" title="Anchor link to this section">&para;</a></h4>
+<p>The operator picks the backup run that holds the point in time: the earliest
+successful run that <strong>started</strong> at or after it (<code>status.resolvedSource.backupStartedAt</code>).
+It creates the database from that run with Neo4j's <code>seedRestoreUntil</code>, so Neo4j
+replays the run's chain and stops at the point in time. Nothing else is stopped,
+and every other database stays online.</p>
+<p>It runs online only when all of these hold:</p>
+<ul>
+<li><strong>The target runs CalVer.</strong> Neo4j 5.26 has no <code>seedRestoreUntil</code>.</li>
+<li><strong>The backup is in cloud storage.</strong> A PVC backup reaches Neo4j over HTTP
+  through the seed proxy, and Neo4j applies a point in time only to cloud seeds.</li>
+<li><strong>The database does not exist yet.</strong> <code>seedRestoreUntil</code> is an option of
+  <code>CREATE DATABASE</code>; recreating a database cannot stop at a point in time.
+  Restore under a new name, compare, and copy back what was lost.</li>
+<li><strong>A run started at or after the point in time.</strong> Otherwise no backup is
+  known to hold every transaction up to it. Take a backup, or pick an earlier
+  point.</li>
+</ul>
+<p>When one does not hold, a standalone restores offline instead (below; it needs
+<code>stopCluster: true</code>). A cluster cannot, so the restore fails and names the
+reason. The decision is made once, when the restore starts, and the restore
+records it in the <code>neo4j.com/point-in-time-path</code> annotation.</p>
+<h4 id="offline-with-neo4j-admin-standalones">Offline, with neo4j-admin (standalones)<a class="headerlink" href="#offline-with-neo4j-admin-standalones" title="Anchor link to this section">&para;</a></h4>
+<p>The offline path runs <code>neo4j-admin database restore --restore-until="&lt;pointInTime&gt;"</code>.
+It stops the standalone, so every database on it is offline until it is back.
+It covers what the online path cannot: Neo4j 5.26, PVC backups, a database that
+exists, and <code>source.type: pitr</code>.</p>
+<p>With <code>source.type: pitr</code> the base backup comes from <code>source.pitr.baseBackup</code>,
+and the transaction logs it replays come from that backup chain.
+<code>source.pitr.logStorage</code> is accepted by the CRD but the restore command does not
+read it (a <code>pvc</code> log storage is only mounted at <code>/transaction-logs</code>), so the
+examples below omit it.</p>
+<blockquote>
+<p><strong>Note:</strong> <code>source.type: pitr</code> applies only to a <code>Neo4jEnterpriseStandalone</code>
+target; the operator rejects it on a cluster. On a cluster, use the online
+path above, or a <code>Neo4jDatabase</code> with <code>spec.seedConfig.restoreUntil</code>.</p>
+</blockquote>
+<h5 id="pitr-configuration">PITR Configuration<a class="headerlink" href="#pitr-configuration" title="Anchor link to this section">&para;</a></h5>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-54-1"><a id="__codelineno-54-1" name="__codelineno-54-1" href="#__codelineno-54-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-54-2"><a id="__codelineno-54-2" name="__codelineno-54-2" href="#__codelineno-54-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
 </span><span id="__span-54-3"><a id="__codelineno-54-3" name="__codelineno-54-3" href="#__codelineno-54-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-54-4"><a id="__codelineno-54-4" name="__codelineno-54-4" href="#__codelineno-54-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr-storage-restore</span>
+</span><span id="__span-54-4"><a id="__codelineno-54-4" name="__codelineno-54-4" href="#__codelineno-54-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr-restore</span>
 </span><span id="__span-54-5"><a id="__codelineno-54-5" name="__codelineno-54-5" href="#__codelineno-54-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-54-6"><a id="__codelineno-54-6" name="__codelineno-54-6" href="#__codelineno-54-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (PITR is standalone-only)</span>
-</span><span id="__span-54-7"><a id="__codelineno-54-7" name="__codelineno-54-7" href="#__codelineno-54-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical-app</span>
+</span><span id="__span-54-6"><a id="__codelineno-54-6" name="__codelineno-54-6" href="#__codelineno-54-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">recovery-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (PITR is standalone-only)</span>
+</span><span id="__span-54-7"><a id="__codelineno-54-7" name="__codelineno-54-7" href="#__codelineno-54-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-db</span>
 </span><span id="__span-54-8"><a id="__codelineno-54-8" name="__codelineno-54-8" href="#__codelineno-54-8"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-54-9"><a id="__codelineno-54-9" name="__codelineno-54-9" href="#__codelineno-54-9"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr</span>
-</span><span id="__span-54-10"><a id="__codelineno-54-10" name="__codelineno-54-10" href="#__codelineno-54-10"></a><span class="w">    </span><span class="nt">pointInTime</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-04T14:45:30Z"</span>
+</span><span id="__span-54-10"><a id="__codelineno-54-10" name="__codelineno-54-10" href="#__codelineno-54-10"></a><span class="w">    </span><span class="nt">pointInTime</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-04T12:30:00Z"</span>
 </span><span id="__span-54-11"><a id="__codelineno-54-11" name="__codelineno-54-11" href="#__codelineno-54-11"></a><span class="w">    </span><span class="nt">pitr</span><span class="p">:</span>
 </span><span id="__span-54-12"><a id="__codelineno-54-12" name="__codelineno-54-12" href="#__codelineno-54-12"></a><span class="w">      </span><span class="nt">baseBackup</span><span class="p">:</span>
-</span><span id="__span-54-13"><a id="__codelineno-54-13" name="__codelineno-54-13" href="#__codelineno-54-13"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">storage</span>
-</span><span id="__span-54-14"><a id="__codelineno-54-14" name="__codelineno-54-14" href="#__codelineno-54-14"></a><span class="w">        </span><span class="nt">storage</span><span class="p">:</span>
-</span><span id="__span-54-15"><a id="__codelineno-54-15" name="__codelineno-54-15" href="#__codelineno-54-15"></a><span class="w">          </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs</span>
-</span><span id="__span-54-16"><a id="__codelineno-54-16" name="__codelineno-54-16" href="#__codelineno-54-16"></a><span class="w">          </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">base-backups</span>
-</span><span id="__span-54-17"><a id="__codelineno-54-17" name="__codelineno-54-17" href="#__codelineno-54-17"></a><span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production/base-backup-20250104</span>
-</span><span id="__span-54-18"><a id="__codelineno-54-18" name="__codelineno-54-18" href="#__codelineno-54-18"></a><span class="w">          </span><span class="nt">cloud</span><span class="p">:</span>
-</span><span id="__span-54-19"><a id="__codelineno-54-19" name="__codelineno-54-19" href="#__codelineno-54-19"></a><span class="w">            </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcp</span>
-</span><span id="__span-54-20"><a id="__codelineno-54-20" name="__codelineno-54-20" href="#__codelineno-54-20"></a><span class="w">            </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs-backup-creds</span>
-</span><span id="__span-54-21"><a id="__codelineno-54-21" name="__codelineno-54-21" href="#__codelineno-54-21"></a><span class="w">        </span><span class="c1"># Relative to storage.path: the operator reads</span>
-</span><span id="__span-54-22"><a id="__codelineno-54-22" name="__codelineno-54-22" href="#__codelineno-54-22"></a><span class="w">        </span><span class="c1"># gs://base-backups/production/base-backup-20250104/critical-app-2025-01-04T02-00-00.backup</span>
-</span><span id="__span-54-23"><a id="__codelineno-54-23" name="__codelineno-54-23" href="#__codelineno-54-23"></a><span class="w">        </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical-app-2025-01-04T02-00-00.backup</span>
-</span><span id="__span-54-24"><a id="__codelineno-54-24" name="__codelineno-54-24" href="#__codelineno-54-24"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-54-25"><a id="__codelineno-54-25" name="__codelineno-54-25" href="#__codelineno-54-25"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-54-26"><a id="__codelineno-54-26" name="__codelineno-54-26" href="#__codelineno-54-26"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-54-13"><a id="__codelineno-54-13" name="__codelineno-54-13" href="#__codelineno-54-13"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
+</span><span id="__span-54-14"><a id="__codelineno-54-14" name="__codelineno-54-14" href="#__codelineno-54-14"></a><span class="w">        </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">daily-backup</span>
+</span><span id="__span-54-15"><a id="__codelineno-54-15" name="__codelineno-54-15" href="#__codelineno-54-15"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-54-16"><a id="__codelineno-54-16" name="__codelineno-54-16" href="#__codelineno-54-16"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-54-17"><a id="__codelineno-54-17" name="__codelineno-54-17" href="#__codelineno-54-17"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span></code></pre></div>
+<p><strong>Best for:</strong> Compliance requirements, precise recovery to a moment before a bad event.</p>
+<h5 id="pitr-with-storage-based-base-backup">PITR with Storage-Based Base Backup<a class="headerlink" href="#pitr-with-storage-based-base-backup" title="Anchor link to this section">&para;</a></h5>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-55-1"><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-55-2"><a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
+</span><span id="__span-55-3"><a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-55-4"><a id="__codelineno-55-4" name="__codelineno-55-4" href="#__codelineno-55-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr-storage-restore</span>
+</span><span id="__span-55-5"><a id="__codelineno-55-5" name="__codelineno-55-5" href="#__codelineno-55-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-55-6"><a id="__codelineno-55-6" name="__codelineno-55-6" href="#__codelineno-55-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">dr-standalone</span><span class="w">   </span><span class="c1"># Neo4jEnterpriseStandalone (PITR is standalone-only)</span>
+</span><span id="__span-55-7"><a id="__codelineno-55-7" name="__codelineno-55-7" href="#__codelineno-55-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical-app</span>
+</span><span id="__span-55-8"><a id="__codelineno-55-8" name="__codelineno-55-8" href="#__codelineno-55-8"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-55-9"><a id="__codelineno-55-9" name="__codelineno-55-9" href="#__codelineno-55-9"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">pitr</span>
+</span><span id="__span-55-10"><a id="__codelineno-55-10" name="__codelineno-55-10" href="#__codelineno-55-10"></a><span class="w">    </span><span class="nt">pointInTime</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-04T14:45:30Z"</span>
+</span><span id="__span-55-11"><a id="__codelineno-55-11" name="__codelineno-55-11" href="#__codelineno-55-11"></a><span class="w">    </span><span class="nt">pitr</span><span class="p">:</span>
+</span><span id="__span-55-12"><a id="__codelineno-55-12" name="__codelineno-55-12" href="#__codelineno-55-12"></a><span class="w">      </span><span class="nt">baseBackup</span><span class="p">:</span>
+</span><span id="__span-55-13"><a id="__codelineno-55-13" name="__codelineno-55-13" href="#__codelineno-55-13"></a><span class="w">        </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">storage</span>
+</span><span id="__span-55-14"><a id="__codelineno-55-14" name="__codelineno-55-14" href="#__codelineno-55-14"></a><span class="w">        </span><span class="nt">storage</span><span class="p">:</span>
+</span><span id="__span-55-15"><a id="__codelineno-55-15" name="__codelineno-55-15" href="#__codelineno-55-15"></a><span class="w">          </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs</span>
+</span><span id="__span-55-16"><a id="__codelineno-55-16" name="__codelineno-55-16" href="#__codelineno-55-16"></a><span class="w">          </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">base-backups</span>
+</span><span id="__span-55-17"><a id="__codelineno-55-17" name="__codelineno-55-17" href="#__codelineno-55-17"></a><span class="w">          </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production/base-backup-20250104</span>
+</span><span id="__span-55-18"><a id="__codelineno-55-18" name="__codelineno-55-18" href="#__codelineno-55-18"></a><span class="w">          </span><span class="nt">cloud</span><span class="p">:</span>
+</span><span id="__span-55-19"><a id="__codelineno-55-19" name="__codelineno-55-19" href="#__codelineno-55-19"></a><span class="w">            </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcp</span>
+</span><span id="__span-55-20"><a id="__codelineno-55-20" name="__codelineno-55-20" href="#__codelineno-55-20"></a><span class="w">            </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gcs-backup-creds</span>
+</span><span id="__span-55-21"><a id="__codelineno-55-21" name="__codelineno-55-21" href="#__codelineno-55-21"></a><span class="w">        </span><span class="c1"># Relative to storage.path: the operator reads</span>
+</span><span id="__span-55-22"><a id="__codelineno-55-22" name="__codelineno-55-22" href="#__codelineno-55-22"></a><span class="w">        </span><span class="c1"># gs://base-backups/production/base-backup-20250104/critical-app-2025-01-04T02-00-00.backup</span>
+</span><span id="__span-55-23"><a id="__codelineno-55-23" name="__codelineno-55-23" href="#__codelineno-55-23"></a><span class="w">        </span><span class="nt">backupPath</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">critical-app-2025-01-04T02-00-00.backup</span>
+</span><span id="__span-55-24"><a id="__codelineno-55-24" name="__codelineno-55-24" href="#__codelineno-55-24"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-55-25"><a id="__codelineno-55-25" name="__codelineno-55-25" href="#__codelineno-55-25"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-55-26"><a id="__codelineno-55-26" name="__codelineno-55-26" href="#__codelineno-55-26"></a><span class="w">  </span><span class="nt">stopCluster</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <hr />
 <h3 id="restore-with-hooks">Restore with Hooks<a class="headerlink" href="#restore-with-hooks" title="Anchor link to this section">&para;</a></h3>
@@ -7232,106 +7336,106 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 <li><strong>postRestore</strong> hooks — run <strong>once the restored database is online</strong>, so Cypher hooks like <code>CALL db.awaitIndexes()</code> target a live database. A failing post-restore hook fails the restore.</li>
 </ol>
 <h4 id="restore-with-cypher-hooks">Restore with Cypher Hooks<a class="headerlink" href="#restore-with-cypher-hooks" title="Anchor link to this section">&para;</a></h4>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-55-1"><a id="__codelineno-55-1" name="__codelineno-55-1" href="#__codelineno-55-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-55-2"><a id="__codelineno-55-2" name="__codelineno-55-2" href="#__codelineno-55-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
-</span><span id="__span-55-3"><a id="__codelineno-55-3" name="__codelineno-55-3" href="#__codelineno-55-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-55-4"><a id="__codelineno-55-4" name="__codelineno-55-4" href="#__codelineno-55-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">restore-with-hooks</span>
-</span><span id="__span-55-5"><a id="__codelineno-55-5" name="__codelineno-55-5" href="#__codelineno-55-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-55-6"><a id="__codelineno-55-6" name="__codelineno-55-6" href="#__codelineno-55-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-standalone</span>
-</span><span id="__span-55-7"><a id="__codelineno-55-7" name="__codelineno-55-7" href="#__codelineno-55-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myapp</span>
-</span><span id="__span-55-8"><a id="__codelineno-55-8" name="__codelineno-55-8" href="#__codelineno-55-8"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-55-9"><a id="__codelineno-55-9" name="__codelineno-55-9" href="#__codelineno-55-9"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
-</span><span id="__span-55-10"><a id="__codelineno-55-10" name="__codelineno-55-10" href="#__codelineno-55-10"></a><span class="w">    </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-backup</span>
-</span><span id="__span-55-11"><a id="__codelineno-55-11" name="__codelineno-55-11" href="#__codelineno-55-11"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-55-12"><a id="__codelineno-55-12" name="__codelineno-55-12" href="#__codelineno-55-12"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
-</span><span id="__span-55-13"><a id="__codelineno-55-13" name="__codelineno-55-13" href="#__codelineno-55-13"></a><span class="w">    </span><span class="nt">preRestore</span><span class="p">:</span>
-</span><span id="__span-55-14"><a id="__codelineno-55-14" name="__codelineno-55-14" href="#__codelineno-55-14"></a><span class="w">      </span><span class="nt">cypherStatements</span><span class="p">:</span>
-</span><span id="__span-55-15"><a id="__codelineno-55-15" name="__codelineno-55-15" href="#__codelineno-55-15"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CALL</span><span class="nv"> </span><span class="s">db.checkpoint()"</span>
-</span><span id="__span-55-16"><a id="__codelineno-55-16" name="__codelineno-55-16" href="#__codelineno-55-16"></a><span class="w">    </span><span class="nt">postRestore</span><span class="p">:</span>
-</span><span id="__span-55-17"><a id="__codelineno-55-17" name="__codelineno-55-17" href="#__codelineno-55-17"></a><span class="w">      </span><span class="nt">cypherStatements</span><span class="p">:</span>
-</span><span id="__span-55-18"><a id="__codelineno-55-18" name="__codelineno-55-18" href="#__codelineno-55-18"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CALL</span><span class="nv"> </span><span class="s">db.awaitIndexes()"</span>
-</span><span id="__span-55-19"><a id="__codelineno-55-19" name="__codelineno-55-19" href="#__codelineno-55-19"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CALL</span><span class="nv"> </span><span class="s">dbms.security.clearAuthCache()"</span>
-</span></code></pre></div>
-<h4 id="restore-with-job-hooks">Restore with Job Hooks<a class="headerlink" href="#restore-with-job-hooks" title="Anchor link to this section">&para;</a></h4>
-<p>Hook Jobs run in their own pods — anything that talks to Neo4j (e.g. <code>cypher-shell</code>) must address the instance's service explicitly (<code>-a neo4j://&lt;standalone&gt;-client:7687</code>), or it will try to connect to localhost inside the hook pod. (<code>&lt;standalone&gt;-service</code> also resolves but is deprecated — use <code>-client</code>.)</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-56-1"><a id="__codelineno-56-1" name="__codelineno-56-1" href="#__codelineno-56-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-56-2"><a id="__codelineno-56-2" name="__codelineno-56-2" href="#__codelineno-56-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
 </span><span id="__span-56-3"><a id="__codelineno-56-3" name="__codelineno-56-3" href="#__codelineno-56-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-56-4"><a id="__codelineno-56-4" name="__codelineno-56-4" href="#__codelineno-56-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">restore-with-job-hooks</span>
+</span><span id="__span-56-4"><a id="__codelineno-56-4" name="__codelineno-56-4" href="#__codelineno-56-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">restore-with-hooks</span>
 </span><span id="__span-56-5"><a id="__codelineno-56-5" name="__codelineno-56-5" href="#__codelineno-56-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-56-6"><a id="__codelineno-56-6" name="__codelineno-56-6" href="#__codelineno-56-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-standalone</span>
-</span><span id="__span-56-7"><a id="__codelineno-56-7" name="__codelineno-56-7" href="#__codelineno-56-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-data</span>
+</span><span id="__span-56-6"><a id="__codelineno-56-6" name="__codelineno-56-6" href="#__codelineno-56-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-standalone</span>
+</span><span id="__span-56-7"><a id="__codelineno-56-7" name="__codelineno-56-7" href="#__codelineno-56-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">myapp</span>
 </span><span id="__span-56-8"><a id="__codelineno-56-8" name="__codelineno-56-8" href="#__codelineno-56-8"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-56-9"><a id="__codelineno-56-9" name="__codelineno-56-9" href="#__codelineno-56-9"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
-</span><span id="__span-56-10"><a id="__codelineno-56-10" name="__codelineno-56-10" href="#__codelineno-56-10"></a><span class="w">    </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-backup</span>
+</span><span id="__span-56-10"><a id="__codelineno-56-10" name="__codelineno-56-10" href="#__codelineno-56-10"></a><span class="w">    </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">production-backup</span>
 </span><span id="__span-56-11"><a id="__codelineno-56-11" name="__codelineno-56-11" href="#__codelineno-56-11"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-56-12"><a id="__codelineno-56-12" name="__codelineno-56-12" href="#__codelineno-56-12"></a><span class="w">    </span><span class="nt">preRestore</span><span class="p">:</span>
-</span><span id="__span-56-13"><a id="__codelineno-56-13" name="__codelineno-56-13" href="#__codelineno-56-13"></a><span class="w">      </span><span class="nt">job</span><span class="p">:</span>
-</span><span id="__span-56-14"><a id="__codelineno-56-14" name="__codelineno-56-14" href="#__codelineno-56-14"></a><span class="w">        </span><span class="nt">template</span><span class="p">:</span>
-</span><span id="__span-56-15"><a id="__codelineno-56-15" name="__codelineno-56-15" href="#__codelineno-56-15"></a><span class="w">          </span><span class="nt">container</span><span class="p">:</span>
-</span><span id="__span-56-16"><a id="__codelineno-56-16" name="__codelineno-56-16" href="#__codelineno-56-16"></a><span class="w">            </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-registry/data-prep:latest</span>
-</span><span id="__span-56-17"><a id="__codelineno-56-17" name="__codelineno-56-17" href="#__codelineno-56-17"></a><span class="w">            </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"/bin/sh"</span><span class="p p-Indicator">]</span>
-</span><span id="__span-56-18"><a id="__codelineno-56-18" name="__codelineno-56-18" href="#__codelineno-56-18"></a><span class="w">            </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"-c"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"/scripts/pre-restore.sh"</span><span class="p p-Indicator">]</span>
-</span><span id="__span-56-19"><a id="__codelineno-56-19" name="__codelineno-56-19" href="#__codelineno-56-19"></a><span class="w">            </span><span class="nt">env</span><span class="p">:</span>
-</span><span id="__span-56-20"><a id="__codelineno-56-20" name="__codelineno-56-20" href="#__codelineno-56-20"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">INSTANCE_NAME</span>
-</span><span id="__span-56-21"><a id="__codelineno-56-21" name="__codelineno-56-21" href="#__codelineno-56-21"></a><span class="w">                </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-standalone</span>
-</span><span id="__span-56-22"><a id="__codelineno-56-22" name="__codelineno-56-22" href="#__codelineno-56-22"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">DATABASE_NAME</span>
-</span><span id="__span-56-23"><a id="__codelineno-56-23" name="__codelineno-56-23" href="#__codelineno-56-23"></a><span class="w">                </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-data</span>
-</span><span id="__span-56-24"><a id="__codelineno-56-24" name="__codelineno-56-24" href="#__codelineno-56-24"></a><span class="w">        </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"10m"</span>
-</span><span id="__span-56-25"><a id="__codelineno-56-25" name="__codelineno-56-25" href="#__codelineno-56-25"></a><span class="w">    </span><span class="nt">postRestore</span><span class="p">:</span>
-</span><span id="__span-56-26"><a id="__codelineno-56-26" name="__codelineno-56-26" href="#__codelineno-56-26"></a><span class="w">      </span><span class="nt">job</span><span class="p">:</span>
-</span><span id="__span-56-27"><a id="__codelineno-56-27" name="__codelineno-56-27" href="#__codelineno-56-27"></a><span class="w">        </span><span class="nt">template</span><span class="p">:</span>
-</span><span id="__span-56-28"><a id="__codelineno-56-28" name="__codelineno-56-28" href="#__codelineno-56-28"></a><span class="w">          </span><span class="nt">container</span><span class="p">:</span>
-</span><span id="__span-56-29"><a id="__codelineno-56-29" name="__codelineno-56-29" href="#__codelineno-56-29"></a><span class="w">            </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-registry/data-validator:latest</span>
-</span><span id="__span-56-30"><a id="__codelineno-56-30" name="__codelineno-56-30" href="#__codelineno-56-30"></a><span class="w">            </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"/bin/sh"</span><span class="p p-Indicator">]</span>
-</span><span id="__span-56-31"><a id="__codelineno-56-31" name="__codelineno-56-31" href="#__codelineno-56-31"></a><span class="w">            </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"-c"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"/scripts/validate-restore.sh"</span><span class="p p-Indicator">]</span>
-</span><span id="__span-56-32"><a id="__codelineno-56-32" name="__codelineno-56-32" href="#__codelineno-56-32"></a><span class="w">            </span><span class="nt">env</span><span class="p">:</span>
-</span><span id="__span-56-33"><a id="__codelineno-56-33" name="__codelineno-56-33" href="#__codelineno-56-33"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_URI</span>
-</span><span id="__span-56-34"><a id="__codelineno-56-34" name="__codelineno-56-34" href="#__codelineno-56-34"></a><span class="w">                </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"neo4j://staging-standalone-client:7687"</span>
-</span><span id="__span-56-35"><a id="__codelineno-56-35" name="__codelineno-56-35" href="#__codelineno-56-35"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_PASSWORD</span>
-</span><span id="__span-56-36"><a id="__codelineno-56-36" name="__codelineno-56-36" href="#__codelineno-56-36"></a><span class="w">                </span><span class="nt">valueFrom</span><span class="p">:</span>
-</span><span id="__span-56-37"><a id="__codelineno-56-37" name="__codelineno-56-37" href="#__codelineno-56-37"></a><span class="w">                  </span><span class="nt">secretKeyRef</span><span class="p">:</span>
-</span><span id="__span-56-38"><a id="__codelineno-56-38" name="__codelineno-56-38" href="#__codelineno-56-38"></a><span class="w">                    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-admin-secret</span>
-</span><span id="__span-56-39"><a id="__codelineno-56-39" name="__codelineno-56-39" href="#__codelineno-56-39"></a><span class="w">                    </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">password</span>
-</span><span id="__span-56-40"><a id="__codelineno-56-40" name="__codelineno-56-40" href="#__codelineno-56-40"></a><span class="w">        </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"15m"</span>
+</span><span id="__span-56-12"><a id="__codelineno-56-12" name="__codelineno-56-12" href="#__codelineno-56-12"></a><span class="w">    </span><span class="nt">replaceExisting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># confirms overwriting the existing database</span>
+</span><span id="__span-56-13"><a id="__codelineno-56-13" name="__codelineno-56-13" href="#__codelineno-56-13"></a><span class="w">    </span><span class="nt">preRestore</span><span class="p">:</span>
+</span><span id="__span-56-14"><a id="__codelineno-56-14" name="__codelineno-56-14" href="#__codelineno-56-14"></a><span class="w">      </span><span class="nt">cypherStatements</span><span class="p">:</span>
+</span><span id="__span-56-15"><a id="__codelineno-56-15" name="__codelineno-56-15" href="#__codelineno-56-15"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CALL</span><span class="nv"> </span><span class="s">db.checkpoint()"</span>
+</span><span id="__span-56-16"><a id="__codelineno-56-16" name="__codelineno-56-16" href="#__codelineno-56-16"></a><span class="w">    </span><span class="nt">postRestore</span><span class="p">:</span>
+</span><span id="__span-56-17"><a id="__codelineno-56-17" name="__codelineno-56-17" href="#__codelineno-56-17"></a><span class="w">      </span><span class="nt">cypherStatements</span><span class="p">:</span>
+</span><span id="__span-56-18"><a id="__codelineno-56-18" name="__codelineno-56-18" href="#__codelineno-56-18"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CALL</span><span class="nv"> </span><span class="s">db.awaitIndexes()"</span>
+</span><span id="__span-56-19"><a id="__codelineno-56-19" name="__codelineno-56-19" href="#__codelineno-56-19"></a><span class="w">        </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CALL</span><span class="nv"> </span><span class="s">dbms.security.clearAuthCache()"</span>
+</span></code></pre></div>
+<h4 id="restore-with-job-hooks">Restore with Job Hooks<a class="headerlink" href="#restore-with-job-hooks" title="Anchor link to this section">&para;</a></h4>
+<p>Hook Jobs run in their own pods — anything that talks to Neo4j (e.g. <code>cypher-shell</code>) must address the instance's service explicitly (<code>-a neo4j://&lt;standalone&gt;-client:7687</code>), or it will try to connect to localhost inside the hook pod. (<code>&lt;standalone&gt;-service</code> also resolves but is deprecated — use <code>-client</code>.)</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-57-1"><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-57-2"><a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jRestore</span>
+</span><span id="__span-57-3"><a id="__codelineno-57-3" name="__codelineno-57-3" href="#__codelineno-57-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-57-4"><a id="__codelineno-57-4" name="__codelineno-57-4" href="#__codelineno-57-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">restore-with-job-hooks</span>
+</span><span id="__span-57-5"><a id="__codelineno-57-5" name="__codelineno-57-5" href="#__codelineno-57-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-57-6"><a id="__codelineno-57-6" name="__codelineno-57-6" href="#__codelineno-57-6"></a><span class="w">  </span><span class="nt">instanceRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-standalone</span>
+</span><span id="__span-57-7"><a id="__codelineno-57-7" name="__codelineno-57-7" href="#__codelineno-57-7"></a><span class="w">  </span><span class="nt">database</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-data</span>
+</span><span id="__span-57-8"><a id="__codelineno-57-8" name="__codelineno-57-8" href="#__codelineno-57-8"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-57-9"><a id="__codelineno-57-9" name="__codelineno-57-9" href="#__codelineno-57-9"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup</span>
+</span><span id="__span-57-10"><a id="__codelineno-57-10" name="__codelineno-57-10" href="#__codelineno-57-10"></a><span class="w">    </span><span class="nt">backupRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-backup</span>
+</span><span id="__span-57-11"><a id="__codelineno-57-11" name="__codelineno-57-11" href="#__codelineno-57-11"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-57-12"><a id="__codelineno-57-12" name="__codelineno-57-12" href="#__codelineno-57-12"></a><span class="w">    </span><span class="nt">preRestore</span><span class="p">:</span>
+</span><span id="__span-57-13"><a id="__codelineno-57-13" name="__codelineno-57-13" href="#__codelineno-57-13"></a><span class="w">      </span><span class="nt">job</span><span class="p">:</span>
+</span><span id="__span-57-14"><a id="__codelineno-57-14" name="__codelineno-57-14" href="#__codelineno-57-14"></a><span class="w">        </span><span class="nt">template</span><span class="p">:</span>
+</span><span id="__span-57-15"><a id="__codelineno-57-15" name="__codelineno-57-15" href="#__codelineno-57-15"></a><span class="w">          </span><span class="nt">container</span><span class="p">:</span>
+</span><span id="__span-57-16"><a id="__codelineno-57-16" name="__codelineno-57-16" href="#__codelineno-57-16"></a><span class="w">            </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-registry/data-prep:latest</span>
+</span><span id="__span-57-17"><a id="__codelineno-57-17" name="__codelineno-57-17" href="#__codelineno-57-17"></a><span class="w">            </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"/bin/sh"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-57-18"><a id="__codelineno-57-18" name="__codelineno-57-18" href="#__codelineno-57-18"></a><span class="w">            </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"-c"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"/scripts/pre-restore.sh"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-57-19"><a id="__codelineno-57-19" name="__codelineno-57-19" href="#__codelineno-57-19"></a><span class="w">            </span><span class="nt">env</span><span class="p">:</span>
+</span><span id="__span-57-20"><a id="__codelineno-57-20" name="__codelineno-57-20" href="#__codelineno-57-20"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">INSTANCE_NAME</span>
+</span><span id="__span-57-21"><a id="__codelineno-57-21" name="__codelineno-57-21" href="#__codelineno-57-21"></a><span class="w">                </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-standalone</span>
+</span><span id="__span-57-22"><a id="__codelineno-57-22" name="__codelineno-57-22" href="#__codelineno-57-22"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">DATABASE_NAME</span>
+</span><span id="__span-57-23"><a id="__codelineno-57-23" name="__codelineno-57-23" href="#__codelineno-57-23"></a><span class="w">                </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">app-data</span>
+</span><span id="__span-57-24"><a id="__codelineno-57-24" name="__codelineno-57-24" href="#__codelineno-57-24"></a><span class="w">        </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"10m"</span>
+</span><span id="__span-57-25"><a id="__codelineno-57-25" name="__codelineno-57-25" href="#__codelineno-57-25"></a><span class="w">    </span><span class="nt">postRestore</span><span class="p">:</span>
+</span><span id="__span-57-26"><a id="__codelineno-57-26" name="__codelineno-57-26" href="#__codelineno-57-26"></a><span class="w">      </span><span class="nt">job</span><span class="p">:</span>
+</span><span id="__span-57-27"><a id="__codelineno-57-27" name="__codelineno-57-27" href="#__codelineno-57-27"></a><span class="w">        </span><span class="nt">template</span><span class="p">:</span>
+</span><span id="__span-57-28"><a id="__codelineno-57-28" name="__codelineno-57-28" href="#__codelineno-57-28"></a><span class="w">          </span><span class="nt">container</span><span class="p">:</span>
+</span><span id="__span-57-29"><a id="__codelineno-57-29" name="__codelineno-57-29" href="#__codelineno-57-29"></a><span class="w">            </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-registry/data-validator:latest</span>
+</span><span id="__span-57-30"><a id="__codelineno-57-30" name="__codelineno-57-30" href="#__codelineno-57-30"></a><span class="w">            </span><span class="nt">command</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"/bin/sh"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-57-31"><a id="__codelineno-57-31" name="__codelineno-57-31" href="#__codelineno-57-31"></a><span class="w">            </span><span class="nt">args</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"-c"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"/scripts/validate-restore.sh"</span><span class="p p-Indicator">]</span>
+</span><span id="__span-57-32"><a id="__codelineno-57-32" name="__codelineno-57-32" href="#__codelineno-57-32"></a><span class="w">            </span><span class="nt">env</span><span class="p">:</span>
+</span><span id="__span-57-33"><a id="__codelineno-57-33" name="__codelineno-57-33" href="#__codelineno-57-33"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_URI</span>
+</span><span id="__span-57-34"><a id="__codelineno-57-34" name="__codelineno-57-34" href="#__codelineno-57-34"></a><span class="w">                </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"neo4j://staging-standalone-client:7687"</span>
+</span><span id="__span-57-35"><a id="__codelineno-57-35" name="__codelineno-57-35" href="#__codelineno-57-35"></a><span class="w">              </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_PASSWORD</span>
+</span><span id="__span-57-36"><a id="__codelineno-57-36" name="__codelineno-57-36" href="#__codelineno-57-36"></a><span class="w">                </span><span class="nt">valueFrom</span><span class="p">:</span>
+</span><span id="__span-57-37"><a id="__codelineno-57-37" name="__codelineno-57-37" href="#__codelineno-57-37"></a><span class="w">                  </span><span class="nt">secretKeyRef</span><span class="p">:</span>
+</span><span id="__span-57-38"><a id="__codelineno-57-38" name="__codelineno-57-38" href="#__codelineno-57-38"></a><span class="w">                    </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">staging-admin-secret</span>
+</span><span id="__span-57-39"><a id="__codelineno-57-39" name="__codelineno-57-39" href="#__codelineno-57-39"></a><span class="w">                    </span><span class="nt">key</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">password</span>
+</span><span id="__span-57-40"><a id="__codelineno-57-40" name="__codelineno-57-40" href="#__codelineno-57-40"></a><span class="w">        </span><span class="nt">timeout</span><span class="p">:</span><span class="w"> </span><span class="s">"15m"</span>
 </span></code></pre></div>
 <hr />
 <h2 id="monitoring-backup-and-restore-operations">Monitoring Backup and Restore Operations<a class="headerlink" href="#monitoring-backup-and-restore-operations" title="Anchor link to this section">&para;</a></h2>
 <h3 id="checking-backup-status">Checking Backup Status<a class="headerlink" href="#checking-backup-status" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-57-1"><a id="__codelineno-57-1" name="__codelineno-57-1" href="#__codelineno-57-1"></a><span class="c1"># List all backups</span>
-</span><span id="__span-57-2"><a id="__codelineno-57-2" name="__codelineno-57-2" href="#__codelineno-57-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackups
-</span><span id="__span-57-3"><a id="__codelineno-57-3" name="__codelineno-57-3" href="#__codelineno-57-3"></a>
-</span><span id="__span-57-4"><a id="__codelineno-57-4" name="__codelineno-57-4" href="#__codelineno-57-4"></a><span class="c1"># Get detailed backup status</span>
-</span><span id="__span-57-5"><a id="__codelineno-57-5" name="__codelineno-57-5" href="#__codelineno-57-5"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jbackup<span class="w"> </span>daily-backup
-</span><span id="__span-57-6"><a id="__codelineno-57-6" name="__codelineno-57-6" href="#__codelineno-57-6"></a>
-</span><span id="__span-57-7"><a id="__codelineno-57-7" name="__codelineno-57-7" href="#__codelineno-57-7"></a><span class="c1"># View backup history — for SCHEDULED backups this is the authoritative record:</span>
-</span><span id="__span-57-8"><a id="__codelineno-57-8" name="__codelineno-57-8" href="#__codelineno-57-8"></a><span class="c1"># they stay in phase "Scheduled" (never "Completed") and don't set</span>
-</span><span id="__span-57-9"><a id="__codelineno-57-9" name="__codelineno-57-9" href="#__codelineno-57-9"></a><span class="c1"># status.lastSuccessTime; each run appends here instead.</span>
-</span><span id="__span-57-10"><a id="__codelineno-57-10" name="__codelineno-57-10" href="#__codelineno-57-10"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>daily-backup<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.history}'</span>
-</span><span id="__span-57-11"><a id="__codelineno-57-11" name="__codelineno-57-11" href="#__codelineno-57-11"></a>
-</span><span id="__span-57-12"><a id="__codelineno-57-12" name="__codelineno-57-12" href="#__codelineno-57-12"></a><span class="c1"># Check backup job logs (one-shot: &lt;name&gt;-backup; scheduled runs: use the</span>
-</span><span id="__span-57-13"><a id="__codelineno-57-13" name="__codelineno-57-13" href="#__codelineno-57-13"></a><span class="c1"># history entry's runID, which is the Job name)</span>
-</span><span id="__span-57-14"><a id="__codelineno-57-14" name="__codelineno-57-14" href="#__codelineno-57-14"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>job/daily-backup-backup
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-58-1"><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a><span class="c1"># List all backups</span>
+</span><span id="__span-58-2"><a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackups
+</span><span id="__span-58-3"><a id="__codelineno-58-3" name="__codelineno-58-3" href="#__codelineno-58-3"></a>
+</span><span id="__span-58-4"><a id="__codelineno-58-4" name="__codelineno-58-4" href="#__codelineno-58-4"></a><span class="c1"># Get detailed backup status</span>
+</span><span id="__span-58-5"><a id="__codelineno-58-5" name="__codelineno-58-5" href="#__codelineno-58-5"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jbackup<span class="w"> </span>daily-backup
+</span><span id="__span-58-6"><a id="__codelineno-58-6" name="__codelineno-58-6" href="#__codelineno-58-6"></a>
+</span><span id="__span-58-7"><a id="__codelineno-58-7" name="__codelineno-58-7" href="#__codelineno-58-7"></a><span class="c1"># View backup history — for SCHEDULED backups this is the authoritative record:</span>
+</span><span id="__span-58-8"><a id="__codelineno-58-8" name="__codelineno-58-8" href="#__codelineno-58-8"></a><span class="c1"># they stay in phase "Scheduled" (never "Completed") and don't set</span>
+</span><span id="__span-58-9"><a id="__codelineno-58-9" name="__codelineno-58-9" href="#__codelineno-58-9"></a><span class="c1"># status.lastSuccessTime; each run appends here instead.</span>
+</span><span id="__span-58-10"><a id="__codelineno-58-10" name="__codelineno-58-10" href="#__codelineno-58-10"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jbackup<span class="w"> </span>daily-backup<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.history}'</span>
+</span><span id="__span-58-11"><a id="__codelineno-58-11" name="__codelineno-58-11" href="#__codelineno-58-11"></a>
+</span><span id="__span-58-12"><a id="__codelineno-58-12" name="__codelineno-58-12" href="#__codelineno-58-12"></a><span class="c1"># Check backup job logs (one-shot: &lt;name&gt;-backup; scheduled runs: use the</span>
+</span><span id="__span-58-13"><a id="__codelineno-58-13" name="__codelineno-58-13" href="#__codelineno-58-13"></a><span class="c1"># history entry's runID, which is the Job name)</span>
+</span><span id="__span-58-14"><a id="__codelineno-58-14" name="__codelineno-58-14" href="#__codelineno-58-14"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>job/daily-backup-backup
 </span></code></pre></div>
 <h3 id="checking-restore-status">Checking Restore Status<a class="headerlink" href="#checking-restore-status" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-58-1"><a id="__codelineno-58-1" name="__codelineno-58-1" href="#__codelineno-58-1"></a><span class="c1"># List all restores</span>
-</span><span id="__span-58-2"><a id="__codelineno-58-2" name="__codelineno-58-2" href="#__codelineno-58-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jrestores
-</span><span id="__span-58-3"><a id="__codelineno-58-3" name="__codelineno-58-3" href="#__codelineno-58-3"></a>
-</span><span id="__span-58-4"><a id="__codelineno-58-4" name="__codelineno-58-4" href="#__codelineno-58-4"></a><span class="c1"># Get detailed restore status — the events name the path (online or offline)</span>
-</span><span id="__span-58-5"><a id="__codelineno-58-5" name="__codelineno-58-5" href="#__codelineno-58-5"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jrestore<span class="w"> </span>restore-operation
-</span><span id="__span-58-6"><a id="__codelineno-58-6" name="__codelineno-58-6" href="#__codelineno-58-6"></a>
-</span><span id="__span-58-7"><a id="__codelineno-58-7" name="__codelineno-58-7" href="#__codelineno-58-7"></a><span class="c1"># Offline standalone restores only: the restore Job's log</span>
-</span><span id="__span-58-8"><a id="__codelineno-58-8" name="__codelineno-58-8" href="#__codelineno-58-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>job/restore-operation-restore
-</span><span id="__span-58-9"><a id="__codelineno-58-9" name="__codelineno-58-9" href="#__codelineno-58-9"></a>
-</span><span id="__span-58-10"><a id="__codelineno-58-10" name="__codelineno-58-10" href="#__codelineno-58-10"></a><span class="c1"># Monitor restore progress</span>
-</span><span id="__span-58-11"><a id="__codelineno-58-11" name="__codelineno-58-11" href="#__codelineno-58-11"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jrestore<span class="w"> </span>restore-operation<span class="w"> </span>-w
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-59-1"><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a><span class="c1"># List all restores</span>
+</span><span id="__span-59-2"><a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jrestores
+</span><span id="__span-59-3"><a id="__codelineno-59-3" name="__codelineno-59-3" href="#__codelineno-59-3"></a>
+</span><span id="__span-59-4"><a id="__codelineno-59-4" name="__codelineno-59-4" href="#__codelineno-59-4"></a><span class="c1"># Get detailed restore status — the events name the path (online or offline)</span>
+</span><span id="__span-59-5"><a id="__codelineno-59-5" name="__codelineno-59-5" href="#__codelineno-59-5"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jrestore<span class="w"> </span>restore-operation
+</span><span id="__span-59-6"><a id="__codelineno-59-6" name="__codelineno-59-6" href="#__codelineno-59-6"></a>
+</span><span id="__span-59-7"><a id="__codelineno-59-7" name="__codelineno-59-7" href="#__codelineno-59-7"></a><span class="c1"># Offline standalone restores only: the restore Job's log</span>
+</span><span id="__span-59-8"><a id="__codelineno-59-8" name="__codelineno-59-8" href="#__codelineno-59-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>job/restore-operation-restore
+</span><span id="__span-59-9"><a id="__codelineno-59-9" name="__codelineno-59-9" href="#__codelineno-59-9"></a>
+</span><span id="__span-59-10"><a id="__codelineno-59-10" name="__codelineno-59-10" href="#__codelineno-59-10"></a><span class="c1"># Monitor restore progress</span>
+</span><span id="__span-59-11"><a id="__codelineno-59-11" name="__codelineno-59-11" href="#__codelineno-59-11"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jrestore<span class="w"> </span>restore-operation<span class="w"> </span>-w
 </span></code></pre></div>
 <h3 id="backup-and-restore-events">Backup and Restore Events<a class="headerlink" href="#backup-and-restore-events" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-59-1"><a id="__codelineno-59-1" name="__codelineno-59-1" href="#__codelineno-59-1"></a><span class="c1"># View events for backup operations</span>
-</span><span id="__span-59-2"><a id="__codelineno-59-2" name="__codelineno-59-2" href="#__codelineno-59-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.name<span class="o">=</span>daily-backup
-</span><span id="__span-59-3"><a id="__codelineno-59-3" name="__codelineno-59-3" href="#__codelineno-59-3"></a>
-</span><span id="__span-59-4"><a id="__codelineno-59-4" name="__codelineno-59-4" href="#__codelineno-59-4"></a><span class="c1"># View events for restore operations</span>
-</span><span id="__span-59-5"><a id="__codelineno-59-5" name="__codelineno-59-5" href="#__codelineno-59-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.name<span class="o">=</span>restore-operation
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-60-1"><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a><span class="c1"># View events for backup operations</span>
+</span><span id="__span-60-2"><a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.name<span class="o">=</span>daily-backup
+</span><span id="__span-60-3"><a id="__codelineno-60-3" name="__codelineno-60-3" href="#__codelineno-60-3"></a>
+</span><span id="__span-60-4"><a id="__codelineno-60-4" name="__codelineno-60-4" href="#__codelineno-60-4"></a><span class="c1"># View events for restore operations</span>
+</span><span id="__span-60-5"><a id="__codelineno-60-5" name="__codelineno-60-5" href="#__codelineno-60-5"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.name<span class="o">=</span>restore-operation
 </span></code></pre></div>
 <hr />
 <h2 id="operational-notes">Operational Notes<a class="headerlink" href="#operational-notes" title="Anchor link to this section">&para;</a></h2>
@@ -7347,40 +7451,40 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 <h2 id="advanced-configuration">Advanced Configuration<a class="headerlink" href="#advanced-configuration" title="Anchor link to this section">&para;</a></h2>
 <h3 id="cloud-storage-authentication-full-reference">Cloud Storage Authentication (Full Reference)<a class="headerlink" href="#cloud-storage-authentication-full-reference" title="Anchor link to this section">&para;</a></h3>
 <p>The <code>cloud</code> block inside <code>storage</code> supports the following fields:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-60-1"><a id="__codelineno-60-1" name="__codelineno-60-1" href="#__codelineno-60-1"></a><span class="nt">storage</span><span class="p">:</span>
-</span><span id="__span-60-2"><a id="__codelineno-60-2" name="__codelineno-60-2" href="#__codelineno-60-2"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3 | gcs | azure</span>
-</span><span id="__span-60-3"><a id="__codelineno-60-3" name="__codelineno-60-3" href="#__codelineno-60-3"></a><span class="w">  </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;bucket-or-container-name&gt;</span>
-</span><span id="__span-60-4"><a id="__codelineno-60-4" name="__codelineno-60-4" href="#__codelineno-60-4"></a><span class="w">  </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;prefix-within-bucket&gt;</span>
-</span><span id="__span-60-5"><a id="__codelineno-60-5" name="__codelineno-60-5" href="#__codelineno-60-5"></a><span class="w">  </span><span class="nt">cloud</span><span class="p">:</span>
-</span><span id="__span-60-6"><a id="__codelineno-60-6" name="__codelineno-60-6" href="#__codelineno-60-6"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws | gcp | azure</span>
-</span><span id="__span-60-7"><a id="__codelineno-60-7" name="__codelineno-60-7" href="#__codelineno-60-7"></a>
-</span><span id="__span-60-8"><a id="__codelineno-60-8" name="__codelineno-60-8" href="#__codelineno-60-8"></a><span class="w">    </span><span class="c1"># Path 1: Explicit credentials</span>
-</span><span id="__span-60-9"><a id="__codelineno-60-9" name="__codelineno-60-9" href="#__codelineno-60-9"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;secret-name&gt;</span>
-</span><span id="__span-60-10"><a id="__codelineno-60-10" name="__codelineno-60-10" href="#__codelineno-60-10"></a><span class="w">    </span><span class="c1"># Secret keys by provider:</span>
-</span><span id="__span-60-11"><a id="__codelineno-60-11" name="__codelineno-60-11" href="#__codelineno-60-11"></a><span class="w">    </span><span class="c1">#   AWS: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION</span>
-</span><span id="__span-60-12"><a id="__codelineno-60-12" name="__codelineno-60-12" href="#__codelineno-60-12"></a><span class="w">    </span><span class="c1">#   GCP: GOOGLE_APPLICATION_CREDENTIALS_JSON (must be this exact key)</span>
-</span><span id="__span-60-13"><a id="__codelineno-60-13" name="__codelineno-60-13" href="#__codelineno-60-13"></a><span class="w">    </span><span class="c1">#   Azure: AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY</span>
-</span><span id="__span-60-14"><a id="__codelineno-60-14" name="__codelineno-60-14" href="#__codelineno-60-14"></a>
-</span><span id="__span-60-15"><a id="__codelineno-60-15" name="__codelineno-60-15" href="#__codelineno-60-15"></a><span class="w">    </span><span class="c1"># Path 2: Workload Identity annotations on neo4j-backup-sa</span>
-</span><span id="__span-60-16"><a id="__codelineno-60-16" name="__codelineno-60-16" href="#__codelineno-60-16"></a><span class="w">    </span><span class="nt">identity</span><span class="p">:</span>
-</span><span id="__span-60-17"><a id="__codelineno-60-17" name="__codelineno-60-17" href="#__codelineno-60-17"></a><span class="w">      </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws | gcp | azure</span><span class="w">   </span><span class="c1"># required; match the storage provider</span>
-</span><span id="__span-60-18"><a id="__codelineno-60-18" name="__codelineno-60-18" href="#__codelineno-60-18"></a><span class="w">      </span><span class="nt">autoCreate</span><span class="p">:</span>
-</span><span id="__span-60-19"><a id="__codelineno-60-19" name="__codelineno-60-19" href="#__codelineno-60-19"></a><span class="w">        </span><span class="nt">annotations</span><span class="p">:</span>
-</span><span id="__span-60-20"><a id="__codelineno-60-20" name="__codelineno-60-20" href="#__codelineno-60-20"></a><span class="w">          </span><span class="nt">&lt;annotation-key&gt;</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;annotation-value&gt;</span>
-</span><span id="__span-60-21"><a id="__codelineno-60-21" name="__codelineno-60-21" href="#__codelineno-60-21"></a><span class="w">        </span><span class="c1"># Examples:</span>
-</span><span id="__span-60-22"><a id="__codelineno-60-22" name="__codelineno-60-22" href="#__codelineno-60-22"></a><span class="w">        </span><span class="c1">#   AWS IRSA:  eks.amazonaws.com/role-arn: arn:aws:iam::...</span>
-</span><span id="__span-60-23"><a id="__codelineno-60-23" name="__codelineno-60-23" href="#__codelineno-60-23"></a><span class="w">        </span><span class="c1">#   GKE WI:    iam.gke.io/gcp-service-account: sa@project.iam.gserviceaccount.com</span>
-</span><span id="__span-60-24"><a id="__codelineno-60-24" name="__codelineno-60-24" href="#__codelineno-60-24"></a><span class="w">        </span><span class="c1">#   Azure WI:  azure.workload.identity/client-id: &lt;client-id&gt;</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-61-1"><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a><span class="nt">storage</span><span class="p">:</span>
+</span><span id="__span-61-2"><a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a><span class="w">  </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">s3 | gcs | azure</span>
+</span><span id="__span-61-3"><a id="__codelineno-61-3" name="__codelineno-61-3" href="#__codelineno-61-3"></a><span class="w">  </span><span class="nt">bucket</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;bucket-or-container-name&gt;</span>
+</span><span id="__span-61-4"><a id="__codelineno-61-4" name="__codelineno-61-4" href="#__codelineno-61-4"></a><span class="w">  </span><span class="nt">path</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;prefix-within-bucket&gt;</span>
+</span><span id="__span-61-5"><a id="__codelineno-61-5" name="__codelineno-61-5" href="#__codelineno-61-5"></a><span class="w">  </span><span class="nt">cloud</span><span class="p">:</span>
+</span><span id="__span-61-6"><a id="__codelineno-61-6" name="__codelineno-61-6" href="#__codelineno-61-6"></a><span class="w">    </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws | gcp | azure</span>
+</span><span id="__span-61-7"><a id="__codelineno-61-7" name="__codelineno-61-7" href="#__codelineno-61-7"></a>
+</span><span id="__span-61-8"><a id="__codelineno-61-8" name="__codelineno-61-8" href="#__codelineno-61-8"></a><span class="w">    </span><span class="c1"># Path 1: Explicit credentials</span>
+</span><span id="__span-61-9"><a id="__codelineno-61-9" name="__codelineno-61-9" href="#__codelineno-61-9"></a><span class="w">    </span><span class="nt">credentialsSecretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;secret-name&gt;</span>
+</span><span id="__span-61-10"><a id="__codelineno-61-10" name="__codelineno-61-10" href="#__codelineno-61-10"></a><span class="w">    </span><span class="c1"># Secret keys by provider:</span>
+</span><span id="__span-61-11"><a id="__codelineno-61-11" name="__codelineno-61-11" href="#__codelineno-61-11"></a><span class="w">    </span><span class="c1">#   AWS: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION</span>
+</span><span id="__span-61-12"><a id="__codelineno-61-12" name="__codelineno-61-12" href="#__codelineno-61-12"></a><span class="w">    </span><span class="c1">#   GCP: GOOGLE_APPLICATION_CREDENTIALS_JSON (must be this exact key)</span>
+</span><span id="__span-61-13"><a id="__codelineno-61-13" name="__codelineno-61-13" href="#__codelineno-61-13"></a><span class="w">    </span><span class="c1">#   Azure: AZURE_STORAGE_ACCOUNT, AZURE_STORAGE_KEY</span>
+</span><span id="__span-61-14"><a id="__codelineno-61-14" name="__codelineno-61-14" href="#__codelineno-61-14"></a>
+</span><span id="__span-61-15"><a id="__codelineno-61-15" name="__codelineno-61-15" href="#__codelineno-61-15"></a><span class="w">    </span><span class="c1"># Path 2: Workload Identity annotations on neo4j-backup-sa</span>
+</span><span id="__span-61-16"><a id="__codelineno-61-16" name="__codelineno-61-16" href="#__codelineno-61-16"></a><span class="w">    </span><span class="nt">identity</span><span class="p">:</span>
+</span><span id="__span-61-17"><a id="__codelineno-61-17" name="__codelineno-61-17" href="#__codelineno-61-17"></a><span class="w">      </span><span class="nt">provider</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">aws | gcp | azure</span><span class="w">   </span><span class="c1"># required; match the storage provider</span>
+</span><span id="__span-61-18"><a id="__codelineno-61-18" name="__codelineno-61-18" href="#__codelineno-61-18"></a><span class="w">      </span><span class="nt">autoCreate</span><span class="p">:</span>
+</span><span id="__span-61-19"><a id="__codelineno-61-19" name="__codelineno-61-19" href="#__codelineno-61-19"></a><span class="w">        </span><span class="nt">annotations</span><span class="p">:</span>
+</span><span id="__span-61-20"><a id="__codelineno-61-20" name="__codelineno-61-20" href="#__codelineno-61-20"></a><span class="w">          </span><span class="nt">&lt;annotation-key&gt;</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;annotation-value&gt;</span>
+</span><span id="__span-61-21"><a id="__codelineno-61-21" name="__codelineno-61-21" href="#__codelineno-61-21"></a><span class="w">        </span><span class="c1"># Examples:</span>
+</span><span id="__span-61-22"><a id="__codelineno-61-22" name="__codelineno-61-22" href="#__codelineno-61-22"></a><span class="w">        </span><span class="c1">#   AWS IRSA:  eks.amazonaws.com/role-arn: arn:aws:iam::...</span>
+</span><span id="__span-61-23"><a id="__codelineno-61-23" name="__codelineno-61-23" href="#__codelineno-61-23"></a><span class="w">        </span><span class="c1">#   GKE WI:    iam.gke.io/gcp-service-account: sa@project.iam.gserviceaccount.com</span>
+</span><span id="__span-61-24"><a id="__codelineno-61-24" name="__codelineno-61-24" href="#__codelineno-61-24"></a><span class="w">        </span><span class="c1">#   Azure WI:  azure.workload.identity/client-id: &lt;client-id&gt;</span>
 </span></code></pre></div>
 <p>Only one of <code>credentialsSecretRef</code> or <code>identity</code> should be specified at a time.</p>
 <h3 id="temporary-storage-for-cloud-operations">Temporary Storage for Cloud Operations<a class="headerlink" href="#temporary-storage-for-cloud-operations" title="Anchor link to this section">&para;</a></h3>
 <p>Cloud backups and restores require local staging space for <code>neo4j-admin</code>. Without explicit temp storage, staging uses the container's ephemeral disk, which may be too small for large databases.</p>
 <p>The <code>tempStorage</code> field tells the operator to create a PVC for staging automatically:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-61-1"><a id="__codelineno-61-1" name="__codelineno-61-1" href="#__codelineno-61-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-61-2"><a id="__codelineno-61-2" name="__codelineno-61-2" href="#__codelineno-61-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-61-3"><a id="__codelineno-61-3" name="__codelineno-61-3" href="#__codelineno-61-3"></a><span class="w">    </span><span class="nt">tempStorage</span><span class="p">:</span>
-</span><span id="__span-61-4"><a id="__codelineno-61-4" name="__codelineno-61-4" href="#__codelineno-61-4"></a><span class="w">      </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="s">"50Gi"</span><span class="w">              </span><span class="c1"># should be &gt;= expected backup size</span>
-</span><span id="__span-61-5"><a id="__codelineno-61-5" name="__codelineno-61-5" href="#__codelineno-61-5"></a><span class="w">      </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gp3</span><span class="w">     </span><span class="c1"># optional, uses cluster default if omitted</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-62-1"><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-62-2"><a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-62-3"><a id="__codelineno-62-3" name="__codelineno-62-3" href="#__codelineno-62-3"></a><span class="w">    </span><span class="nt">tempStorage</span><span class="p">:</span>
+</span><span id="__span-62-4"><a id="__codelineno-62-4" name="__codelineno-62-4" href="#__codelineno-62-4"></a><span class="w">      </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="s">"50Gi"</span><span class="w">              </span><span class="c1"># should be &gt;= expected backup size</span>
+</span><span id="__span-62-5"><a id="__codelineno-62-5" name="__codelineno-62-5" href="#__codelineno-62-5"></a><span class="w">      </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gp3</span><span class="w">     </span><span class="c1"># optional, uses cluster default if omitted</span>
 </span></code></pre></div>
 <p>The operator:</p>
 <ol>
@@ -7391,50 +7495,50 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </ol>
 <p>If you prefer to manage the PVC yourself, use <code>tempPath</code> instead (points to any path you've mounted via <code>additionalArgs</code> or other means).</p>
 <h3 id="backup-options-reference">Backup Options Reference<a class="headerlink" href="#backup-options-reference" title="Anchor link to this section">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-62-1"><a id="__codelineno-62-1" name="__codelineno-62-1" href="#__codelineno-62-1"></a><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-62-2"><a id="__codelineno-62-2" name="__codelineno-62-2" href="#__codelineno-62-2"></a><span class="w">  </span><span class="c1"># Backup type: AUTO (default — FULL first run, DIFF after), FULL, or DIFF</span>
-</span><span id="__span-62-3"><a id="__codelineno-62-3" name="__codelineno-62-3" href="#__codelineno-62-3"></a><span class="w">  </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTO</span>
-</span><span id="__span-62-4"><a id="__codelineno-62-4" name="__codelineno-62-4" href="#__codelineno-62-4"></a>
-</span><span id="__span-62-5"><a id="__codelineno-62-5" name="__codelineno-62-5" href="#__codelineno-62-5"></a><span class="w">  </span><span class="c1"># For DIFF backups on CalVer 2025.04+: use latest diff instead of latest full as parent</span>
-</span><span id="__span-62-6"><a id="__codelineno-62-6" name="__codelineno-62-6" href="#__codelineno-62-6"></a><span class="w">  </span><span class="nt">preferDiffAsParent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="__span-62-7"><a id="__codelineno-62-7" name="__codelineno-62-7" href="#__codelineno-62-7"></a>
-</span><span id="__span-62-8"><a id="__codelineno-62-8" name="__codelineno-62-8" href="#__codelineno-62-8"></a><span class="w">  </span><span class="c1"># Compress backup data (recommended)</span>
-</span><span id="__span-62-9"><a id="__codelineno-62-9" name="__codelineno-62-9" href="#__codelineno-62-9"></a><span class="w">  </span><span class="nt">compress</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-62-10"><a id="__codelineno-62-10" name="__codelineno-62-10" href="#__codelineno-62-10"></a>
-</span><span id="__span-62-11"><a id="__codelineno-62-11" name="__codelineno-62-11" href="#__codelineno-62-11"></a><span class="w">  </span><span class="c1"># Validate backup recoverability after creation by running</span>
-</span><span id="__span-62-12"><a id="__codelineno-62-12" name="__codelineno-62-12" href="#__codelineno-62-12"></a><span class="w">  </span><span class="c1"># `neo4j-admin backup validate`. Failures are recorded on</span>
-</span><span id="__span-62-13"><a id="__codelineno-62-13" name="__codelineno-62-13" href="#__codelineno-62-13"></a><span class="w">  </span><span class="c1"># status.history[].validation but do NOT fail the Job.</span>
-</span><span id="__span-62-14"><a id="__codelineno-62-14" name="__codelineno-62-14" href="#__codelineno-62-14"></a><span class="w">  </span><span class="c1"># Requires a CalVer (2025.x+) image — no effect on 5.26 (subcommand</span>
-</span><span id="__span-62-15"><a id="__codelineno-62-15" name="__codelineno-62-15" href="#__codelineno-62-15"></a><span class="w">  </span><span class="c1"># does not exist); the operator emits a BackupValidateUnsupported warning.</span>
-</span><span id="__span-62-16"><a id="__codelineno-62-16" name="__codelineno-62-16" href="#__codelineno-62-16"></a><span class="w">  </span><span class="nt">validate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-62-17"><a id="__codelineno-62-17" name="__codelineno-62-17" href="#__codelineno-62-17"></a>
-</span><span id="__span-62-18"><a id="__codelineno-62-18" name="__codelineno-62-18" href="#__codelineno-62-18"></a><span class="w">  </span><span class="c1"># Operator-managed staging PVC for cloud operations (recommended for large databases)</span>
-</span><span id="__span-62-19"><a id="__codelineno-62-19" name="__codelineno-62-19" href="#__codelineno-62-19"></a><span class="w">  </span><span class="nt">tempStorage</span><span class="p">:</span>
-</span><span id="__span-62-20"><a id="__codelineno-62-20" name="__codelineno-62-20" href="#__codelineno-62-20"></a><span class="w">    </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="s">"50Gi"</span>
-</span><span id="__span-62-21"><a id="__codelineno-62-21" name="__codelineno-62-21" href="#__codelineno-62-21"></a><span class="w">    </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gp3</span><span class="w">  </span><span class="c1"># optional</span>
-</span><span id="__span-62-22"><a id="__codelineno-62-22" name="__codelineno-62-22" href="#__codelineno-62-22"></a>
-</span><span id="__span-62-23"><a id="__codelineno-62-23" name="__codelineno-62-23" href="#__codelineno-62-23"></a><span class="w">  </span><span class="c1"># Manual temp path (alternative to tempStorage — you must mount the volume yourself)</span>
-</span><span id="__span-62-24"><a id="__codelineno-62-24" name="__codelineno-62-24" href="#__codelineno-62-24"></a><span class="w">  </span><span class="c1"># tempPath: /my/mounted/volume</span>
-</span><span id="__span-62-25"><a id="__codelineno-62-25" name="__codelineno-62-25" href="#__codelineno-62-25"></a>
-</span><span id="__span-62-26"><a id="__codelineno-62-26" name="__codelineno-62-26" href="#__codelineno-62-26"></a><span class="w">  </span><span class="c1"># Include users/roles metadata in backup (Neo4j 5.26+)</span>
-</span><span id="__span-62-27"><a id="__codelineno-62-27" name="__codelineno-62-27" href="#__codelineno-62-27"></a><span class="w">  </span><span class="c1"># Values: all (default), none, users, roles</span>
-</span><span id="__span-62-28"><a id="__codelineno-62-28" name="__codelineno-62-28" href="#__codelineno-62-28"></a><span class="w">  </span><span class="nt">includeMetadata</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">all</span>
-</span><span id="__span-62-29"><a id="__codelineno-62-29" name="__codelineno-62-29" href="#__codelineno-62-29"></a>
-</span><span id="__span-62-30"><a id="__codelineno-62-30" name="__codelineno-62-30" href="#__codelineno-62-30"></a><span class="w">  </span><span class="c1"># Multi-threaded transaction application during backup</span>
-</span><span id="__span-62-31"><a id="__codelineno-62-31" name="__codelineno-62-31" href="#__codelineno-62-31"></a><span class="w">  </span><span class="nt">parallelRecovery</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="__span-62-32"><a id="__codelineno-62-32" name="__codelineno-62-32" href="#__codelineno-62-32"></a>
-</span><span id="__span-62-33"><a id="__codelineno-62-33" name="__codelineno-62-33" href="#__codelineno-62-33"></a><span class="w">  </span><span class="c1"># Preserve failed backup artifacts for debugging</span>
-</span><span id="__span-62-34"><a id="__codelineno-62-34" name="__codelineno-62-34" href="#__codelineno-62-34"></a><span class="w">  </span><span class="nt">keepFailed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
-</span><span id="__span-62-35"><a id="__codelineno-62-35" name="__codelineno-62-35" href="#__codelineno-62-35"></a>
-</span><span id="__span-62-36"><a id="__codelineno-62-36" name="__codelineno-62-36" href="#__codelineno-62-36"></a><span class="w">  </span><span class="c1"># Pass additional flags directly to neo4j-admin database backup</span>
-</span><span id="__span-62-37"><a id="__codelineno-62-37" name="__codelineno-62-37" href="#__codelineno-62-37"></a><span class="w">  </span><span class="nt">additionalArgs</span><span class="p">:</span>
-</span><span id="__span-62-38"><a id="__codelineno-62-38" name="__codelineno-62-38" href="#__codelineno-62-38"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--verbose"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-63-1"><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-63-2"><a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a><span class="w">  </span><span class="c1"># Backup type: AUTO (default — FULL first run, DIFF after), FULL, or DIFF</span>
+</span><span id="__span-63-3"><a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a><span class="w">  </span><span class="nt">backupType</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AUTO</span>
+</span><span id="__span-63-4"><a id="__codelineno-63-4" name="__codelineno-63-4" href="#__codelineno-63-4"></a>
+</span><span id="__span-63-5"><a id="__codelineno-63-5" name="__codelineno-63-5" href="#__codelineno-63-5"></a><span class="w">  </span><span class="c1"># For DIFF backups on CalVer 2025.04+: use latest diff instead of latest full as parent</span>
+</span><span id="__span-63-6"><a id="__codelineno-63-6" name="__codelineno-63-6" href="#__codelineno-63-6"></a><span class="w">  </span><span class="nt">preferDiffAsParent</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-63-7"><a id="__codelineno-63-7" name="__codelineno-63-7" href="#__codelineno-63-7"></a>
+</span><span id="__span-63-8"><a id="__codelineno-63-8" name="__codelineno-63-8" href="#__codelineno-63-8"></a><span class="w">  </span><span class="c1"># Compress backup data (recommended)</span>
+</span><span id="__span-63-9"><a id="__codelineno-63-9" name="__codelineno-63-9" href="#__codelineno-63-9"></a><span class="w">  </span><span class="nt">compress</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-63-10"><a id="__codelineno-63-10" name="__codelineno-63-10" href="#__codelineno-63-10"></a>
+</span><span id="__span-63-11"><a id="__codelineno-63-11" name="__codelineno-63-11" href="#__codelineno-63-11"></a><span class="w">  </span><span class="c1"># Validate backup recoverability after creation by running</span>
+</span><span id="__span-63-12"><a id="__codelineno-63-12" name="__codelineno-63-12" href="#__codelineno-63-12"></a><span class="w">  </span><span class="c1"># `neo4j-admin backup validate`. Failures are recorded on</span>
+</span><span id="__span-63-13"><a id="__codelineno-63-13" name="__codelineno-63-13" href="#__codelineno-63-13"></a><span class="w">  </span><span class="c1"># status.history[].validation but do NOT fail the Job.</span>
+</span><span id="__span-63-14"><a id="__codelineno-63-14" name="__codelineno-63-14" href="#__codelineno-63-14"></a><span class="w">  </span><span class="c1"># Requires a CalVer (2025.x+) image — no effect on 5.26 (subcommand</span>
+</span><span id="__span-63-15"><a id="__codelineno-63-15" name="__codelineno-63-15" href="#__codelineno-63-15"></a><span class="w">  </span><span class="c1"># does not exist); the operator emits a BackupValidateUnsupported warning.</span>
+</span><span id="__span-63-16"><a id="__codelineno-63-16" name="__codelineno-63-16" href="#__codelineno-63-16"></a><span class="w">  </span><span class="nt">validate</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-63-17"><a id="__codelineno-63-17" name="__codelineno-63-17" href="#__codelineno-63-17"></a>
+</span><span id="__span-63-18"><a id="__codelineno-63-18" name="__codelineno-63-18" href="#__codelineno-63-18"></a><span class="w">  </span><span class="c1"># Operator-managed staging PVC for cloud operations (recommended for large databases)</span>
+</span><span id="__span-63-19"><a id="__codelineno-63-19" name="__codelineno-63-19" href="#__codelineno-63-19"></a><span class="w">  </span><span class="nt">tempStorage</span><span class="p">:</span>
+</span><span id="__span-63-20"><a id="__codelineno-63-20" name="__codelineno-63-20" href="#__codelineno-63-20"></a><span class="w">    </span><span class="nt">size</span><span class="p">:</span><span class="w"> </span><span class="s">"50Gi"</span>
+</span><span id="__span-63-21"><a id="__codelineno-63-21" name="__codelineno-63-21" href="#__codelineno-63-21"></a><span class="w">    </span><span class="nt">storageClassName</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gp3</span><span class="w">  </span><span class="c1"># optional</span>
+</span><span id="__span-63-22"><a id="__codelineno-63-22" name="__codelineno-63-22" href="#__codelineno-63-22"></a>
+</span><span id="__span-63-23"><a id="__codelineno-63-23" name="__codelineno-63-23" href="#__codelineno-63-23"></a><span class="w">  </span><span class="c1"># Manual temp path (alternative to tempStorage — you must mount the volume yourself)</span>
+</span><span id="__span-63-24"><a id="__codelineno-63-24" name="__codelineno-63-24" href="#__codelineno-63-24"></a><span class="w">  </span><span class="c1"># tempPath: /my/mounted/volume</span>
+</span><span id="__span-63-25"><a id="__codelineno-63-25" name="__codelineno-63-25" href="#__codelineno-63-25"></a>
+</span><span id="__span-63-26"><a id="__codelineno-63-26" name="__codelineno-63-26" href="#__codelineno-63-26"></a><span class="w">  </span><span class="c1"># Include users/roles metadata in backup (Neo4j 5.26+)</span>
+</span><span id="__span-63-27"><a id="__codelineno-63-27" name="__codelineno-63-27" href="#__codelineno-63-27"></a><span class="w">  </span><span class="c1"># Values: all (default), none, users, roles</span>
+</span><span id="__span-63-28"><a id="__codelineno-63-28" name="__codelineno-63-28" href="#__codelineno-63-28"></a><span class="w">  </span><span class="nt">includeMetadata</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">all</span>
+</span><span id="__span-63-29"><a id="__codelineno-63-29" name="__codelineno-63-29" href="#__codelineno-63-29"></a>
+</span><span id="__span-63-30"><a id="__codelineno-63-30" name="__codelineno-63-30" href="#__codelineno-63-30"></a><span class="w">  </span><span class="c1"># Multi-threaded transaction application during backup</span>
+</span><span id="__span-63-31"><a id="__codelineno-63-31" name="__codelineno-63-31" href="#__codelineno-63-31"></a><span class="w">  </span><span class="nt">parallelRecovery</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-63-32"><a id="__codelineno-63-32" name="__codelineno-63-32" href="#__codelineno-63-32"></a>
+</span><span id="__span-63-33"><a id="__codelineno-63-33" name="__codelineno-63-33" href="#__codelineno-63-33"></a><span class="w">  </span><span class="c1"># Preserve failed backup artifacts for debugging</span>
+</span><span id="__span-63-34"><a id="__codelineno-63-34" name="__codelineno-63-34" href="#__codelineno-63-34"></a><span class="w">  </span><span class="nt">keepFailed</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-63-35"><a id="__codelineno-63-35" name="__codelineno-63-35" href="#__codelineno-63-35"></a>
+</span><span id="__span-63-36"><a id="__codelineno-63-36" name="__codelineno-63-36" href="#__codelineno-63-36"></a><span class="w">  </span><span class="c1"># Pass additional flags directly to neo4j-admin database backup</span>
+</span><span id="__span-63-37"><a id="__codelineno-63-37" name="__codelineno-63-37" href="#__codelineno-63-37"></a><span class="w">  </span><span class="nt">additionalArgs</span><span class="p">:</span>
+</span><span id="__span-63-38"><a id="__codelineno-63-38" name="__codelineno-63-38" href="#__codelineno-63-38"></a><span class="w">    </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--verbose"</span>
 </span></code></pre></div>
 <h3 id="split-backup-archives">Split backup archives<a class="headerlink" href="#split-backup-archives" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Neo4j 2026.09+.</strong> By default an artifact is one file. For a database whose backup is larger than the target storage accepts as a single object, split it into parts:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-63-1"><a id="__codelineno-63-1" name="__codelineno-63-1" href="#__codelineno-63-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-63-2"><a id="__codelineno-63-2" name="__codelineno-63-2" href="#__codelineno-63-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-63-3"><a id="__codelineno-63-3" name="__codelineno-63-3" href="#__codelineno-63-3"></a><span class="w">    </span><span class="nt">splitArchivePartSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500Gi</span><span class="w">   </span><span class="c1"># each part at most 500GiB</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-64-1"><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-64-2"><a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-64-3"><a id="__codelineno-64-3" name="__codelineno-64-3" href="#__codelineno-64-3"></a><span class="w">    </span><span class="nt">splitArchivePartSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">500Gi</span><span class="w">   </span><span class="c1"># each part at most 500GiB</span>
 </span></code></pre></div>
 <ul>
 <li><strong>Size:</strong> a Kubernetes quantity of at least <code>1Gi</code>, Neo4j's minimum part size. Note that <code>1G</code> is 10⁹ bytes, which is below the minimum: the backup goes <code>Invalid</code> with a message that says so.</li>
@@ -7451,11 +7555,11 @@ overwriting an existing database — on <strong>both</strong> cluster and standa
 </ul>
 <h3 id="custom-backup-arguments">Custom Backup Arguments<a class="headerlink" href="#custom-backup-arguments" title="Anchor link to this section">&para;</a></h3>
 <p>Pass flags directly to <code>neo4j-admin database backup</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-64-1"><a id="__codelineno-64-1" name="__codelineno-64-1" href="#__codelineno-64-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-64-2"><a id="__codelineno-64-2" name="__codelineno-64-2" href="#__codelineno-64-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
-</span><span id="__span-64-3"><a id="__codelineno-64-3" name="__codelineno-64-3" href="#__codelineno-64-3"></a><span class="w">    </span><span class="nt">additionalArgs</span><span class="p">:</span>
-</span><span id="__span-64-4"><a id="__codelineno-64-4" name="__codelineno-64-4" href="#__codelineno-64-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--verbose"</span>
-</span><span id="__span-64-5"><a id="__codelineno-64-5" name="__codelineno-64-5" href="#__codelineno-64-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--parallel-recovery"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-65-1"><a id="__codelineno-65-1" name="__codelineno-65-1" href="#__codelineno-65-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-65-2"><a id="__codelineno-65-2" name="__codelineno-65-2" href="#__codelineno-65-2"></a><span class="w">  </span><span class="nt">options</span><span class="p">:</span>
+</span><span id="__span-65-3"><a id="__codelineno-65-3" name="__codelineno-65-3" href="#__codelineno-65-3"></a><span class="w">    </span><span class="nt">additionalArgs</span><span class="p">:</span>
+</span><span id="__span-65-4"><a id="__codelineno-65-4" name="__codelineno-65-4" href="#__codelineno-65-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--verbose"</span>
+</span><span id="__span-65-5"><a id="__codelineno-65-5" name="__codelineno-65-5" href="#__codelineno-65-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"--parallel-recovery"</span>
 </span></code></pre></div>
 <h3 id="namespace-scoping">Namespace scoping<a class="headerlink" href="#namespace-scoping" title="Anchor link to this section">&para;</a></h3>
 <p>A <code>Neo4jBackup</code> backs up a deployment <strong>in its own namespace</strong>. <code>instanceRef</code> (and <code>shardedDatabase</code>) resolve within the backup CR's namespace, and the API has no namespace field to point elsewhere. This keeps each backup's blast radius inside a single namespace — the same boundary the operator enforces for users and roles. To back up a cluster that lives in another namespace, create the <code>Neo4jBackup</code> in <strong>that</strong> namespace.</p>
