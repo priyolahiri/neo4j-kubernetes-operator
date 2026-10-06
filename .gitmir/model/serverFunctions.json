@@ -781,7 +781,7 @@
     "name": "Reconcile Neo4jBackup",
     "serverUnitId": "su-neo4jbackup",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec (including replication-source chain rules), resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight, and branches to the scheduled or one-time backup path; raises advisory caveats about a valid spec (BackupValidator.Warnings) as Warning events.",
+    "description": "Main reconcile loop: validates the spec (including replication-source chain rules), resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight, and branches to the scheduled or one-time backup path.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -792,7 +792,6 @@
     ],
     "emitsEventIds": [
       "ev-backup-failed",
-      "ev-backup-restore-caveat",
       "ev-replication-source-caveat"
     ],
     "subscribesEventIds": [],

@@ -216,27 +216,6 @@ spec:
 	}
 }
 
-// A scheduled PVC backup is valid, but its later runs are differentials no
-// restore can seed online: validate warns at authoring time, as the operator's
-// BackupRestoreCaveat event does once it is applied.
-func TestValidate_WarnsOnPVCDifferentialBackups(t *testing.T) {
-	results, err := validateSource(writeManifest(t, `
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jBackup
-metadata: {name: nightly}
-spec:
-  instanceRef: c
-  database: neo4j
-  schedule: "0 2 * * *"
-  storage: {type: pvc, pvc: {name: backups, size: 10Gi}}
-`), nil, "")
-	require.NoError(t, err)
-	require.Len(t, results, 1)
-	assert.Equal(t, 0, results[0].errorCount(), "the manifest must still be accepted: %+v", results[0].findings)
-	require.Equal(t, 1, results[0].warningCount(), "findings: %+v", results[0].findings)
-	assert.Contains(t, results[0].findings[0].detail, "cannot seed a PVC differential online")
-}
-
 func TestValidate_ReportsErrorsWithFieldPaths(t *testing.T) {
 	path := writeManifest(t, `
 apiVersion: neo4j.neo4j.com/v1beta1

@@ -310,9 +310,6 @@ first reconcile.
 
 ### New, no action needed
 
-- A `BackupRestoreCaveat` Warning event (and a `kubectl neo4j validate`
-  warning) on a PVC `Neo4jBackup` whose runs will be differentials, which no
-  `Neo4jRestore` can seed online.
 - `Neo4jBackup` `status.history[].artifactType` (and `databaseArtifacts[].type`):
   `FULL` or `DIFF`, read from each run's log. `Neo4jRestore`
   `status.resolvedSource.artifactType` carries it into the restore.

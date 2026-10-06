@@ -81,51 +81,6 @@ func NewBackupValidator() *BackupValidator {
 	return &BackupValidator{}
 }
 
-// Warnings reports caveats about a valid backup spec. They are advisory: they
-// never block a reconcile. The controller turns each into a Warning event and
-// `kubectl neo4j validate` prints them.
-func (v *BackupValidator) Warnings(backup *neo4jv1beta1.Neo4jBackup) []string {
-	var warnings []string
-	if w := pvcDifferentialRestoreWarning(&backup.Spec); w != "" {
-		warnings = append(warnings, w)
-	}
-	return warnings
-}
-
-// pvcDifferentialRestoreWarning says when a PVC backup's runs will be
-// differentials that a Neo4jRestore cannot seed online. The seed proxy serves a
-// PVC artifact to Neo4j over HTTP as one file, and Neo4j refuses a differential
-// without the rest of its chain, so a cluster refuses the restore and a
-// standalone runs it offline. A one-shot AUTO backup writes a full into its
-// own directory and is not affected. Sharded backups restore through
-// Neo4jShardedDatabase, not Neo4jRestore, and are left out.
-func pvcDifferentialRestoreWarning(spec *neo4jv1beta1.Neo4jBackupSpec) string {
-	if spec.Storage.Type != "pvc" || spec.Scope() == neo4jv1beta1.BackupTargetKindShardedDatabase {
-		return ""
-	}
-	backupType := "AUTO" // neo4j-admin's default when no --type is passed
-	if spec.Options != nil && spec.Options.BackupType != "" {
-		backupType = spec.Options.BackupType
-	}
-	var why string
-	switch {
-	case backupType == "FULL":
-		return ""
-	case backupType == "DIFF":
-		why = "spec.options.backupType is DIFF, so its runs are differentials"
-	case spec.ChainFromBackup != "":
-		why = "spec.chainFromBackup adds its runs to another backup's chain, so they are differentials"
-	case spec.Schedule != "":
-		why = "it is scheduled with backupType AUTO (the default), so every run after the first is a differential"
-	default:
-		return ""
-	}
-	return fmt.Sprintf("spec.storage is a PVC and %s. A Neo4jRestore cannot seed a PVC differential online: "+
-		"a cluster refuses it, and a standalone restores it offline with neo4j-admin, which stops the instance. "+
-		"For backups you will restore from, set spec.options.backupType: FULL, or use cloud storage, "+
-		"which restores differentials online.", why)
-}
-
 // Validate validates the backup configuration for Neo4j 5.26+ compatibility
 func (v *BackupValidator) Validate(backup *neo4jv1beta1.Neo4jBackup) field.ErrorList {
 	var allErrs field.ErrorList
