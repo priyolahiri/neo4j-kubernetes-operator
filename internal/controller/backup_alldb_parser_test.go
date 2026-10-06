@@ -16,7 +16,11 @@ limitations under the License.
 
 package controller
 
-import "testing"
+import (
+	"testing"
+
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+)
 
 // TestParseAllDatabaseArtifactsFromLog verifies the per-database artifact map
 // the all-databases backup records for cluster-wide restore (#222): one entry
@@ -58,6 +62,64 @@ func TestParseAllDatabaseArtifactsFromLog_Empty(t *testing.T) {
 	}
 	if got := parseAllDatabaseArtifactsFromLog("no backup files here"); len(got) != 0 {
 		t.Fatalf("expected no artifacts for non-matching log, got %+v", got)
+	}
+}
+
+// The type lines are neo4j-admin's own (BackupOutputMonitor), as a 5.26
+// Job logged them: a full, a differential, an AUTO differential that fell
+// back to a full, and a differential with nothing new to fetch.
+func TestParseArtifactTypesFromLog(t *testing.T) {
+	log := `
+INFO  [c.n.b.b.BackupOutputMonitor] Start full backup of database 'other'.
+INFO  [c.n.b.b.BackupOutputMonitor] Finished full backup of database 'other'. Downloaded from tx -1 to tx 5.
+INFO  [c.n.b.b.BackupOutputMonitor] Start differential backup of database 'neo4j'.
+INFO  [c.n.b.b.BackupOutputMonitor] Finished differential backup of database 'neo4j'.
+INFO  [c.n.b.b.BackupOutputMonitor] Start differential backup of database 'fellback'.
+INFO  [c.n.b.b.BackupOutputMonitor] Differential backup of database 'fellback' failed. Reason: Differential backups require that a full backup of the same database exists in the folder defined in --to-path.
+INFO  [c.n.b.b.BackupOutputMonitor] Falling back to full backup of database 'fellback'.
+INFO  [c.n.b.b.BackupOutputMonitor] Start full backup of database 'fellback'.
+INFO  [c.n.b.b.BackupOutputMonitor] Start differential backup of database 'idle'.
+INFO  [c.n.b.b.BackupOutputMonitor] The remote server (s-0:6362) has not any recent data for database 'DatabaseId{c16ce93f[idle]}'.
+INFO  [c.n.b.b.BackupOutputMonitor] Finished artifact creation 'idle-2026-10-06T07-36-03.backup' for database 'idle', took 38ms.
+`
+	want := map[string]string{"other": "FULL", "neo4j": "DIFF", "fellback": "FULL", "idle": "DIFF"}
+	got := parseArtifactTypesFromLog(log)
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for db, w := range want {
+		if got[db] != w {
+			t.Errorf("database %q: type = %q, want %q", db, got[db], w)
+		}
+	}
+}
+
+func TestRecordArtifactTypes(t *testing.T) {
+	log := "Start full backup of database 'neo4j'.\nStart differential backup of database 'other'.\n"
+	run := neo4jv1beta1.BackupRun{
+		ArtifactFilename: "neo4j-1.backup",
+		DatabaseArtifacts: []neo4jv1beta1.DatabaseArtifact{
+			{Database: "neo4j", Filename: "neo4j-1.backup"},
+			{Database: "other", Filename: "other-1.backup"},
+			{Database: "silent", Filename: "silent-1.backup"},
+		},
+	}
+	recordArtifactTypes(&run, log, "neo4j")
+	if run.ArtifactType != "FULL" {
+		t.Errorf("ArtifactType = %q, want FULL", run.ArtifactType)
+	}
+	for db, w := range map[string]string{"neo4j": "FULL", "other": "DIFF", "silent": ""} {
+		for _, a := range run.DatabaseArtifacts {
+			if a.Database == db && a.Type != w {
+				t.Errorf("database %q: Type = %q, want %q", db, a.Type, w)
+			}
+		}
+	}
+	// No artifact recorded, no type: a type alone would name nothing.
+	bare := neo4jv1beta1.BackupRun{}
+	recordArtifactTypes(&bare, log, "neo4j")
+	if bare.ArtifactType != "" {
+		t.Errorf("ArtifactType = %q without an ArtifactFilename, want empty", bare.ArtifactType)
 	}
 }
 

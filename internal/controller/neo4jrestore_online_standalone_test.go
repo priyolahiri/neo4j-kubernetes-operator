@@ -23,6 +23,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -54,27 +55,129 @@ func statusRestoreReconciler(t *testing.T, objs ...runtime.Object) *Neo4jRestore
 	return &Neo4jRestoreReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(16)}
 }
 
+// pinnedBackupRestore is a `source.type: backup` restore whose source is
+// already resolved, as ensureResolvedBackupSource leaves it.
+func pinnedBackupRestore(storageType string, snap neo4jv1beta1.ResolvedRestoreSource) *neo4jv1beta1.Neo4jRestore {
+	restore := minimalRestore("r", "ns", "sa")
+	restore.Spec.Source = neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "b"}
+	snap.BackupRef = "b"
+	snap.Storage = &neo4jv1beta1.StorageLocation{Type: storageType}
+	if storageType != "pvc" {
+		snap.Storage.Cloud = &neo4jv1beta1.CloudBlock{Provider: "aws", CredentialsSecretRef: "creds"}
+	}
+	restore.Status.ResolvedSource = &snap
+	return restore
+}
+
 func TestRestoreRunsOffline(t *testing.T) {
 	at := metav1.Now()
+	full := neo4jv1beta1.ResolvedRestoreSource{ArtifactFilename: "neo4j-1.backup", ArtifactType: "FULL"}
+	diff := neo4jv1beta1.ResolvedRestoreSource{ArtifactFilename: "neo4j-2.backup", ArtifactType: "DIFF"}
+	untyped := neo4jv1beta1.ResolvedRestoreSource{ArtifactFilename: "neo4j-3.backup"}
+	allDBs := func(types ...string) neo4jv1beta1.ResolvedRestoreSource {
+		snap := neo4jv1beta1.ResolvedRestoreSource{DatabaseArtifacts: []neo4jv1beta1.DatabaseArtifact{
+			{Database: "system", Filename: "system-1.backup"}, // never restored, never consulted
+		}}
+		for i, ty := range types {
+			snap.DatabaseArtifacts = append(snap.DatabaseArtifacts,
+				neo4jv1beta1.DatabaseArtifact{Database: fmt.Sprintf("db%d", i), Filename: fmt.Sprintf("db%d-1.backup", i), Type: ty})
+		}
+		return snap
+	}
+
 	cases := []struct {
-		name      string
-		source    neo4jv1beta1.RestoreSource
-		cluster   bool
-		wantJobOn bool
+		name    string
+		restore func() *neo4jv1beta1.Neo4jRestore
+		cluster bool
+		offline bool
 	}{
-		{"standalone, backupRef", neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "b"}, false, false},
-		{"standalone, storage", neo4jv1beta1.RestoreSource{Type: "storage"}, false, false},
-		{"standalone, pitr", neo4jv1beta1.RestoreSource{Type: "pitr"}, false, true},
-		{"standalone, backupRef + pointInTime", neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "b", PointInTime: &at}, false, true},
-		{"cluster, backupRef", neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "b"}, true, false},
-		{"cluster, pitr (refused by validation, never a Job)", neo4jv1beta1.RestoreSource{Type: "pitr"}, true, false},
+		{"PVC FULL", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", full) }, false, false},
+		{"PVC DIFF: HTTP fetches one file, not the chain", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", diff) }, false, true},
+		{"PVC, type not recorded", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", untyped) }, false, true},
+		{"cloud DIFF: the seed provider reads the chain", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("s3", diff) }, false, false},
+		{"cloud, type not recorded", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("s3", untyped) }, false, false},
+		{"cloud by pod identity: a standalone's pods cannot carry one", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("s3", full)
+			r.Status.ResolvedSource.Storage.Cloud.CredentialsSecretRef = ""
+			return r
+		}, false, true},
+		{"cluster, cloud by pod identity (spec.podServiceAccountAnnotations)", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("s3", full)
+			r.Status.ResolvedSource.Storage.Cloud = nil
+			return r
+		}, true, false},
+		{"cloud, no artifact recorded", func() *neo4jv1beta1.Neo4jRestore {
+			return pinnedBackupRestore("s3", neo4jv1beta1.ResolvedRestoreSource{})
+		}, false, true},
+		{"not resolved yet", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("pvc", full)
+			r.Status.ResolvedSource = nil
+			return r
+		}, false, true},
+		{"source.type storage: the path may be a directory", func() *neo4jv1beta1.Neo4jRestore {
+			r := minimalRestore("r", "ns", "sa")
+			r.Spec.Source = neo4jv1beta1.RestoreSource{Type: "storage", BackupPath: "nightly/neo4j-1.backup"}
+			return r
+		}, false, true},
+		{"pitr", func() *neo4jv1beta1.Neo4jRestore {
+			r := minimalRestore("r", "ns", "sa")
+			r.Spec.Source = neo4jv1beta1.RestoreSource{Type: "pitr"}
+			return r
+		}, false, true},
+		{"backupRef + pointInTime", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("s3", full)
+			r.Spec.Source.PointInTime = &at
+			return r
+		}, false, true},
+		{"all databases on a PVC, all FULL", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("pvc", allDBs("FULL", "FULL"))
+			r.Spec.AllDatabases = true
+			return r
+		}, false, false},
+		{"all databases on a PVC, one DIFF", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("pvc", allDBs("FULL", "DIFF"))
+			r.Spec.AllDatabases = true
+			return r
+		}, false, true},
+		{"one database of an all-databases backup, FULL", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("pvc", allDBs("DIFF", "FULL"))
+			r.Spec.Source.SourceDatabase = "db1"
+			return r
+		}, false, false},
+		{"one database of an all-databases backup, DIFF", func() *neo4jv1beta1.Neo4jRestore {
+			r := pinnedBackupRestore("pvc", allDBs("DIFF", "FULL"))
+			r.Spec.Source.SourceDatabase = "db0"
+			return r
+		}, false, true},
+		{"cluster: never the Job, whatever the source", func() *neo4jv1beta1.Neo4jRestore { return pinnedBackupRestore("pvc", diff) }, true, false},
+		{"cluster pitr (refused by validation, never a Job)", func() *neo4jv1beta1.Neo4jRestore {
+			r := minimalRestore("r", "ns", "c")
+			r.Spec.Source = neo4jv1beta1.RestoreSource{Type: "pitr"}
+			return r
+		}, true, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			restore := &neo4jv1beta1.Neo4jRestore{Spec: neo4jv1beta1.Neo4jRestoreSpec{Source: tc.source}}
-			assert.Equal(t, tc.wantJobOn, restoreRunsOffline(restore, tc.cluster))
+			restore := tc.restore()
+			assert.Equal(t, tc.offline, restoreRunsOffline(restore, tc.cluster), standaloneOfflineReason(restore))
 		})
 	}
+}
+
+// A Job restore an earlier operator started holds the standalone stopped;
+// finishing it online would talk Bolt to an instance with no pods.
+func TestRestoreOnJobPath_FinishesAJobRestoreItAlreadyHolds(t *testing.T) {
+	restore := pinnedBackupRestore("s3", neo4jv1beta1.ResolvedRestoreSource{ArtifactFilename: "neo4j-1.backup"})
+	require.False(t, restoreRunsOffline(restore, false), "on its own this restore would run online")
+
+	held := minimalStandaloneForRestore("sa", "ns")
+	held.Annotations = map[string]string{RestoreInProgressAnnotation: "r"}
+	assert.True(t, statusRestoreReconciler(t, held).restoreOnJobPath(context.Background(), restore, false))
+
+	other := minimalStandaloneForRestore("sa", "ns")
+	other.Annotations = map[string]string{RestoreInProgressAnnotation: "another-restore"}
+	assert.False(t, statusRestoreReconciler(t, other).restoreOnJobPath(context.Background(), restore, false))
+	assert.False(t, statusRestoreReconciler(t, held).restoreOnJobPath(context.Background(), restore, true), "a cluster never takes the Job")
 }
 
 // The online path was written for clusters; these are the places a standalone
@@ -174,17 +277,16 @@ func TestSeedCredsRolledOut_ReadsTheStandalonesStatefulSet(t *testing.T) {
 // the seed-credentials check and names the standalone.
 func TestStartRestore_StandaloneTakesTheOnlinePath(t *testing.T) {
 	sa := minimalStandaloneForRestore("sa", "ns")
-	restore := minimalRestore("r", "ns", "sa")
+	restore := pinnedBackupRestore("s3", neo4jv1beta1.ResolvedRestoreSource{
+		BackupPath: "nightly", ArtifactFilename: "neo4j-2026-10-05T08-43-31.backup", ArtifactType: "DIFF",
+	})
 	restore.Spec.StopCluster = true
-	restore.Spec.Source = neo4jv1beta1.RestoreSource{
-		Type:       "storage",
-		BackupPath: "nightly/neo4j-2026-10-05T08-43-31.backup",
-		Storage: &neo4jv1beta1.StorageLocation{
-			Type: "s3", Bucket: "neo4j-backups", Path: "prod",
-			Cloud: &neo4jv1beta1.CloudBlock{Provider: "aws", CredentialsSecretRef: "creds"},
-		},
+	restore.Status.ResolvedSource.Storage = &neo4jv1beta1.StorageLocation{
+		Type: "s3", Bucket: "neo4j-backups", Path: "prod",
+		Cloud: &neo4jv1beta1.CloudBlock{Provider: "aws", CredentialsSecretRef: "creds"},
 	}
-	r := statusRestoreReconciler(t, sa, restore)
+	backup := &neo4jv1beta1.Neo4jBackup{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"}}
+	r := statusRestoreReconciler(t, sa, restore, backup)
 
 	_, _ = r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
 
@@ -223,6 +325,77 @@ func TestStartRestore_StandalonePointInTimeStaysOnTheJob(t *testing.T) {
 	assert.Contains(t, strings.Join(jobs.Items[0].Spec.Template.Spec.Containers[0].Args, " "), "--restore-until")
 }
 
+// A scheduled PVC backup's latest artifact is usually a DIFF (backupType AUTO).
+// Seeded over HTTP Neo4j refuses it, so a standalone restores it offline, as
+// before, and says why.
+func TestStartRestore_StandalonePVCDiffTakesTheJob(t *testing.T) {
+	sa := minimalStandaloneForRestore("sa", "ns")
+	restore := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
+		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "DIFF",
+	})
+	restore.Status.ResolvedSource.Storage.PVC = &neo4jv1beta1.PVCSpec{Name: "backups"}
+	restore.Spec.Options = &neo4jv1beta1.RestoreOptionsSpec{ReplaceExisting: true}
+	backup := &neo4jv1beta1.Neo4jBackup{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"}}
+	// No pods: the instance is already stopped, so the Job may run without
+	// stopCluster.
+	r := statusRestoreReconciler(t, sa, restore, backup)
+
+	_, _ = r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
+
+	jobs := &batchv1.JobList{}
+	require.NoError(t, r.List(context.Background(), jobs))
+	require.Len(t, jobs.Items, 1, "a PVC DIFF restores through the neo4j-admin Job")
+	recorder, ok := r.Recorder.(*record.FakeRecorder)
+	require.True(t, ok)
+	assert.Contains(t, strings.Join(drainEvents(recorder), "\n"), "differential (DIFF) backup on a PVC")
+}
+
+// Without stopCluster the Job path refuses a running standalone; now that most
+// standalone restores run online, the refusal has to say why this one doesn't.
+func TestStartRestore_StandaloneOfflineRefusalSaysWhy(t *testing.T) {
+	sa := minimalStandaloneForRestore("sa", "ns")
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "sa-0", Namespace: "ns", Labels: map[string]string{"app": "sa"}}}
+	restore := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
+		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "DIFF",
+	})
+	restore.Status.ResolvedSource.Storage.PVC = &neo4jv1beta1.PVCSpec{Name: "backups"}
+	restore.Spec.Options = &neo4jv1beta1.RestoreOptionsSpec{ReplaceExisting: true}
+	backup := &neo4jv1beta1.Neo4jBackup{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"}}
+	r := statusRestoreReconciler(t, sa, pod, restore, backup)
+
+	_, _ = r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
+
+	got := &neo4jv1beta1.Neo4jRestore{}
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
+	assert.Equal(t, StatusFailed, got.Status.Phase)
+	assert.Contains(t, got.Status.Message, "it restores offline: neo4j-2026-10-06T07-40-04.backup is a differential (DIFF) backup on a PVC")
+	assert.Contains(t, got.Status.Message, "spec.stopCluster=true")
+}
+
+// A cluster has no Job to fall back to. Seeding a PVC DIFF used to create the
+// database and leave it offline ("not part of a valid backup chain"), to be
+// DROPped by hand; it is refused before anything is created.
+func TestClusterRestore_RefusesAPVCDiffBeforeCreatingAnything(t *testing.T) {
+	cluster := minimalClusterForRestore("c", "ns")
+	restore := pinnedBackupRestore("pvc", neo4jv1beta1.ResolvedRestoreSource{
+		BackupPath: "nightly/", ArtifactFilename: "neo4j-2026-10-06T07-40-04.backup", ArtifactType: "DIFF",
+	})
+	restore.Spec.InstanceRef = "c"
+	restore.Status.ResolvedSource.Storage.PVC = &neo4jv1beta1.PVCSpec{Name: "backups"}
+	r := statusRestoreReconciler(t, cluster, restore)
+
+	_, err := r.startClusterCypherRestore(context.Background(), restore, cluster)
+	require.Error(t, err)
+
+	got := &neo4jv1beta1.Neo4jRestore{}
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
+	assert.Equal(t, StatusFailed, got.Status.Phase)
+	assert.Contains(t, got.Status.Message, "cannot be seeded online")
+	deployments := &appsv1.DeploymentList{}
+	require.NoError(t, r.List(context.Background(), deployments))
+	assert.Empty(t, deployments.Items, "no seed proxy is started for a seed that cannot work")
+}
+
 // The online path skipped restore hooks entirely — a standalone that used to
 // run its post-restore hooks through the Job would silently lose them. The
 // completion step now runs them; a hook Job that never finishes fails the
@@ -256,6 +429,35 @@ func TestCompleteOnlineRestore_RunsPostRestoreHooks(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "p", Namespace: "ns"}, got))
 	assert.Equal(t, StatusCompleted, got.Status.Phase)
+}
+
+// An all-databases restore ends in its aggregate step, Completed or Failed;
+// both carry status.completionTime, as the single-database paths do.
+func TestFinishAllDatabasesRestore_StampsCompletionTime(t *testing.T) {
+	sa := minimalStandaloneForRestore("sa", "ns")
+	for _, tc := range []struct {
+		name      string
+		dbPhases  []string
+		wantPhase string
+	}{
+		{"all restored", []string{StatusCompleted, StatusCompleted}, StatusCompleted},
+		{"one failed", []string{StatusCompleted, StatusFailed}, StatusFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			restore := minimalRestore("r", "ns", "sa")
+			for i, p := range tc.dbPhases {
+				restore.Status.DatabaseResults = append(restore.Status.DatabaseResults,
+					neo4jv1beta1.DatabaseRestoreResult{Database: fmt.Sprintf("db%d", i), Phase: p})
+			}
+			r := statusRestoreReconciler(t, sa, restore)
+			_, err := r.finishAllDatabasesRestore(context.Background(), restore, standaloneAsCluster(sa))
+			require.NoError(t, err)
+			got := &neo4jv1beta1.Neo4jRestore{}
+			require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
+			assert.Equal(t, tc.wantPhase, got.Status.Phase)
+			assert.NotNil(t, got.Status.CompletionTime)
+		})
+	}
 }
 
 // The all-databases loop is re-entered on every requeue while it waits for

@@ -286,7 +286,7 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	if restore.Status.Phase == StatusRunning {
 		routeToProgress := !restore.Spec.AllDatabases
 		if restore.Spec.AllDatabases {
-			if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && restoreRunsOffline(restore, isCluster) {
+			if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && r.restoreOnJobPath(ctx, restore, isCluster) {
 				routeToProgress = true
 			}
 		}
@@ -416,7 +416,7 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Target lookup failed: %v", lookupErr))
 		return ctrl.Result{}, lookupErr
 	}
-	if !restoreRunsOffline(restore, isTrueCluster) {
+	if !r.restoreOnJobPath(ctx, restore, isTrueCluster) {
 		// All-databases restore (#222/#288) drives one per-database online
 		// restore per pass from the resolved per-database artifact map (its own
 		// requeue-driven state machine in status.databaseResults).
@@ -426,10 +426,15 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		return r.startClusterCypherRestore(ctx, restore, cluster)
 	}
 
-	// Offline Job path: a point-in-time restore into a standalone. An
-	// all-databases one runs a multi-database `neo4j-admin database restore`
-	// and handleRestoreSuccess brings every database online via
+	// Offline Job path: a standalone restore standaloneOfflineReason refuses
+	// online (point-in-time, a `source.type: storage` path, a DIFF on a PVC).
+	// An all-databases one runs a multi-database `neo4j-admin database
+	// restore` and handleRestoreSuccess brings every database online via
 	// registerAllDatabasesAfterRestore.
+	if reason := standaloneOfflineReason(restore); reason != "" && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
+			fmt.Sprintf("Restoring offline with neo4j-admin, which stops standalone %q: %s", cluster.Name, reason))
+	}
 
 	// Check if database exists and handle accordingly. Skipped when THIS
 	// restore already stopped the instance on a previous reconcile (re-entry
@@ -551,7 +556,7 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 	// and re-issues the recreate / re-checks the database. The offline path
 	// (a point-in-time restore into a standalone, which DOES use a Job) is
 	// unaffected, so a TTL-collected Job still fails terminally.
-	if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && !restoreRunsOffline(restore, isCluster) {
+	if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && !r.restoreOnJobPath(ctx, restore, isCluster) {
 		return r.startClusterCypherRestore(ctx, restore, cluster)
 	}
 
@@ -1713,7 +1718,7 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 	// single file). Best-effort: standalone Job restores resolve the file with
 	// a shell glob and don't need it, and older backups may not have captured
 	// it — those paths surface their own error later if the filename is needed.
-	artifact := ""
+	artifact, artifactType := "", ""
 	var dbArtifacts []neo4jv1beta1.DatabaseArtifact
 	var shardedExcluded []string
 	var backupCreatedAt *metav1.Time
@@ -1722,6 +1727,12 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 		for i := range backup.Status.History {
 			if backup.Status.History[i].Status == "Succeeded" {
 				artifact = backup.Status.History[i].ArtifactFilename
+				artifactType = backup.Status.History[i].ArtifactType
+				// A run recorded before the operator read the type is still
+				// known FULL when the backup only ever takes fulls.
+				if artifactType == "" && backup.Spec.Options != nil && backup.Spec.Options.BackupType == backupArtifactFull {
+					artifactType = backupArtifactFull
+				}
 				// Pin the per-database map too, for an all-databases restore (#222).
 				dbArtifacts = backup.Status.History[i].DatabaseArtifacts
 				// Carry forward the sharded families this backup did not cover so
@@ -1743,6 +1754,7 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 		Storage:                  &storage,
 		BackupPath:               backupPath,
 		ArtifactFilename:         artifact,
+		ArtifactType:             artifactType,
 		DatabaseArtifacts:        dbArtifacts,
 		ShardedDatabasesExcluded: shardedExcluded,
 		ResolvedAt:               &now,
@@ -2430,8 +2442,14 @@ func (r *Neo4jRestoreReconciler) refuseRestoreIfPodsRunning(ctx context.Context,
 		return fmt.Errorf("failed to list server pods for restore preflight: %w", err)
 	}
 	if len(pods.Items) > 0 {
-		return fmt.Errorf("restore %q cannot run against a live cluster: %d server pod(s) of %q are still present. Set spec.stopCluster=true to let the operator coordinate the scale-down, or scale the cluster to 0 manually before applying this restore",
-			restore.Name, len(pods.Items), cluster.Name)
+		// Most standalone restores run online now (rule 108); say why this
+		// one doesn't, or the stopCluster requirement reads as arbitrary.
+		why := ""
+		if reason := standaloneOfflineReason(restore); reason != "" {
+			why = fmt.Sprintf(" (it restores offline: %s)", reason)
+		}
+		return fmt.Errorf("restore %q cannot run against a running standalone%s: %d server pod(s) of %q are still present. Set spec.stopCluster=true to let the operator stop the instance for the restore, or scale it to 0 manually before applying this restore",
+			restore.Name, why, len(pods.Items), cluster.Name)
 	}
 	return nil
 }
@@ -3082,6 +3100,17 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			}
 		}
 	case "pvc":
+		// Refuse a DIFF before creating anything: seeded over HTTP it fails
+		// inside Neo4j and leaves the database offline.
+		if snap := resolvedBackupSnapshot(restore); snap != nil {
+			for _, a := range restoreSeedArtifacts(restore, snap) {
+				if msg := pvcDiffSeedRefusal(storage.Type, a.Filename, a.Type); msg != "" {
+					r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+					r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+					return ctrl.Result{}, fmt.Errorf("%s", msg)
+				}
+			}
+		}
 		// Cluster + PVC restore: spawn the in-cluster HTTP proxy in front
 		// of the backup PVC, build a single-file seedURI against it. The
 		// cluster's seed_from_uri_providers default (rule 74) includes

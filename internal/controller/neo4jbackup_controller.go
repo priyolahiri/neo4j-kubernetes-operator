@@ -420,6 +420,9 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 				r.recordShardedExclusion(latest, &run, jobLog)
 			}
 			if jobLog != "" {
+				recordArtifactTypes(&run, jobLog, latest.Spec.ScopedName())
+			}
+			if jobLog != "" {
 				if validation := parseValidationFromLog(jobLog); validation != nil {
 					run.Validation = validation
 				}
@@ -2349,6 +2352,9 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 		// Warning + sets ShardedDatabasesExcluded). The scheduled-history path
 		// calls this too; the one-shot path previously did not.
 		r.recordShardedExclusion(backup, &run, logContent)
+	}
+	if logContent != "" {
+		recordArtifactTypes(&run, logContent, backup.Spec.ScopedName())
 	}
 	if logContent != "" {
 		if validation := parseValidationFromLog(logContent); validation != nil {

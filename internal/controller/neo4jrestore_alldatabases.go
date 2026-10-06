@@ -172,6 +172,17 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 
 		switch res.Phase {
 		case "", StatusPending:
+			// A DIFF on a PVC fails inside Neo4j after the database is
+			// created; refuse it here instead (pvcDiffSeedRefusal).
+			for _, a := range snap.DatabaseArtifacts {
+				if a.Database != db {
+					continue
+				}
+				if msg := pvcDiffSeedRefusal(storage.Type, fname, a.Type); msg != "" {
+					r.markDatabaseResult(ctx, restore, db, StatusFailed, msg)
+					return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+				}
+			}
 			// Issue the create/recreate exactly ONCE, then flip to Running and
 			// persist BEFORE returning — re-issuing would wipe a partially-seeded
 			// database. Re-entry finds Running and only polls (below).
@@ -255,6 +266,17 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 	}
 
 	// No database is still pending/running — aggregate the terminal outcome.
+	return r.finishAllDatabasesRestore(ctx, restore, cluster)
+}
+
+// finishAllDatabasesRestore aggregates the per-database results once every
+// database is terminal: Failed if any database failed, otherwise the
+// post-restore hooks run and the restore is Completed. Either way the restore
+// is over, so it is stamped with status.completionTime (the online loop never
+// set it, so `kubectl get neo4jrestore` showed no end time).
+func (r *Neo4jRestoreReconciler) finishAllDatabasesRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+	completion := metav1.Now()
+	restore.Status.CompletionTime = &completion
 	failed := 0
 	for i := range restore.Status.DatabaseResults {
 		if restore.Status.DatabaseResults[i].Phase == StatusFailed {
@@ -268,7 +290,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 	}
 	if restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
 		if err := r.runRestoreHooks(ctx, restore, cluster, restore.Spec.Options.PostRestore, hookPhasePostRestore); err != nil {
-			logger.Error(err, "Post-restore hooks failed")
+			log.FromContext(ctx).Error(err, "Post-restore hooks failed")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Post-restore hooks failed: %v", err))
 			return ctrl.Result{}, err
 		}

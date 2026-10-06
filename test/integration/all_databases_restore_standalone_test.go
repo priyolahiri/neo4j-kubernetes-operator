@@ -22,7 +22,9 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -30,11 +32,13 @@ import (
 )
 
 // Standalone all-databases restore via the v1.13 scope-based API (#288). A
-// Neo4jEnterpriseStandalone takes the offline `neo4j-admin database restore`
-// Job path — distinct from the cluster in-place Cypher path — restoring every
-// user database recorded in the backup's per-database artifact map (system
-// excluded) in a single multi-database restore Job, then bringing each online
-// and reporting per-database outcomes in status.databaseResults.
+// Neo4jEnterpriseStandalone restores online, like a cluster (rule 108):
+// one database per pass, recreated from the backup's per-database artifact
+// map (system excluded) against the running instance, with per-database
+// outcomes in status.databaseResults. The backup is a one-shot into an empty
+// directory, so every artifact is FULL — which the backup must record, or a
+// PVC restore would fall back to the offline neo4j-admin Job. stopCluster is
+// set to show it is ignored: no Job runs and the instance is never stopped.
 //
 // Run locally:
 //
@@ -111,7 +115,7 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 		return string(out)
 	}
 
-	It("restores all user databases from a PVC backup via the offline Job path", func() {
+	It("restores all user databases from a PVC backup online", func() {
 		By("Creating a standalone")
 		standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{
 			ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: testNamespace},
@@ -178,8 +182,12 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 			return backup.Status.Phase
 		}, backupTimeout, pollInterval).Should(Equal("Completed"))
 		Expect(backup.Status.History[0].DatabaseArtifacts).ToNot(BeEmpty())
+		for _, a := range backup.Status.History[0].DatabaseArtifacts {
+			Expect(a.Type).To(Equal("FULL"),
+				"database %q: the backup must record FULL from neo4j-admin's log, or the restore goes offline", a.Database)
+		}
 
-		By("Mutating both databases, then restoring all (spec.allDatabases, stopCluster + force)")
+		By("Mutating both databases, then restoring all (spec.allDatabases, replaceExisting; stopCluster is ignored)")
 		cypher(pod, "inventory", "MATCH (i:Item) SET i.count = 999 RETURN 1;")
 		cypher(pod, "customers", "MATCH (c:Customer) SET c.tier = 'bronze' RETURN 1;")
 		restore = &neo4jv1beta1.Neo4jRestore{
@@ -209,6 +217,12 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 		Expect(got).To(HaveKeyWithValue("inventory", "Completed"))
 		Expect(got).To(HaveKeyWithValue("customers", "Completed"))
 		Expect(got).ToNot(HaveKey("system"))
+		Expect(restore.Status.CompletionTime).ToNot(BeNil())
+
+		By("It ran online: no restore Job was created")
+		job := &batchv1.Job{}
+		err := k8sClient.Get(ctx, client.ObjectKey{Name: restore.Name + "-restore", Namespace: testNamespace}, job)
+		Expect(apierrors.IsNotFound(err)).To(BeTrue(), "a standalone restore of FULL PVC artifacts must not run the neo4j-admin Job; got err=%v", err)
 
 		By("Restored data reflects the backed-up state, not the mutations")
 		Eventually(func() string {

@@ -179,12 +179,15 @@ func TestEnsureResolvedBackupSource_MissingCRFailsWithStorageHint(t *testing.T) 
 
 func TestEnsureResolvedBackupSource_SuccessPinsSnapshot(t *testing.T) {
 	backup := backupCRForRestore("simple-backup", "default", true)
+	require.NotEmpty(t, backup.Status.History)
+	backup.Status.History[0].ArtifactType = "DIFF"
 	r := restoreWithBackupRef("simple-restore", "default", "simple-backup")
 	rec := newResolvedSourceReconciler(t, backup, r)
 
 	_, done, err := rec.ensureResolvedBackupSource(context.Background(), r)
 	require.NoError(t, err)
 	assert.False(t, done, "resolved successfully — restore proceeds")
+	assert.Equal(t, "DIFF", r.Status.ResolvedSource.ArtifactType, "routing reads the artifact type from the pinned snapshot")
 
 	// In-memory restore is updated…
 	require.NotNil(t, r.Status.ResolvedSource)
@@ -199,6 +202,24 @@ func TestEnsureResolvedBackupSource_SuccessPinsSnapshot(t *testing.T) {
 	require.NoError(t, rec.Get(context.Background(), client.ObjectKeyFromObject(r), got))
 	require.NotNil(t, got.Status.ResolvedSource)
 	assert.Equal(t, "neo4j-2026-06-11T10-00-00.backup", got.Status.ResolvedSource.ArtifactFilename)
+}
+
+// A run recorded before the operator read the artifact type is still known
+// FULL when the backup only takes fulls; otherwise it stays unknown.
+func TestEnsureResolvedBackupSource_UntypedRunOfAFullOnlyBackup(t *testing.T) {
+	for _, tc := range []struct {
+		backupType, want string
+	}{{"FULL", "FULL"}, {"AUTO", ""}, {"", ""}} {
+		backup := backupCRForRestore("simple-backup", "default", true)
+		if tc.backupType != "" {
+			backup.Spec.Options = &neo4jv1beta1.BackupOptions{BackupType: tc.backupType}
+		}
+		r := restoreWithBackupRef("simple-restore", "default", "simple-backup")
+		rec := newResolvedSourceReconciler(t, backup, r)
+		_, _, err := rec.ensureResolvedBackupSource(context.Background(), r)
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, r.Status.ResolvedSource.ArtifactType, "backupType %q", tc.backupType)
+	}
 }
 
 func TestValidateRestore_PinnedSnapshotSurvivesMissingCR(t *testing.T) {

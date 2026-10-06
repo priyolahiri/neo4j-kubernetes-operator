@@ -218,7 +218,7 @@ var _ = Describe("Restore Integration Tests", Label("extended"), Ordered, func()
 					return ""
 				}
 				return latest.Status.Message
-			}, time.Second*20, restoreInterval).ShouldNot(ContainSubstring("cannot run against a live cluster"),
+			}, time.Second*20, restoreInterval).ShouldNot(ContainSubstring("cannot run against a running standalone"),
 				"rule 75: cluster restores use the safe in-place Cypher path; the "+
 					"refuseRestoreIfPodsRunning guard must NOT fire for a cluster target. "+
 					"If this message reappears, the unsafe Job path was re-introduced for clusters.")

@@ -561,6 +561,17 @@ spec:
                         CREATE DATABASE OPTIONS{seedURI}. Sharded backups populate
                         per-shard equivalents in ShardArtifacts[].Filename instead.
                       type: string
+                    artifactType:
+                      description: |-
+                        ArtifactType says whether ArtifactFilename is a FULL backup or a DIFF
+                        (differential) one, which needs the rest of its chain to restore. Read
+                        from the Job's Pod log; empty when the log did not say. A restore that
+                        seeds from a PVC fetches the one file over HTTP and cannot follow a
+                        chain, so it relies on this.
+                      enum:
+                      - FULL
+                      - DIFF
+                      type: string
                     backupsPath:
                       description: |-
                         BackupsPath is the shared per-CR directory (relative to
@@ -602,6 +613,14 @@ spec:
                               0 otherwise.
                             format: int64
                             type: integer
+                          type:
+                            description: |-
+                              Type is FULL or DIFF (see BackupRun.ArtifactType); empty when the log
+                              did not say.
+                            enum:
+                            - FULL
+                            - DIFF
+                            type: string
                         required:
                         - database
                         type: object
