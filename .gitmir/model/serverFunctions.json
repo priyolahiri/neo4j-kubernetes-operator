@@ -412,7 +412,7 @@
     "name": "Merge PVC Backup Chain for Seeding",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "job",
-    "description": "newSeedMergePlan / applySeedMerge (pvc_seed_merge.go): when a PVC seed artifact is not recorded as a FULL backup, the seed proxy pod gets a merge-chain init container running the target's Neo4j image that copies the chain to scratch space (emptyDir or spec.options.tempStorage), merges it with neo4j-admin database aggregate-backup (5.x) / backup aggregate (CalVer), and publishes the merged full artifact at the original relative path; a failed merge fails the restore at once with neo4j-admin's reason (rule 109).",
+    "description": "newSeedMergePlan / applySeedMerge (pvc_seed_merge.go): when a PVC seed artifact is not recorded as a FULL backup, the seed proxy pod gets a merge-chain init container running the target's Neo4j image that copies the chain to scratch space (emptyDir or spec.options.tempStorage), merges it with neo4j-admin database aggregate-backup (5.x) / backup aggregate (CalVer), and publishes the merged full artifact at the original relative path; a failed merge fails the restore at once with neo4j-admin's reason (rule 109). The merged result is checked with backup inspect --show-metadata and refused if it is a differential (5.26 reports an empty differential with no full as an existing full backup).",
     "readsFieldIds": [
       "f-neo4jrestore-status-resolved-source-artifact-type"
     ],
@@ -800,7 +800,7 @@
     "name": "Reconcile Neo4jBackup",
     "serverUnitId": "su-neo4jbackup",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec (including replication-source chain rules), resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight, and branches to the scheduled or one-time backup path.",
+    "description": "Main reconcile loop: validates the spec (including replication-source chain rules), resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight, and branches to the scheduled or one-time backup path. A one-time backup that is Completed or Failed returns before the target lookup, so a restarting target cannot reopen it.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

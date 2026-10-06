@@ -160,7 +160,7 @@ func TestWarnShardedPVCDifferential(t *testing.T) {
 		fix    string
 	}{
 		{"a differential shard on a PVC", pvc, diffRun, "run sbackup-backup-cron-1 wrote differential backups of sdata-g000 to a PVC",
-			"Remove options.backupType: DIFF"},
+			"Later runs are full"},
 		{"an all-databases run's family", allDBs, familyRun, "differential backups of sdata-g000",
 			"back the sharded database up with its own Neo4jBackup"},
 		{"cloud storage seeds differentials", cloud, diffRun, "", ""},
@@ -269,7 +269,7 @@ func TestEffectiveBackupType(t *testing.T) {
 		{"sharded on a PVC, AUTO", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = opts("AUTO") }), "FULL"},
 		{"sharded on a PVC, no options", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = nil }), "FULL"},
 		{"sharded on a PVC, type unset", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = opts("") }), "FULL"},
-		{"sharded on a PVC, explicit DIFF", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = opts("DIFF") }), "DIFF"},
+		{"sharded on a PVC, explicit DIFF (refused by the validator)", with(func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.Options = opts("DIFF") }), "DIFF"},
 		{"sharded in cloud storage, AUTO", with(func(b *neo4jv1beta1.Neo4jBackup) {
 			b.Spec.Options = opts("AUTO")
 			b.Spec.Storage = neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b"}

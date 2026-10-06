@@ -45,7 +45,11 @@ import (
 //   - it exits 0 when it fails, so the result is read from its output: "new
 //     artifact: '<path>'", or "Found existing full backup: '<path>'" when the
 //     file is already a full;
-//   - pointed at a differential, it merges the chain ENDING at that file.
+//   - pointed at a differential, it merges the chain ENDING at that file;
+//   - on 5.26, pointed at an EMPTY differential whose chain has lost its full,
+//     it reports that differential as an "existing full backup". So the
+//     result is checked with `backup inspect --show-metadata`, which says
+//     "full": true or false, before it is served.
 //
 // And one of `backup inspect`: it leaves out EMPTY backups — a run that found
 // no new transactions, routine for a quiet database in an all-databases
@@ -187,6 +191,11 @@ while [ "$#" -ge 4 ]; do
   if [ -z "$result" ] || [ ! -f "$result" ]; then
     fail "could not merge the backup chain ending at $dir/$file: $(printf '%s\n' "$log" | grep -v -e JAVA_TOOL -e incubator -e '^-*$' | tail -n 3 | tr '\n' ' ')"
   fi
+  info=$("${merge[0]}" backup inspect "$work" --database="$db" --empty --show-metadata --format=JSON 2>/dev/null \
+    | tr '}' '\n' | grep -F "\"uri\":\"file://$result\"")
+  case $info in *'"full":false'*)
+    fail "could not merge the backup chain ending at $dir/$file: neo4j-admin returned a differential backup, so the chain has no full backup to start from (was it deleted?)";;
+  esac
   mv "$result" "$out/$file"
   for p in "$result".*; do [ -e "$p" ] && mv "$p" "$out/$file.${p##*.}"; done
   rm -rf "$work" "$tmp"

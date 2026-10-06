@@ -529,10 +529,11 @@ either: merging a shard's chain loses the sharding information the seed needs.
 So:
 
 - On a PVC, `backupType: AUTO` (the default) takes a **full** backup of a
-  sharded database on every run, so every run can seed one. Only an explicit
-  `backupType: DIFF` writes differentials there; each such run raises a
-  `BackupShardedDifferential` warning. Each run's shard types are in
-  `status.history[].shardArtifacts[].type`.
+  sharded database on every run, so every run can seed one. Each run's shard
+  types are in `status.history[].shardArtifacts[].type`. (`backupType: DIFF`
+  is refused for a sharded database: Neo4j does not back up property shards
+  differentially. In cloud storage, `AUTO` writes a differential of the graph
+  shard and full property shards, which seed directly.)
 - An all-databases backup (`spec.allDatabases`) keeps `AUTO` as usual, because
   one `neo4j-admin` run covers every database. Its sharded families' runs after
   the first hold differentials, and raise the same warning. To restore a
@@ -543,7 +544,10 @@ So:
   database seeds from it.
 
 **From cloud storage, differentials seed directly**: Neo4j reads the whole chain
-from the bucket. The cluster's server pods fetch it themselves, so they need the
+from the bucket. To seed under a different `spec.name` than the backed-up
+database, set `spec.seedSourceDatabase` to the backed-up name: Neo4j matches
+the seed's shards by name. (From a PVC, the operator maps the shards to the new
+name itself.) The cluster's server pods fetch it themselves, so they need the
 backup's credentials Secret — and, for MinIO or another S3-compatible store, its
 endpoint. Put them on the cluster (`spec.extraEnvFrom`, `spec.env`), or annotate
 the cluster with `neo4j.com/auto-inherit-seed-creds: "true"` and the operator

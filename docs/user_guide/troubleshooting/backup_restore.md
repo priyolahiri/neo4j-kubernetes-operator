@@ -409,9 +409,9 @@ See [Property Sharding](../property_sharding.md) for details.
 
 #### Symptom: Sharded database `Failed` with "holds differential backups of …"
 
-**Cause:** the `Neo4jShardedDatabase`'s `seedBackupRef` names a PVC backup whose latest run holds a differential of one or more shards. From a PVC, Neo4j seeds a sharded database only from a full backup of every shard, and a differential cannot be merged into one. On a PVC, `backupType: AUTO` takes full backups of a sharded database, so this comes from an explicit `backupType: DIFF` or an all-databases backup; `status.history[].shardArtifacts[].type` shows which shards are `DIFF`.
+**Cause:** the `Neo4jShardedDatabase`'s `seedBackupRef` names a PVC backup whose latest run holds a differential of one or more shards. From a PVC, Neo4j seeds a sharded database only from a full backup of every shard, and a differential cannot be merged into one. On a PVC, `backupType: AUTO` takes full backups of a sharded database, so this comes from an all-databases backup, or a sharded backup's run taken by an earlier operator version; `status.history[].shardArtifacts[].type` shows which shards are `DIFF`.
 
-**Fix:** let the backup take a full run: remove `backupType: DIFF`, or create a one-shot `Neo4jBackup` with `spec.shardedDatabase` and point `seedBackupRef` at it. The sharded database retries and seeds once a full run lands. To keep differentials, back sharded databases up to cloud storage, where they seed directly.
+**Fix:** seed from a sharded backup's full run: let the next run of a `spec.shardedDatabase` backup land, or create a one-shot `Neo4jBackup` with `spec.shardedDatabase` and point `seedBackupRef` at it. The sharded database retries and seeds once a full run lands. To keep differentials, back sharded databases up to cloud storage, where they seed directly.
 
 ### Point-in-Time Recovery (PITR) Issues
 

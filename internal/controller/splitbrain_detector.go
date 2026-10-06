@@ -152,7 +152,7 @@ func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4
 			IsSplitBrain:    false,
 			ExpectedServers: expectedServers,
 			RepairAction:    RepairActionWaitForming,
-			ErrorMessage:    fmt.Sprintf("Only %d of %d pods are running, waiting for cluster formation", runningPods, expectedServers),
+			ErrorMessage:    fmt.Sprintf("Only %d of %d server pods are running", runningPods, expectedServers),
 		}, nil
 	}
 

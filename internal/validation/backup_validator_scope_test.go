@@ -169,3 +169,33 @@ func TestNeo4jBackupSpec_Scope(t *testing.T) {
 		})
 	}
 }
+
+// Neo4j refuses differential backups of property shards (observed on the
+// 2026.08.1 CI anchor: "Differential backups of property shards are not
+// allowed"), so a DIFF backup of a sharded database fails on every run. Only
+// the sharded scope is refused; AUTO and FULL are fine, and DIFF stays valid
+// for a single database.
+func TestBackupValidator_ShardedDatabaseRefusesDIFF(t *testing.T) {
+	validator := NewBackupValidator()
+	s3 := neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b", Cloud: &neo4jv1beta1.CloudBlock{Provider: "aws"}}
+	backup := func(scope func(*neo4jv1beta1.Neo4jBackupSpec), backupType string) *neo4jv1beta1.Neo4jBackup {
+		spec := neo4jv1beta1.Neo4jBackupSpec{InstanceRef: "c", Storage: s3, Options: &neo4jv1beta1.BackupOptions{BackupType: backupType}}
+		scope(&spec)
+		return &neo4jv1beta1.Neo4jBackup{ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: "ns"}, Spec: spec}
+	}
+	sharded := func(s *neo4jv1beta1.Neo4jBackupSpec) { s.ShardedDatabase = "products" }
+	single := func(s *neo4jv1beta1.Neo4jBackupSpec) { s.Database = "neo4j" }
+
+	errs := validator.Validate(backup(sharded, "DIFF"))
+	if len(errs) != 1 || errs[0].Field != "spec.options.backupType" || !strings.Contains(errs[0].Detail, "property shards") {
+		t.Fatalf("a DIFF backup of a sharded database must be refused on spec.options.backupType, got %v", errs)
+	}
+	for _, typ := range []string{"AUTO", "FULL", ""} {
+		if errs := validator.Validate(backup(sharded, typ)); len(errs) != 0 {
+			t.Errorf("backupType %q of a sharded database must be valid, got %v", typ, errs)
+		}
+	}
+	if errs := validator.Validate(backup(single, "DIFF")); len(errs) != 0 {
+		t.Errorf("DIFF of a single database must stay valid, got %v", errs)
+	}
+}
