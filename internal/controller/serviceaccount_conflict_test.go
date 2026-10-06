@@ -121,7 +121,7 @@ func TestProjectClusterSeedConfig(t *testing.T) {
 	t.Run("missing creds+endpoint, no annotation -> sentinel + both listed", func(t *testing.T) {
 		cluster := baseCluster()
 		r := newResolvedSourceReconciler(t, cluster)
-		projected, missing, err := r.projectClusterSeedConfig(context.Background(), cluster, "minio-creds", cloud)
+		projected, missing, err := r.projectSeedConfig(context.Background(), restoreTarget{cluster: cluster}, "minio-creds", cloud)
 		require.False(t, projected)
 		require.ErrorIs(t, err, errSeedConfigNotAutoInherited)
 		require.Len(t, missing, 2)
@@ -134,13 +134,13 @@ func TestProjectClusterSeedConfig(t *testing.T) {
 		cluster := baseCluster()
 		cluster.Annotations = map[string]string{AutoInheritSeedCredsAnnotation: "true"}
 		r := newResolvedSourceReconciler(t, cluster)
-		projected, _, err := r.projectClusterSeedConfig(context.Background(), cluster, "minio-creds", cloud)
+		projected, _, err := r.projectSeedConfig(context.Background(), restoreTarget{cluster: cluster}, "minio-creds", cloud)
 		require.True(t, projected)
 		require.NoError(t, err)
 		got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(cluster), got))
 		// creds projected via extraEnvFrom
-		assert.True(t, clusterHasSecretEnvFrom(got, "minio-creds"), "creds Secret must be in extraEnvFrom")
+		assert.True(t, hasSecretEnvFrom(got.Spec.ExtraEnvFrom, "minio-creds"), "creds Secret must be in extraEnvFrom")
 		// endpoint + forcePathStyle projected via spec.env
 		var endpoint, jto string
 		for _, e := range got.Spec.Env {
@@ -156,7 +156,7 @@ func TestProjectClusterSeedConfig(t *testing.T) {
 		// Single Update: STS generation effect is one bump — asserted by the
 		// fact that both landed in the same Get/Update cycle (this fake-client
 		// call is atomic). Re-running is now a no-op.
-		again, _, err := r.projectClusterSeedConfig(context.Background(), got, "minio-creds", cloud)
+		again, _, err := r.projectSeedConfig(context.Background(), restoreTarget{cluster: got}, "minio-creds", cloud)
 		require.NoError(t, err)
 		assert.False(t, again, "already projected -> nothing to do (no second roll)")
 	})
@@ -171,7 +171,7 @@ func TestProjectClusterSeedConfig(t *testing.T) {
 			LocalObjectReference: corev1.LocalObjectReference{Name: "minio-creds"},
 		}}}
 		r := newResolvedSourceReconciler(t, cluster, secret)
-		projected, _, err := r.projectClusterSeedConfig(context.Background(), cluster, "minio-creds", cloud)
+		projected, _, err := r.projectSeedConfig(context.Background(), restoreTarget{cluster: cluster}, "minio-creds", cloud)
 		require.False(t, projected, "creds present + endpoint in the projected Secret -> nothing to do")
 		require.NoError(t, err)
 	})

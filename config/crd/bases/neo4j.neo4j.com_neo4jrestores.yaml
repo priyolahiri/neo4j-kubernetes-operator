@@ -984,15 +984,20 @@ spec:
                 - type
                 type: object
               stopCluster:
-                description: Stop cluster before restore (required for some restore
-                  operations)
+                description: |-
+                  StopCluster scales a standalone to 0 for an offline neo4j-admin
+                  restore and back up afterwards. Only a standalone restore that cannot
+                  run online uses it: point-in-time, a source.type storage path, a PVC
+                  differential, or cloud storage by pod identity. Online restores —
+                  every cluster restore and every other standalone one — ignore it.
                 type: boolean
               timeout:
                 description: |-
-                  Timeout bounds the cluster Cypher restore's online-convergence wait
+                  Timeout bounds the online Cypher restore's online-convergence wait
                   (Go duration, e.g. "30m"). Defaults to 5m when unset — increase for
-                  large stores seeded from object storage. The standalone Job path is
-                  bounded by the Job's own backoff/active-deadline semantics instead.
+                  large stores seeded from object storage. The offline standalone Job
+                  path is bounded by the Job's own backoff/active-deadline semantics
+                  instead.
                 type: string
             required:
             - source
@@ -1152,6 +1157,14 @@ spec:
                       older backups whose Pod-log capture didn't record it (standalone Job
                       restores don't need it — they resolve the file with a shell glob).
                     type: string
+                  artifactType:
+                    description: |-
+                      ArtifactType is the resolved run's BackupRun.ArtifactType: FULL, DIFF,
+                      or empty when the backup did not record it.
+                    enum:
+                    - FULL
+                    - DIFF
+                    type: string
                   backupCreatedAt:
                     description: |-
                       BackupCreatedAt is the completion time of the resolved most-recent
@@ -1196,6 +1209,14 @@ spec:
                             0 otherwise.
                           format: int64
                           type: integer
+                        type:
+                          description: |-
+                            Type is FULL or DIFF (see BackupRun.ArtifactType); empty when the log
+                            did not say.
+                          enum:
+                          - FULL
+                          - DIFF
+                          type: string
                       required:
                       - database
                       type: object

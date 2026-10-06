@@ -264,20 +264,29 @@ server-lifecycle commands *before* lowering `replicas`.
 - **Flexible Targets**: Cluster OR standalone (auto-detected through `getClusterRef`; standalone is converted into a synthetic cluster representation with `Topology.Servers=1` via `standaloneAsCluster`)
 - **Validation**: Ensures target deployment compatibility
 
-**Two restore paths.** `startRestore` branches on `isRestoreTargetTrueCluster`:
-true clusters take a **Cypher path** (no Job — `neo4j-admin restore`'s
-`--overwrite-destination` is documented as unsafe on a cluster); standalone
-targets take the **Job path** below.
+**Two restore paths.** `startRestore` routes through `restoreOnJobPath`
+(`restore_target.go`, rule 108): every cluster, and every standalone restore
+whose seed the server can fetch itself, takes the online **Cypher path** (no
+Job — `neo4j-admin restore`'s `--overwrite-destination` is documented as
+unsafe on a cluster, and on a standalone it stopped every database to restore
+one). A standalone takes the **Job path** below only when
+`standaloneOfflineReason` names a reason: point-in-time, `source.type:
+storage`, a PVC artifact not known to be `FULL` (the seed proxy serves one
+file over HTTP; a differential needs its chain), or cloud storage by pod
+identity (standalone pods cannot carry one).
 
-**Cluster Cypher restore** (`startClusterCypherRestore`, clusters only): no
-Job, no `stopCluster`/scale-down. The controller seeds each server from a
-single backup-file URI — `RecreateDatabaseWithSeedURI` when the database
-already exists, `CreateDatabaseWithSeedURIOptions` when it doesn't. Because
-`dbms.recreateDatabase` is async, the controller then polls
+**Online Cypher restore** (`startClusterCypherRestore`, clusters and
+standalones): no Job, no `stopCluster`/scale-down. The controller seeds each
+server from a single backup-file URI — `RecreateDatabaseWithSeedURI` when the
+database already exists, `CreateDatabaseWithSeedURIOptions` when it doesn't.
+Because `dbms.recreateDatabase` is async, the controller then polls
 `SHOW DATABASE` online-state across requeues via `pollClusterRestoreOnline`
-before marking the restore `Completed`.
+before running post-restore hooks and marking the restore `Completed`. What
+differs between the two kinds — the StatefulSet name, the pod labels the seed
+proxy's NetworkPolicy admits, and the CR that carries the seed
+`spec.env`/`spec.extraEnvFrom` — comes from `restoreTarget`.
 
-**Standalone restore lifecycle** (Job path, post-Job-success):
+**Offline standalone restore lifecycle** (Job path, post-Job-success):
 
 1. **Restore Job** — `neo4j-admin database restore` runs in a Pod that mounts the server-0 data PVC (`neo4j-data-{name}-0` for standalone, `data-{name}-server-0` for the synthetic cluster representation — the only PVC the operator writes restored data to). `--from-path` is resolved at Pod startup via shell substitution `$(ls /backup/<run>/<dbname>-*.backup | tail -1)` (`tail -1` picks the LATEST timestamped artifact) so a single artifact file is passed even when the directory holds multiple `.backup` files. Both the path and database name go through `shellQuote()`. `--temp-path=/tmp/restore-tmp` is defaulted for PVC sources because the backup PVC is mounted ReadOnly.
 

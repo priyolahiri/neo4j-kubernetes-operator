@@ -1394,6 +1394,13 @@
         "type": "string",
         "isNullable": true,
         "note": "Exact object-storage directory a downstream cross-cluster replica should pull from; populated only when spec.mode=replication-source."
+      },
+      {
+        "id": "f-neo4jbackup-status-history-artifact-type",
+        "name": "status.history[].artifactType",
+        "type": "enum",
+        "isNullable": true,
+        "note": "FULL or DIFF per run (and databaseArtifacts[].type per database), read from neo4j-admin's log; empty when the log did not say. An online PVC restore can only seed a FULL artifact."
       }
     ],
     "paths": [
@@ -1505,7 +1512,7 @@
         "name": "stopCluster",
         "type": "bool",
         "isNullable": true,
-        "note": "Stop cluster before restore (required for some restore operations)."
+        "note": "Scales a standalone to 0 for an offline neo4j-admin restore and back up afterwards. Used only by a standalone restore that cannot run online (point-in-time, source.type storage, a PVC differential, cloud by pod identity); online restores — every cluster restore and most standalone ones — ignore it, with an event on a standalone."
       },
       {
         "id": "f-neo4jrestore-timeout",
@@ -1550,7 +1557,14 @@
         "name": "status.resolvedSource.artifactFilename",
         "type": "string",
         "isNullable": true,
-        "note": "Exact .backup filename resolved from source.type=backup; required by cluster Cypher restore paths (cloud seedURI / PVC proxy)."
+        "note": "Exact .backup filename resolved from source.type=backup; required by the online Cypher restore paths (cloud seedURI / PVC proxy)."
+      },
+      {
+        "id": "f-neo4jrestore-status-resolved-source-artifact-type",
+        "name": "status.resolvedSource.artifactType",
+        "type": "enum",
+        "isNullable": true,
+        "note": "FULL or DIFF, carried from the resolved backup run (FULL for an unrecorded run of a backupType FULL backup). A PVC seed must be FULL; decides a standalone's online vs offline restore."
       }
     ],
     "paths": [

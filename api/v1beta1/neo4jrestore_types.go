@@ -57,13 +57,18 @@ type Neo4jRestoreSpec struct {
 	// Restore options
 	Options *RestoreOptionsSpec `json:"options,omitempty"`
 
-	// Stop cluster before restore (required for some restore operations)
+	// StopCluster scales a standalone to 0 for an offline neo4j-admin
+	// restore and back up afterwards. Only a standalone restore that cannot
+	// run online uses it: point-in-time, a source.type storage path, a PVC
+	// differential, or cloud storage by pod identity. Online restores —
+	// every cluster restore and every other standalone one — ignore it.
 	StopCluster bool `json:"stopCluster,omitempty"`
 
-	// Timeout bounds the cluster Cypher restore's online-convergence wait
+	// Timeout bounds the online Cypher restore's online-convergence wait
 	// (Go duration, e.g. "30m"). Defaults to 5m when unset — increase for
-	// large stores seeded from object storage. The standalone Job path is
-	// bounded by the Job's own backoff/active-deadline semantics instead.
+	// large stores seeded from object storage. The offline standalone Job
+	// path is bounded by the Job's own backoff/active-deadline semantics
+	// instead.
 	Timeout string `json:"timeout,omitempty"`
 }
 
@@ -270,6 +275,12 @@ type ResolvedRestoreSource struct {
 	// older backups whose Pod-log capture didn't record it (standalone Job
 	// restores don't need it — they resolve the file with a shell glob).
 	ArtifactFilename string `json:"artifactFilename,omitempty"`
+
+	// ArtifactType is the resolved run's BackupRun.ArtifactType: FULL, DIFF,
+	// or empty when the backup did not record it.
+	// +kubebuilder:validation:Enum=FULL;DIFF
+	// +optional
+	ArtifactType string `json:"artifactType,omitempty"`
 
 	// ResolvedAt is when the backupRef was first dereferenced.
 	ResolvedAt *metav1.Time `json:"resolvedAt,omitempty"`

@@ -151,6 +151,53 @@ func parseAllDatabaseArtifactsFromLog(logContent string) []neo4jv1beta1.Database
 	return out
 }
 
+// Artifact types recorded in BackupRun.ArtifactType / DatabaseArtifact.Type.
+const (
+	backupArtifactFull = "FULL"
+	backupArtifactDiff = "DIFF"
+)
+
+// backupTypeLineRegex matches neo4j-admin's per-database progress lines:
+//
+//	Start full backup of database 'neo4j'.
+//	Start differential backup of database 'neo4j'.
+//	Falling back to full backup of database 'neo4j'.
+//	Finished full backup of database 'neo4j'. Downloaded from tx -1 to tx 8.
+//
+// Capture groups: [1] = "full" or "differential", [2] = database name.
+var backupTypeLineRegex = regexp.MustCompile(`(?i)\b(full|differential) backup of database '([^']+)'`)
+
+// parseArtifactTypesFromLog reports, per database, whether the run wrote a
+// FULL or a DIFF artifact. An AUTO differential that found no full to chain
+// from logs "Falling back to full backup", so any full line makes it FULL; a
+// differential with nothing new to fetch logs only its start line, and still
+// writes a DIFF artifact. Databases the log never mentions are absent.
+func parseArtifactTypesFromLog(logContent string) map[string]string {
+	types := map[string]string{}
+	for _, m := range backupTypeLineRegex.FindAllStringSubmatch(logContent, -1) {
+		db := m[2]
+		if strings.EqualFold(m[1], "full") {
+			types[db] = backupArtifactFull
+		} else if types[db] == "" {
+			types[db] = backupArtifactDiff
+		}
+	}
+	return types
+}
+
+// recordArtifactTypes stamps FULL or DIFF onto the artifacts a run recorded:
+// its single-database ArtifactFilename (database dbName) and every entry of
+// DatabaseArtifacts.
+func recordArtifactTypes(run *neo4jv1beta1.BackupRun, logContent, dbName string) {
+	types := parseArtifactTypesFromLog(logContent)
+	if run.ArtifactFilename != "" {
+		run.ArtifactType = types[dbName]
+	}
+	for i := range run.DatabaseArtifacts {
+		run.DatabaseArtifacts[i].Type = types[run.DatabaseArtifacts[i].Database]
+	}
+}
+
 // parseShardedFamiliesExcludedFromLog scans the same all-databases backup log
 // and returns the DISTINCT logical sharded databases (e.g. "products") whose
 // shard physical databases (…-g000 / …-pNNN) appear in it. These are the

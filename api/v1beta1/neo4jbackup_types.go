@@ -434,6 +434,15 @@ type BackupRun struct {
 	// +optional
 	ArtifactFilename string `json:"artifactFilename,omitempty"`
 
+	// ArtifactType says whether ArtifactFilename is a FULL backup or a DIFF
+	// (differential) one, which needs the rest of its chain to restore. Read
+	// from the Job's Pod log; empty when the log did not say. A restore that
+	// seeds from a PVC fetches the one file over HTTP and cannot follow a
+	// chain, so it relies on this.
+	// +kubebuilder:validation:Enum=FULL;DIFF
+	// +optional
+	ArtifactType string `json:"artifactType,omitempty"`
+
 	// ShardArtifacts records the per-shard `.backup` files produced by a
 	// sharded backup run (target.kind=ShardedDatabase). Populated by the
 	// backup controller after parsing the trailing `ls -la` output appended
@@ -533,6 +542,12 @@ type DatabaseArtifact struct {
 
 	// Size is the artifact size in bytes when parseable; 0 otherwise.
 	Size int64 `json:"size,omitempty"`
+
+	// Type is FULL or DIFF (see BackupRun.ArtifactType); empty when the log
+	// did not say.
+	// +kubebuilder:validation:Enum=FULL;DIFF
+	// +optional
+	Type string `json:"type,omitempty"`
 }
 
 // BackupValidationResult captures the output of `neo4j-admin backup validate`

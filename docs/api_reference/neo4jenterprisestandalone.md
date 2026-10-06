@@ -893,7 +893,7 @@ spec:
     backupRef: dev-neo4j-backup
   options:
     replaceExisting: true
-  stopCluster: true                # standalone restores run offline (see the Neo4jRestore reference)
+  stopCluster: true                # S3 by pod identity: a standalone restores it offline (see the Neo4jRestore reference)
 EOF
 ```
 
@@ -1150,7 +1150,7 @@ spec:
     backupRef: cluster-migration-backup
   options:
     replaceExisting: true            # the new standalone already has a default `neo4j` database
-  stopCluster: true
+  stopCluster: true                  # S3 by pod identity: restored offline (see the Neo4jRestore reference)
 EOF
 ```
 

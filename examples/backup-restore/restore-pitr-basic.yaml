@@ -38,9 +38,9 @@ spec:
           provider: aws
   options:
     replaceExisting: true
-    # Hooks run only on standalone targets (this example). preRestore Cypher
-    # hooks run BEFORE the instance is stopped; postRestore hooks run AFTER
-    # the restored database is registered/started.
+    # A point-in-time restore runs offline: preRestore Cypher hooks run
+    # BEFORE the instance is stopped; postRestore hooks run AFTER the
+    # restored database is registered/started.
     preRestore:
       cypherStatements:
         - "CALL db.checkpoint()"
