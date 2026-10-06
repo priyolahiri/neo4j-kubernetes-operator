@@ -47,6 +47,11 @@ import (
 //     file is already a full;
 //   - pointed at a differential, it merges the chain ENDING at that file.
 //
+// And one of `backup inspect`: it leaves out EMPTY backups — a run that found
+// no new transactions, routine for a quiet database in an all-databases
+// backup — unless asked with --empty. Without it the chain it names can stop
+// short of the very file being restored.
+//
 // The merged artifact is published at the same relative path the proxy served
 // the original under, so the seed URL does not change.
 const (
@@ -160,8 +165,9 @@ while [ "$#" -ge 4 ]; do
   latest=$(ls -1 "$src" | grep -E "$pattern" | sort | tail -n 1)
   chain=""
   if [ "$latest" = "$file" ]; then
-    chain=$("${merge[0]}" backup inspect "$src" --database="$db" --latest-chain --format=JSON 2>/dev/null \
+    chain=$("${merge[0]}" backup inspect "$src" --database="$db" --latest-chain --empty --format=JSON 2>/dev/null \
       | grep -o '"uri":"file://[^"]*"' | sed -e 's#^"uri":"file://##' -e 's#"$##')
+    printf '%s\n' $chain | grep -qxF "$src/$file" || chain=""
   fi
   if [ -z "$chain" ]; then
     chain=$(ls -1 "$src" | grep -E "$pattern" | sort | awk -v t="$file" '$0 <= t' | sed "s#^#$src/#")
@@ -179,7 +185,7 @@ while [ "$#" -ge 4 ]; do
   result=$(printf '%s\n' "$log" | sed -n -e "s/.*new artifact: '\([^']*\)'.*/\1/p" \
     -e "s/.*Found existing full backup: '\([^']*\)'.*/\1/p" | tail -n 1)
   if [ -z "$result" ] || [ ! -f "$result" ]; then
-    fail "could not merge the backup chain ending at $dir/$file: $(printf '%s\n' "$log" | grep -v -e JAVA_TOOL -e incubator | tail -n 3 | tr '\n' ' ')"
+    fail "could not merge the backup chain ending at $dir/$file: $(printf '%s\n' "$log" | grep -v -e JAVA_TOOL -e incubator -e '^-*$' | tail -n 3 | tr '\n' ' ')"
   fi
   mv "$result" "$out/$file"
   for p in "$result".*; do [ -e "$p" ] && mv "$p" "$out/$file.${p##*.}"; done

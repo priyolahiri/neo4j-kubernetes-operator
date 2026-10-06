@@ -43,8 +43,11 @@ import (
 // so a test can see which files the script copied.
 const fakeNeo4jAdmin = `#!/bin/bash
 if [ "$1" = backup ] && [ "$2" = inspect ]; then
+  chain=$FAKE_CHAIN
+  # Like neo4j-admin: an empty backup (the newest, here) is listed only with --empty.
+  case " $* " in *" --empty "*) ;; *) [ -n "${FAKE_LATEST_EMPTY:-}" ] && chain=${chain#* } ;; esac
   printf '['; first=1
-  for f in $FAKE_CHAIN; do [ $first = 1 ] || printf ','; first=0; printf '{"uri":"file://%s/%s"}' "${3%/}" "$f"; done
+  for f in $chain; do [ $first = 1 ] || printf ','; first=0; printf '{"uri":"file://%s/%s"}' "${3%/}" "$f"; done
   printf ']\n'; exit 0
 fi
 for a in "$@"; do case $a in --from-path=*) from=${a#--from-path=};; esac; done
@@ -125,6 +128,32 @@ func TestSeedMergeScript_MergesTheLatestChain(t *testing.T) {
 	assert.NotContains(t, merged, "other-")
 	_, err := os.Stat(filepath.Join(run.scratch, "work", "1"))
 	assert.True(t, os.IsNotExist(err), "the working copy is removed once merged")
+}
+
+// A quiet database's newest run is often EMPTY (no new transactions), and
+// `backup inspect` lists empty backups only with --empty; without it the chain
+// stopped short of the file being restored. Live on Kind, an all-databases
+// restore failed on exactly that. And should a listing ever omit the target,
+// the script copies everything up to it instead.
+func TestSeedMergeScript_AnEmptyNewestRunIsPartOfTheChain(t *testing.T) {
+	files := map[string]string{"nightly/neo4j-2025-12-31T00-00-00.backup": "an older chain's full"}
+	for k, v := range seedChainFiles {
+		files[k] = v
+	}
+	chain := "FAKE_CHAIN=neo4j-2026-01-01T02-00-00.backup neo4j-2026-01-01T01-00-00.backup neo4j-2026-01-01T00-00-00.backup"
+	run := runSeedMergeScript(t, files, []string{chain, "FAKE_LATEST_EMPTY=1"},
+		"nightly", "neo4j-2026-01-01T02-00-00.backup", "neo4j", "merge")
+	require.NoError(t, run.err, "%s", run.out)
+	merged := run.served(t, "nightly/neo4j-2026-01-01T02-00-00.backup")
+	assert.Contains(t, merged, "neo4j-2026-01-01T02-00-00.backup")
+	assert.NotContains(t, merged, "neo4j-2025-12-31", "the listed chain is copied, not everything before it")
+
+	run = runSeedMergeScript(t, files, []string{"FAKE_CHAIN=neo4j-2026-01-01T01-00-00.backup neo4j-2026-01-01T00-00-00.backup"},
+		"nightly", "neo4j-2026-01-01T02-00-00.backup", "neo4j", "merge")
+	require.NoError(t, run.err, "%s", run.out)
+	merged = run.served(t, "nightly/neo4j-2026-01-01T02-00-00.backup")
+	assert.Contains(t, merged, "neo4j-2026-01-01T02-00-00.backup", "a listing without the target falls back to copying up to it")
+	assert.Contains(t, merged, "neo4j-2025-12-31")
 }
 
 // A run that is not the newest in its directory: `--latest-chain` would name
