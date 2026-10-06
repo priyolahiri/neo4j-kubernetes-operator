@@ -4177,12 +4177,12 @@ cluster only when it <em>needs</em> clustering.</p>
 <tr>
 <td><strong>Backup → restore</strong></td>
 <td><strong>Both</strong></td>
-<td>Standalone restores via the <code>neo4j-admin</code> path (supports PITR <code>--restore-until</code>); cluster restores via the in-place <strong>Cypher</strong> path (PITR is <em>rejected</em> on clusters). Separate code paths.</td>
+<td>Both restore via the in-place <strong>Cypher</strong> path, but the standalone differs in its target plumbing (StatefulSet name, pod labels, which CR carries the seed env) and is the only target with an offline <code>neo4j-admin</code> path (PITR <code>--restore-until</code>, <code>source.type: storage</code>, PVC differentials, cloud by pod identity — rule 108). PITR is <em>rejected</em> on clusters.</td>
 </tr>
 <tr>
 <td><strong>Split backup archives</strong> (<code>splitArchivePartSize</code>)</td>
 <td>Standalone <strong>and</strong> Cluster, on a <strong>2026.09+</strong> image (not the CI anchor)</td>
-<td>The parts are written by the backup Job and read by every consumer, so the walk needs both restore paths (standalone <code>neo4j-admin</code>, cluster <code>seedURI</code> from cloud and through the PVC proxy) plus PVC retention. A backup larger than one part needs &gt;1GiB of incompressible data, which is why this runs outside CI</td>
+<td>The parts are written by the backup Job and read by every consumer, so the walk needs both restore paths (offline <code>neo4j-admin</code> on a standalone, online <code>seedURI</code> from cloud and through the PVC proxy) plus PVC retention. A backup larger than one part needs &gt;1GiB of incompressible data, which is why this runs outside CI</td>
 </tr>
 <tr>
 <td>Property sharding</td>
@@ -4443,16 +4443,20 @@ back to 1 replica.</p>
 <td><code>Neo4jPlugin</code> Ready; an APOC function <strong>inside the plugin's <code>allowedProcedures</code></strong> answers — with <code>examples/plugins/apoc-plugin-example.yaml</code> that is e.g. <code>RETURN apoc.convert.toJson({a:1})</code>. <code>apoc.version()</code> is outside that example's allowlist, so it fails as <em>Unknown function</em> while APOC works; that is the allowlist doing its job, not a failed install (standalone <strong>ConfigMap</strong> path)</td>
 </tr>
 <tr>
-<td>Backup → restore</td>
-<td><code>neo4j-admin</code> path with <code>stopCluster: true</code>: add a marker node → back up → delete the marker → restore → confirm the marker returns</td>
+<td>Backup → restore (online)</td>
+<td>add a marker node → back up (one-shot, PVC) → change the marker → restore over <code>neo4j</code> with <code>replaceExisting</code> → the marker returns. While it runs, poll a <strong>second</strong> database: it stays <code>online</code> throughout, the pod's restart count and UID do not change, no <code>&lt;restore&gt;-restore</code> Job exists, and a <code>stopCluster: true</code> on the restore draws an event saying it is ignored. A <code>postRestore</code> Cypher hook runs (rule 108)</td>
+</tr>
+<tr>
+<td>Backup → restore (offline)</td>
+<td>a scheduled PVC backup (<code>backupType: AUTO</code>) until a run records <code>artifactType: DIFF</code> → restore it without <code>stopCluster</code>: <code>Failed</code>, naming the differential → with <code>stopCluster: true</code>: the <code>neo4j-admin</code> Job restores the whole chain (data written after the full is present)</td>
 </tr>
 <tr>
 <td>Restore under a new name (standalone)</td>
-<td><code>stopCluster: true</code>, <code>database: &lt;new&gt;</code>: from a one-database <code>backupRef</code> (PVC and MinIO), and from an <code>allDatabases</code> backup with <code>source.sourceDatabase</code> — each new database is created with the source's data, and the Job's <code>--from-path</code> names the exact <code>.backup</code> file (no <code>$(ls …)</code> glob). A same-name restore with <code>replaceExisting</code> still brings the marker back</td>
+<td><code>database: &lt;new&gt;</code>: from a one-database <code>backupRef</code> (PVC and MinIO), and from an <code>allDatabases</code> backup with <code>source.sourceDatabase</code> — each new database is created online with the source's data. MinIO first <strong>without</strong> <code>neo4j.com/auto-inherit-seed-creds</code>: <code>Failed</code>, naming the standalone and the missing Secret/endpoint; then with it: exactly one restart, then <code>Completed</code>. On the offline path (<code>source.type: storage</code> + <code>stopCluster: true</code>) the Job's <code>--from-path</code> names the exact <code>.backup</code> file (no <code>$(ls …)</code> glob)</td>
 </tr>
 <tr>
 <td>All-databases restore (standalone)</td>
-<td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>stopCluster: true</code>, <code>options.replaceExisting: true</code>); confirm both round-trip via the single offline Job and <code>status.databaseResults</code> are all <code>Completed</code> (<code>system</code> excluded) (#288)</td>
+<td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>options.replaceExisting: true</code>); confirm both round-trip online, one database per pass, with no Job and no restart, <code>status.databaseResults</code> all <code>Completed</code> (<code>system</code> excluded) and <code>status.completionTime</code> set (#288, rule 108)</td>
 </tr>
 <tr>
 <td>Standalone recommended labels</td>

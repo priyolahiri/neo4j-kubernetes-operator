@@ -6168,18 +6168,27 @@ server-lifecycle commands <em>before</em> lowering <code>replicas</code>.</p>
 <li><strong>Flexible Targets</strong>: Cluster OR standalone (auto-detected through <code>getClusterRef</code>; standalone is converted into a synthetic cluster representation with <code>Topology.Servers=1</code> via <code>standaloneAsCluster</code>)</li>
 <li><strong>Validation</strong>: Ensures target deployment compatibility</li>
 </ul>
-<p><strong>Two restore paths.</strong> <code>startRestore</code> branches on <code>isRestoreTargetTrueCluster</code>:
-true clusters take a <strong>Cypher path</strong> (no Job — <code>neo4j-admin restore</code>'s
-<code>--overwrite-destination</code> is documented as unsafe on a cluster); standalone
-targets take the <strong>Job path</strong> below.</p>
-<p><strong>Cluster Cypher restore</strong> (<code>startClusterCypherRestore</code>, clusters only): no
-Job, no <code>stopCluster</code>/scale-down. The controller seeds each server from a
-single backup-file URI — <code>RecreateDatabaseWithSeedURI</code> when the database
-already exists, <code>CreateDatabaseWithSeedURIOptions</code> when it doesn't. Because
-<code>dbms.recreateDatabase</code> is async, the controller then polls
+<p><strong>Two restore paths.</strong> <code>startRestore</code> routes through <code>restoreOnJobPath</code>
+(<code>restore_target.go</code>, rule 108): every cluster, and every standalone restore
+whose seed the server can fetch itself, takes the online <strong>Cypher path</strong> (no
+Job — <code>neo4j-admin restore</code>'s <code>--overwrite-destination</code> is documented as
+unsafe on a cluster, and on a standalone it stopped every database to restore
+one). A standalone takes the <strong>Job path</strong> below only when
+<code>standaloneOfflineReason</code> names a reason: point-in-time, <code>source.type:
+storage</code>, a PVC artifact not known to be <code>FULL</code> (the seed proxy serves one
+file over HTTP; a differential needs its chain), or cloud storage by pod
+identity (standalone pods cannot carry one).</p>
+<p><strong>Online Cypher restore</strong> (<code>startClusterCypherRestore</code>, clusters and
+standalones): no Job, no <code>stopCluster</code>/scale-down. The controller seeds each
+server from a single backup-file URI — <code>RecreateDatabaseWithSeedURI</code> when the
+database already exists, <code>CreateDatabaseWithSeedURIOptions</code> when it doesn't.
+Because <code>dbms.recreateDatabase</code> is async, the controller then polls
 <code>SHOW DATABASE</code> online-state across requeues via <code>pollClusterRestoreOnline</code>
-before marking the restore <code>Completed</code>.</p>
-<p><strong>Standalone restore lifecycle</strong> (Job path, post-Job-success):</p>
+before running post-restore hooks and marking the restore <code>Completed</code>. What
+differs between the two kinds — the StatefulSet name, the pod labels the seed
+proxy's NetworkPolicy admits, and the CR that carries the seed
+<code>spec.env</code>/<code>spec.extraEnvFrom</code> — comes from <code>restoreTarget</code>.</p>
+<p><strong>Offline standalone restore lifecycle</strong> (Job path, post-Job-success):</p>
 <ol>
 <li>
 <p><strong>Restore Job</strong> — <code>neo4j-admin database restore</code> runs in a Pod that mounts the server-0 data PVC (<code>neo4j-data-{name}-0</code> for standalone, <code>data-{name}-server-0</code> for the synthetic cluster representation — the only PVC the operator writes restored data to). <code>--from-path</code> is resolved at Pod startup via shell substitution <code>$(ls /backup/&lt;run&gt;/&lt;dbname&gt;-*.backup | tail -1)</code> (<code>tail -1</code> picks the LATEST timestamped artifact) so a single artifact file is passed even when the directory holds multiple <code>.backup</code> files. Both the path and database name go through <code>shellQuote()</code>. <code>--temp-path=/tmp/restore-tmp</code> is defaulted for PVC sources because the backup PVC is mounted ReadOnly.</p>

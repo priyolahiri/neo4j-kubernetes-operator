@@ -6381,7 +6381,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-32-27"><a id="__codelineno-32-27" name="__codelineno-32-27" href="#__codelineno-32-27"></a><span class="s">    backupRef: dev-neo4j-backup</span>
 </span><span id="__span-32-28"><a id="__codelineno-32-28" name="__codelineno-32-28" href="#__codelineno-32-28"></a><span class="s">  options:</span>
 </span><span id="__span-32-29"><a id="__codelineno-32-29" name="__codelineno-32-29" href="#__codelineno-32-29"></a><span class="s">    replaceExisting: true</span>
-</span><span id="__span-32-30"><a id="__codelineno-32-30" name="__codelineno-32-30" href="#__codelineno-32-30"></a><span class="s">  stopCluster: true                # standalone restores run offline (see the Neo4jRestore reference)</span>
+</span><span id="__span-32-30"><a id="__codelineno-32-30" name="__codelineno-32-30" href="#__codelineno-32-30"></a><span class="s">  stopCluster: true                # S3 by pod identity: a standalone restores it offline (see the Neo4jRestore reference)</span>
 </span><span id="__span-32-31"><a id="__codelineno-32-31" name="__codelineno-32-31" href="#__codelineno-32-31"></a><span class="s">EOF</span>
 </span></code></pre></div>
 <h2 id="migration-guide">Migration Guide<a class="headerlink" href="#migration-guide" title="Anchor link to this section">&para;</a></h2>
@@ -6607,7 +6607,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-42-43"><a id="__codelineno-42-43" name="__codelineno-42-43" href="#__codelineno-42-43"></a><span class="s">    backupRef: cluster-migration-backup</span>
 </span><span id="__span-42-44"><a id="__codelineno-42-44" name="__codelineno-42-44" href="#__codelineno-42-44"></a><span class="s">  options:</span>
 </span><span id="__span-42-45"><a id="__codelineno-42-45" name="__codelineno-42-45" href="#__codelineno-42-45"></a><span class="s">    replaceExisting: true            # the new standalone already has a default `neo4j` database</span>
-</span><span id="__span-42-46"><a id="__codelineno-42-46" name="__codelineno-42-46" href="#__codelineno-42-46"></a><span class="s">  stopCluster: true</span>
+</span><span id="__span-42-46"><a id="__codelineno-42-46" name="__codelineno-42-46" href="#__codelineno-42-46"></a><span class="s">  stopCluster: true                  # S3 by pod identity: restored offline (see the Neo4jRestore reference)</span>
 </span><span id="__span-42-47"><a id="__codelineno-42-47" name="__codelineno-42-47" href="#__codelineno-42-47"></a><span class="s">EOF</span>
 </span></code></pre></div>
 <h2 id="best-practices_1">Best Practices<a class="headerlink" href="#best-practices_1" title="Anchor link to this section">&para;</a></h2>

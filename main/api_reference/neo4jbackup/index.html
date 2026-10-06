@@ -5334,7 +5334,12 @@
 <tr>
 <td><code>artifactFilename</code></td>
 <td><code>string</code></td>
-<td>Filename of the <code>.backup</code> artifact produced by this standard-DB run (e.g. <code>"neo4j-2026-06-08T01-18-06.backup"</code>). Populated by parsing the Job's Pod log after completion; empty when logs couldn't be fetched or the pattern didn't match. Used by the cluster PVC-restore path to build a per-restore seed URL.</td>
+<td>Filename of the <code>.backup</code> artifact produced by this standard-DB run (e.g. <code>"neo4j-2026-06-08T01-18-06.backup"</code>). Populated by parsing the Job's Pod log after completion; empty when logs couldn't be fetched or the pattern didn't match. Used by the online PVC-restore path to build a per-restore seed URL.</td>
+</tr>
+<tr>
+<td><code>artifactType</code></td>
+<td><code>string</code></td>
+<td><code>FULL</code> or <code>DIFF</code>: whether <code>artifactFilename</code> is a full backup or a differential that needs the rest of its chain. Read from the Job's Pod log (<code>AUTO</code> that fell back to a full is <code>FULL</code>); empty when the log did not say. An online restore from a PVC seeds the one file over HTTP, so it needs <code>FULL</code> — a cluster refuses a <code>DIFF</code>, a standalone restores it offline.</td>
 </tr>
 <tr>
 <td><code>shardArtifacts</code></td>
@@ -5344,7 +5349,7 @@
 <tr>
 <td><code>databaseArtifacts</code></td>
 <td><code>[]DatabaseArtifact</code></td>
-<td>Per-database <code>.backup</code> files produced by an all-databases backup (<code>spec.allDatabases</code>): one entry (<code>database</code>, <code>filename</code>, <code>size</code>) per user database (shard physical databases excluded). Consumed by an all-databases restore (<code>Neo4jRestore.spec.allDatabases</code>). Empty for single-database and sharded runs.</td>
+<td>Per-database <code>.backup</code> files produced by an all-databases backup (<code>spec.allDatabases</code>): one entry (<code>database</code>, <code>filename</code>, <code>size</code>, <code>type</code> — <code>FULL</code>/<code>DIFF</code> as for <code>artifactType</code>) per user database (shard physical databases excluded). Consumed by an all-databases restore (<code>Neo4jRestore.spec.allDatabases</code>). Empty for single-database and sharded runs.</td>
 </tr>
 <tr>
 <td><code>shardedDatabasesExcluded</code></td>
