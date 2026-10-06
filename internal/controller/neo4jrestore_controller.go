@@ -418,6 +418,11 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	if res, done, err := r.ensureResolvedBackupSource(ctx, restore); done {
 		return res, err
 	}
+	// A point in time runs online only into a new database on CalVer from
+	// cloud storage; decide once, before routing, and record it.
+	if res, done, err := r.decidePointInTimePath(ctx, restore); done {
+		return res, err
+	}
 
 	// Restores run ONLINE against the live DBMS — `dbms.recreateDatabase` for
 	// an existing database, `CREATE DATABASE … OPTIONS {seedURI}` for a new one
@@ -925,7 +930,7 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		// Reject it up front with an actionable pointer to the cluster-native
 		// path (Neo4jDatabase.spec.seedConfig.restoreUntil).
 		if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
-			return fmt.Errorf("source.type=pitr is not supported for cluster targets (instanceRef %q resolves to a Neo4jEnterpriseCluster); Neo4jRestore PITR applies to Neo4jEnterpriseStandalone targets only. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
+			return fmt.Errorf("source.type=pitr is not supported for cluster targets (instanceRef %q resolves to a Neo4jEnterpriseCluster): it replays separately stored transaction logs with neo4j-admin, which needs the instance stopped. For cluster point-in-time recovery, use source.type backup with source.pointInTime (CalVer, cloud storage, into a new database), or a Neo4jDatabase with spec.seedConfig.restoreUntil", restore.Spec.InstanceRef)
 		}
 
 	default:
@@ -983,13 +988,15 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 		}
 	}
 
-	// spec.source.pointInTime is implemented by the standalone Job path
-	// (--restore-until) for EVERY source type — but the cluster Cypher path
-	// never reads it (#218). Silently returning latest-state when the user
-	// asked for a point in time is worse than failing: reject up front.
-	if restore.Spec.Source.PointInTime != nil {
+	// spec.source.pointInTime on a cluster restores online with
+	// seedRestoreUntil, which needs a Neo4jBackup's recorded runs to pick the
+	// one holding the point in time, and a single database to create
+	// (decidePointInTimePath checks the rest once the source is resolved).
+	// Silently returning latest-state when the user asked for a point in
+	// time is worse than failing (#218): reject the shapes it cannot do.
+	if restore.Spec.Source.PointInTime != nil && (restore.Spec.Source.Type != SourceTypeBackup || restore.Spec.AllDatabases) {
 		if isCluster, _, terr := r.isRestoreTargetTrueCluster(ctx, restore); terr == nil && isCluster {
-			return fmt.Errorf("source.pointInTime is not supported for cluster targets (instanceRef %q resolves to a Neo4jEnterpriseCluster) — the cluster restore path seeds from a backup artifact and cannot replay to a point in time. For cluster point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead", restore.Spec.InstanceRef)
+			return fmt.Errorf("source.pointInTime on a cluster target (instanceRef %q) needs source.type backup and a single spec.database: the cluster restores to a point in time online, by creating the database from the backup run that holds it. For other shapes, create a Neo4jDatabase with spec.seedConfig.restoreUntil", restore.Spec.InstanceRef)
 		}
 	}
 
@@ -1740,29 +1747,31 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 	artifact, artifactType := "", ""
 	var dbArtifacts []neo4jv1beta1.DatabaseArtifact
 	var shardedExcluded []string
-	var backupCreatedAt *metav1.Time
+	var backupCreatedAt, backupStartedAt *metav1.Time
 	backup := &neo4jv1beta1.Neo4jBackup{}
 	if gerr := r.Get(ctx, types.NamespacedName{Name: restore.Spec.Source.BackupRef, Namespace: restore.Namespace}, backup); gerr == nil {
-		for i := range backup.Status.History {
-			if backup.Status.History[i].Status == "Succeeded" {
-				artifact = backup.Status.History[i].ArtifactFilename
-				artifactType = backup.Status.History[i].ArtifactType
-				// A run recorded before the operator read the type is still
-				// known FULL when the backup only ever takes fulls.
-				if artifactType == "" && backup.Spec.Options != nil && backup.Spec.Options.BackupType == backupArtifactFull {
-					artifactType = backupArtifactFull
-				}
-				// Pin the per-database map too, for an all-databases restore (#222).
-				dbArtifacts = backup.Status.History[i].DatabaseArtifacts
-				// Carry forward the sharded families this backup did not cover so
-				// an all-databases restore can surface them (they restore via the
-				// Neo4jShardedDatabase CR, not here).
-				shardedExcluded = backup.Status.History[i].ShardedDatabasesExcluded
-				// Pin when the backup ran so restore provenance survives the
-				// Neo4jBackup CR being deleted (surfaced as
-				// status.backupInfo.backupCreatedAt).
-				backupCreatedAt = backup.Status.History[i].CompletionTime
-				break
+		if i := restoreRunIndex(backup.Status.History, restore.Spec.Source.PointInTime); i >= 0 {
+			run := backup.Status.History[i]
+			artifact = run.ArtifactFilename
+			artifactType = run.ArtifactType
+			// A run recorded before the operator read the type is still
+			// known FULL when the backup only ever takes fulls.
+			if artifactType == "" && backup.Spec.Options != nil && backup.Spec.Options.BackupType == backupArtifactFull {
+				artifactType = backupArtifactFull
+			}
+			// Pin the per-database map too, for an all-databases restore (#222).
+			dbArtifacts = run.DatabaseArtifacts
+			// Carry forward the sharded families this backup did not cover so
+			// an all-databases restore can surface them (they restore via the
+			// Neo4jShardedDatabase CR, not here).
+			shardedExcluded = run.ShardedDatabasesExcluded
+			// Pin when the backup ran so restore provenance survives the
+			// Neo4jBackup CR being deleted (surfaced as
+			// status.backupInfo.backupCreatedAt).
+			backupCreatedAt = run.CompletionTime
+			if !run.StartTime.IsZero() {
+				started := run.StartTime
+				backupStartedAt = &started
 			}
 		}
 	}
@@ -1778,6 +1787,7 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 		ShardedDatabasesExcluded: shardedExcluded,
 		ResolvedAt:               &now,
 		BackupCreatedAt:          backupCreatedAt,
+		BackupStartedAt:          backupStartedAt,
 	}
 	if err := r.persistResolvedSource(ctx, restore, snapshot); err != nil {
 		// Persisting failed; retry on a later reconcile rather than proceeding
@@ -1785,6 +1795,52 @@ func (r *Neo4jRestoreReconciler) ensureResolvedBackupSource(ctx context.Context,
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, true, err
 	}
 	return ctrl.Result{}, false, nil
+}
+
+// restoreRunIndex picks the Succeeded run a `source.type: backup` restore
+// resolves to, or -1: the most recent one, or — with a point in time — the
+// earliest that started at or after it. That run holds every transaction
+// committed before the point in time, so restoring it until then is exact; a
+// later run would do too, with more of the chain to replay. When none started
+// that late, the most recent run is the best there is (pointInTimeCovered
+// reports it). A run with no start time cannot be placed and is skipped.
+func restoreRunIndex(history []neo4jv1beta1.BackupRun, pointInTime *metav1.Time) int {
+	latest, covering := -1, -1
+	for i := range history {
+		run := &history[i]
+		if run.Status != "Succeeded" {
+			continue
+		}
+		if latest < 0 || runStartedAfter(run, &history[latest]) {
+			latest = i
+		}
+		if pointInTime == nil || run.StartTime.IsZero() || run.StartTime.Before(pointInTime) {
+			continue
+		}
+		if covering < 0 || runStartedAfter(&history[covering], run) {
+			covering = i
+		}
+	}
+	if covering >= 0 {
+		return covering
+	}
+	return latest
+}
+
+// runStartedAfter orders runs by start time; one with no start time is the
+// older, so history order (newest first) decides between such runs.
+func runStartedAfter(a, b *neo4jv1beta1.BackupRun) bool {
+	if a.StartTime.IsZero() || b.StartTime.IsZero() {
+		return false
+	}
+	return a.StartTime.After(b.StartTime.Time)
+}
+
+// pointInTimeCovered reports whether the resolved run started at or after the
+// restore's point in time, so it holds every transaction before it.
+func pointInTimeCovered(restore *neo4jv1beta1.Neo4jRestore, snap *neo4jv1beta1.ResolvedRestoreSource) bool {
+	pit := restore.Spec.Source.PointInTime
+	return pit != nil && snap != nil && snap.BackupStartedAt != nil && !snap.BackupStartedAt.Before(pit)
 }
 
 // persistResolvedSource durably writes the snapshot to status.ResolvedSource
@@ -3191,13 +3247,23 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	// instead of silently ignoring the field.
 	if target.isStandalone() && restore.Spec.StopCluster {
 		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-			fmt.Sprintf("spec.stopCluster is ignored: standalone %q is restored online and its other databases stay available (only a point-in-time restore stops the instance)", target.name()))
+			fmt.Sprintf("spec.stopCluster is ignored: standalone %q is restored online and its other databases stay available (only a restore the server cannot seed itself stops the instance)", target.name()))
 	}
 
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
 		fmt.Sprintf("Online restore into %s %q: database %q (%s), seedURI=%s",
 			target.kind(), target.name(), restore.Spec.Database, ternaryString(exists, "recreate", "create"), seedURI))
 
+	if exists && restore.Spec.Source.PointInTime != nil {
+		// Decided online because the database was absent; it has appeared
+		// since. dbms.recreateDatabase has no restore-until, so recreating it
+		// would silently restore the whole run instead of the point in time.
+		msg := fmt.Sprintf("database %q exists now; a point-in-time restore creates the database (seedRestoreUntil is a CREATE DATABASE option) — restore under a new name, or drop it and re-trigger the restore",
+			restore.Spec.Database)
+		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+		return ctrl.Result{}, nil
+	}
 	if exists {
 		// Recreating an EXISTING database wipes and replaces its contents —
 		// destructive by definition. Gate on the same explicit opt-in the
@@ -3257,7 +3323,13 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	// offline with the failure in SHOW DATABASE's statusMessage. Verify the
 	// actual allocation state before declaring success; the statusMessage
 	// is the actionable detail the user needs.
-	if createErr := neo4jClient.CreateDatabaseWithSeedURIOptions(ctx, restore.Spec.Database, seedURI, false); createErr != nil {
+	var createErr error
+	if pit := restore.Spec.Source.PointInTime; pit != nil {
+		createErr = neo4jClient.CreateDatabaseWithSeedURIUntil(ctx, restore.Spec.Database, seedURI, pit.Time)
+	} else {
+		createErr = neo4jClient.CreateDatabaseWithSeedURIOptions(ctx, restore.Spec.Database, seedURI, false)
+	}
+	if createErr != nil {
 		logger.Error(createErr, "CREATE DATABASE OPTIONS{seedURI} failed")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("CREATE DATABASE OPTIONS{seedURI} failed: %v", createErr))
 		return ctrl.Result{}, createErr
@@ -3436,12 +3508,14 @@ func (r *Neo4jRestoreReconciler) clearCypherRestoreIssued(ctx context.Context, r
 		_, hasIssued := latest.Annotations[AnnotationCypherRestoreIssued]
 		_, hasOffline := latest.Annotations[AnnotationCypherRestoreObservedOffline]
 		_, hasHooks := latest.Annotations[AnnotationRestorePreHooksRan]
-		if !hasIssued && !hasOffline && !hasHooks {
+		_, hasPath := latest.Annotations[AnnotationPointInTimePath]
+		if !hasIssued && !hasOffline && !hasHooks && !hasPath {
 			return nil
 		}
 		delete(latest.Annotations, AnnotationCypherRestoreIssued)
 		delete(latest.Annotations, AnnotationCypherRestoreObservedOffline)
 		delete(latest.Annotations, AnnotationRestorePreHooksRan)
+		delete(latest.Annotations, AnnotationPointInTimePath)
 		return r.Update(ctx, latest)
 	})
 	if err != nil {
@@ -3450,6 +3524,7 @@ func (r *Neo4jRestoreReconciler) clearCypherRestoreIssued(ctx context.Context, r
 	delete(restore.Annotations, AnnotationCypherRestoreIssued)
 	delete(restore.Annotations, AnnotationCypherRestoreObservedOffline)
 	delete(restore.Annotations, AnnotationRestorePreHooksRan)
+	delete(restore.Annotations, AnnotationPointInTimePath)
 	return nil
 }
 

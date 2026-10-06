@@ -208,7 +208,9 @@ func restoreRunsOffline(restore *neo4jv1beta1.Neo4jRestore, isTrueCluster bool, 
 // above, so they keep the Job.
 func standaloneOfflineReason(restore *neo4jv1beta1.Neo4jRestore, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) string {
 	if restore.Spec.Source.Type == "pitr" || restore.Spec.Source.PointInTime != nil {
-		return "a point-in-time restore cannot be seeded online (dbms.recreateDatabase has no restore-until option)"
+		if why := pointInTimeOfflineReason(restore); why != "" {
+			return why
+		}
 	}
 	if restore.Spec.Source.Type != SourceTypeBackup {
 		return fmt.Sprintf("source.type %q gives a path, which may be a directory or part of a backup chain; only neo4j-admin resolves those", restore.Spec.Source.Type)

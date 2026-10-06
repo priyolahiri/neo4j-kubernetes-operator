@@ -292,6 +292,13 @@ type ResolvedRestoreSource struct {
 	// +optional
 	BackupCreatedAt *metav1.Time `json:"backupCreatedAt,omitempty"`
 
+	// BackupStartedAt is when the resolved run started. With
+	// spec.source.pointInTime the restore resolves the earliest Succeeded run
+	// that started at or after it — that run holds every transaction before
+	// the point in time — rather than the most recent one.
+	// +optional
+	BackupStartedAt *metav1.Time `json:"backupStartedAt,omitempty"`
+
 	// DatabaseArtifacts is the per-database `.backup` map pinned for an
 	// all-databases restore (spec.allDatabases), copied from the resolved
 	// backup's latest Succeeded run so the restore no longer depends on the

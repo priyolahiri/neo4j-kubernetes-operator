@@ -285,17 +285,26 @@ first reconcile.
   `Neo4jEnterpriseStandalone` no longer stops the instance: it runs
   `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }` against
   it, so only the restored database is unavailable, and `stopCluster: true` is
-  ignored. Point-in-time restores and `source.type: storage` still restore
-  offline and need `stopCluster: true`, as does cloud storage by pod identity
-  unless the standalone sets the new `spec.podServiceAccountAnnotations`
-  (below). A restore already running offline when you upgrade finishes
-  offline. See
+  ignored. `source.type: storage`, point-in-time restores that cannot run
+  online (below), and cloud storage by pod identity unless the standalone sets
+  the new `spec.podServiceAccountAnnotations` (below) still restore offline
+  and need `stopCluster: true`. A restore already running offline when you
+  upgrade finishes offline. See
   [Restore to a Standalone Instance](guides/backup_restore.md#restore-to-a-standalone-instance).
   - From **cloud storage with static credentials**, the standalone's own pods
     now fetch the seed. They need the credentials Secret in `spec.extraEnvFrom`
     (and, for MinIO, the endpoint in `spec.env`), or the
     `neo4j.com/auto-inherit-seed-creds: "true"` annotation, which adds them at
     the cost of one restart. Without either, the restore fails and says so.
+- **Point-in-time restores run online.** A `Neo4jRestore` with
+  `source.pointInTime` from a `Neo4jBackup` in cloud storage, into a database
+  that does not exist yet, on CalVer, now creates the database with
+  `seedRestoreUntil`, on a cluster or a standalone. It used to stop a
+  standalone for the Job, and a cluster refused it. The restore now uses the
+  backup run that holds the point in time (the earliest that started at or
+  after it), not the most recent run. Other point-in-time restores still take
+  the Job on a standalone; on a cluster they fail naming the reason. See
+  [Point-in-Time Recovery](guides/backup_restore.md#point-in-time-recovery-pitr).
 - **Cluster restores run their hooks.** `spec.options.preRestore` and
   `postRestore` were ignored on clusters; they now run before the restore is
   issued and once the database is online, as on a standalone. A failing
@@ -337,6 +346,8 @@ first reconcile.
   `FULL` or `DIFF`, read from each run's log. `Neo4jRestore`
   `status.resolvedSource.artifactType` carries it into the restore.
 - An all-databases restore records `status.completionTime`.
+- `Neo4jRestore` `status.resolvedSource.backupStartedAt`: when the resolved
+  backup run started.
 - **A standalone restores into a new database name.** It used to look for the
   *target* name's files and fail. Standalone restores from a
   `backupRef` now read the run's recorded artifact, as cluster restores

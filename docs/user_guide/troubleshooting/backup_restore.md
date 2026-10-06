@@ -415,16 +415,26 @@ See [Property Sharding](../property_sharding.md) for details.
 
 ### Point-in-Time Recovery (PITR) Issues
 
-PITR via `Neo4jRestore` (`source.type: pitr`) runs the `neo4j-admin database restore --restore-until=…` Job and is supported **only for `Neo4jEnterpriseStandalone` targets**. For cluster point-in-time recovery, create a `Neo4jDatabase` with `spec.seedConfig.restoreUntil` instead — a `Neo4jRestore` with `source.type: pitr` whose `instanceRef` points at a cluster is rejected by the validator.
+A `Neo4jRestore` with `source.pointInTime` runs online on CalVer, from cloud storage, into a database that does not exist yet. Otherwise a standalone runs the `neo4j-admin database restore --restore-until=…` Job, and a cluster refuses. `source.type: pitr` always takes the Job, so it is standalone-only. See [Point-in-Time Recovery](../guides/backup_restore.md#point-in-time-recovery-pitr).
+
+#### Symptom: "point-in-time restore into cluster … cannot run: …"
+
+**Cause:** the cluster cannot restore this point in time online, and a cluster has no offline path. The message names why:
+
+- **the database exists** — restore under a new name, then compare and copy back what was lost;
+- **Neo4j 5.26** — upgrade to CalVer, or use a `Neo4jDatabase` with `spec.seedConfig.restoreUntil` on CalVer;
+- **a PVC backup** — back up to cloud storage;
+- **no run started at or after the point in time** — take a backup, or choose an earlier point.
+
+**Fix:** address the cause and re-trigger the restore by changing its spec.
 
 #### Symptom: PITR restore rejected for a cluster target
 
 ```
-source.type=pitr is not supported for cluster targets … For cluster
-point-in-time recovery, create a Neo4jDatabase with spec.seedConfig.restoreUntil instead
+source.type=pitr is not supported for cluster targets …
 ```
 
-**Fix:** use the `Neo4jDatabase` seed-config path for clusters; reserve `Neo4jRestore` PITR for standalone.
+**Fix:** on a cluster use `source.type: backup` with `source.pointInTime` (above), or a `Neo4jDatabase` with `spec.seedConfig.restoreUntil`; `source.type: pitr` is for standalones.
 
 #### Symptom: PITR restore fails with timestamp errors
 

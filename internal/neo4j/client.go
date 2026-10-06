@@ -2296,6 +2296,31 @@ func (c *Client) CreateDatabaseWithSeedURIOptions(
 	return nil
 }
 
+// CreateDatabaseWithSeedURIUntil creates a database from a seed restored up to
+// a point in time: `seedRestoreUntil: datetime(...)` replays the transactions
+// committed before it. CalVer only, through the cloud and file seed providers,
+// and only with CREATE DATABASE — dbms.recreateDatabase has no such option.
+// seedURI names the backup holding the data up to that time.
+// https://neo4j.com/docs/operations-manual/current/database-administration/standard-databases/seed-from-uri/#seed-restore-until-option
+func (c *Client) CreateDatabaseWithSeedURIUntil(ctx context.Context, databaseName, seedURI string, until time.Time) error {
+	if seedURI == "" {
+		return fmt.Errorf("seedURI is required for seedURI-based CREATE DATABASE of %q", databaseName)
+	}
+	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeWrite,
+		DatabaseName: "system",
+	})
+	defer session.Close(ctx)
+
+	// existingData: 'use' as in CreateDatabaseWithSeedURIOptions: the system
+	// database parses this as Cypher 5, which requires it alongside seedURI.
+	query := fmt.Sprintf("CREATE DATABASE `%s` OPTIONS { existingData: 'use', seedURI: $uri, seedRestoreUntil: datetime($until) } WAIT", databaseName)
+	if _, err := session.Run(ctx, query, map[string]any{"uri": seedURI, "until": until.UTC().Format(time.RFC3339Nano)}); err != nil {
+		return fmt.Errorf("CREATE DATABASE %q OPTIONS{seedURI, seedRestoreUntil}: %w", databaseName, err)
+	}
+	return nil
+}
+
 // DatabaseExists checks if a database exists
 func (c *Client) DatabaseExists(ctx context.Context, databaseName string) (bool, error) {
 	databases, err := c.GetDatabases(ctx)

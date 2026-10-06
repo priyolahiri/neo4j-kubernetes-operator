@@ -1579,6 +1579,13 @@
         "type": "enum",
         "isNullable": true,
         "note": "FULL or DIFF, carried from the resolved backup run (FULL for an unrecorded run of a backupType FULL backup). Anything but FULL on a PVC has its chain merged by the seed proxy before seeding."
+      },
+      {
+        "id": "f-neo4jrestore-status-resolved-source-backup-started-at",
+        "name": "status.resolvedSource.backupStartedAt",
+        "type": "datetime",
+        "isNullable": true,
+        "note": "When the resolved backup run started. With spec.source.pointInTime the restore resolves the earliest Succeeded run that started at or after it (it holds every transaction before it), not the most recent one."
       }
     ],
     "paths": [
