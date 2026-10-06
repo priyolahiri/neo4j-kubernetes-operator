@@ -280,25 +280,23 @@ first reconcile.
   now keeps the last address it reported, and series a cluster no longer
   reports are withdrawn.
 
-- **A standalone restores online** (rule 108). A `Neo4jRestore` into a
-  `Neo4jEnterpriseStandalone` used to stop the instance and run `neo4j-admin`,
-  taking every database offline to restore one. It now runs
-  `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }` against the
-  running instance, like a cluster restore: only the restored database is
-  unavailable, and `stopCluster: true` is ignored (an event says so). A few
-  restores still run offline, and still need `stopCluster: true`:
-  point-in-time, `source.type: storage`, a PVC backup whose artifact is a
-  differential or of unrecorded type, and cloud storage by pod identity. See
+- **A standalone restores online.** A `Neo4jRestore` into a
+  `Neo4jEnterpriseStandalone` no longer stops the instance: it runs
+  `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }` against
+  it, so only the restored database is unavailable, and `stopCluster: true` is
+  ignored. Point-in-time restores, `source.type: storage`, PVC differentials
+  and cloud storage by pod identity still restore offline and need
+  `stopCluster: true`; a restore already running offline when you upgrade
+  finishes offline. See
   [Restore to a Standalone Instance](guides/backup_restore.md#restore-to-a-standalone-instance).
-  - A standalone restoring from **cloud storage with static credentials** now
-    fetches the seed from its own pods, which need the credentials Secret in
-    `spec.extraEnvFrom` (and, for MinIO, the endpoint in `spec.env`) — or the
-    `neo4j.com/auto-inherit-seed-creds: "true"` annotation, which projects
-    them at the cost of one restart. Without either, the restore fails with a
-    message saying exactly that.
-  - **PVC backups taken before this upgrade** carry no recorded type, so a
-    standalone restores them offline — unless the backup's `backupType` is
-    `FULL`. Runs after the upgrade record it.
+  - From **cloud storage with static credentials**, the standalone's own pods
+    now fetch the seed. They need the credentials Secret in `spec.extraEnvFrom`
+    (and, for MinIO, the endpoint in `spec.env`), or the
+    `neo4j.com/auto-inherit-seed-creds: "true"` annotation, which adds them at
+    the cost of one restart. Without either, the restore fails and says so.
+  - **PVC backups taken before the upgrade** carry no `FULL`/`DIFF` record, so
+    a standalone restores them offline unless the backup's `backupType` is
+    `FULL`.
 - **Cluster restores run their hooks.** `spec.options.preRestore` and
   `postRestore` were ignored on clusters; they now run before the restore is
   issued and once the database is online, as on a standalone. A failing

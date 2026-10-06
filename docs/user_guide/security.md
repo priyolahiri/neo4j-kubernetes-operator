@@ -482,7 +482,7 @@ spec:
 
 **Do not use `extraVolumes` to override Neo4j's SSL policy paths.** The operator owns `dbms.ssl.policy.*`, `server.bolt.tls_level`, and `server.directories.certificates` end-to-end; the cluster validator rejects any of those keys in `spec.config` with `Forbidden`. Per-policy `truststore_path` overrides are not configurable via the operator today — for an additive trust anchor, use `spec.trustedCASecrets` (above), which feeds the operator-managed JKS truststore at `/truststore/truststore.jks`.
 
-Mount paths that collide with operator-managed paths are rejected by the controller during reconciliation (the project does not use admission webhooks — see CLAUDE.md rule 26). Reserved paths include `/data`, `/logs`, `/conf`, `/ssl`, `/plugins`, `/truststore`, `/truststore-ca`, and subdirectories under `/var/lib/neo4j/` such as `data`, `logs`, `conf`, `plugins`, and `certificates`. A CR with a colliding mount is accepted into the API but its `status.phase` moves to `Failed` with a message naming the offending path.
+Mount paths that collide with operator-managed paths are rejected by the controller during reconciliation (the operator uses no admission webhooks). Reserved paths include `/data`, `/logs`, `/conf`, `/ssl`, `/plugins`, `/truststore`, `/truststore-ca`, and subdirectories under `/var/lib/neo4j/` such as `data`, `logs`, `conf`, `plugins`, and `certificates`. A CR with a colliding mount is accepted into the API but its `status.phase` moves to `Failed` with a message naming the offending path.
 
 ### Group-to-Role Mapping
 

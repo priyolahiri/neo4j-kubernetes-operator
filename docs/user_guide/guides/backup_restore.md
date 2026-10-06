@@ -121,12 +121,11 @@ seeds it from the backup over Cypher — online, no downtime, and your original
 !!! note "On a `Neo4jEnterpriseStandalone`"
 
     The same: a standalone restores online too, and its other databases stay
-    available throughout. A few restores still run **offline** through
-    `neo4j-admin`, which stops the instance — point-in-time restores,
-    `source.type: storage` paths, and a PVC backup whose latest artifact is a
-    differential (`backupType: AUTO` writes one on every run after the first).
-    Those need `stopCluster: true`, and the restore's status says which case
-    applies. See [Restore to a Standalone Instance](#restore-to-a-standalone-instance).
+    available throughout. A few restores run **offline** through
+    `neo4j-admin`, which stops the instance — point-in-time restores, for
+    example, and a PVC backup whose latest artifact is a differential. Those
+    need `stopCluster: true`, and the restore's status names the reason. See
+    [Restore to a Standalone Instance](#restore-to-a-standalone-instance).
 
 ```yaml
 cat <<'EOF' | kubectl apply -f -
@@ -209,7 +208,7 @@ spec:
 
 **Cross-topology restore.** A backup is database-scoped, not topology-scoped — a database backed up from a **standalone** can be restored into a **cluster** (and vice-versa); the operator picks the engine from the *target*. Caveats: the target Neo4j version must be ≥ the source; the `system` database is never restored across topologies (an `allDatabases` restore skips it, although the backup captures it — carry users/roles via `options.includeMetadata` on the backup).
 
-**All-databases restore ([#222](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/222), [#288](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/288)).** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, with per-database progress in `status.databaseResults`. Requires `source.type=backup`. The operator restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike; set `options.replaceExisting: true` to overwrite existing databases. A standalone falls back to a single offline `neo4j-admin database restore` Job covering all user databases — with `stopCluster: true`, which scales the instance to 0 — in the cases listed under [Restore to a Standalone Instance](#restore-to-a-standalone-instance), for example when any of the PVC artifacts is a differential.
+**All-databases restore.** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, with per-database progress in `status.databaseResults`. Requires `source.type=backup`. The operator restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike; set `options.replaceExisting: true` to overwrite existing databases. A standalone falls back to a single offline `neo4j-admin database restore` Job covering all user databases — with `stopCluster: true`, which scales the instance to 0 — in the cases listed under [Restore to a Standalone Instance](#restore-to-a-standalone-instance), for example when any of the PVC artifacts is a differential.
 
 **Migrating from the pre-v1.14 API.** The legacy `spec.target` (backup) and `spec.clusterRef`/`spec.databaseName`/`spec.force` (restore) fields were deprecated in v1.13 and **removed in v1.14**. Migrate backups to `instanceRef` + `database`/`allDatabases`/`shardedDatabase` (cloud config moves under `storage.cloud`), and restores to `instanceRef` + `database`/`allDatabases` with `options.replaceExisting` in place of `force`.
 
@@ -239,7 +238,7 @@ spec:
 
 A standalone is just an instance — back it up with `instanceRef: <standalone-name>` + a scope, exactly like a cluster.
 
-> ℹ️ **`allDatabases` and property-sharded databases — one backup, two restore paths.** An instance-wide backup now **catalogues** each property-sharded family's per-shard `.backup` files in `status.history[].shardedFamilies` (the family names are also listed in `shardedDatabasesExcluded`, with a `BackupShardedDatabasesExcluded` event). So **one `allDatabases` backup is a complete DR source**. What differs is *how* each kind is restored: the all-databases **restore loop recreates standard databases only** (sharded DBs need the shard-topology `CREATE` clauses only `Neo4jShardedDatabase` emits), so to recover a sharded family you re-apply its `Neo4jShardedDatabase` CR with `spec.seedBackupRef` pointing at that **same** backup (add `spec.seedSourceDatabase` if restoring under a different name). The all-databases restore re-warns (`RestoreShardedDatabasesNotCovered`) naming each family and the `seedBackupRef` to use — see [Property Sharding](../property_sharding.md). Recovering a mixed cluster is therefore an all-databases restore **plus** one `Neo4jShardedDatabase` re-apply per family, all seeding from the single backup. (You can still take a dedicated `shardedDatabase:`-scoped backup per family if you prefer per-family lifecycles.)
+> ℹ️ **`allDatabases` and property-sharded databases — one backup, two restore paths.** An instance-wide backup **catalogues** each property-sharded family's per-shard `.backup` files in `status.history[].shardedFamilies` (the family names are also listed in `shardedDatabasesExcluded`, with a `BackupShardedDatabasesExcluded` event). So **one `allDatabases` backup is a complete DR source**. What differs is *how* each kind is restored: the all-databases **restore loop recreates standard databases only** (sharded DBs need the shard-topology `CREATE` clauses only `Neo4jShardedDatabase` emits), so to recover a sharded family you re-apply its `Neo4jShardedDatabase` CR with `spec.seedBackupRef` pointing at that **same** backup (add `spec.seedSourceDatabase` if restoring under a different name). The all-databases restore re-warns (`RestoreShardedDatabasesNotCovered`) naming each family and the `seedBackupRef` to use — see [Property Sharding](../property_sharding.md). Recovering a mixed cluster is therefore an all-databases restore **plus** one `Neo4jShardedDatabase` re-apply per family, all seeding from the single backup. (You can still take a dedicated `shardedDatabase:`-scoped backup per family if you prefer per-family lifecycles.)
 
 > **Removed `target` block.** The pre-v1.14 `target: {kind: Cluster|Database|ShardedDatabase, name, clusterRef}` form was deprecated in v1.13 and **removed in v1.14** — use `instanceRef` + `allDatabases`/`database`/`shardedDatabase`.
 
@@ -1074,14 +1073,16 @@ Restores run **online**, against the running DBMS: only the database being resto
 
 **Online path (Cypher)** — clusters and standalones; works with both cloud and PVC backups:
 
-- **Cloud-backed backup** (S3 / GCS / Azure): the operator passes the exact `.backup` **file** URI of the latest successful run (`s3://bucket/<path>/<backup-cr-name>/<dbname>-<timestamp>.backup`) as `seedURI` — `CloudSeedProvider` seeds a single database from one file, not a directory. When that file is a differential, Neo4j resolves and applies the full + differential chain from the same directory automatically. The cluster's pods must have the cloud credentials Secret projected via `spec.extraEnvFrom` — the operator emits an actionable error if they don't, or auto-patches under annotation `neo4j.com/auto-inherit-seed-creds=true`.
-- **PVC-backed backup**: the operator spawns an in-cluster busybox httpd proxy (`backup-seed-proxy-<restore-name>`) mounting the backup PVC RO at `/backup`, then passes the per-run `.backup` file URL as `seedURI` (`http://backup-seed-proxy-<restore-name>:8080/<backup-cr-name>/<filename>`). Neo4j's `URLConnectionSeedProvider` fetches it. The operator also creates a **NetworkPolicy restricting the proxy's ingress to the target's server pods** (effective on enforcing CNIs), and **tears the whole proxy stack down automatically** (Deployment + Service + NetworkPolicy) as soon as the restore reaches `Completed` or `Failed` — it doesn't keep serving the backup PVC for the lifetime of the CR. No credentials required. The server fetches the one file, so it must be a **full** backup: Neo4j refuses a differential seeded this way ("not part of a valid backup chain"). Each backup run records whether it wrote a `FULL` or a `DIFF` (`status.history[].artifactType`); a cluster refuses a PVC differential before creating anything, and a standalone restores it offline. Cloud storage has no such limit — its seed provider reads the whole chain. To restore a cluster from PVC backups, take them with `backupType: FULL`.
-- Restoring over an **existing** database requires the explicit opt-in `spec.options.replaceExisting: true` — recreate wipes and replaces the live contents, so the operator refuses without it.
+- **Cloud-backed backup** (S3 / GCS / Azure): the operator passes the exact `.backup` **file** URI of the latest successful run (`s3://bucket/<path>/<backup-cr-name>/<dbname>-<timestamp>.backup`) as `seedURI`. When that file is a differential, Neo4j applies the full + differential chain from the same directory automatically. The Neo4j server pods fetch the seed themselves, so they need the cloud credentials Secret in the cluster's or standalone's `spec.extraEnvFrom` — the operator says exactly what is missing, or projects it for you when the CR carries the annotation `neo4j.com/auto-inherit-seed-creds: "true"` (one rolling restart).
+- **PVC-backed backup**: the operator starts a temporary proxy (`backup-seed-proxy-<restore-name>`) that serves the backup PVC read-only over HTTP, and passes the artifact's URL as `seedURI`. A NetworkPolicy admits only the target's server pods (effective on enforcing CNIs), and the proxy is removed as soon as the restore reaches `Completed` or `Failed`. No credentials required.
+- **A PVC seed must be a full backup.** The server fetches that one file over HTTP, and Neo4j refuses a differential without the rest of its chain. Each backup run records whether it wrote a `FULL` or a `DIFF` (`status.history[].artifactType`): a cluster refuses a PVC differential before creating anything, and a standalone restores it [offline](#restore-to-a-standalone-instance). With `backupType: AUTO` (the default) every scheduled run after the first is a differential — so take the PVC backups a cluster restores from with `backupType: FULL`, or keep them on cloud storage, whose seed provider reads the whole chain.
+- An **existing** database is recreated with `dbms.recreateDatabase`, which keeps its users' privileges — this needs the explicit opt-in `spec.options.replaceExisting: true`, since it replaces the live contents. A new database is created with `CREATE DATABASE … OPTIONS { seedURI } WAIT`.
+- The restore is `Completed` once every allocation reports `online`, bounded by **`spec.timeout`** (default 5m) — raise it for multi-GB stores seeded from object storage.
 
 > **S3-compatible endpoints (MinIO, on-prem object stores):** the seed
 > download runs inside the Neo4j server JVMs, which need the custom endpoint
-> configuration in addition to the credentials. Add both to the cluster CR
-> before restoring:
+> configuration in addition to the credentials. Add both to the cluster or
+> standalone CR before restoring (or let the annotation above project them):
 >
 > ```yaml
 > spec:
@@ -1103,20 +1104,17 @@ Restores run **online**, against the running DBMS: only the database being resto
 >
 > `currentStatus: offline` with a populated `statusMessage` means the seed
 > failed — the message names the exact cause (e.g. an unreachable seed URI).
-- `dbms.recreateDatabase` preserves user/role privileges on the existing database; no `DROP DATABASE` needed.
-- For new databases, the operator emits `CREATE DATABASE … OPTIONS { seedURI: '…' } WAIT`.
-- Both forms finish with the database online. For the recreate path the operator polls until every allocation reports `online`, bounded by **`spec.timeout`** (default 5m) — raise it for multi-GB stores seeded from object storage.
 
 **Offline path (Job)** — standalones only, in the [offline cases](#restore-to-a-standalone-instance):
 
-- The operator spawns a Kubernetes Job that mounts the backup PVC (or streams from cloud storage), runs `neo4j-admin database restore --from-path=<latest-file>`, then automatically runs `CREATE DATABASE` or `START DATABASE` over Bolt.
-- The `<latest-file>` is resolved at Pod startup via shell substitution (`ls <dir>/<dbname>-*.backup | tail -1`), so the most recent run in the chain wins by default.
+- The operator runs a Kubernetes Job that mounts the backup PVC (or streams from cloud storage) and runs `neo4j-admin database restore`, then runs `CREATE DATABASE` or `START DATABASE` over Bolt.
+- It restores the artifact the backup recorded; from a `source.type: storage` directory, the newest `.backup` file in it. `neo4j-admin` applies a differential's whole chain.
 - Use `stopCluster: true`: the operator scales the instance down for the offline restore and back up afterwards. With `stopCluster: false` it **refuses to start the Job while any server pod is running** (it never writes into a live data volume), and the message says why the restore is offline.
 
-**No manual post-restore Cypher is required** for either path — with one exception: if the backup included users/roles metadata (`includeMetadata`), `neo4j-admin database restore` writes a `restore_metadata.cypher` script under the data directory (`/data/scripts/<dbname>/restore_metadata.cypher`) and the operator does **not** run it. Re-apply users/roles manually:
+**No manual post-restore Cypher is required** for either path — with one exception: an offline restore of a backup taken with `includeMetadata` (users/roles) writes a `restore_metadata.cypher` script under the data directory (`/data/scripts/<dbname>/restore_metadata.cypher`), and the operator does **not** run it. Re-apply users/roles manually:
 
 ```bash
-kubectl exec <instance>-server-0 -c neo4j -- bash -c \
+kubectl exec <standalone>-0 -c neo4j -- bash -c \
   'cypher-shell -u neo4j -p "$NEO4J_PASSWORD" -d system \
      -f /data/scripts/<dbname>/restore_metadata.cypher'
 ```
@@ -1140,7 +1138,7 @@ spec:
     backupRef: daily-backup
   options:
     replaceExisting: true   # required — "neo4j" already exists on the cluster
-  timeout: "30m"            # cluster online-convergence budget (default 5m)
+  timeout: "30m"            # online-convergence budget (default 5m)
 ```
 
 This runs entirely over Cypher (no Job, `stopCluster` is ignored) and finishes with the database online, on a cluster or a standalone. When a standalone restores [offline](#restore-to-a-standalone-instance) instead, the operator runs the restore Job and then automatically issues `START DATABASE neo4j` (or `CREATE DATABASE neo4j` for a new database). **You do not need to run any Cypher manually.**
@@ -1201,7 +1199,7 @@ spec:
 >
 > ⚠️ **Restore is destructive and overwrites in place.** With `options.replaceExisting: true` the target database's current data is replaced by the backup. Re-running a restore — including after re-creating a deleted Backup CR — re-seeds and overwrites again. Treat every restore as a destructive operation against the named database.
 
-> **Which run a restore picks**: both cluster and standalone restores read the **latest successful artifact of the referenced `Neo4jBackup` CR**, by its recorded filename (a standalone falls back to the newest `<database>-*.backup` in that CR's directory only for a backup that recorded none). In a FULL+DIFF chain, reference the **DIFF CR** for the latest state or the **FULL CR** to roll back to the last full snapshot — restoring via the FULL CR does *not* apply the newer diffs (and emits a `RestoreFromChainParent` warning). To pin to an arbitrary earlier run, set `source.type: storage` with `backupPath` pointing at the exact `.backup` file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning).
+> **Which run a restore picks**: both cluster and standalone restores read the **latest successful artifact of the referenced `Neo4jBackup` CR**, by its recorded filename (an offline standalone restore falls back to the newest `<database>-*.backup` in that CR's directory only for a backup that recorded none). In a FULL+DIFF chain, reference the **DIFF CR** for the latest state or the **FULL CR** to roll back to the last full snapshot — restoring via the FULL CR does *not* apply the newer diffs (and emits a `RestoreFromChainParent` warning). To pin to an arbitrary earlier run, set `source.type: storage` with `backupPath` pointing at the exact `.backup` file, or keep a point-in-time snapshot of the directory (cloud lifecycle rules / versioning).
 
 #### Restoring under a different name
 
@@ -1256,13 +1254,11 @@ instance — every database is offline until it is back:
 | Point-in-time (`source.type: pitr`, or `source.pointInTime`) | `dbms.recreateDatabase` has no restore-until option |
 | `source.type: storage` | the path may be a directory or part of a backup chain; only `neo4j-admin` resolves those |
 | A PVC backup whose artifact is a differential (`DIFF`) — with `backupType: AUTO` (the default), every scheduled run after the first | the seed proxy serves one file over HTTP, and Neo4j refuses a differential without its chain |
-| A PVC backup whose run did not record `FULL`/`DIFF` (taken before the operator recorded it, unless its `backupType` is `FULL`) | it might be a differential |
+| A PVC backup whose run did not record `FULL`/`DIFF` (taken by an earlier operator release, unless its `backupType` is `FULL`) | it might be a differential |
 | Cloud storage with no `credentialsSecretRef` (Workload Identity, node IAM) | standalone pods cannot carry a workload identity; the restore Job's ServiceAccount can |
-| A restore an earlier operator started on the Job, still running after an upgrade | it is finished where it started |
 
 These need `stopCluster: true` — with `false` the operator refuses while pods
-are running, and the message names the case. The operator emits an event naming
-it when it starts. The Job path then:
+are running, and the message names the case. The Job path then:
 
 1. Scales the standalone StatefulSet to 0.
 2. Runs a restore Job that mounts the data PVC and the backup source and runs
@@ -1351,8 +1347,6 @@ Hooks run on every target, online and offline. The ordering is:
 1. **preRestore** hooks — run **before anything is restored** (and, offline, before the instance is stopped), so Cypher hooks like `CALL db.checkpoint()` hit a live Bolt endpoint. An all-databases restore runs them once, before its first database.
 2. The restore: online, `dbms.recreateDatabase` / `CREATE DATABASE … OPTIONS { seedURI }`; offline, instance scale-down (`stopCluster: true`), restore Job, scale-up, then the automatic `CREATE DATABASE` / `START DATABASE`.
 3. **postRestore** hooks — run **once the restored database is online**, so Cypher hooks like `CALL db.awaitIndexes()` target a live database. A failing post-restore hook fails the restore.
-
-Cluster restores used to skip hooks; a cluster `Neo4jRestore` that carries hooks now runs them.
 
 #### Restore with Cypher Hooks
 
