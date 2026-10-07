@@ -2742,14 +2742,9 @@ func getMinInitialPrimariesSetting(_ *neo4jv1beta1.Neo4jEnterpriseCluster) strin
 // and never consumed. Return an empty string so the dead assignment isn't
 // even emitted into the startup script.
 //
-// KNOWN-STALE TEXT, deliberately left in the returned script: its comment says
-// minimum_initial_system_primaries_count is "set to TOTAL_SERVERS". The value the
-// script actually writes is cluster.EffectiveMinSystemPrimaries() (min(3, servers)
-// by default, or spec.topology.minSystemPrimaries) — see the "Initial formation"
-// block in buildStartupScriptForEnterprise. The text is inside the emitted
-// startup.sh, and ConfigMapManager hashes that script, so correcting even a
-// comment changes the hash and rolls every existing cluster on operator upgrade.
-// Fix the wording in a release that restarts pods anyway.
+// The comments in the returned script are free to change: ConfigMapManager
+// ignores comment lines when it decides whether the servers must restart (#465),
+// so rewording one is written to the ConfigMap without rolling the cluster.
 func buildBootstrapStrategyShellBlock(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	if isCalverImage(cluster.Spec.Image.Tag) {
 		return `# CalVer (2025.x+): V2 discovery elects a bootstrapper from the LIST endpoints;
@@ -2757,9 +2752,10 @@ func buildBootstrapStrategyShellBlock(cluster *neo4jv1beta1.Neo4jEnterpriseClust
 # so no BOOTSTRAP_STRATEGY assignment is emitted here.`
 	}
 	return `# ME/OTHER bootstrap strategy: server-0 bootstraps, all others join.
-# With Parallel pod management all pods start simultaneously. Using LIST discovery
-# with static pod FQDNs (via the headless service DNS) and minimum_initial_system_primaries_count
-# set to TOTAL_SERVERS ensures all servers discover each other before RAFT election.
+# With Parallel pod management all pods start simultaneously. LIST discovery with
+# static pod FQDNs (via the headless service DNS), plus
+# minimum_initial_system_primaries_count on first formation (see below), makes
+# the bootstrapper wait for enough servers to discover each other before RAFT election.
 # Server-0 (me) is preferred bootstrapper; all others (other) join when ready.
 if [ "$SERVER_INDEX" = "0" ]; then
     echo "Server 0: Using bootstrapping strategy 'me' (preferred cluster bootstrapper)"

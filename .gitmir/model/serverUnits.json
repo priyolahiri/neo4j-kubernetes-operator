@@ -11,7 +11,8 @@
     "moduleId": "mod-cluster",
     "paths": [
       "internal/controller/neo4jenterprisecluster_controller.go",
-      "internal/controller/cluster_availability.go"
+      "internal/controller/cluster_availability.go",
+      "internal/controller/configmap_manager.go"
     ]
   },
   {

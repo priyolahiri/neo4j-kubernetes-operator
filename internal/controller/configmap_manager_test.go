@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 // ---------------------------------------------------------------------------
@@ -162,14 +163,21 @@ func TestNormalizeNeo4jConf_DeduplicatesKeys(t *testing.T) {
 	}
 }
 
-func TestNormalizeNeo4jConf_PreservesComments(t *testing.T) {
+// A comment or a blank line in neo4j.conf means nothing to Neo4j, so it must not
+// reach the restart hash (#465).
+func TestNormalizeNeo4jConf_IgnoresCommentsAndBlankLines(t *testing.T) {
 	cm := NewConfigMapManager(fake.NewClientBuilder().WithScheme(newTestScheme()).Build())
 
-	input := "# This is a comment\nkey=value\n"
-	output := cm.normalizeNeo4jConf(input)
-
-	if !containsLine(output, "# This is a comment") {
-		t.Error("normalizer should preserve comments")
+	a := cm.normalizeNeo4jConf("# This is a comment\nkey=value\n")
+	b := cm.normalizeNeo4jConf("# Reworded comment\n\n   # indented comment\nkey=value\n\n")
+	if a != b {
+		t.Errorf("comment-only difference changed the normalised conf: %q vs %q", a, b)
+	}
+	if containsLine(a, "# This is a comment") {
+		t.Error("comments must not be part of the normalised conf")
+	}
+	if !containsLine(a, "key=value") {
+		t.Error("settings must be kept")
 	}
 }
 
@@ -200,8 +208,124 @@ func TestNormalizeStartupScript_ReplacesRuntimeVars(t *testing.T) {
 	if !containsLine(output, "static line") {
 		t.Error("static lines should be preserved")
 	}
-	if !containsLine(output, "# Runtime variable excluded from hash") {
-		t.Error("replaced lines should contain placeholder comment")
+	if !containsLine(output, runtimeVariablePlaceholder) {
+		t.Error("replaced lines should contain the placeholder")
+	}
+	// The placeholder is not a comment, so adding a runtime line still counts.
+	more := cm.normalizeStartupScript(input + "export HOSTNAME_FQDN=x\n")
+	if more == output {
+		t.Error("adding a runtime-variable line must still change the normalised script")
+	}
+}
+
+// TestCalculateConfigMapHash_IgnoresCommentsAndBlankLines pins #465: rewording
+// a comment, or adding blank lines, in any of the three files leaves the restart
+// hash alone, while a trailing comment after a command or any real line still
+// changes it.
+func TestCalculateConfigMapHash_IgnoresCommentsAndBlankLines(t *testing.T) {
+	cm := NewConfigMapManager(fake.NewClientBuilder().WithScheme(newTestScheme()).Build())
+	base := map[string]string{
+		"neo4j.conf": "# memory\nserver.memory.heap.max_size=1g\n",
+		"startup.sh": "#!/bin/bash\n# start it\nset -e\nexec neo4j\n",
+		"health.sh":  "#!/bin/bash\n# probe\ncurl -sf localhost:7474\n",
+	}
+	baseHash := cm.calculateConfigMapHash(configMapWithData("a", "ns", base))
+
+	same := map[string]string{
+		"neo4j.conf": "# heap and page cache\n\nserver.memory.heap.max_size=1g\n",
+		"startup.sh": "#!/bin/bash\n\n# start Neo4j, reworded\n  # indented\nset -e\nexec neo4j\n",
+		"health.sh":  "#!/bin/bash\n# probe the HTTP port\n\ncurl -sf localhost:7474\n",
+	}
+	if got := cm.calculateConfigMapHash(configMapWithData("b", "ns", same)); got != baseHash {
+		t.Errorf("comment/blank-line changes must not change the restart hash")
+	}
+
+	for key, changed := range map[string]string{
+		"neo4j.conf": "# memory\nserver.memory.heap.max_size=2g\n",
+		"startup.sh": "#!/bin/bash\n# start it\nset -e\nexec neo4j # trailing note\n",
+		"health.sh":  "#!/bin/bash\n# probe\ncurl -sf localhost:7475\n",
+	} {
+		data := map[string]string{}
+		for k, v := range base {
+			data[k] = v
+		}
+		data[key] = changed
+		if cm.calculateConfigMapHash(configMapWithData("c", "ns", data)) == baseHash {
+			t.Errorf("a real change to %s must change the restart hash", key)
+		}
+	}
+}
+
+// rewordComments rewrites every full-line comment, as a new operator version
+// that only edits comments in the rendered files would.
+func rewordComments(content string) string {
+	lines := splitLines(content)
+	for i, l := range lines {
+		if isCommentOrBlankLine(l) && len(l) > 0 && l[0] == '#' && (len(l) < 2 || l[1] != '!') {
+			lines[i] = "# reworded: " + l
+		}
+	}
+	out := ""
+	for _, l := range lines {
+		out += l + "\n"
+	}
+	return out
+}
+
+// TestReconcileConfigMap_CommentOnlyChangeWritesWithoutRestart: the rendered
+// startup script and neo4j.conf of a real cluster, with every comment reworded,
+// are rewritten to the ConfigMap but the servers are not restarted (#465).
+func TestReconcileConfigMap_CommentOnlyChangeWritesWithoutRestart(t *testing.T) {
+	ctx := context.Background()
+	cluster := minimalCluster("c465", "default")
+	desired := resources.BuildConfigMapForEnterprise(cluster)
+	if rewordComments(desired.Data["startup.sh"]) == desired.Data["startup.sh"] {
+		t.Fatal("test premise: the rendered startup script has comments to reword")
+	}
+	existing := desired.DeepCopy()
+	existing.Data["startup.sh"] = rewordComments(desired.Data["startup.sh"])
+	existing.Data["neo4j.conf"] = rewordComments(desired.Data["neo4j.conf"])
+	fc := fake.NewClientBuilder().WithScheme(newTestScheme()).
+		WithObjects(cluster, serverSTS("c465", "default"), existing).Build()
+
+	if err := NewConfigMapManager(fc).ReconcileConfigMap(ctx, cluster); err != nil {
+		t.Fatalf("ReconcileConfigMap: %v", err)
+	}
+
+	got := &corev1.ConfigMap{}
+	if err := fc.Get(ctx, types.NamespacedName{Name: "c465-config", Namespace: "default"}, got); err != nil {
+		t.Fatalf("get ConfigMap: %v", err)
+	}
+	if got.Data["startup.sh"] != desired.Data["startup.sh"] || got.Data["neo4j.conf"] != desired.Data["neo4j.conf"] {
+		t.Error("the reworded files must still be written, so the next restart reads them")
+	}
+	sts := &appsv1.StatefulSet{}
+	if err := fc.Get(ctx, types.NamespacedName{Name: "c465-server", Namespace: "default"}, sts); err != nil {
+		t.Fatalf("get StatefulSet: %v", err)
+	}
+	if v, ok := sts.Spec.Template.Annotations["neo4j.neo4j.com/config-restart"]; ok {
+		t.Errorf("a comment-only change must not restart the servers; config-restart=%q", v)
+	}
+}
+
+// TestReconcileConfigMap_SettingChangeRestarts: a changed setting still restarts.
+func TestReconcileConfigMap_SettingChangeRestarts(t *testing.T) {
+	ctx := context.Background()
+	cluster := minimalCluster("c465b", "default")
+	existing := resources.BuildConfigMapForEnterprise(cluster)
+	existing.Data["neo4j.conf"] += "db.transaction.timeout=10s\n"
+	fc := fake.NewClientBuilder().WithScheme(newTestScheme()).
+		WithObjects(cluster, serverSTS("c465b", "default"), existing).Build()
+
+	if err := NewConfigMapManager(fc).ReconcileConfigMap(ctx, cluster); err != nil {
+		t.Fatalf("ReconcileConfigMap: %v", err)
+	}
+	sts := &appsv1.StatefulSet{}
+	if err := fc.Get(ctx, types.NamespacedName{Name: "c465b-server", Namespace: "default"}, sts); err != nil {
+		t.Fatalf("get StatefulSet: %v", err)
+	}
+	if sts.Spec.Template.Annotations["neo4j.neo4j.com/config-restart"] == "" {
+		t.Error("a changed setting must still restart the servers")
 	}
 }
 

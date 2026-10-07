@@ -70,16 +70,21 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 	err := cm.Get(ctx, configMapKey, existingConfigMap)
 	configMapExists := err == nil
 
-	var configChanged bool
+	var configChanged, restartRelevant bool
 	var oldConfigHash, newConfigHash string
 
 	if configMapExists {
-		// Calculate hash of existing config
+		// Two separate questions. The hash, over a normalised rendering that
+		// ignores comments and blank lines, decides whether the servers must
+		// restart. The raw content decides whether the ConfigMap is written:
+		// a change that does not restart anything (a reworded comment) is still
+		// written, so it is what each server reads at its next restart.
 		oldConfigHash = cm.calculateConfigMapHash(existingConfigMap)
 		newConfigHash = cm.calculateConfigMapHash(desiredConfigMap)
-		configChanged = oldConfigHash != newConfigHash
+		restartRelevant = oldConfigHash != newConfigHash
+		configChanged = !reflect.DeepEqual(existingConfigMap.Data, desiredConfigMap.Data)
 
-		if configChanged {
+		if restartRelevant {
 			// Perform detailed analysis to understand what changed
 			changes := cm.analyzeConfigChanges(existingConfigMap, desiredConfigMap)
 			needsRestart := cm.requiresRestart(changes)
@@ -96,8 +101,12 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 				"cluster", cluster.Name,
 				"existingKeys", getMapKeys(existingConfigMap.Data),
 				"desiredKeys", getMapKeys(desiredConfigMap.Data))
+		} else if configChanged {
+			logger.Info("ConfigMap changed in comments or blank lines only; writing it without restarting the servers",
+				"cluster", cluster.Name,
+				"hash", newConfigHash)
 		} else {
-			logger.V(1).Info("ConfigMap hash unchanged, skipping update",
+			logger.V(1).Info("ConfigMap unchanged, skipping update",
 				"cluster", cluster.Name,
 				"hash", newConfigHash)
 		}
@@ -136,6 +145,9 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 		cm.mu.Unlock()
 
 		// Only trigger rolling restart if changes actually require it
+		if configMapExists && !restartRelevant {
+			return nil
+		}
 		if configMapExists {
 			changes := cm.analyzeConfigChanges(existingConfigMap, desiredConfigMap)
 			needsRestart := cm.requiresRestart(changes)
@@ -287,15 +299,46 @@ func (cm *ConfigMapManager) normalizeConfigContent(key, value string) string {
 	case "startup.sh":
 		return cm.normalizeStartupScript(value)
 	case "health.sh":
-		// Health script is static, no normalization needed
-		return value
+		return stripCommentAndBlankLines(value)
 	default:
 		return value
 	}
 }
 
+// isCommentOrBlankLine reports whether a line of neo4j.conf or of a rendered
+// shell script carries no meaning: blank, or a full-line comment. In neo4j.conf
+// Neo4j ignores both. In startup.sh/health.sh a "#" line is either a shell
+// comment or, inside a heredoc, a comment line written into neo4j.conf. A
+// trailing "# …" after a command is NOT stripped, so a change there still counts.
+func isCommentOrBlankLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	return trimmed == "" || strings.HasPrefix(trimmed, "#")
+}
+
+// stripCommentAndBlankLines drops the lines isCommentOrBlankLine matches, so a
+// reworded comment does not change a restart hash (#465). Without this, an
+// operator upgrade that only edits a comment in the rendered startup script
+// restarted every server of every cluster.
+func stripCommentAndBlankLines(content string) string {
+	var kept []string
+	for _, line := range strings.Split(content, "\n") {
+		if !isCommentOrBlankLine(line) {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
 // normalizeNeo4jConf normalizes neo4j.conf content to remove duplicates and runtime values
 func (cm *ConfigMapManager) normalizeNeo4jConf(content string) string {
+	return normalizeNeo4jConfForRestart(content)
+}
+
+// normalizeNeo4jConfForRestart is the neo4j.conf rendering a restart decision
+// compares: comments and blank lines dropped, each line trimmed, and only the
+// first occurrence of a key kept. Shared by the cluster's ConfigMap hash and the
+// standalone's semantic conf hash, so the two Kinds agree on what counts.
+func normalizeNeo4jConfForRestart(content string) string {
 	lines := strings.Split(content, "\n")
 	seen := make(map[string]bool)
 	var normalized []string
@@ -303,9 +346,7 @@ func (cm *ConfigMapManager) normalizeNeo4jConf(content string) string {
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 
-		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, "#") {
-			normalized = append(normalized, line)
+		if isCommentOrBlankLine(line) {
 			continue
 		}
 
@@ -329,19 +370,27 @@ func (cm *ConfigMapManager) normalizeNeo4jConf(content string) string {
 	return strings.Join(normalized, "\n")
 }
 
+// runtimeVariablePlaceholder stands in for a startup-script line that carries a
+// runtime value. It is deliberately not a comment, so it survives the comment
+// stripping and adding or removing such a line still changes the hash.
+const runtimeVariablePlaceholder = "<runtime variable excluded from hash>"
+
 // normalizeStartupScript normalizes startup script content to exclude variable runtime values
 func (cm *ConfigMapManager) normalizeStartupScript(content string) string {
 	lines := strings.Split(content, "\n")
 	var normalized []string
 
 	for _, line := range lines {
+		if isCommentOrBlankLine(line) {
+			continue
+		}
 		// Exclude lines that contain runtime environment variables or timestamps
 		if strings.Contains(line, "POD_ORDINAL") ||
 			strings.Contains(line, "HOSTNAME") ||
 			strings.Contains(line, "$(date") ||
 			strings.Contains(line, "timestamp") {
 			// Replace with placeholder to maintain script structure
-			normalized = append(normalized, "# Runtime variable excluded from hash")
+			normalized = append(normalized, runtimeVariablePlaceholder)
 			continue
 		}
 
