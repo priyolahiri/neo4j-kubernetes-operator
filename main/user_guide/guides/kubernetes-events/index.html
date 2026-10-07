@@ -2028,10 +2028,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#scale-down" class="md-nav__link">
+  <a href="#scaling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scale-down
+        Scaling
       
     </span>
   </a>
@@ -4009,10 +4009,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#scale-down" class="md-nav__link">
+  <a href="#scaling" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Scale-down
+        Scaling
       
     </span>
   </a>
@@ -4317,9 +4317,19 @@ and alerting systems.</p>
 <td>Warning</td>
 <td>Reconciliation loop encountered an unrecoverable error</td>
 </tr>
+<tr>
+<td><code>ConfigAppliedLive</code></td>
+<td>Normal</td>
+<td>A <code>spec.config</code> change touched only settings Neo4j can change at runtime, so the operator applied it to every running server (<code>dbms.setConfigValue</code>) and wrote it to <code>neo4j.conf</code>; nothing restarted. Names the settings. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
+</tr>
+<tr>
+<td><code>ConfigNeedsRestart</code></td>
+<td>Normal</td>
+<td>A <code>neo4j.conf</code> change could not be applied at runtime, so the servers restart as before. The message names the settings and the reason: a setting Neo4j reads only at startup, one also set through an environment variable, or the deployment not <code>Ready</code> with every server up. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
+</tr>
 </tbody>
 </table>
-<h3 id="scale-down">Scale-down<a class="headerlink" href="#scale-down" title="Anchor link to this section">&para;</a></h3>
+<h3 id="scaling">Scaling<a class="headerlink" href="#scaling" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
 <tr>
@@ -4329,6 +4339,11 @@ and alerting systems.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><code>ScaledWithoutRestart</code></td>
+<td>Normal</td>
+<td>A scale-up added only servers that join as <code>system</code> secondaries, so the running servers were not restarted; they read the longer discovery list at their next restart. A scale-up that adds a system primary (with the default, from 2 servers to 3+) restarts them instead and raises no such event</td>
+</tr>
 <tr>
 <td><code>ScaleDownDraining</code></td>
 <td>Normal</td>

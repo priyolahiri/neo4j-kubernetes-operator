@@ -6057,7 +6057,7 @@ cluster reaches <code>Ready</code> — see <a href="../neo4jrestore/"><code>Neo4
 <tr>
 <td><code>minSystemPrimaries</code></td>
 <td><code>*int32</code></td>
-<td>System-database primary count written to <code>dbms.cluster.minimum_initial_system_primaries_count</code> at cluster formation, and the floor the cluster can later be scaled down to. Default: <code>min(3, servers)</code>. Validator: must be ≥ 2 and ≤ <code>servers</code>; an even value draws a warning (an even voting set has no clean write-quorum majority — prefer 3, 5, …). Note this is a bootstrap <strong>floor</strong>, not a cap: Neo4j makes <strong>all</strong> initially-joined servers system primaries; the setting only defines how many must be present to bootstrap and the minimum the system database can shrink to</td>
+<td>System-database primary count written to <code>dbms.cluster.minimum_initial_system_primaries_count</code> at cluster formation, and the floor the cluster can later be scaled down to. Default: <code>min(3, servers)</code>. Validator: must be ≥ 2 and ≤ <code>servers</code>; an even value draws a warning (an even voting set has no clean write-quorum majority — prefer 3, 5, …). It also sets each server's role for the <code>system</code> database: servers with an ordinal below it start as system primaries, the rest as system secondaries (fixed at a server's first start and recorded on its volume; servers created before this behaviour keep their role). Adding servers past it does not restart the running servers. See <a href="../../user_guide/clustering/#system-primaries-and-secondaries">System primaries and secondaries</a></td>
 </tr>
 <tr>
 <td><code>serverModeConstraint</code></td>
@@ -8508,6 +8508,12 @@ visible via <code>kubectl get svc</code>.</p>
 <td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them</td>
 <td>The removed servers have been drained and dropped</td>
 <td>n/a</td>
+</tr>
+<tr>
+<td><code>RestartPending</code></td>
+<td>One or more servers have not restarted since the operator added a setting it applies at each server's next restart instead of restarting for it (reason <code>SettingsAwaitRestart</code>; the message names the servers and settings). Today: <code>dbms.cluster.raft.async_channel_acquisition_enabled</code> on 5.26.29+ (see <a href="../../user_guide/clustering/#526-writes-while-a-server-is-stopped">5.26: writes while a server is stopped</a>). Restart the named pods, or let it happen on their next restart</td>
+<td>Every server runs those settings (reason <code>NoSettingsAwaitRestart</code>)</td>
+<td>n/a — absent when nothing is applied at restart (CalVer, or the setting is set in <code>spec.config</code>)</td>
 </tr>
 <tr>
 <td><code>CrossClusterProxySecure</code></td>

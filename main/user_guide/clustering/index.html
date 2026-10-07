@@ -971,6 +971,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#system-primaries-and-secondaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System primaries and secondaries
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -1217,6 +1228,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#526-writes-while-a-server-is-stopped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.26: writes while a server is stopped
+      
+    </span>
+  </a>
   
 </li>
       
@@ -4435,6 +4457,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#system-primaries-and-secondaries" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        System primaries and secondaries
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4685,6 +4718,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#526-writes-while-a-server-is-stopped" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        5.26: writes while a server is stopped
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#troubleshooting" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4898,11 +4942,21 @@
 <tr>
 <td>4+ servers</td>
 <td>3 (default)</td>
-<td>The floor is a minimum, not a cap: servers that have joined by then all become system primaries</td>
+<td>Servers 0–2 host the <code>system</code> database as primaries; servers 3 and up as secondaries (see below)</td>
 </tr>
 </tbody>
 </table>
 <p>This keeps any single server from bootstrapping a solo cluster.</p>
+<h4 id="system-primaries-and-secondaries">System primaries and secondaries<a class="headerlink" href="#system-primaries-and-secondaries" title="Anchor link to this section">&para;</a></h4>
+<p>Each server hosts the <code>system</code> database (what databases, users and roles exist) either as a <strong>primary</strong>, which votes in its Raft group, or as a <strong>secondary</strong>, which keeps a copy and does not vote. The operator fixes the role at a server's first start, from its ordinal:</p>
+<ul>
+<li>servers below <code>spec.topology.minSystemPrimaries</code> (default <code>min(3, servers)</code>) are system primaries;</li>
+<li>the rest are system secondaries;</li>
+<li>the role is recorded on the server's data volume and kept across restarts.</li>
+</ul>
+<p>This follows the Neo4j Operations Manual: start with three system primaries, and give servers that come and go the secondary role. It is also what lets the operator add servers without restarting the ones already running (see <a href="#scale-updown">Scale Up/Down</a>).</p>
+<p>The <code>system</code> database stays writable while a majority of its primaries is up. With the default of 3, that means two of servers 0–2, however many servers the cluster has. Raise <code>minSystemPrimaries</code> (an odd number) to make more servers system primaries.</p>
+<p>A server created before this behaviour existed keeps the role it had: every server in such a cluster stays a system primary. Only servers added later start as secondaries.</p>
 <h3 id="cluster-formation-process">Cluster Formation Process<a class="headerlink" href="#cluster-formation-process" title="Anchor link to this section">&para;</a></h3>
 <ol>
 <li><strong>Resource Creation</strong>: The operator creates all Kubernetes resources (StatefulSets, Services, RBAC)</li>
@@ -5117,7 +5171,9 @@
 </span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="c1"># Or edit the resource directly</span>
 </span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a>kubectl<span class="w"> </span>edit<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster
 </span></code></pre></div>
-<p><strong>Scale-up</strong> just raises the replica count; new servers join and you rebalance databases onto them (<code>REALLOCATE DATABASES</code>, or set per-database <code>TOPOLOGY</code>).</p>
+<p><strong>Scale-up</strong> raises the replica count. New servers join, and you rebalance databases onto them (<code>REALLOCATE DATABASES</code>, or set a per-database <code>TOPOLOGY</code>).</p>
+<p><strong>Servers already running are not restarted when the new servers join as system secondaries.</strong> That covers any scale-up from <code>minSystemPrimaries</code> servers or more, for example 3→5. Each new server's discovery list names every server, and the running servers learn about it through discovery. They read the longer list at their next restart. A <code>ScaledWithoutRestart</code> event records it.</p>
+<p>A scale-up that adds a system primary does restart the running servers one at a time, because Neo4j requires every system primary in each server's discovery list. With the default, that only happens from 2 servers to 3 or more. Scaling down never restarts the servers that stay.</p>
 <h4 id="scaling-down-automated-safe-by-default">Scaling down (automated, safe-by-default)<a class="headerlink" href="#scaling-down-automated-safe-by-default" title="Anchor link to this section">&para;</a></h4>
 <p>When you <strong>lower</strong> <code>spec.topology.servers</code>, the operator drains the removed servers <strong>before</strong> their pods are stopped — it never just deletes pods out from under live data. For each removed server (highest ordinals first) it runs, one step per reconcile:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>cordon → DRYRUN DEALLOCATE (feasibility) → DEALLOCATE DATABASES FROM SERVER → wait until it hosts only `system` → DROP SERVER → lower replicas
@@ -5145,6 +5201,23 @@
 </span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="w">    </span><span class="nt">stabilizationTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3m</span>
 </span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="w">    </span><span class="nt">autoPauseOnFailure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
+<h2 id="526-writes-while-a-server-is-stopped">5.26: writes while a server is stopped<a class="headerlink" href="#526-writes-while-a-server-is-stopped" title="Anchor link to this section">&para;</a></h2>
+<p>On 5.26, writes can stall for about 30 seconds every time one server stops: a restart, a crash or a node drain. The leader waits for a connection to the stopped member before it replicates to the others, for up to <code>dbms.cluster.network.connect_timeout</code>. Neo4j documents this for Kubernetes and fixes it from <strong>5.26.29</strong> with <code>dbms.cluster.raft.async_channel_acquisition_enabled=true</code>. CalVer has that on by default. On Kind, restarting a follower stalled writes for 32 seconds with it off and not at all with it on.</p>
+<p>The operator turns it on for 5.26 clusters:</p>
+<ul>
+<li><strong>Which servers:</strong> only servers whose own Neo4j is 5.26.29 or later. An older patch would refuse the unknown setting and not start. The <code>5.26-enterprise</code> tag floats, so each server decides from its own version when it starts.</li>
+<li><strong>New clusters:</strong> have it from the first start.</li>
+<li><strong>Existing clusters:</strong> get it at each server's next restart. The operator does not restart them for it. Until then, the <code>RestartPending</code> condition names the servers still waiting:</li>
+</ul>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jenterprisecluster<span class="w"> </span>my-cluster<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.status.conditions[?(@.type=="RestartPending")].message}'</span>
+</span></code></pre></div>
+<p>To apply it sooner, delete those pods one at a time, or run <code>kubectl rollout restart statefulset my-cluster-server</code>.
+- <strong>Overriding it:</strong> set the setting in <code>spec.config</code> (for example <code>"false"</code>). The operator then leaves it to you, and changing it restarts the servers as for any setting Neo4j reads only at startup.</p>
+<div class="admonition note">
+<p class="admonition-title"><code>SHOW SETTINGS</code> reports it as <code>false</code></p>
+<p>On 5.26.31, <code>SHOW SETTINGS</code> shows this setting as <code>false</code>, and not explicitly set, even on a server that runs with it on. 5.26.29 made an existing internal setting public, and <code>SHOW SETTINGS</code> does not reflect it. The value Neo4j actually starts with is in the configuration dump at the top of <code>debug.log</code>, and the operator's <code>RestartPending</code> condition does not rely on <code>SHOW SETTINGS</code>.</p>
+</div>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Anchor link to this section">&para;</a></h3>
 <ol>
@@ -5172,14 +5245,14 @@
 <li>See <a href="../../api_reference/neo4jenterprisecluster/#server-availability">Server availability</a> and <a href="../guides/troubleshooting/#problem-a-server-is-down-degraded">Troubleshooting</a>.</li>
 </ol>
 <h3 id="debug-commands">Debug Commands<a class="headerlink" href="#debug-commands" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-17-1"><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="c1"># Check cluster member status</span>
-</span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>password<span class="w"> </span><span class="s2">"SHOW SERVERS"</span>
-</span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a>
-</span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="c1"># Check database allocation</span>
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>password<span class="w"> </span><span class="s2">"SHOW DATABASES"</span>
-</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a>
-</span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="c1"># View cluster logs</span>
-</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>my-cluster-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-18-1"><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="c1"># Check cluster member status</span>
+</span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>password<span class="w"> </span><span class="s2">"SHOW SERVERS"</span>
+</span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
+</span><span id="__span-18-4"><a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="c1"># Check database allocation</span>
+</span><span id="__span-18-5"><a id="__codelineno-18-5" name="__codelineno-18-5" href="#__codelineno-18-5"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>my-cluster-server-0<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>password<span class="w"> </span><span class="s2">"SHOW DATABASES"</span>
+</span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a>
+</span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="c1"># View cluster logs</span>
+</span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>my-cluster-server-0<span class="w"> </span>-c<span class="w"> </span>neo4j
 </span></code></pre></div>
 <h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Anchor link to this section">&para;</a></h2>
 <ol>
