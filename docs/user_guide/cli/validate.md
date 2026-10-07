@@ -33,7 +33,7 @@ Errors are listed before warnings, each sorted by field path.
 | `--connect` | Connect to the current kubeconfig context to check cross-references. |
 | `--context` | Kubeconfig context to use (implies `--connect`). |
 | `--kubeconfig` | Path to the kubeconfig file (implies `--connect`). |
-| `--namespace`, `-n` | Namespace for manifests that omit one. |
+| `--namespace`, `-n` | Namespace for manifests that omit one. With `--connect`, it defaults to the kubeconfig context's namespace, else `default` — where `kubectl apply` would put them. |
 | `--strict` | Treat warnings as errors (exit non-zero on warnings). Pending is unaffected. |
 | `--quiet` | Print findings only — no per-file "ok" lines, no summary. |
 

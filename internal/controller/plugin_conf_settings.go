@@ -57,16 +57,49 @@ func pluginConfKeyIsSecurity(key string) bool {
 		strings.HasPrefix(key, "dbms.bloom.")
 }
 
+// pluginConfKey reports whether a plugin setting belongs in neo4j.conf rather
+// than the container env: security keys, and keys Neo4j reads only at startup.
+func pluginConfKey(key string) bool {
+	return pluginConfKeyIsNonDynamic(key) || pluginConfKeyIsSecurity(key)
+}
+
+// specSecuritySettings returns what a plugin's spec.security asks for:
+// allowedProcedures as the allowlist and — outside the sandbox — as the
+// unrestricted list too, deniedProcedures as the denylist. Each replaces the
+// automatic value for its key.
+func specSecuritySettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
+	settings := make(map[string]string)
+	sec := plugin.Spec.Security
+	if sec == nil {
+		return settings
+	}
+	if len(sec.AllowedProcedures) > 0 {
+		allowed := strings.Join(sec.AllowedProcedures, ",")
+		settings["dbms.security.procedures.allowlist"] = allowed
+		if !sec.Sandbox {
+			settings["dbms.security.procedures.unrestricted"] = allowed
+		}
+	}
+	if len(sec.DeniedProcedures) > 0 {
+		settings["dbms.security.procedures.denylist"] = strings.Join(sec.DeniedProcedures, ",")
+	}
+	return settings
+}
+
 // pluginConfSettings returns the neo4j.conf settings derived from a single
-// Neo4jPlugin: its automatic security settings plus any non-dynamic/security
-// keys the user set in spec.config (user values override the automatic ones).
+// Neo4jPlugin: its automatic security settings, what its spec.security asks
+// for, and any security or startup-only keys the user set in spec.config —
+// later sources override earlier ones.
 func pluginConfSettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 	settings := make(map[string]string)
 	for k, v := range automaticPluginSecuritySettings(plugin.Spec.Name) {
 		settings[k] = v
 	}
+	for k, v := range specSecuritySettings(plugin) {
+		settings[k] = v
+	}
 	for k, v := range plugin.Spec.Config {
-		if pluginConfKeyIsNonDynamic(k) || pluginConfKeyIsSecurity(k) {
+		if pluginConfKey(k) {
 			settings[k] = v
 		}
 	}

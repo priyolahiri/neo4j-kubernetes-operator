@@ -322,6 +322,12 @@ Flags:
 			fmt.Fprintf(stderr, "error: could not connect to the cluster: %v\n", err)
 			return exitUsage
 		}
+		// A manifest without metadata.namespace lands, on apply, in the
+		// context's namespace (else "default"); its cross-references are looked
+		// up there too. Left empty, every lookup failed — read as "target not
+		// there yet" — so --connect without -n warned about objects that
+		// existed and passed checks it never made.
+		*namespace = connectedNamespace(*namespace, *kubeconfig, *kubeContext)
 	}
 
 	inputs, err := expandInputs(files)
@@ -469,6 +475,16 @@ func isReleaseVersion(v string) bool {
 
 // validateSource reads one input (a path, or "-" for stdin) and validates every
 // YAML document it contains.
+// connectedNamespace is the namespace --connect resolves cross-references in
+// for manifests that name none: -n when given, else the kubeconfig context's,
+// else "default" — where kubectl apply would put them.
+func connectedNamespace(flagValue, kubeconfig, kubeContext string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	return currentNamespace(kubeconfig, kubeContext)
+}
+
 func validateSource(source string, c client.Client, defaultNamespace string) ([]docResult, error) {
 	var r io.Reader
 	if source == "-" {

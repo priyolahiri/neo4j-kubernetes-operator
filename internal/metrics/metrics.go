@@ -22,6 +22,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -542,6 +543,30 @@ func (m *ClusterMetrics) RecordServerHealth(servers []ServerHealth) {
 		}
 	}
 	serverHealthSeen.byCluster[key] = current
+}
+
+// Forget withdraws every series this cluster exported — its health, phase,
+// replica, reconcile, upgrade, backup and per-server families. Without it a
+// deleted cluster kept exporting its last values (a "healthy" cluster that no
+// longer exists) until the operator restarted.
+func (m *ClusterMetrics) Forget() {
+	labels := prometheus.Labels{LabelClusterName: m.clusterName, LabelNamespace: m.namespace}
+	for _, vec := range []interface {
+		DeletePartialMatch(prometheus.Labels) int
+	}{
+		clusterReplicas, clusterHealthy, clusterPhase, splitBrainDetectedTotal,
+		reconcileTotal, reconcileDuration, upgradeTotal, upgradeDuration,
+		backupTotal, backupDuration, serverHealth,
+	} {
+		vec.DeletePartialMatch(labels)
+	}
+	serverHealthSeen.mu.Lock()
+	defer serverHealthSeen.mu.Unlock()
+	for key := range serverHealthSeen.byCluster {
+		if strings.HasSuffix(key, "/"+m.namespace+"/"+m.clusterName) {
+			delete(serverHealthSeen.byCluster, key)
+		}
+	}
 }
 
 // serverHealthSeries is the per-server part of a server_health label set.

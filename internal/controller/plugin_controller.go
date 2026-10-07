@@ -964,8 +964,19 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 			}
 		}
 
+		// A standalone carries a plugin's security and startup-only settings in
+		// neo4j.conf, merged there with the user's own spec.config by the
+		// standalone controller (#146). The image applies NEO4J_* env vars over
+		// neo4j.conf, so an env copy of such a key replaced that merged value —
+		// dropping the user's own procedure allowlist. Those keys stay out of a
+		// standalone's env; the plugin's other settings (APOC's, …) stay in it.
+		standalone := deployment.Type == "standalone"
+
 		// Add plugin-specific configuration as environment variables
 		for key, value := range plugin.Spec.Config {
+			if standalone && pluginConfKey(key) {
+				continue
+			}
 			envVarName := resources.Neo4jSettingEnvVarName(key)
 			// Check if environment variable already exists
 			exists := false
@@ -984,9 +995,14 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 			}
 		}
 
-		// Apply security settings as environment variables, unioning additive
-		// allowlists across plugins (see mergePluginSecurityEnv).
-		currentNeo4jContainer.Env = mergePluginSecurityEnv(currentNeo4jContainer.Env, r.pluginSecuritySettings(plugin))
+		if standalone {
+			// …and env copies an earlier operator wrote are removed (one roll).
+			currentNeo4jContainer.Env = removeStandalonePluginConfEnv(currentNeo4jContainer.Env, plugin, r.pluginSecurityRemovalSettings(plugin))
+		} else {
+			// Apply security settings as environment variables, unioning additive
+			// allowlists across plugins (see mergePluginSecurityEnv).
+			currentNeo4jContainer.Env = mergePluginSecurityEnv(currentNeo4jContainer.Env, r.pluginSecuritySettings(plugin))
+		}
 
 		return r.Update(ctx, currentSts)
 	})
@@ -1029,18 +1045,8 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 // them on uninstall, so the two paths can't diverge.
 func (r *Neo4jPluginReconciler) pluginSecuritySettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 	settings := r.getAutomaticSecuritySettings(plugin.Spec.Name)
-	if plugin.Spec.Security != nil {
-		if len(plugin.Spec.Security.AllowedProcedures) > 0 {
-			allowedList := strings.Join(plugin.Spec.Security.AllowedProcedures, ",")
-			settings["dbms.security.procedures.allowlist"] = allowedList
-			// Non-sandbox mode also runs the allowed procedures unrestricted.
-			if !plugin.Spec.Security.Sandbox {
-				settings["dbms.security.procedures.unrestricted"] = allowedList
-			}
-		}
-		if len(plugin.Spec.Security.DeniedProcedures) > 0 {
-			settings["dbms.security.procedures.denylist"] = strings.Join(plugin.Spec.Security.DeniedProcedures, ",")
-		}
+	for k, v := range specSecuritySettings(plugin) {
+		settings[k] = v
 	}
 	return settings
 }
@@ -1100,6 +1106,40 @@ func removePluginSecurityEnv(env []corev1.EnvVar, settings map[string]string) []
 			if e.Value == "" {
 				continue // nothing left for this key — drop it
 			}
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// removeStandalonePluginConfEnv removes from a standalone's env the copies of
+// a plugin's neo4j.conf settings that earlier operators wrote there: this
+// plugin's tokens from the additive lists (removePluginSecurityEnv), and a
+// scalar setting only where the env still holds exactly the plugin's value —
+// a value someone else set is left alone.
+func removeStandalonePluginConfEnv(env []corev1.EnvVar, plugin *neo4jv1beta1.Neo4jPlugin, removal map[string]string) []corev1.EnvVar {
+	conf := pluginConfSettings(plugin)
+	tokens := make(map[string]string, len(removal)+len(conf))
+	for k, v := range removal {
+		tokens[k] = v
+	}
+	scalar := make(map[string]string)
+	for k, v := range conf {
+		if !resources.IsAdditiveConfKey(k) {
+			scalar[resources.Neo4jSettingEnvVarName(k)] = v
+			continue
+		}
+		if existing, ok := tokens[k]; ok {
+			tokens[k] = resources.MergeConfListValues(existing, v)
+		} else {
+			tokens[k] = v
+		}
+	}
+	env = removePluginSecurityEnv(env, tokens)
+	out := env[:0:0]
+	for _, e := range env {
+		if v, ok := scalar[e.Name]; ok && e.ValueFrom == nil && e.Value == v {
+			continue
 		}
 		out = append(out, e)
 	}

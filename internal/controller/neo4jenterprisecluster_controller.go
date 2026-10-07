@@ -252,17 +252,19 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
+	// Handle deletion — before the reconcile metrics are set up: the pass
+	// that releases the finalizer withdraws the cluster's series (Forget),
+	// and recording this pass afterwards would export them again.
+	if cluster.DeletionTimestamp != nil {
+		return r.handleDeletion(ctx, cluster)
+	}
+
 	reconcileStart := time.Now()
 	reconcileM := metrics.NewReconcileMetrics(cluster.Name, cluster.Namespace)
 	defer func() {
 		success := cluster.Status.Phase == "Ready"
 		reconcileM.RecordReconcile(ctx, "cluster", time.Since(reconcileStart), success)
 	}()
-
-	// Handle deletion
-	if cluster.DeletionTimestamp != nil {
-		return r.handleDeletion(ctx, cluster)
-	}
 
 	// Apply defaults and validate the cluster
 	if r.Validator != nil {
@@ -817,6 +819,8 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 		return ctrl.Result{}, err
 	}
 	logger.Info("Successfully removed finalizer and updated cluster", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
+	// The cluster is gone; so are its metric series.
+	metrics.NewClusterMetrics(cluster.Name, cluster.Namespace).Forget()
 	return ctrl.Result{}, nil
 }
 

@@ -469,3 +469,73 @@ func TestDeployedOperatorVersion(t *testing.T) {
 		})
 	}
 }
+
+// --connect without -n looked cross-references up in namespace "": every
+// lookup failed, which validators read as "not applied yet", so it warned
+// about objects that existed and passed checks it never made. It now uses
+// -n, else the kubeconfig context's namespace, else "default", like apply.
+func TestConnectedNamespace(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, ns string) string {
+		nsLine := ""
+		if ns != "" {
+			nsLine = "\n    namespace: " + ns
+		}
+		p := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(p, []byte(`apiVersion: v1
+kind: Config
+clusters: [{name: c, cluster: {server: "https://127.0.0.1:1"}}]
+users: [{name: u, user: {}}]
+contexts:
+- name: ctx
+  context:
+    cluster: c
+    user: u`+nsLine+`
+current-context: ctx
+`), 0o600))
+		return p
+	}
+	withNS := write("with-ns", "team-a")
+	without := write("without-ns", "")
+
+	assert.Equal(t, "explicit", connectedNamespace("explicit", withNS, ""), "-n wins")
+	assert.Equal(t, "team-a", connectedNamespace("", withNS, ""), "the context's namespace, as kubectl apply")
+	assert.Equal(t, "default", connectedNamespace("", without, ""), `a context without one means "default", never ""`)
+}
+
+// The composite check passed a remote constituent whose target has no
+// keystore when --connect looked in namespace "": the target lookup failed,
+// which reads as "not applied yet". In the right namespace it is refused.
+func TestValidate_Connected_CompositeKeystoreNeedsTheRightNamespace(t *testing.T) {
+	c := testClient(t, &neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: "neo4j"}})
+	manifest := writeManifest(t, `
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jCompositeDatabase
+metadata: {name: catalog}
+spec:
+  clusterRef: sa
+  name: catalog
+  constituents:
+  - name: remote
+    targetDatabase: neo4j
+    remote:
+      url: neo4j+s://elsewhere.example:7687
+      credentialsSecretRef: remote-creds
+`)
+	empty, err := validateSource(manifest, c, "")
+	require.NoError(t, err)
+	assert.Equal(t, 0, empty[0].errorCount(), "the old behaviour: nothing found, nothing checked: %s", findingsText(empty[0]))
+
+	resolved, err := validateSource(manifest, c, "neo4j")
+	require.NoError(t, err)
+	require.Equal(t, 1, resolved[0].errorCount(), "%s", findingsText(resolved[0]))
+	assert.Contains(t, findingsText(resolved[0]), "remoteAliasKeystore")
+}
+
+func findingsText(r docResult) string {
+	var b strings.Builder
+	for _, f := range r.findings {
+		b.WriteString(f.path + ": " + f.detail + "\n")
+	}
+	return b.String()
+}

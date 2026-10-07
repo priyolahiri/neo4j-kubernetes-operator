@@ -392,3 +392,84 @@ func TestCheckForDuplicatePlugin_UIDTiebreaker(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "a", winner, "lower UID wins the tiebreaker")
 }
+
+// A standalone carries a plugin's security and startup-only settings in
+// neo4j.conf, merged with the user's own spec.config. The image applies
+// NEO4J_* env vars over neo4j.conf, so an env copy replaced that merged value:
+// on the v1.19.0 walk a user's `gds.*,apoc.*` allowlist was cut to the
+// plugin's own. Those keys stay out of a standalone's env, env copies an
+// earlier operator wrote are removed, and the plugin's other settings stay.
+func TestInstallPluginViaEnvironment_StandaloneKeepsConfKeysOutOfEnv(t *testing.T) {
+	const ns = "default"
+	sts := pluginTestSTS("sa", ns)
+	sts.Name = "sa" // a standalone's StatefulSet is <name>
+	sts.Spec.Template.Spec.Containers[0].Env = []corev1.EnvVar{
+		// What an earlier operator wrote for this plugin…
+		{Name: "NEO4J_dbms_security_procedures_unrestricted", Value: "apoc.coll.*"},
+		{Name: "NEO4J_dbms_security_procedures_allowlist", Value: "apoc.coll.*"},
+		{Name: "NEO4J_gds_enterprise_license__file", Value: "/licenses/gds.lic"},
+		// …and settings it did not write.
+		{Name: "NEO4J_dbms_security_procedures_denylist", Value: "db.unsafe.*"},
+		{Name: "NEO4J_dbms_bloom_license__file", Value: "/someone/else.lic"},
+	}
+	r := newPluginTestReconciler(t, sts)
+	plugin := &neo4jv1beta1.Neo4jPlugin{
+		ObjectMeta: metav1.ObjectMeta{Name: "apoc", Namespace: ns},
+		Spec: neo4jv1beta1.Neo4jPluginSpec{
+			ClusterRef: "sa", Name: "apoc", Version: "5.26.0",
+			Config: map[string]string{
+				"apoc.export.file.enabled":    "true",
+				"gds.enterprise.license_file": "/licenses/gds.lic",
+				"dbms.bloom.license_file":     "/licenses/bloom.lic",
+			},
+			Security: &neo4jv1beta1.PluginSecurity{AllowedProcedures: []string{"apoc.coll.*"}},
+		},
+	}
+
+	require.NoError(t, r.installPluginViaEnvironment(context.Background(), plugin, &DeploymentInfo{Type: "standalone", Name: "sa", Namespace: ns}))
+
+	got := &appsv1.StatefulSet{}
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "sa", Namespace: ns}, got))
+	c := &got.Spec.Template.Spec.Containers[0]
+
+	v, ok := findEnv(c, "NEO4J_PLUGINS")
+	require.True(t, ok)
+	assert.Contains(t, v, "apoc")
+	v, ok = findEnv(c, "NEO4J_apoc_export_file_enabled")
+	assert.True(t, ok && v == "true", "the plugin's own settings stay in the env")
+	for _, gone := range []string{"NEO4J_dbms_security_procedures_unrestricted", "NEO4J_dbms_security_procedures_allowlist", "NEO4J_gds_enterprise_license__file"} {
+		_, ok := findEnv(c, gone)
+		assert.False(t, ok, "%s belongs in neo4j.conf, not the env", gone)
+	}
+	v, _ = findEnv(c, "NEO4J_dbms_security_procedures_denylist")
+	assert.Equal(t, "db.unsafe.*", v, "a setting this plugin never wrote is left alone")
+	v, _ = findEnv(c, "NEO4J_dbms_bloom_license__file")
+	assert.Equal(t, "/someone/else.lic", v, "a scalar holding another value is left alone")
+
+	// A cluster still takes the settings as env vars (its conf comes from them).
+	clusterSTS := pluginTestSTS("c", ns)
+	r = newPluginTestReconciler(t, clusterSTS)
+	plugin.Spec.ClusterRef = "c"
+	require.NoError(t, r.installPluginViaEnvironment(context.Background(), plugin, &DeploymentInfo{Type: "cluster", Name: "c", Namespace: ns}))
+	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "c-server", Namespace: ns}, got))
+	v, ok = findEnv(&got.Spec.Template.Spec.Containers[0], "NEO4J_dbms_security_procedures_allowlist")
+	assert.True(t, ok && v == "apoc.coll.*")
+}
+
+// spec.security reached a standalone only through the env; with the env copy
+// gone, neo4j.conf carries it.
+func TestPluginConfSettings_IncludesSpecSecurity(t *testing.T) {
+	plugin := &neo4jv1beta1.Neo4jPlugin{Spec: neo4jv1beta1.Neo4jPluginSpec{Name: "graph-data-science",
+		Security: &neo4jv1beta1.PluginSecurity{AllowedProcedures: []string{"gds.graph.*"}, DeniedProcedures: []string{"gds.debug.*"}},
+		Config:   map[string]string{"dbms.security.procedures.unrestricted": "gds.*", "gds.dynamic.thing": "x"}}}
+	got := pluginConfSettings(plugin)
+	assert.Equal(t, "gds.graph.*", got["dbms.security.procedures.allowlist"], "spec.security replaces the automatic allowlist")
+	assert.Equal(t, "gds.debug.*", got["dbms.security.procedures.denylist"])
+	assert.Equal(t, "gds.*", got["dbms.security.procedures.unrestricted"], "an explicit spec.config key wins")
+	assert.NotContains(t, got, "gds.dynamic.thing", "a dynamic plugin setting is not a conf key")
+
+	plugin.Spec.Config = nil
+	plugin.Spec.Security.Sandbox = true
+	got = pluginConfSettings(plugin)
+	assert.Equal(t, "gds.*,apoc.load.*", got["dbms.security.procedures.unrestricted"], "in the sandbox the allowed list is not unrestricted")
+}
