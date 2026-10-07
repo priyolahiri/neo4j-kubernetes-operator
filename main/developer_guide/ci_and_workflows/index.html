@@ -4253,6 +4253,7 @@ gate that blocks merge. Jobs:</p>
    the result. The same job then runs the static checks that have no generator
    to catch them: <code>make helm-lint</code>, <code>make check-csv-coverage</code>,
    <code>make check-apiref-drift</code>, <code>make check-cli-asset-names</code>,
+   <code>make check-release-notes-links</code>,
    <code>make check-cli-docs</code>, <code>make check-docs-release-pins</code>,
    <code>make check-examples-catalog</code>, <code>make check-docs-tables</code>,
    <code>make check-crd-catalog</code>, and a gitleaks secret scan. All are static and
@@ -4482,7 +4483,8 @@ with a tag input). Jobs:</p>
    (<code>neo4j-kubernetes-operator-complete.yaml</code>, <code>…operator.yaml</code>), stamps the OLM
    CSV via <code>make bundle-release</code> (with a guard that refuses to publish if
    <code>createdAt:</code> is still the dev placeholder), renders the release body from
-   <code>.github/release-notes-template.md</code>, and publishes the GitHub release.</li>
+   <code>.github/release-notes-template.md</code> (its docs links point at the release's
+   own <code>vX.Y</code> docs), and publishes the GitHub release.</li>
 </ol>
 <p>The release workflow's final jobs (<code>publish-docs</code>, <code>publish-helm</code>) then call
 <strong>Pages — Docs</strong> and <strong>Pages — Helm Repo</strong> (below) once every gate and artifact
