@@ -612,6 +612,23 @@
 - **pinned-by:** `TestCalculateConfigMapHash_IgnoresCommentsAndBlankLines`, `TestNormalizeNeo4jConf_IgnoresCommentsAndBlankLines`, `TestNormalizeStartupScript_ReplacesRuntimeVars`, `TestReconcileConfigMap_CommentOnlyChangeWritesWithoutRestart`, `TestReconcileConfigMap_SettingChangeRestarts` (`internal/controller/configmap_manager_test.go`); `TestReconcileStatefulSet_CommentOnlyConfChangeKeepsTheStamp` (`internal/controller/neo4jenterprisestandalone_statefulset_test.go`).
 - **enforcement:** unit test.
 
+### id 118 — A neo4j.conf change of dynamic settings is applied to the running servers, then written; anything else restarts
+- **scope:** `internal/controller/live_config.go`: `neo4jConfChanges`, `confValues`, `liveConfigBlocker`, `statefulSetSettled`, `boltLiveConfigApplier`, `boltStandaloneLiveConfigApplier`. Also `ConfigMapManager.onlyNeo4jConfChanged` and the live-apply step in `ReconcileConfigMap` (`configmap_manager.go`), `applyStandaloneConfLive` (`neo4jenterprisestandalone_controller.go`), and `Client.SettingsDynamic` (`internal/neo4j/client.go`).
+- **rule:**
+  - **When it applies live:** only `neo4j.conf` changed (a `startup.sh`/`health.sh` change runs only at container start). Every changed setting must be one the server reports as `isDynamic` in `SHOW SETTINGS`; a setting it does not report counts as static. No changed setting may be set by a `NEO4J_*` env var, which the image applies over neo4j.conf. The deployment must be phase `Ready`, not `Degraded=True`, with every replica ready on the current revision, and every server must be reachable.
+  - **What it does:** `dbms.setConfigValue` runs on every server, with `''` for a removed setting (reset to default), and then the ConfigMap is written.
+  - **Order:** apply, then write. Written first, a crash before the apply leaves the servers on the old values with no difference left to act on.
+  - **Fallback:** any blocker, refusal or unreachable server falls back to the restart that happened before. A partial apply is fine, because that restart makes every server consistent. Event `ConfigNeedsRestart` (Normal) carries the reason; a live apply raises `ConfigAppliedLive`.
+  - **Standalone:** after a live apply, the new conf's semantic hash is recorded on the StatefulSet (rule 117), so the pod's stamp is kept.
+  - **Diffing:** never use `resources.Neo4jConfSettings`, which skips the repeatable `server.jvm.additional` and would let a JVM-flag change skip its restart. `confValues` keeps every value and turns a non-`key=value` line into an unknown setting.
+- **why:** #466. Every `spec.config` edit restarted every server, or took a standalone down, even for the roughly 50 settings Neo4j changes at runtime (52 of 307 on 5.26.28, 53 of 325 on 2026.08.1). `dbms.setConfigValue` changes one server and is not persisted, so the Operations Manual says to run it on every member and update neo4j.conf: exactly what this does. Walked live on Kind 2026-10-07:
+  - **2026.08.1, 3 servers:** a changed and an added setting were applied to all three servers with no pod restarted. A removed setting reset to its default on all three. A static `db.tx_log.buffer.size` raised `ConfigNeedsRestart` naming it, and the servers restarted.
+  - **5.26.31, 3 servers:** two dynamic settings were applied live.
+  - **2026.08.1 standalone:** applied live with the same pod and stamp, and the value survived a pod delete.
+  - **Bug found by the tests:** a line added with no value compared equal to an absent one, so the comparison checks presence as well.
+- **pinned-by:** `TestNeo4jConfChanges`, `TestLiveConfigBlocker`, `TestBoltLiveConfigApplier`, `TestReconcileConfigMap_DynamicOnlyChangeAppliedLive`, `TestReconcileConfigMap_LiveApplyRefusedRestarts`, `TestReconcileConfigMap_StartupScriptChangeIsNeverAppliedLive`, `TestStandaloneDynamicConfChange` (`internal/controller/live_config_test.go`).
+- **enforcement:** unit test; the Bolt calls are walked live.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

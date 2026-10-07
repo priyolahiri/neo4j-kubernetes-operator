@@ -69,6 +69,9 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	RequeueAfter     time.Duration
 	Validator        *validation.StandaloneValidator
 	ConfigMapManager *ConfigMapManager
+	// LiveConfig applies a dynamic-only neo4j.conf change to the running pod
+	// instead of restarting it (#466). nil uses Bolt.
+	LiveConfig StandaloneLiveConfigApplier
 	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
@@ -476,6 +479,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 			// controller (it sees its settings already present and makes no change).
 			merged := resources.DedupeNeo4jConf(resources.UpsertNeo4jConfSettings(desiredConf, mergeBack))
 
+			// A change of dynamic settings only is applied to the running pod
+			// before the conf is written (#466); see applyStandaloneConfLive.
+			if oldConf := configMap.Data["neo4j.conf"]; oldConf != "" &&
+				normalizeNeo4jConfForRestart(oldConf) != normalizeNeo4jConfForRestart(merged) {
+				r.applyStandaloneConfLive(ctx, standalone, oldConf, merged)
+			}
+
 			if configMap.Data == nil {
 				configMap.Data = make(map[string]string)
 			}
@@ -551,6 +561,53 @@ const standaloneConfigSemanticHashAnnotation = "neo4j.com/config-semantic-hash"
 func standaloneConfSemanticHash(conf string) string {
 	sum := sha256.Sum256([]byte(normalizeNeo4jConfForRestart(conf)))
 	return hex.EncodeToString(sum[:])
+}
+
+// applyStandaloneConfLive applies a neo4j.conf change to the running pod when
+// every changed setting is dynamic (#466). It records the new conf's semantic
+// hash on the StatefulSet, so reconcileStatefulSet keeps the live config-hash
+// stamp (renderedConfStamp) and the pod is not restarted for what it already
+// runs. When the change cannot be applied, nothing is recorded and the stamp
+// changes as before, restarting the pod. It runs inside the ConfigMap's
+// mutate function, before the write; a retry runs it again, which is harmless —
+// setting a value twice changes nothing.
+func (r *Neo4jEnterpriseStandaloneReconciler) applyStandaloneConfLive(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, oldConf, newConf string) {
+	changes := neo4jConfChanges(oldConf, newConf)
+	applier := r.LiveConfig
+	if applier == nil {
+		applier = newBoltStandaloneLiveConfigApplier(r.Client)
+	}
+	applied, reason := applier.ApplyLive(ctx, standalone, changes)
+	if !applied {
+		if reason != "" && r.Recorder != nil {
+			r.Recorder.Eventf(standalone, corev1.EventTypeNormal, EventReasonConfigNeedsRestart,
+				"Restarting the pod for neo4j.conf changes to %s: %s",
+				strings.Join(sortedSettingNames(changes), ", "), reason)
+		}
+		return
+	}
+	semantic := standaloneConfSemanticHash(newConf)
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		sts := &appsv1.StatefulSet{}
+		if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, sts); err != nil {
+			return err
+		}
+		if sts.Annotations == nil {
+			sts.Annotations = map[string]string{}
+		}
+		sts.Annotations[standaloneConfigSemanticHashAnnotation] = semantic
+		return r.Update(ctx, sts)
+	})
+	if err != nil {
+		// The pod already runs the new values; without the record the stamp
+		// changes and the pod restarts into the same values. Wasteful, not wrong.
+		log.FromContext(ctx).Error(err, "Applied neo4j.conf changes live but could not record them; the pod will restart")
+		return
+	}
+	if r.Recorder != nil {
+		r.Recorder.Eventf(standalone, corev1.EventTypeNormal, EventReasonConfigAppliedLive,
+			"Applied %s without a restart", strings.Join(sortedSettingNames(changes), ", "))
+	}
 }
 
 // renderedConfStamp reads the standalone's ConfigMap and returns the config-hash

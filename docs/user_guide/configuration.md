@@ -225,6 +225,30 @@ spec:
 
 `spec.config` is a free-form `map[string]string` that lands in `neo4j.conf`. A lot of older example material still floats around using the pre-5.x key namespace. Use the current keys below and you'll avoid the most common foot-guns.
 
+### Which changes restart the servers
+
+Neo4j reads most settings only at startup, so changing one in `spec.config` restarts the servers one at a time, or restarts a standalone's pod. Some settings Neo4j can change while it runs; when every setting you change is one of those, the operator applies it to each running server instead, and nothing restarts. Examples:
+
+- query logging (`db.logs.query.*`);
+- transaction timeouts and memory limits (`db.transaction.timeout`, `db.memory.transaction.*`);
+- transaction-log retention (`db.tx_log.rotation.*`);
+- read-only databases (`server.databases.read_only`);
+- LDAP group and role mappings.
+
+To list every such setting on your version:
+
+```cypher
+SHOW SETTINGS YIELD name, isDynamic WHERE isDynamic RETURN name ORDER BY name
+```
+
+What the operator does:
+
+- **Every changed setting can change at runtime:** it runs `dbms.setConfigValue` on every server, including an empty value to reset a removed setting to its default. It also writes the new `neo4j.conf`, so a later restart keeps the value. You get a `ConfigAppliedLive` event naming the settings.
+- **Any changed setting can't:** the servers restart, as for any other change, with a `ConfigNeedsRestart` event that says why. Reasons include a setting Neo4j reads only at startup, a setting also set through `spec.env`, which Neo4j applies over `neo4j.conf`, or the deployment not being `Ready` with every server up.
+- **Only comments or blank lines differ** (for example after an operator upgrade): nothing restarts.
+
+Changes that touch anything other than `neo4j.conf` always restart: the image, resources, TLS, plugins, environment variables and volumes.
+
 ### Memory
 
 Use the `server.memory.*` namespace. The pre-5.x `dbms.memory.heap.*` and `dbms.memory.pagecache.*` keys still appear in many older tutorials but were renamed in Neo4j 5.0:

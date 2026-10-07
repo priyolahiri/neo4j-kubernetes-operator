@@ -44,6 +44,8 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `ClusterQuorumLost` | Warning | A formed cluster has half or fewer of its servers available. Its phase is `Forming` and dependents pause until a majority is back. Emitted once per transition (an operator restart during the outage may repeat it once) |
 | `ConnectivityDegraded` | Warning | The operator has failed to reach the cluster's Bolt endpoint for a sustained streak: at least 10 consecutive reconciles spanning at least 5 minutes, so a cluster that is still forming does not raise it. Emitted once per streak, with the last error and any pod issues |
 | `ReconcileFailed` | Warning | Reconciliation loop encountered an unrecoverable error |
+| `ConfigAppliedLive` | Normal | A `spec.config` change touched only settings Neo4j can change at runtime, so the operator applied it to every running server (`dbms.setConfigValue`) and wrote it to `neo4j.conf`; nothing restarted. Names the settings. Also emitted by `Neo4jEnterpriseStandalone` |
+| `ConfigNeedsRestart` | Normal | A `neo4j.conf` change could not be applied at runtime, so the servers restart as before. The message names the settings and the reason: a setting Neo4j reads only at startup, one also set through an environment variable, or the deployment not `Ready` with every server up. Also emitted by `Neo4jEnterpriseStandalone` |
 
 ### Scale-down
 
