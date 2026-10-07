@@ -2590,7 +2590,7 @@ if [ ! -d "/data/databases/system" ]; then
 else
     echo "Restart detected (/data/databases/system exists) - skipping minimum primaries count"
 fi
-` + buildSystemDatabaseModeBlock(cluster) + `
+` + buildSystemDatabaseModeBlock(cluster) + buildAsyncRaftChannelsBlock(cluster) + `
 # Add server mode constraint if specified
 ` + buildServerModeConstraintConfig(cluster) + `
 
@@ -2604,13 +2604,16 @@ exec /startup/docker-entrypoint.sh neo4j
 `
 }
 
-// RestartNeutralBegin and RestartNeutralEnd delimit startup-script lines that
-// never require a RUNNING server to restart: they decide something only a
-// server's first start uses and that it records on its data volume and reads
-// back unchanged (its system database role). The operator's restart decision
-// skips everything between them (#467), so neither adding such a block in an
-// operator upgrade nor a value in it changing restarts anything. Never put a
-// setting a running server would need to pick up between these markers. Do not
+// RestartNeutralBegin and RestartNeutralEnd delimit startup-script lines whose
+// change must never restart a RUNNING server. Two kinds belong here: what only
+// a server's first start uses and it records on its data volume (its system
+// database role, #467), and settings the operator deliberately applies at each
+// server's next restart instead of restarting for them (#468: the setting
+// reaches a server when it next starts for any reason, and status reports the
+// servers still waiting). The operator's restart decision skips everything
+// between them, so neither adding such a block in an operator upgrade nor a
+// value in it changing restarts anything. Never put anything else between these
+// markers — a setting the servers must pick up now belongs outside. Do not
 // wrap lines that already exist unwrapped either: an existing cluster's script
 // still counts them, so wrapping them would change its hash and restart it.
 // Never change the marker text: an existing script's section would then stop
@@ -2669,6 +2672,54 @@ if [ "$OPERATOR_SYSTEM_DB_MODE" = "SECONDARY" ]; then
     echo "server.cluster.system_database_mode=SECONDARY" >> /conf/neo4j.conf
 fi
 echo "System database mode: ${OPERATOR_SYSTEM_DB_MODE:-PRIMARY (server predates the record)}"
+` + RestartNeutralEnd + `
+`
+}
+
+// AsyncRaftChannelsSetting is the 5.26 mitigation for write stalls while a
+// cluster member is stopped (#468).
+const AsyncRaftChannelsSetting = "dbms.cluster.raft.async_channel_acquisition_enabled"
+
+// AsyncRaftChannelsMinPatch is the first 5.26 patch that has the setting.
+const AsyncRaftChannelsMinPatch = 29
+
+// buildAsyncRaftChannelsBlock renders, for a 5.26 image, the startup-script
+// block that enables asynchronous Raft sender channels (#468).
+//
+// Neo4j documents it (clustering/troubleshooting, 5.x): in 5.26 "a cluster can
+// experience delayed or unavailable writes if the leader waits for a Raft
+// sender connection to a cluster member that has stopped but whose network
+// endpoint still accepts connection attempts … observed in Kubernetes
+// environments", for up to dbms.cluster.network.connect_timeout (30s) each time
+// one server stops — a roll, a crash, a node drain. The fix, from 5.26.29, is
+// this setting; CalVer has it on by default since 2025.02, so nothing is
+// rendered there.
+//
+// The setting does not exist before 5.26.29, and an unknown setting stops
+// Neo4j starting. The 5.26 image tag floats (5.26-enterprise) and nodes can
+// hold different patches under it, so the decision is made in each container
+// from its own kernel jar's version, not from the tag. A value the user sets in
+// spec.config is left alone (a second line would be a duplicate key). The block
+// is restart-neutral: a running server gets the setting at its next restart,
+// and the RestartPending condition names the servers still waiting.
+func buildAsyncRaftChannelsBlock(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	if isCalverImage(cluster.Spec.Image.Tag) {
+		return ""
+	}
+	return RestartNeutralBegin + `
+# 5.26 write stalls while a member is stopped: async Raft sender channels,
+# from 5.26.29 (decided from this container's own Neo4j version).
+OPERATOR_NEO4J_VERSION=$(ls "${NEO4J_HOME:-/var/lib/neo4j}"/lib/neo4j-kernel-[0-9]*.jar 2>/dev/null | head -1 | sed -E 's/.*neo4j-kernel-([0-9][0-9.]*)\.jar$/\1/')
+case "$OPERATOR_NEO4J_VERSION" in
+    5.26.*)
+        OPERATOR_NEO4J_PATCH="${OPERATOR_NEO4J_VERSION#5.26.}"
+        OPERATOR_NEO4J_PATCH="${OPERATOR_NEO4J_PATCH%%.*}"
+        if [ "$OPERATOR_NEO4J_PATCH" -ge ` + fmt.Sprintf("%d", AsyncRaftChannelsMinPatch) + ` ] 2>/dev/null && ! grep -q '^` + AsyncRaftChannelsSetting + `=' /conf/neo4j.conf; then
+            echo "` + AsyncRaftChannelsSetting + `=true" >> /conf/neo4j.conf
+            echo "Async Raft sender channels enabled (Neo4j $OPERATOR_NEO4J_VERSION)"
+        fi
+        ;;
+esac
 ` + RestartNeutralEnd + `
 `
 }

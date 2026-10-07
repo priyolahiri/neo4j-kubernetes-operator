@@ -208,18 +208,23 @@ func newBoltLiveConfigApplier(c client.Client) *boltLiveConfigApplier {
 	return &boltLiveConfigApplier{
 		Client: c,
 		dial: func(_ context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (confSetter, error) {
-			if cluster.Spec.Auth == nil || cluster.Spec.Auth.AdminSecret == "" {
-				return nil, fmt.Errorf("cluster %s has no admin secret", cluster.Name)
-			}
-			scheme := "bolt"
-			if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == resources.CertManagerMode {
-				scheme = "bolt+s"
-			}
-			url := fmt.Sprintf("%s://%s.%s-headless.%s.svc.cluster.local:7687",
-				scheme, podName, cluster.Name, cluster.Namespace)
-			return neo4jclient.NewClientForPod(cluster, c, cluster.Spec.Auth.AdminSecret, url)
+			return dialClusterPod(c, cluster, podName)
 		},
 	}
+}
+
+// dialClusterPod opens a connection to one server pod of the cluster.
+func dialClusterPod(c client.Client, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (*neo4jclient.Client, error) {
+	if cluster.Spec.Auth == nil || cluster.Spec.Auth.AdminSecret == "" {
+		return nil, fmt.Errorf("cluster %s has no admin secret", cluster.Name)
+	}
+	scheme := "bolt"
+	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == resources.CertManagerMode {
+		scheme = "bolt+s"
+	}
+	url := fmt.Sprintf("%s://%s.%s-headless.%s.svc.cluster.local:7687",
+		scheme, podName, cluster.Name, cluster.Namespace)
+	return neo4jclient.NewClientForPod(cluster, c, cluster.Spec.Auth.AdminSecret, url)
 }
 
 // ApplyLive implements LiveConfigApplier.

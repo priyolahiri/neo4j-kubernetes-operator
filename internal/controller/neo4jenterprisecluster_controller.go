@@ -72,6 +72,10 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// server before its phase turns Degraded (#444); zero uses
 	// DefaultServerUnavailableGrace. Set from --server-unavailable-grace.
 	ServerUnavailableGrace time.Duration
+	// RestartPendingChecker reads each server's settings for the RestartPending
+	// condition (#468). nil uses Bolt; tests inject a fake.
+	RestartPendingChecker *restartPendingChecker
+	restartPendingOnce    sync.Once
 	// fleetFailures dedupes the AuraFleetManagementFailed event so a
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
@@ -700,6 +704,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			}
 		}
 	}
+
+	// Name the servers that still have to restart to pick up a setting the
+	// operator applies at the next restart (#468). Best-effort, never fatal.
+	r.reconcileRestartPending(ctx, cluster)
 
 	// Plugin management is now handled by the separate Neo4jPlugin CRD and controller
 

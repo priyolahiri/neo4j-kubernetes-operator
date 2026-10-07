@@ -648,6 +648,23 @@
   - `TestScale_RestartDecision` (both lines: 3→4, 3→6, 5→3 quiet; 2→3, 2→4 restart), `TestScale_OtherChangeStillRestarts` and `TestUpgrade_SystemDatabaseModeBlockRestartsNothing` (`internal/controller/scale_no_restart_test.go`).
 - **enforcement:** unit test.
 
+### id 120 — 5.26 clusters get async Raft sender channels at each server's next restart, decided per container from its own version
+- **scope:** `buildAsyncRaftChannelsBlock`, `AsyncRaftChannelsSetting` and `AsyncRaftChannelsMinPatch` (`internal/resources/cluster.go`); `internal/controller/restart_pending.go` (`clusterDeferredSettings`, `supportsAsyncRaftChannels`, `stampDeferredSettings`, `pendingRestartServers`, `reconcileRestartPending`) and its call in `ReconcileConfigMap` and `Reconcile`; `GetLoadedComponents` (`internal/neo4j/client.go`).
+- **rule:**
+  - **The block:** a 5.26 image's startup script has a restart-neutral block (rule 119's markers). It appends `dbms.cluster.raft.async_channel_acquisition_enabled=true` only when that container's own kernel jar (`$NEO4J_HOME/lib/neo4j-kernel-<version>.jar`) is 5.26.29 or later, and only when `spec.config` does not already set the key.
+  - **Why per container:** the setting does not exist before 5.26.29, and an unknown setting stops Neo4j starting. The `5.26-enterprise` tag floats, and nodes can hold different patches under it (this laptop's cache had 5.26.28 while the Kind node ran 5.26.31). Never decide it from the tag.
+  - **CalVer:** nothing is rendered; it is on by default there.
+  - **The record on the ConfigMap:** `neo4j.com/deferred-settings` names the settings applied at restart, and `neo4j.com/deferred-settings-since` is when the ConfigMap first carried exactly those.
+  - **RestartPending:** True names every server whose Neo4j has the setting (`dbms.components()` on `system`, per pod) and whose `neo4j` container started before that moment. False means none is waiting. The condition is removed when nothing is deferred (CalVer, or a `spec.config` override).
+  - **Never use `SHOW SETTINGS` here:** on 5.26.31 it reports this setting `false` (`isExplicitlySet` false) on a server whose startup config dump in `debug.log` shows `true`.
+  - **Never run `dbms.components()` without `DatabaseName: "system"` on a per-pod connection:** the default database (`neo4j`, one primary by default) is not on every server, so the call fails on the others.
+- **why:** #468. Neo4j documents a 5.26 write stall on Kubernetes (`clustering/troubleshooting.adoc`, 5.x): the leader waits up to `dbms.cluster.network.connect_timeout` (30s) for a connection to a stopped member. It hits every roll, crash and drain. The user chose "at the next restart, with status" over restarting every 5.26 cluster on upgrade. Walked live on Kind 2026-10-07 (5.26.31):
+  - **The stall:** with the setting `false` (set through `spec.config`), restarting a follower under writes stalled for **32s**; with it `true`, there was no gap across 75s. Earlier rolls without it stalled 32–37s.
+  - **Upgrade from the #467 build:** the ConfigMap gained the block and the annotations, nothing restarted, and RestartPending named all three servers. After server-1 was deleted, it dropped from the condition and its conf has the line.
+  - **Bugs found on the way:** `SHOW SETTINGS` was the first status design and was abandoned for the reason above. `GetLoadedComponents` without a database failed against servers not hosting `neo4j`.
+- **pinned-by:** `TestAsyncRaftChannelsBlock` (runs the rendered block through bash against fake kernel jars: 5.26.28 none, 5.26.29/31 once, user value kept, no jar none; CalVer renders nothing) (`internal/resources/system_database_mode_test.go`); `TestClusterDeferredSettings`, `TestSupportsAsyncRaftChannels`, `TestStampDeferredSettings`, `TestPendingRestartServers`, `TestReconcileRestartPending` (`internal/controller/restart_pending_test.go`); `TestUpgrade_SystemDatabaseModeBlockRestartsNothing` covers the 5.26 upgrade.
+- **enforcement:** unit test; the stall itself is walked live.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

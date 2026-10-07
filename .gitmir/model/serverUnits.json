@@ -13,7 +13,8 @@
       "internal/controller/neo4jenterprisecluster_controller.go",
       "internal/controller/cluster_availability.go",
       "internal/controller/configmap_manager.go",
-      "internal/controller/live_config.go"
+      "internal/controller/live_config.go",
+      "internal/controller/restart_pending.go"
     ]
   },
   {
