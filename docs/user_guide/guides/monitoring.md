@@ -201,7 +201,7 @@ Two uses worth wiring up:
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `neo4j_operator_cluster_healthy` | Gauge | `cluster_name`, `namespace` | `1` in phase `Ready` (also while a server is down, within the grace period); `0` in `Forming`, `Degraded` or `Failed` |
+| `neo4j_operator_cluster_healthy` | Gauge | `cluster_name`, `namespace` | `1` in phase `Ready` (also while a server is down, within the grace period); `0` in `Forming`, `Degraded` or `Failed` Every series of a cluster is removed when the cluster is deleted. |
 | `neo4j_operator_cluster_replicas_total` | Gauge | `cluster_name`, `namespace`, `role` (`desired`/`ready`) | Server counts: `desired` = `spec.topology.servers`, `ready` = StatefulSet ready replicas (set when the cluster reaches `Ready`) |
 | `neo4j_operator_cluster_phase` | Gauge | `cluster_name`, `namespace`, `phase` | `1` for the current phase, `0` for all others (phases: `Pending`, `Forming`, `Ready`, `Failed`, `Degraded`, `Upgrading`) |
 | `neo4j_operator_split_brain_detected_total` | Counter | `cluster_name`, `namespace` | Total split-brain detection events |

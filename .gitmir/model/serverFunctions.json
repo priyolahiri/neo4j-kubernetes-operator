@@ -4,7 +4,7 @@
     "name": "Reconcile Cluster",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified — or hands a cluster that is short of servers to the shortfall assessment.",
+    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified — or hands a cluster that is short of servers to the shortfall assessment. On deletion, releasing the finalizer withdraws the cluster's metric series.",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -1761,7 +1761,7 @@
     "name": "Reconcile Neo4jPlugin",
     "serverUnitId": "su-neo4jplugin",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers. On reaching Ready it records status.installedVersion (the spec.version it installed) and status.installationTime (set once per installed version, not touched by later reconciles or same-version Ready/Installing cycles); a plugin already Ready before those fields existed is backfilled on its next reconcile.",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers. On reaching Ready it records status.installedVersion (the spec.version it installed) and status.installationTime (set once per installed version, not touched by later reconciles or same-version Ready/Installing cycles); a plugin already Ready before those fields existed is backfilled on its next reconcile. On a standalone, the plugin's security and startup-only settings stay out of the env (the standalone controller merges them into neo4j.conf with the user's spec.config), and env copies an earlier operator wrote are removed.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

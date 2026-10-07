@@ -337,6 +337,24 @@ behaviour changes below take effect on the first reconcile.
   `spec.retention` for it. Cloud storage keeps `AUTO` as it was, since it
   seeds differentials. See
   [Restoring a sharded database](property_sharding.md#restoring-a-sharded-database).
+- **A plugin no longer overrides a standalone's own procedure settings.**
+  On a `Neo4jEnterpriseStandalone`, a `Neo4jPlugin` also wrote its security
+  settings (`dbms.security.procedures.*` and the like) as environment
+  variables, which Neo4j applies over `neo4j.conf` — so a standalone's own
+  `spec.config` values for those keys were silently replaced by the plugin's
+  (for example `gds.*,apoc.*` cut to `apoc.*`). They now live only in
+  `neo4j.conf`, merged with yours, and the plugin's `spec.security` is
+  written there too. **Each standalone with a `Neo4jPlugin` restarts once on
+  upgrade** as the environment copies are removed. Clusters are unchanged.
+- **A deleted cluster stops exporting metrics.** Its series —
+  `cluster_healthy`, `cluster_phase`, `server_health` and the rest — stayed
+  exported at their last values until the operator restarted; they are now
+  removed when the cluster is deleted.
+- **`kubectl neo4j validate --connect` checks namespace-less manifests in the
+  right namespace.** Without `-n` it looked cross-references up in an empty
+  namespace and reported raw client errors (and could pass a remote composite
+  whose target has no keystore); it now uses the kubeconfig context's
+  namespace, else `default`.
 - **A finished one-time backup stays finished.** A `Neo4jBackup` without a
   schedule that was `Completed` or `Failed` turned `Waiting` whenever its
   target restarted or was briefly missing, and once its Job had been cleaned

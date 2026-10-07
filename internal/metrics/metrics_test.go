@@ -362,3 +362,41 @@ func TestClusterMetrics_RecordServerHealth_SeparatesKubernetesClusters(t *testin
 	assert.Equal(t, 0.0, testutil.ToFloat64(
 		serverHealth.WithLabelValues("prod", "neo4j", "srv-0", "10.0.0.1:7687", "us-east")))
 }
+
+// A deleted cluster must stop exporting. On the v1.19.0 walk a deleted
+// cluster's cluster_healthy, cluster_replicas_total and server_health series
+// stayed at their last values until the operator restarted. Another cluster's
+// series — including one with the same name in another namespace — stay.
+func TestClusterMetrics_ForgetWithdrawsTheClustersSeries(t *testing.T) {
+	for _, vec := range []interface{ Reset() }{clusterHealthy, clusterPhase, clusterReplicas, serverHealth, reconcileTotal} {
+		vec.Reset()
+	}
+	gone := NewClusterMetrics("prod", "neo4j")
+	other := NewClusterMetrics("prod", "staging")
+	for _, m := range []*ClusterMetrics{gone, other} {
+		m.RecordClusterHealth(true)
+		m.RecordClusterPhase("Ready")
+		m.RecordClusterReplicas(3, 3)
+		m.RecordServerHealth([]ServerHealth{{Name: "srv-1", Address: "10.0.0.1:7687", Enabled: true, Available: true}})
+	}
+	NewReconcileMetrics("prod", "neo4j").RecordReconcile(context.Background(), "reconcile", time.Second, true)
+	NewReconcileMetrics("prod", "staging").RecordReconcile(context.Background(), "reconcile", time.Second, true)
+	before := testutil.CollectAndCount(clusterPhase)
+
+	gone.Forget()
+	serverHealthSeen.mu.Lock()
+	_, remembered := serverHealthSeen.byCluster["/neo4j/prod"]
+	serverHealthSeen.mu.Unlock()
+	assert.False(t, remembered, "its server bookkeeping goes with it")
+
+	assert.Equal(t, 1, testutil.CollectAndCount(clusterHealthy))
+	assert.Equal(t, 1, testutil.CollectAndCount(serverHealth))
+	assert.Equal(t, before/2, testutil.CollectAndCount(clusterPhase))
+	assert.Equal(t, 1.0, testutil.ToFloat64(clusterHealthy.WithLabelValues("prod", "staging")), "the other namespace's cluster is untouched")
+	assert.Equal(t, 2, testutil.CollectAndCount(clusterReplicas), "only the other namespace's desired and ready remain")
+	assert.Equal(t, 1, testutil.CollectAndCount(reconcileTotal), "only the other namespace's reconcile counter remains")
+
+	// Recording again after a recreate starts fresh series.
+	gone.RecordServerHealth([]ServerHealth{{Name: "srv-1", Address: "10.0.0.5:7687", Enabled: true, Available: true}})
+	assert.Equal(t, 2, testutil.CollectAndCount(serverHealth))
+}

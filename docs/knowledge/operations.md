@@ -582,6 +582,27 @@
 - **pinned-by:** `TestSupportsSplitArchive` (`internal/neo4j/version_test.go`); `TestBackupValidator_SplitArchivePartSize`, `TestBackupValidator_SplitArchivePartSizeNotAlsoInAdditionalArgs` (`internal/validation/backup_split_archive_test.go`); `TestBuildBackupCommand_SplitArchivePartSize` (`internal/controller/backup_restore_field_findings_test.go`); `TestRetentionScript_MaxCountDeletesSplitParts`, `TestRetentionScript_MaxAgeDeletesSplitPartsAndKeepsNewest` (`internal/controller/neo4jbackup_retention_split_test.go`) — these execute the generated script against real files.
 - **enforcement:** unit test. No integration spec: CI is anchored on 2026.08.1, which has no such option; the release journey carries the scenario.
 
+### id 114 — A standalone carries a plugin's security and startup-only settings in neo4j.conf, never in its env
+- **scope:** `installPluginViaEnvironment`, `removeStandalonePluginConfEnv`, `pluginSecuritySettings` (`internal/controller/plugin_controller.go`); `pluginConfKey`, `specSecuritySettings`, `pluginConfSettings`, `unionPluginConfSettings` (`internal/controller/plugin_conf_settings.go`).
+- **rule:** On a standalone the standalone controller folds every plugin's security and startup-only settings — automatic ones, `spec.security`, and those keys from the plugin's `spec.config` — into neo4j.conf, merged with the user's own `spec.config` (additive lists unioned). The plugin controller writes `NEO4J_PLUGINS` and the plugin's other settings (APOC's, …) as env vars there, but not those keys, and removes copies an earlier operator wrote: this plugin's tokens from additive lists, a scalar only where it still holds exactly the plugin's value. A cluster still takes them as env vars (its conf is built from env). The Neo4j image applies `NEO4J_*` env vars over neo4j.conf, so an env copy replaces the merged value.
+- **why:** the v1.19.0 journey (2026-10-06) saw a standalone's own `dbms.security.procedures.unrestricted` (`gds.*,…`) cut to the plugin's `apoc.*` once a plugin was installed. Walked live on Kind 2026-10-07 (2026.08.1): reproduced on the previous operator (effective value `apoc.*`, conf `gds.*,custom.*`), then upgraded: the env copies were removed in one restart, the conf became `gds.*,custom.*,apoc.*` with `allowlist=apoc.*`, the effective settings matched, APOC answered, and the pod stayed put afterwards.
+- **pinned-by:** `TestInstallPluginViaEnvironment_StandaloneKeepsConfKeysOutOfEnv`, `TestPluginConfSettings_IncludesSpecSecurity` (`internal/controller/plugin_install_mode_test.go`).
+- **enforcement:** unit test.
+
+### id 115 — A deleted cluster's metric series are withdrawn
+- **scope:** `ClusterMetrics.Forget` (`internal/metrics/metrics.go`); the finalizer release in `handleDeletion` and the deletion branch's position in `Neo4jEnterpriseClusterReconciler.Reconcile` (`internal/controller/neo4jenterprisecluster_controller.go`).
+- **rule:** When the cluster's finalizer is released, `Forget` deletes every series labelled with its `cluster_name` + `namespace` (health, phase, replicas, reconcile, upgrade, backup and per-server families) and its server-health bookkeeping. Deletion is handled before `Reconcile` sets up its deferred reconcile recording, so the pass that forgot the cluster does not export it again.
+- **why:** the v1.19.0 journey saw `cluster_healthy=1`, `cluster_replicas_total` and every `server_health` series of a deleted cluster exported until the operator restarted. Walked live on Kind 2026-10-07: 24 series while `Ready`, 0 after deletion (the first attempt left 12 reconcile series, recorded by the deletion pass's deferred metrics — hence the reordering).
+- **pinned-by:** `TestClusterMetrics_ForgetWithdrawsTheClustersSeries` (`internal/metrics/metrics_test.go`).
+- **enforcement:** unit test (Forget); the call site is walked live.
+
+### id 116 — `kubectl neo4j validate --connect` resolves cross-references where `kubectl apply` would put the object
+- **scope:** `connectedNamespace` and its call in `runValidate` (`cmd/kubectl-neo4j/validate.go`); `currentNamespace` (`status.go`).
+- **rule:** Under `--connect`, a manifest without `metadata.namespace` is checked in `-n`, else the kubeconfig context's namespace, else `default` — never `""`. Validators read a failed lookup as "not applied yet", so an empty namespace made `--connect` warn about objects that existed (with client-go's raw *"an empty namespace may not be set"*) and pass checks it never made — a remote composite whose target lacks `remoteAliasKeystore` included.
+- **why:** found by the v1.19.0 journey; confirmed against the dev Kind cluster: the old build printed the raw error and looked in namespace `""`, the new one checks in `default`.
+- **pinned-by:** `TestConnectedNamespace`, `TestValidate_Connected_CompositeKeystoreNeedsTheRightNamespace` (`cmd/kubectl-neo4j/validate_test.go`).
+- **enforcement:** unit test.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.
