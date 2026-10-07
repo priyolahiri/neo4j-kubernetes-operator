@@ -30,6 +30,7 @@ gate that blocks merge. Jobs:
    the result. The same job then runs the static checks that have no generator
    to catch them: `make helm-lint`, `make check-csv-coverage`,
    `make check-apiref-drift`, `make check-cli-asset-names`,
+   `make check-release-notes-links`,
    `make check-cli-docs`, `make check-docs-release-pins`,
    `make check-examples-catalog`, `make check-docs-tables`,
    `make check-crd-catalog`, and a gitleaks secret scan. All are static and
@@ -278,7 +279,8 @@ with a tag input). Jobs:
    (`neo4j-kubernetes-operator-complete.yaml`, `…operator.yaml`), stamps the OLM
    CSV via `make bundle-release` (with a guard that refuses to publish if
    `createdAt:` is still the dev placeholder), renders the release body from
-   `.github/release-notes-template.md`, and publishes the GitHub release.
+   `.github/release-notes-template.md` (its docs links point at the release's
+   own `vX.Y` docs), and publishes the GitHub release.
 
 The release workflow's final jobs (`publish-docs`, `publish-helm`) then call
 **Pages — Docs** and **Pages — Helm Repo** (below) once every gate and artifact
