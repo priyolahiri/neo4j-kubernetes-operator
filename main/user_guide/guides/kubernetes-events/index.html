@@ -4446,7 +4446,7 @@ and alerting systems.</p>
 <tr>
 <td><code>BackupShardedDifferential</code></td>
 <td>Warning</td>
-<td>A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run. Comes from an explicit <code>backupType: DIFF</code>, or an all-databases backup (<code>AUTO</code> already takes full backups of a sharded database on a PVC)</td>
+<td>A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run. Comes from an all-databases backup; a <code>spec.shardedDatabase</code> backup takes full backups on a PVC</td>
 </tr>
 <tr>
 <td><code>BackupValidateUnsupported</code></td>

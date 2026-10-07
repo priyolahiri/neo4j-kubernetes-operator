@@ -4556,17 +4556,24 @@ behaviour changes below take effect on the first reconcile.</p>
   backup, and a differential cannot be merged into one. A <code>seedBackupRef</code>
   whose latest run holds a differential shard used to fail inside Neo4j after
   the seed proxy started; it now fails at once, naming the shards, and seeds
-  once a full run lands. A sharded PVC run that still writes a differential
-  (an explicit <code>DIFF</code>, or an all-databases backup) raises a
-  <code>BackupShardedDifferential</code> warning.</li>
+  once a full run lands. An all-databases PVC run that writes a differential
+  shard raises a <code>BackupShardedDifferential</code> warning.</li>
 <li><strong><code>backupType: AUTO</code> takes full backups of a sharded database on a PVC.</strong>
   A <code>Neo4jBackup</code> with <code>spec.shardedDatabase</code> and PVC storage used to write a
   differential on every run after the first, and none of those can seed a
   sharded database. <code>AUTO</code> (the default) now takes a full backup on every run
   there. Expect each run to be as large as the first; size the PVC and
-  <code>spec.retention</code> for it. An explicit <code>DIFF</code> still writes differentials, and
-  cloud storage keeps <code>AUTO</code> as it was, since it seeds differentials. See
+  <code>spec.retention</code> for it. Cloud storage keeps <code>AUTO</code> as it was, since it
+  seeds differentials. See
   <a href="../property_sharding/#restoring-a-sharded-database">Restoring a sharded database</a>.</li>
+<li><strong>A finished one-time backup stays finished.</strong> A <code>Neo4jBackup</code> without a
+  schedule that was <code>Completed</code> or <code>Failed</code> turned <code>Waiting</code> whenever its
+  target restarted or was briefly missing, and once its Job had been cleaned
+  up it could run again, writing a new backup. It now keeps its phase.</li>
+<li><strong><code>backupType: DIFF</code> is refused for a sharded database.</strong> Neo4j does not
+  back up property shards differentially, so every run of such a backup
+  failed. A <code>Neo4jBackup</code> with <code>spec.shardedDatabase</code> and <code>backupType: DIFF</code>
+  is now refused by validation and names the field; use <code>AUTO</code> or <code>FULL</code>.</li>
 <li><strong>A sharded seed from MinIO gets its endpoint.</strong> Seeding a sharded database
   from S3-compatible storage under <code>neo4j.com/auto-inherit-seed-creds</code> added
   only the credentials to the cluster, so Neo4j went to AWS for the bucket.

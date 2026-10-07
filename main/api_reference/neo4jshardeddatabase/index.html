@@ -4984,7 +4984,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <td><code>string</code></td>
 <td>No</td>
 <td>-</td>
-<td>Seed source database name for metadata lookup</td>
+<td>The source sharded database's logical name in the backup (<code>seedSourceDatabase</code> OPTION). Needed when seeding from <strong>cloud storage</strong> under a different <code>spec.name</code> — Neo4j matches the seed's shards by name — and to pick one family out of an all-databases backup. A PVC seed maps the shards to the new name itself</td>
 </tr>
 <tr>
 <td><code>seedConfig</code></td>

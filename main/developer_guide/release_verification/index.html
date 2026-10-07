@@ -4656,7 +4656,7 @@ cluster (~2Gi each):</p>
 </tr>
 <tr>
 <td>Sharded PVC backups are full</td>
-<td>The scheduled sharded backup on a PVC with <code>backupType: AUTO</code> (or none): every run's <code>status.history[].shardArtifacts[].type</code> is <code>FULL</code> (the Job command carries <code>--type=FULL</code>), and a new <code>Neo4jShardedDatabase</code> with <code>seedBackupRef</code> to it seeds from the latest run (the seed proxy serves it, no <code>merge-chain</code> init container). Set <code>backupType: DIFF</code> and let one run land → a <code>BackupShardedDifferential</code> Warning naming the shards; a <code>seedBackupRef</code> to it → <code>Failed</code> within seconds, naming the differential shards, with <strong>no</strong> <code>backup-seed-proxy</code> Deployment. Set <code>FULL</code> again → once a run lands, that database seeds on its own requeue</td>
+<td>The scheduled sharded backup on a PVC with <code>backupType: AUTO</code> (or none): every run's <code>status.history[].shardArtifacts[].type</code> is <code>FULL</code> (the Job command carries <code>--type=FULL</code>), and a new <code>Neo4jShardedDatabase</code> with <code>seedBackupRef</code> to it seeds from the latest run (the seed proxy serves it, no <code>merge-chain</code> init container). A <code>Neo4jBackup</code> with <code>spec.shardedDatabase</code> and <code>backupType: DIFF</code> is refused by validation, naming <code>spec.options.backupType</code> (Neo4j does not back up property shards differentially). To reach the differential path, take an <strong>all-databases</strong> <code>AUTO</code> backup on a PVC twice: the second run raises a <code>BackupShardedDifferential</code> Warning naming the graph shard; a <code>seedBackupRef</code> to it → <code>Failed</code> within seconds, naming the differential shard, with <strong>no</strong> <code>backup-seed-proxy</code> Deployment; after a sharded backup's full run lands and <code>seedBackupRef</code> points at it, the database seeds on its own requeue</td>
 </tr>
 <tr>
 <td>Sharded seed from MinIO</td>
@@ -4861,7 +4861,7 @@ Parts A/B.</p>
 </tr>
 <tr>
 <td>A FULL then a DIFF</td>
-<td>let (or force) two runs so the bucket holds a full <strong>and</strong> a differential — a seed-only chain does not exercise the pull path. <strong><code>status.history[]</code> does not record the backup type</strong>, so read it from the run's Job log (<code>Finished full backup … Downloaded from tx -1 to tx N</code> then <code>Finished differential backup … from tx N+1</code>) or from the artifact sizes in the bucket. Run 1 logs <em>"Start differential … Falling back to full"</em> — correct, there is no parent yet. Write to the CHAIN'S database between runs, not the default one: <code>kubectl neo4j cypher</code> has no <code>-d</code> flag, so use <code>kubectl exec … cypher-shell -d &lt;db&gt;</code> or the diff has nothing to carry</td>
+<td>let (or force) two runs so the bucket holds a full <strong>and</strong> a differential — a seed-only chain does not exercise the pull path. <code>status.history[].artifactType</code> records each run's type; the run's Job log shows the transactions (<code>Finished full backup … Downloaded from tx -1 to tx N</code> then <code>Finished differential backup … from tx N+1</code>). Run 1 logs <em>"Start differential … Falling back to full"</em> — correct, there is no parent yet. Write to the CHAIN'S database between runs, not the default one: <code>kubectl neo4j cypher</code> has no <code>-d</code> flag, so use <code>kubectl exec … cypher-shell -d &lt;db&gt;</code> or the diff has nothing to carry</td>
 </tr>
 <tr>
 <td>CLI replaces the copy step</td>
@@ -5083,7 +5083,7 @@ the first walk. The scripted steps already do.</p>
 </tr>
 <tr>
 <td>The cluster says what guards the exposed port</td>
-<td><code>status.conditions[CrossClusterProxySecure]</code> is <code>True</code>/<code>MutualTLSRequired</code> with TLS on. It reads <code>False</code>/<code>NoClusterTLS</code> when the proxy is enabled without <code>spec.tls</code> — nothing authenticates the tx-shipping port then, and the proxy authenticates nothing itself</td>
+<td><code>status.conditions[CrossClusterProxySecure]</code> is <code>True</code>/<code>MutualTLSRequired</code> with TLS on. Enabling the proxy without <code>spec.tls</code> is refused: the cluster goes <code>Failed</code>, naming <code>spec.tls.mode=cert-manager</code>, and no StatefulSet or Service is created — nothing would authenticate the tx-shipping port, and the proxy authenticates nothing itself</td>
 </tr>
 </tbody>
 </table>
@@ -5391,6 +5391,12 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 </tr>
 </thead>
 <tbody>
+<tr>
+<td><strong>v1.19.0 release verification</strong></td>
+<td>2026-10-06</td>
+<td>✅ Phases 0-3 and Phase 5 (Parts A, B, E) pass on <code>27baf02</code>, after the fixes noted; Phase 4 <strong>not run</strong> (nothing under <code>internal/aura/</code> or <code>api/v1beta1/aura*</code> changed); Parts C/D left to the extended suite; no wedged cluster arose to repair in Part E. Walked on an isolated Kind cluster beside an existing dev cluster</td>
+<td><strong>Upgrade from v1.18.0:</strong> standalone role rows, ConfigMap, StatefulSet template, generation and pod UID unchanged, scheduled backup stays <code>Ready</code>/<code>BackupScheduled</code>; sharding cluster hash, generation, ConfigMap and pod UIDs unchanged. <strong>New this release, live:</strong> a lost server keeps the cluster <code>Ready</code> (<code>Degraded</code> names the pod), then <code>Degraded</code> after the grace, <code>Forming</code> + <code>ClusterQuorumLost</code> on majority loss, image change deferred (<code>UpgradeDeferred</code>); split archives on 2026.09 (exact 1 GiB parts on PVC and MinIO, retention keeps parts, 1.3M-node restores on standalone and cluster); restore under a new name / <code>sourceDatabase</code>; online standalone restore (no Job, no restart, <code>stopCluster</code> ignored, hook ran); merged PVC differentials on 5.26 and 2026.09 incl. an empty quiet run; standalone workload identity (no ServiceAccount or roll for a v1.18.0 standalone; online pod-identity restore; refused once removed); online cluster PITR into a new database and refusal over <code>neo4j</code>; 5.26 offline PITR to the pinned run; sharded <code>AUTO</code> → <code>FULL</code> on a PVC, differential seed refusal (via an all-databases <code>AUTO</code> backup), MinIO credentials + endpoint in one roll. <strong>Fixed in the journey-fix PR:</strong> on 5.26 an empty differential whose chain lost its full was served as a full (left an offline database) — the merge now checks the result; a <code>Completed</code> one-time backup turned <code>Waiting</code> on a target restart and ran again after its Job was GC'd (pre-existing) — rule 113; Neo4j refuses <code>backupType: DIFF</code> for a sharded database (<em>"Differential backups of property shards are not allowed"</em>) — now refused by validation, docs corrected; the <code>Degraded</code> message no longer says "waiting for cluster formation"; a cloud sharded seed under a new name needs <code>seedSourceDatabase</code> — documented. <strong>Open (pre-existing, not blocking):</strong> a deleted cluster's metrics stay exported until the operator restarts; <code>validate --connect</code> without <code>-n</code> checks namespace-less manifests in <code>""</code>; <code>validate --connect</code> passes a remote composite whose target lacks <code>remoteAliasKeystore</code>; a standalone's plugin settings arrive as env vars and override the same key in <code>spec.config</code>. Matrix rows corrected: proxy without TLS is refused (no <code>NoClusterTLS</code>), history records <code>artifactType</code>, the sharded DIFF row</td>
+</tr>
 <tr>
 <td><strong>v1.18.0 release verification</strong></td>
 <td>2026-10-02</td>

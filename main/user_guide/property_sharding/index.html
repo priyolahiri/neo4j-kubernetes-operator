@@ -5168,10 +5168,11 @@ either: merging a shard's chain loses the sharding information the seed needs.
 So:</p>
 <ul>
 <li>On a PVC, <code>backupType: AUTO</code> (the default) takes a <strong>full</strong> backup of a
-  sharded database on every run, so every run can seed one. Only an explicit
-  <code>backupType: DIFF</code> writes differentials there; each such run raises a
-  <code>BackupShardedDifferential</code> warning. Each run's shard types are in
-  <code>status.history[].shardArtifacts[].type</code>.</li>
+  sharded database on every run, so every run can seed one. Each run's shard
+  types are in <code>status.history[].shardArtifacts[].type</code>. (<code>backupType: DIFF</code>
+  is refused for a sharded database: Neo4j does not back up property shards
+  differentially. In cloud storage, <code>AUTO</code> writes a differential of the graph
+  shard and full property shards, which seed directly.)</li>
 <li>An all-databases backup (<code>spec.allDatabases</code>) keeps <code>AUTO</code> as usual, because
   one <code>neo4j-admin</code> run covers every database. Its sharded families' runs after
   the first hold differentials, and raise the same warning. To restore a
@@ -5182,7 +5183,10 @@ So:</p>
   database seeds from it.</li>
 </ul>
 <p><strong>From cloud storage, differentials seed directly</strong>: Neo4j reads the whole chain
-from the bucket. The cluster's server pods fetch it themselves, so they need the
+from the bucket. To seed under a different <code>spec.name</code> than the backed-up
+database, set <code>spec.seedSourceDatabase</code> to the backed-up name: Neo4j matches
+the seed's shards by name. (From a PVC, the operator maps the shards to the new
+name itself.) The cluster's server pods fetch it themselves, so they need the
 backup's credentials Secret — and, for MinIO or another S3-compatible store, its
 endpoint. Put them on the cluster (<code>spec.extraEnvFrom</code>, <code>spec.env</code>), or annotate
 the cluster with <code>neo4j.com/auto-inherit-seed-creds: "true"</code> and the operator
