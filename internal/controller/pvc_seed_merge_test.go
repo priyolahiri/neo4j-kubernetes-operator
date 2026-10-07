@@ -42,6 +42,18 @@ import (
 // happened. Its "merged artifact" holds the names of the files it was given,
 // so a test can see which files the script copied.
 const fakeNeo4jAdmin = `#!/bin/bash
+if [ "$1" = backup ] && [ "$2" = inspect ] && [[ " $* " == *" --show-metadata "* ]]; then
+  # The metadata listing of a directory: every backup in it, each "full" unless
+  # named in FAKE_NOT_FULL.
+  printf '['; first=1
+  for f in "${3%/}"/*.backup; do
+    [ -e "$f" ] || continue
+    full=true; [ "$(basename "$f")" = "${FAKE_NOT_FULL:-}" ] && full=false
+    [ $first = 1 ] || printf ','; first=0
+    printf '{"uri":"file://%s","full":%s,"lowestTransaction":1}' "$f" "$full"
+  done
+  printf ']\n'; exit 0
+fi
 if [ "$1" = backup ] && [ "$2" = inspect ]; then
   chain=$FAKE_CHAIN
   # Like neo4j-admin: an empty backup (the newest, here) is listed only with --empty.
@@ -215,6 +227,23 @@ func TestSeedMergeScript_FailsWithNeo4jAdminsReason(t *testing.T) {
 	require.Error(t, run.err)
 	msg, _ = os.ReadFile(run.termLog)
 	assert.Contains(t, string(msg), "is not on the backup PVC")
+}
+
+// On 5.26, an EMPTY newest differential whose chain lost its full is reported
+// as an "existing full backup" (reproduced against neo4j:5.26-enterprise).
+// Served as such, CREATE DATABASE fails later inside Neo4j and leaves an
+// offline database behind; the script must refuse it with the reason instead.
+func TestSeedMergeScript_ADifferentialReportedAsFullIsRefused(t *testing.T) {
+	run := runSeedMergeScript(t, seedChainFiles,
+		[]string{"FAKE_CHAIN=neo4j-2026-01-01T02-00-00.backup", "FAKE_MODE=full", "FAKE_NOT_FULL=neo4j-2026-01-01T02-00-00.backup"},
+		"nightly", "neo4j-2026-01-01T02-00-00.backup", "neo4j", "merge")
+	require.Error(t, run.err)
+	msg, err := os.ReadFile(run.termLog)
+	require.NoError(t, err)
+	assert.Contains(t, string(msg), "could not merge the backup chain ending at nightly/neo4j-2026-01-01T02-00-00.backup")
+	assert.Contains(t, string(msg), "returned a differential backup")
+	_, err = os.Stat(filepath.Join(run.scratch, "serve", "nightly", "neo4j-2026-01-01T02-00-00.backup"))
+	assert.True(t, os.IsNotExist(err), "nothing is served")
 }
 
 func TestNewSeedMergePlan(t *testing.T) {

@@ -327,17 +327,24 @@ behaviour changes below take effect on the first reconcile.
   backup, and a differential cannot be merged into one. A `seedBackupRef`
   whose latest run holds a differential shard used to fail inside Neo4j after
   the seed proxy started; it now fails at once, naming the shards, and seeds
-  once a full run lands. A sharded PVC run that still writes a differential
-  (an explicit `DIFF`, or an all-databases backup) raises a
-  `BackupShardedDifferential` warning.
+  once a full run lands. An all-databases PVC run that writes a differential
+  shard raises a `BackupShardedDifferential` warning.
 - **`backupType: AUTO` takes full backups of a sharded database on a PVC.**
   A `Neo4jBackup` with `spec.shardedDatabase` and PVC storage used to write a
   differential on every run after the first, and none of those can seed a
   sharded database. `AUTO` (the default) now takes a full backup on every run
   there. Expect each run to be as large as the first; size the PVC and
-  `spec.retention` for it. An explicit `DIFF` still writes differentials, and
-  cloud storage keeps `AUTO` as it was, since it seeds differentials. See
+  `spec.retention` for it. Cloud storage keeps `AUTO` as it was, since it
+  seeds differentials. See
   [Restoring a sharded database](property_sharding.md#restoring-a-sharded-database).
+- **A finished one-time backup stays finished.** A `Neo4jBackup` without a
+  schedule that was `Completed` or `Failed` turned `Waiting` whenever its
+  target restarted or was briefly missing, and once its Job had been cleaned
+  up it could run again, writing a new backup. It now keeps its phase.
+- **`backupType: DIFF` is refused for a sharded database.** Neo4j does not
+  back up property shards differentially, so every run of such a backup
+  failed. A `Neo4jBackup` with `spec.shardedDatabase` and `backupType: DIFF`
+  is now refused by validation and names the field; use `AUTO` or `FULL`.
 - **A sharded seed from MinIO gets its endpoint.** Seeding a sharded database
   from S3-compatible storage under `neo4j.com/auto-inherit-seed-creds` added
   only the credentials to the cluster, so Neo4j went to AWS for the bucket.

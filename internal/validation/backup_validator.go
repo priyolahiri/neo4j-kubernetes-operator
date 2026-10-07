@@ -130,6 +130,17 @@ func (v *BackupValidator) Validate(backup *neo4jv1beta1.Neo4jBackup) field.Error
 		allErrs = append(allErrs, v.validateBackupOptions(backup.Spec.Options)...)
 	}
 
+	// A sharded database cannot be backed up differentially: Neo4j refuses
+	// differential backups of property shards ("Differential backups of
+	// property shards are not allowed", 2026.08.1), so every run would fail.
+	// AUTO takes full backups of the property shards (and, on a PVC, of every
+	// shard — rule 110).
+	if backup.Spec.ShardedDatabase != "" && backup.Spec.Options != nil && backup.Spec.Options.BackupType == "DIFF" {
+		allErrs = append(allErrs, field.Invalid(
+			field.NewPath("spec", "options", "backupType"), backup.Spec.Options.BackupType,
+			"a sharded database cannot be backed up differentially: Neo4j refuses differential backups of property shards. Use AUTO (the default) or FULL"))
+	}
+
 	// chainFromBackup self-reference check. Cross-CR consistency
 	// (target match + storage match) is enforced by the reconciler at
 	// reconcile time, because it requires a client lookup.

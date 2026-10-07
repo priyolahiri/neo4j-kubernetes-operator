@@ -205,6 +205,20 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		}
 	}
 
+	// A one-time backup is terminal once Completed or Failed (#116). Decide
+	// that before looking at the target: a target that is restarting or gone
+	// would otherwise overwrite the terminal phase with Waiting, and once the
+	// finished Job had been garbage-collected the next pass ran the backup
+	// again. A leftover CronJob (the schedule was removed) still goes.
+	if backup.Spec.Schedule == "" &&
+		(backup.Status.Phase == neo4jv1beta1.PhaseCompleted || backup.Status.Phase == neo4jv1beta1.PhaseFailed) {
+		if err := r.cleanupOrphanedCronJob(ctx, backup); err != nil {
+			logger.Error(err, "Failed to delete orphaned backup CronJob")
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Get target cluster. NotFound is TRANSIENT (#217): `kubectl apply -f dir/`
 	// commonly creates the Neo4jBackup before (or alongside) its target CR —
 	// flipping to Failed here is permanent for one-shot backups (the terminal
@@ -2303,8 +2317,9 @@ func (r *Neo4jBackupReconciler) recordShardedExclusion(backup *neo4jv1beta1.Neo4
 // spec's backupType, except that AUTO — the default, also when unset — takes
 // a full backup of a sharded database stored on a PVC. A differential shard
 // there can never seed a sharded database (rule 110), so AUTO would make
-// every run after the first unrestorable. An explicit DIFF is kept, and
-// warned about after the run. An all-databases backup keeps AUTO: its one
+// every run after the first unrestorable. (An explicit DIFF is refused by the
+// validator: Neo4j does not back up property shards differentially.) An
+// all-databases backup keeps AUTO: its one
 // neo4j-admin run covers every database, and forcing it full would make every
 // database's backup full.
 func effectiveBackupType(backup *neo4jv1beta1.Neo4jBackup) string {
@@ -2330,7 +2345,7 @@ func (r *Neo4jBackupReconciler) warnShardedPVCDifferential(backup *neo4jv1beta1.
 	if len(diffs) == 0 {
 		return
 	}
-	fix := "Remove options.backupType: DIFF — AUTO and FULL take full backups of a sharded database on a PVC"
+	fix := "Later runs are full — AUTO and FULL take full backups of a sharded database on a PVC"
 	if backup.Spec.Scope() == neo4jv1beta1.BackupTargetKindCluster {
 		fix = "An all-databases backup's shards follow its backupType; back the sharded database up with its own Neo4jBackup (spec.shardedDatabase), which takes full backups on a PVC"
 	}
