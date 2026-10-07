@@ -8511,7 +8511,7 @@ visible via <code>kubectl get svc</code>.</p>
 </tr>
 <tr>
 <td><code>RestartPending</code></td>
-<td>One or more servers have not restarted since the operator added a setting it applies at each server's next restart instead of restarting for it (reason <code>SettingsAwaitRestart</code>; the message names the servers and settings). Today: <code>dbms.cluster.raft.async_channel_acquisition_enabled</code> on 5.26.29+ (see <a href="../../user_guide/clustering/#526-writes-while-a-server-is-stopped">5.26: writes while a server is stopped</a>). Restart the named pods, or let it happen on their next restart</td>
+<td>One or more servers have not restarted since the operator added a setting it applies at each server's next restart instead of restarting for it (reason <code>SettingsAwaitRestart</code>; the message names the servers and settings). Today: <code>dbms.cluster.raft.async_channel_acquisition_enabled</code> on 5.26.29+ (see <a href="../../user_guide/clustering/#526-writes-while-a-server-is-stopped">5.26: writes while a server is stopped</a>), and <code>dbms.security.tls_reload_enabled</code> on CalVer 2025.03+ with cert-manager TLS (see <a href="../../user_guide/security/#tls-certificate-rotation">TLS certificate rotation</a>). Restart the named pods, or let it happen on their next restart</td>
 <td>Every server runs those settings (reason <code>NoSettingsAwaitRestart</code>)</td>
 <td>n/a — absent when nothing is applied at restart (CalVer, or the setting is set in <code>spec.config</code>)</td>
 </tr>

@@ -6526,7 +6526,21 @@ deployments that don't actually use the integration.</p>
 <p>If the plugin auto-renews the token (auto-rotation enabled in the Aura wizard), no action is needed. No <code>ALTER USER</code>-equivalent is needed — the registration is a single procedure call.</p>
 <h3 id="tls-certificate-rotation">TLS certificate rotation<a class="headerlink" href="#tls-certificate-rotation" title="Anchor link to this section">&para;</a></h3>
 <p><strong>What it is</strong>: the cert-manager-issued Secret named <code>{cluster}-tls-secret</code> that holds <code>tls.crt</code>, <code>tls.key</code>, and <code>ca.crt</code>.</p>
-<p><strong>With <code>spec.tls.mode: cert-manager</code></strong> (the only mode that issues certificates): rotation is fully automatic. cert-manager issues a new Certificate when the existing one approaches expiry (<code>spec.duration</code> and <code>spec.renewBefore</code> on the <code>Certificate</code> resource). The new Secret content is picked up on the next pod restart — schedule a rolling restart yourself if your certificate renewal cadence is shorter than your pod lifetime:</p>
+<p><strong>With <code>spec.tls.mode: cert-manager</code></strong> (the only mode that issues certificates), cert-manager renews the certificate as it nears expiry (<code>spec.duration</code> and <code>spec.renewBefore</code> on the <code>Certificate</code> resource), and the kubelet updates the files mounted at <code>/ssl</code> within a minute or two. What happens next depends on the Neo4j version.</p>
+<p><strong>CalVer 2025.03 and later:</strong> the operator sets <code>dbms.security.tls_reload_enabled=true</code>. When the Secret changes, it runs <code>dbms.security.reloadTLS()</code> on each server, then checks the certificate a new TLS connection gets. Nothing restarts.</p>
+<ul>
+<li>A <code>TLSCertificateReloaded</code> event names the servers that reloaded.</li>
+<li>New connections get the renewed certificate; existing ones keep theirs.</li>
+<li>If the files take longer to appear, the operator retries for up to ten minutes after the new certificate was issued.</li>
+</ul>
+<p>On a deployment created before this behaviour, each server gets the setting at its next restart, and the operator does not restart servers for it:</p>
+<ul>
+<li>On a cluster, the <code>RestartPending</code> condition names the servers still waiting.</li>
+<li>On a standalone, nothing reports it; the setting takes effect at the pod's next restart.</li>
+<li>Until then, a renewal reaches those servers only when they restart, and a <code>TLSCertificateNeedsRestart</code> Warning names them.</li>
+<li>To enable reload everywhere at once, restart them, one at a time on a cluster.</li>
+</ul>
+<p><strong>5.26:</strong> Neo4j cannot reload certificates at runtime. The renewed certificate takes effect at each server's next restart, so schedule a rolling restart yourself if certificates renew more often than your pods restart:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-32-1"><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>kubectl<span class="w"> </span>rollout<span class="w"> </span>restart<span class="w"> </span>statefulset<span class="w"> </span>&lt;cluster&gt;-server<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
 </span></code></pre></div>
 <p>The operator has no bring-your-own-certificate mode: <code>spec.tls.mode</code> is <code>cert-manager</code> or <code>disabled</code>, and <code>spec.tls.certificateSecret</code> is accepted by the schema but not used (a <code>ValidationWarning</code> event is raised when it is set).</p>
@@ -6564,9 +6578,9 @@ deployments that don't actually use the integration.</p>
 </tr>
 <tr>
 <td>TLS Secret (cert-manager)</td>
-<td>Yes (rolling restart on renewal)</td>
+<td>No on CalVer 2025.03+ (reloaded live); on 5.26, renewal takes effect at the next restart</td>
 <td>No</td>
-<td>cert-manager auto-renews</td>
+<td>cert-manager renews; the operator reloads it (CalVer 2025.03+)</td>
 </tr>
 <tr>
 <td><code>Neo4jPlugin.spec.source.authSecret</code></td>

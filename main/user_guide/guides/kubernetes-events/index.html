@@ -4323,6 +4323,16 @@ and alerting systems.</p>
 <td>A <code>spec.config</code> change touched only settings Neo4j can change at runtime, so the operator applied it to every running server (<code>dbms.setConfigValue</code>) and wrote it to <code>neo4j.conf</code>; nothing restarted. Names the settings. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
 </tr>
 <tr>
+<td><code>TLSCertificateReloaded</code></td>
+<td>Normal</td>
+<td>cert-manager renewed the TLS certificate and the operator reloaded it on the named servers (<code>dbms.security.reloadTLS()</code>, CalVer 2025.03+); no restart. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
+</tr>
+<tr>
+<td><code>TLSCertificateNeedsRestart</code></td>
+<td>Warning</td>
+<td>A renewed TLS certificate could not be reloaded on the named servers: TLS reload is not enabled on them yet (they get it at their next restart), or they still presented the old certificate ten minutes after the new one was issued. They serve the previous certificate until they restart. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
+</tr>
+<tr>
 <td><code>ConfigNeedsRestart</code></td>
 <td>Normal</td>
 <td>A <code>neo4j.conf</code> change could not be applied at runtime, so the servers restart as before. The message names the settings and the reason: a setting Neo4j reads only at startup, one also set through an environment variable, or the deployment not <code>Ready</code> with every server up. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
