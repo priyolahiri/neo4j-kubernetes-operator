@@ -1066,5 +1066,17 @@
     "name": "ScaledWithoutRestart",
     "description": "Fires when a scale-up added only servers that join as system secondaries (ordinals at or past minSystemPrimaries), so the running servers were not restarted; they read the longer discovery list at their next restart.",
     "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-tls-certificate-reloaded",
+    "name": "TLSCertificateReloaded",
+    "description": "Fires when cert-manager renewed a cluster's or standalone's TLS certificate and the operator reloaded it on the named servers with dbms.security.reloadTLS() (CalVer 2025.03+), confirmed by the certificate a new TLS connection gets; nothing restarted.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-tls-certificate-needs-restart",
+    "name": "TLSCertificateNeedsRestart",
+    "description": "Warning when a renewed TLS certificate could not be reloaded on the named servers (TLS reload not enabled on them yet, or still the old certificate ten minutes after the new one was issued); they serve the previous certificate until they restart.",
+    "moduleId": "mod-cluster"
   }
 ]

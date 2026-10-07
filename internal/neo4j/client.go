@@ -2571,6 +2571,52 @@ func (c *Client) SettingsDynamic(ctx context.Context, names []string) (map[strin
 	return out, err
 }
 
+// SettingValue returns the value this server reports for one setting (SHOW
+// SETTINGS), and whether it knows the setting at all.
+func (c *Client) SettingValue(ctx context.Context, name string) (string, bool, error) {
+	var value string
+	var known bool
+	err := c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {
+		session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+			AccessMode:   neo4j.AccessModeRead,
+			DatabaseName: "system",
+		})
+		defer session.Close(ctx)
+		result, err := session.Run(ctx, "SHOW SETTINGS YIELD name, value WHERE name = $name RETURN value",
+			map[string]any{"name": name})
+		if err != nil {
+			return fmt.Errorf("failed to run SHOW SETTINGS: %w", err)
+		}
+		if result.Next(ctx) {
+			value, known = columnString(result.Record().Values[0]), true
+		}
+		return result.Err()
+	})
+	return value, known, err
+}
+
+// ReloadTLS asks this server to reload its TLS certificates and SSL policies
+// from disk (CALL dbms.security.reloadTLS(), 2025.03+, admin only). It needs
+// dbms.security.tls_reload_enabled=true at the server's start, and acts on
+// the server it runs against only; existing connections keep the old
+// certificate. On 2026.08.1 it also SUCCEEDS, silently doing nothing, when
+// reload is not enabled — check the setting first.
+func (c *Client) ReloadTLS(ctx context.Context) error {
+	return c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {
+		session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+			AccessMode:   neo4j.AccessModeWrite,
+			DatabaseName: "system",
+		})
+		defer session.Close(ctx)
+		result, err := session.Run(ctx, "CALL dbms.security.reloadTLS()", nil)
+		if err != nil {
+			return fmt.Errorf("dbms.security.reloadTLS failed: %w", err)
+		}
+		_, err = result.Consume(ctx)
+		return err
+	})
+}
+
 // SetAllowedProcedures sets the allowed procedures for a plugin
 func (c *Client) SetAllowedProcedures(ctx context.Context, procedures []string) error {
 	return c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {

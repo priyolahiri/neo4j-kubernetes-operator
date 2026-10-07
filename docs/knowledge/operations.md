@@ -665,6 +665,27 @@
 - **pinned-by:** `TestAsyncRaftChannelsBlock` (runs the rendered block through bash against fake kernel jars: 5.26.28 none, 5.26.29/31 once, user value kept, no jar none; CalVer renders nothing) (`internal/resources/system_database_mode_test.go`); `TestClusterDeferredSettings`, `TestSupportsAsyncRaftChannels`, `TestStampDeferredSettings`, `TestPendingRestartServers`, `TestReconcileRestartPending` (`internal/controller/restart_pending_test.go`); `TestUpgrade_SystemDatabaseModeBlockRestartsNothing` covers the 5.26 upgrade.
 - **enforcement:** unit test; the stall itself is walked live.
 
+### id 121 — A renewed TLS certificate is reloaded on running servers (CalVer 2025.03+), never assumed reloaded
+- **scope:**
+  - `TLSReloadSetting`, `TLSReloadApplies`, `buildTLSReloadBlock` (`internal/resources/cluster.go`);
+  - the standalone's `dbms.security.tls_reload_enabled` line, `standaloneDeferredConfKeys`, `withoutDeferredConfKeys` and their use in `standaloneConfSemanticHash`, `renderedConfStamp` and `reconcileConfigMap` (`neo4jenterprisestandalone_controller.go`);
+  - `internal/controller/tls_reload.go` (`reconcileTLSReload`, `reloadRenewedCertificate`, `reloadOne`, `presentedCertFingerprint`, `tlsSecretOwnerRequest`), wired through `reconcileClusterTLSReload` and `reconcileStandaloneTLSReload` and the `-tls-secret` watches;
+  - `Version.SupportsTLSReload`, `Client.ReloadTLS`, `Client.SettingValue`.
+- **rule:**
+  - **The setting:** CalVer 2025.03+ with cert-manager TLS gets `dbms.security.tls_reload_enabled=true`. A tag pins at least year and month, so the tag decides, unlike the 5.26 patch gate in rule 120. It is static and "requires a restart", so existing servers get it at their next restart: through the cluster's restart-neutral block, with `RestartPending` naming the servers, or as a single standalone conf line that the standalone's restart decision (semantic hash, live apply, and the first-upgrade stamp check) ignores.
+  - **The renewal pass:** when `{name}-tls-secret` changes (watched by name; cert-manager owns it), each ready pod's presented certificate (TLS dial to pod IP:7687) is compared with the Secret's. For a mismatch, the operator reads `tls_reload_enabled` on that server; only if it is `true` does it call `dbms.security.reloadTLS()` and dial again.
+  - **Never trust the procedure's success:** on 2026.08.1 it returns success and does nothing when reload is disabled.
+  - **Outcomes:** reloaded → `TLSCertificateReloaded`. Not enabled, or still on the old certificate 10 minutes after the new one's `NotBefore` → `TLSCertificateNeedsRestart` (Warning). Still waiting → retry every 30s, throttled per deployment because the reconcile runs far more often. When none is waiting, the fingerprint is recorded on the StatefulSet (`neo4j.com/tls-certificate`), and nothing is dialled while it matches.
+  - **5.26:** cannot reload; renewal still takes effect at restart, as the security guide says.
+- **why:** #469. The security guide claimed "rolling restart on renewal", but nothing restarted, so a cluster that outlived its certificate kept serving the old one. Walked live on Kind 2026-10-07 (2026.08.1):
+  - **TLS cluster, upgraded from the #468 build:** nothing restarted, and `RestartPending` named all three servers.
+  - **First renewal:** a Warning named all three, which do not have reload enabled.
+  - **After server-1 restarted:** a second renewal was presented by server-1 **91s later with no restart**, and the other two were reported.
+  - **TLS standalone created fresh:** reload was enabled from the start, and a renewal was presented 83s later, same pod.
+  - **Found on the way:** `reloadTLS()` silently succeeding while disabled, which the first design read as "files not projected yet" and retried for ever.
+- **pinned-by:** `TestCertFingerprint`, `TestReloadRenewedCertificate` (already current, reloaded, files lag, not enabled → never reloaded, reload fails, unreachable), `TestReconcileTLSReload`, `TestReconcileTLSReload_ThrottleAndGiveUp`, `TestTLSSecretOwnerRequest`, `TestClusterDeferredSettings_TLSReload`, `TestStandaloneTLSReloadSetting` (rendering and the upgrade keeping the stamp) (`internal/controller/tls_reload_test.go`); `TestTLSReloadBlock` (`internal/resources/system_database_mode_test.go`); `TestSupportsTLSReload` (`internal/neo4j/version_test.go`).
+- **enforcement:** unit test; the reload itself is walked live.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

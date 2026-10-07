@@ -610,3 +610,15 @@ func TestCCDRVersionConstantsMatchGates(t *testing.T) {
 			MinCCDRUpstreamVersion)
 	}
 }
+
+func TestSupportsTLSReload(t *testing.T) {
+	for in, want := range map[string]bool{"5.26.31": false, "2025.01.0": false, "2025.02.0": false, "2025.03.0": true, "2026.08.1": true, "2027.01.0": true} {
+		v, err := ParseVersion(in)
+		if err != nil {
+			t.Fatalf("%s: %v", in, err)
+		}
+		if got := v.SupportsTLSReload(); got != want {
+			t.Errorf("%s: got %v, want %v", in, got, want)
+		}
+	}
+}

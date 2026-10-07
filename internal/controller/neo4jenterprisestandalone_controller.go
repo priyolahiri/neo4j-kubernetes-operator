@@ -72,6 +72,9 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// LiveConfig applies a dynamic-only neo4j.conf change to the running pod
 	// instead of restarting it (#466). nil uses Bolt.
 	LiveConfig StandaloneLiveConfigApplier
+	// TLSReloadDeps replaces the network in TLS-reload tests (#469); nil in
+	// production.
+	TLSReloadDeps *tlsReloadDeps
 	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
@@ -392,8 +395,29 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		}
 	}
 
+	// Reload a renewed TLS certificate without a restart (#469).
+	requeue := r.RequeueAfter
+	if standalone.Status.Phase == "Ready" {
+		if d := r.reconcileStandaloneTLSReload(ctx, standalone); d > 0 && (requeue == 0 || d < requeue) {
+			requeue = d
+		}
+	}
+
 	logger.Info("Successfully reconciled Neo4jEnterpriseStandalone")
-	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// reconcileStandaloneTLSReload reloads a renewed TLS certificate on the
+// running standalone (#469); see reconcileTLSReload.
+func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneTLSReload(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) time.Duration {
+	certManager := standalone.Spec.TLS != nil && standalone.Spec.TLS.Mode == resources.CertManagerMode
+	if !resources.TLSReloadApplies(standalone.Spec.Image.Tag, certManager) {
+		return 0
+	}
+	return reconcileTLSReload(ctx, r.Client, r.Recorder, standalone, standalone.Name+"-tls-secret", standalone.Name, r.TLSReloadDeps,
+		func(context.Context, string) (tlsReloadConn, error) {
+			return neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
+		})
 }
 
 // ownedStandaloneConfKeysAnnotation records the neo4j.conf setting keys the
@@ -481,9 +505,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 
 			// A change of dynamic settings only is applied to the running pod
 			// before the conf is written (#466); see applyStandaloneConfLive.
-			if oldConf := configMap.Data["neo4j.conf"]; oldConf != "" &&
-				normalizeNeo4jConfForRestart(oldConf) != normalizeNeo4jConfForRestart(merged) {
-				r.applyStandaloneConfLive(ctx, standalone, oldConf, merged)
+			// Settings deferred to the next restart (#469) are neither applied
+			// live nor a reason to restart.
+			if oldConf := withoutDeferredConfKeys(configMap.Data["neo4j.conf"]); oldConf != "" &&
+				normalizeNeo4jConfForRestart(oldConf) != normalizeNeo4jConfForRestart(withoutDeferredConfKeys(merged)) {
+				r.applyStandaloneConfLive(ctx, standalone, oldConf, withoutDeferredConfKeys(merged))
 			}
 
 			if configMap.Data == nil {
@@ -557,9 +583,35 @@ func standaloneConfHash(conf string) string {
 // lets a comment-only conf change keep the running pod's stamp (#465).
 const standaloneConfigSemanticHashAnnotation = "neo4j.com/config-semantic-hash"
 
+// standaloneDeferredConfKeys are settings the operator adds to a standalone's
+// neo4j.conf for the pod's next restart instead of restarting it for them
+// (#469): they are left out of the restart decision. Only operator-added,
+// single-line settings belong here.
+var standaloneDeferredConfKeys = []string{resources.TLSReloadSetting}
+
+// withoutDeferredConfKeys returns conf without the lines that set a
+// standaloneDeferredConfKeys setting, byte for byte otherwise.
+func withoutDeferredConfKeys(conf string) string {
+	lines := strings.SplitAfter(conf, "\n")
+	kept := lines[:0]
+	for _, line := range lines {
+		deferred := false
+		for _, k := range standaloneDeferredConfKeys {
+			if strings.HasPrefix(strings.TrimSpace(line), k+"=") {
+				deferred = true
+				break
+			}
+		}
+		if !deferred {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "")
+}
+
 // standaloneConfSemanticHash hashes the parts of neo4j.conf a restart depends on.
 func standaloneConfSemanticHash(conf string) string {
-	sum := sha256.Sum256([]byte(normalizeNeo4jConfForRestart(conf)))
+	sum := sha256.Sum256([]byte(normalizeNeo4jConfForRestart(withoutDeferredConfKeys(conf))))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -636,7 +688,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) renderedConfStamp(ctx context.Cont
 	live := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, live); err == nil {
 		liveStamp := live.Spec.Template.Annotations[standaloneConfigHashAnnotation]
-		if liveStamp != "" && liveStamp != stamp && live.Annotations[standaloneConfigSemanticHashAnnotation] == semantic {
+		recorded, hasRecord := live.Annotations[standaloneConfigSemanticHashAnnotation]
+		switch {
+		case liveStamp == "" || liveStamp == stamp:
+		case hasRecord && recorded == semantic:
+			stamp = liveStamp
+		// No semantic hash yet (the upgrade that introduced it): the live stamp
+		// still counts as current when the conf differs from what it stamped
+		// only by operator-added deferred settings — the same upgrade may add
+		// one (#469), and must not restart the pod for it.
+		case !hasRecord && liveStamp == standaloneConfHash(withoutDeferredConfKeys(conf)):
 			stamp = liveStamp
 		}
 	}
@@ -1408,6 +1469,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 		configLines = append(configLines, "dbms.ssl.policy.bolt.public_certificate=tls.crt")
 		configLines = append(configLines, "dbms.ssl.policy.bolt.client_auth=NONE")
 		configLines = append(configLines, "dbms.ssl.policy.bolt.tls_versions=TLSv1.3,TLSv1.2")
+		// Reload renewed certificates without a restart (#469). A single line
+		// on purpose: standaloneDeferredConfKeys drops it from the restart
+		// decision, so it reaches a running pod at its next restart.
+		if _, own := standalone.Spec.Config[resources.TLSReloadSetting]; !own &&
+			resources.TLSReloadApplies(standalone.Spec.Image.Tag, true) {
+			configLines = append(configLines, resources.TLSReloadSetting+"=true")
+		}
 		configLines = append(configLines, "")
 	} else {
 		// Bolt without TLS
@@ -2681,6 +2749,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager)
 		Owns(&corev1.Service{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&networkingv1.Ingress{}).
+		// cert-manager, not the standalone, owns {name}-tls-secret: watch it by
+		// name so a renewal is reloaded on the running pod (#469).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(tlsSecretOwnerRequest)).
 		// A Neo4jPlugin's settings are folded into the standalone's neo4j.conf
 		// (the standalone controller is the single owner — issue #146), so
 		// re-reconcile the targeted standalone whenever a plugin is added,

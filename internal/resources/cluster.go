@@ -2590,7 +2590,7 @@ if [ ! -d "/data/databases/system" ]; then
 else
     echo "Restart detected (/data/databases/system exists) - skipping minimum primaries count"
 fi
-` + buildSystemDatabaseModeBlock(cluster) + buildAsyncRaftChannelsBlock(cluster) + `
+` + buildSystemDatabaseModeBlock(cluster) + buildAsyncRaftChannelsBlock(cluster) + buildTLSReloadBlock(cluster) + `
 # Add server mode constraint if specified
 ` + buildServerModeConstraintConfig(cluster) + `
 
@@ -2720,6 +2720,41 @@ case "$OPERATOR_NEO4J_VERSION" in
         fi
         ;;
 esac
+` + RestartNeutralEnd + `
+`
+}
+
+// TLSReloadSetting lets a server reload renewed TLS certificates without a
+// restart (#469).
+const TLSReloadSetting = "dbms.security.tls_reload_enabled"
+
+// TLSReloadApplies reports whether a deployment on this image tag, with or
+// without cert-manager TLS, gets dbms.security.tls_reload_enabled: CalVer
+// 2025.03+ and cert-manager TLS. A CalVer tag always pins at least the year and
+// month, so unlike the 5.26 patch-level gate (#468) the tag is enough here.
+func TLSReloadApplies(tag string, certManagerTLS bool) bool {
+	if !certManagerTLS {
+		return false
+	}
+	v, err := neo4j.ParseVersion(tag)
+	return err == nil && v.SupportsTLSReload()
+}
+
+// buildTLSReloadBlock renders the restart-neutral startup-script block that
+// enables TLS reload (#469). Turning the setting on needs a restart ("requires
+// a restart", security/ssl-framework), so an existing server gets it at its
+// next start; RestartPending names the servers still waiting. A value the user
+// sets in spec.config is left alone.
+func buildTLSReloadBlock(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	certManager := cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == CertManagerMode
+	if !TLSReloadApplies(cluster.Spec.Image.Tag, certManager) {
+		return ""
+	}
+	return RestartNeutralBegin + `
+# Reload renewed TLS certificates without a restart (CalVer 2025.03+).
+if ! grep -q '^` + TLSReloadSetting + `=' /conf/neo4j.conf; then
+    echo "` + TLSReloadSetting + `=true" >> /conf/neo4j.conf
+fi
 ` + RestartNeutralEnd + `
 `
 }

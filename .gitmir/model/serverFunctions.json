@@ -25,7 +25,8 @@
       "sf-collect-diagnostics",
       "sf-merge-env-vars",
       "sf-reconcile-ccdr-proxy",
-      "sf-reconcile-server-shortfall"
+      "sf-reconcile-server-shortfall",
+      "sf-reload-renewed-tls"
     ],
     "emitsEventIds": [
       "ev-topology-warning",
@@ -74,11 +75,27 @@
     "moduleId": "mod-cluster"
   },
   {
+    "id": "sf-reload-renewed-tls",
+    "name": "Reload Renewed TLS Certificate",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "When {name}-tls-secret (owned by cert-manager, watched by name) holds a certificate the servers do not present, reads dbms.security.tls_reload_enabled on each ready server and, where it is true, runs dbms.security.reloadTLS() and confirms the certificate a new TLS connection gets (the procedure also succeeds, doing nothing, when reload is disabled). Retries while the kubelet projects the files (throttled to 30s, up to 10 minutes after the certificate's NotBefore), reports servers that must restart instead, and records the fingerprint on the StatefulSet (neo4j.com/tls-certificate). Shared by the cluster and standalone reconcilers; CalVer 2025.03+ with cert-manager TLS only.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-tls-certificate-reloaded",
+      "ev-tls-certificate-needs-restart"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
     "id": "sf-reconcile-standalone",
     "name": "Reconcile Standalone",
     "serverUnitId": "su-neo4jenterprisestandalone",
     "operation": "business_action",
-    "description": "Top-level standalone reconcile: validates the spec (including admin-secret password shape), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check on image-tag drift, and updates status once the StatefulSet reports one ready replica. With spec.podServiceAccountAnnotations it creates the `<name>-neo4j` ServiceAccount before the StatefulSet and runs the pod under it, and deletes it once the field is removed and no pod uses it. The pod template carries a hash of the raw neo4j.conf, so a changed conf restarts the pod; a change only in comments or blank lines keeps the running pod's hash (the normalised conf hash is recorded on the StatefulSet) and restarts nothing. A neo4j.conf change of dynamic settings only is applied to the running pod with dbms.setConfigValue before the conf is written, and the pod keeps its hash.",
+    "description": "Top-level standalone reconcile: validates the spec (including admin-secret password shape), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check on image-tag drift, and updates status once the StatefulSet reports one ready replica. With spec.podServiceAccountAnnotations it creates the `<name>-neo4j` ServiceAccount before the StatefulSet and runs the pod under it, and deletes it once the field is removed and no pod uses it. The pod template carries a hash of the raw neo4j.conf, so a changed conf restarts the pod; a change only in comments or blank lines keeps the running pod's hash (the normalised conf hash is recorded on the StatefulSet) and restarts nothing. A neo4j.conf change of dynamic settings only is applied to the running pod with dbms.setConfigValue before the conf is written, and the pod keeps its hash. With cert-manager TLS on CalVer 2025.03+, its conf enables TLS reload (applied at the next restart, ignored by the restart decision) and a renewed certificate is reloaded on the running pod.",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -87,7 +104,8 @@
     ],
     "callsFunctionIds": [
       "sf-expand-standalone-storage",
-      "sf-collect-standalone-diagnostics"
+      "sf-collect-standalone-diagnostics",
+      "sf-reload-renewed-tls"
     ],
     "emitsEventIds": [
       "ev-validation-failed",

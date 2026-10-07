@@ -183,3 +183,30 @@ func TestAsyncRaftChannelsBlock(t *testing.T) {
 		})
 	}
 }
+
+// TestTLSReloadBlock pins #469's cluster side: the restart-neutral block is
+// rendered for CalVer 2025.03+ with cert-manager TLS only, and the whole script
+// still parses.
+func TestTLSReloadBlock(t *testing.T) {
+	withTLS := func(tag string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+		c := systemModeCluster(tag, 3)
+		c.Spec.TLS = &neo4jv1beta1.TLSSpec{Mode: CertManagerMode}
+		return c
+	}
+	for tag, want := range map[string]bool{"2026.08.1-enterprise": true, "2025.03.0-enterprise": true, "2025.01.0-enterprise": false, "5.26-enterprise": false} {
+		if got := strings.Contains(buildTLSReloadBlock(withTLS(tag)), TLSReloadSetting+"=true"); got != want {
+			t.Errorf("%s: rendered=%v, want %v", tag, got, want)
+		}
+	}
+	if b := buildTLSReloadBlock(systemModeCluster("2026.08.1-enterprise", 3)); b != "" {
+		t.Errorf("no TLS: nothing to reload, got %q", b)
+	}
+	if _, err := exec.LookPath("bash"); err == nil {
+		script := BuildConfigMapForEnterprise(withTLS("2026.08.1-enterprise")).Data["startup.sh"]
+		cmd := exec.CommandContext(t.Context(), "bash", "-n")
+		cmd.Stdin = strings.NewReader(script)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("startup.sh with the TLS reload block does not parse: %v\n%s", err, out)
+		}
+	}
+}

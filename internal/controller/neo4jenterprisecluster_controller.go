@@ -76,6 +76,9 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// condition (#468). nil uses Bolt; tests inject a fake.
 	RestartPendingChecker *restartPendingChecker
 	restartPendingOnce    sync.Once
+	// TLSReloadDeps replaces the network in TLS-reload tests (#469); nil in
+	// production.
+	TLSReloadDeps *tlsReloadDeps
 	// fleetFailures dedupes the AuraFleetManagementFailed event so a
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
@@ -779,7 +782,25 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterReady, "Neo4j Enterprise cluster is ready")
 	}
 
-	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	// Reload a renewed TLS certificate on the running servers (#469).
+	requeue := r.RequeueAfter
+	if d := r.reconcileClusterTLSReload(ctx, cluster); d > 0 && (requeue == 0 || d < requeue) {
+		requeue = d
+	}
+	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// reconcileClusterTLSReload reloads a renewed TLS certificate on every running
+// server (#469); see reconcileTLSReload.
+func (r *Neo4jEnterpriseClusterReconciler) reconcileClusterTLSReload(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) time.Duration {
+	certManager := cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == resources.CertManagerMode
+	if !resources.TLSReloadApplies(cluster.Spec.Image.Tag, certManager) {
+		return 0
+	}
+	return reconcileTLSReload(ctx, r.Client, r.Recorder, cluster, cluster.Name+"-tls-secret", cluster.Name+"-server", r.TLSReloadDeps,
+		func(_ context.Context, pod string) (tlsReloadConn, error) {
+			return dialClusterPod(r.Client, cluster, pod)
+		})
 }
 
 func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
@@ -3169,6 +3190,9 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 		// Note: Removed ConfigMap from Owns() to prevent reconciliation feedback loops
 		// ConfigMaps are managed manually by ConfigMapManager with debounce
 		Owns(&corev1.Secret{}).
+		// cert-manager, not the cluster, owns {name}-tls-secret: watch it by
+		// name so a renewal is reloaded on the running servers (#469).
+		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(tlsSecretOwnerRequest)).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: 1, // Limit concurrent reconciliations
 			RateLimiter: workqueue.NewTypedMaxOfRateLimiter(

@@ -14,7 +14,8 @@
       "internal/controller/cluster_availability.go",
       "internal/controller/configmap_manager.go",
       "internal/controller/live_config.go",
-      "internal/controller/restart_pending.go"
+      "internal/controller/restart_pending.go",
+      "internal/controller/tls_reload.go"
     ]
   },
   {
