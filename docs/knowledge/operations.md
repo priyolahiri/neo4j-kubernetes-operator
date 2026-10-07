@@ -629,6 +629,25 @@
 - **pinned-by:** `TestNeo4jConfChanges`, `TestLiveConfigBlocker`, `TestBoltLiveConfigApplier`, `TestReconcileConfigMap_DynamicOnlyChangeAppliedLive`, `TestReconcileConfigMap_LiveApplyRefusedRestarts`, `TestReconcileConfigMap_StartupScriptChangeIsNeverAppliedLive`, `TestStandaloneDynamicConfChange` (`internal/controller/live_config_test.go`).
 - **enforcement:** unit test; the Bolt calls are walked live.
 
+### id 119 — Servers past the system primaries join as system secondaries, and adding them restarts nothing
+- **scope:**
+  - `buildSystemDatabaseModeBlock`, `RestartNeutralBegin`/`RestartNeutralEnd` and `SystemDatabaseModeFile` (`internal/resources/cluster.go`);
+  - the restart-neutral skip in `normalizeStartupScript`, plus `isMembershipLine`, `membershipOnlyStartupChange`, `renderedServerCount`, `addedSystemPrimaries`, `scaleNeedsNoRestart` and their call in `ReconcileConfigMap` (`internal/controller/configmap_manager.go`).
+- **rule:**
+  - **Role:** a server's `system` role is decided at its first start (no system store, no record): PRIMARY below `EffectiveMinSystemPrimaries()`, SECONDARY at or past it. It is written to `/data/.neo4j-operator/system-database-mode` and read back on every later start, because `server.cluster.system_database_mode` is read at each start and defaults to PRIMARY, so without the record a secondary would turn primary at its first restart. A server with a store and no record predates this and keeps the default (PRIMARY): an existing server never changes role.
+  - **Restart-neutral section:** the role block sits between the markers, and the restart hash skips the section. Adding it in an operator upgrade, or `OPERATOR_SYSTEM_PRIMARIES` changing, restarts nothing. Never put a setting a running server needs inside the markers. Never wrap lines that already exist unwrapped: an existing script still counts them, so its hash would change. Never change the marker text.
+  - **Scale restart decision:** a change confined to the membership lines (`TOTAL_SERVERS=`, the discovery endpoint list on either line), with `neo4j.conf` and `health.sh` unchanged, skips the restart when no added ordinal is below `EffectiveMinSystemPrimaries()`. That covers a scale-down, or a scale-up that adds only secondaries, and raises `ScaledWithoutRestart`. A scale-up that adds a system primary (2→3 by default) restarts, as before.
+- **why:** #467. A scale-up rolled every existing server: about 60s each, measured 3m05s for 3→4 on 2026.08.1 and 2m49s on 5.26.31 with stalled writes. Neo4j's discovery rule (`clustering/setup/discovery.adoc`, both lines) asks for "each server hosting the `system` database in primary mode" in the list, so a new system secondary needs nothing from the running servers. The Operations Manual also advises three system primaries and secondaries for servers that come and go. Walked live on Kind 2026-10-07:
+  - **2026.08.1:** a cluster created by the #466 operator was upgraded to this one with no restart; the ConfigMap gained the block and the StatefulSet stayed at generation 1.
+    - Scale 3→5 took 21s to Ready under continuous writes, with 0 failures and servers 0–2 untouched. Servers 3 and 4 joined as secondaries with records.
+    - Server-3 restarted, and then all five restarted together: the roles held, and everything was back in 60s.
+    - Scale-down 5→3 took 31s, restarting nothing.
+  - **5.26.31:** a fresh 4-server cluster formed with 3 primaries and 1 secondary. Scale 4→5 took 21s, restarting nothing, with no failed writes. The secondary kept its role across a restart.
+- **pinned-by:**
+  - `TestSystemDatabaseModeBlock` (runs the rendered block through bash for each case) and `TestStartupScript_ParsesAsBash` (`internal/resources/system_database_mode_test.go`);
+  - `TestScale_RestartDecision` (both lines: 3→4, 3→6, 5→3 quiet; 2→3, 2→4 restart), `TestScale_OtherChangeStillRestarts` and `TestUpgrade_SystemDatabaseModeBlockRestartsNothing` (`internal/controller/scale_no_restart_test.go`).
+- **enforcement:** unit test.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

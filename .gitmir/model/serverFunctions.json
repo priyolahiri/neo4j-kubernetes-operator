@@ -47,13 +47,14 @@
     "name": "Reconcile Cluster ConfigMap",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Renders the cluster's {cluster}-config ConfigMap (neo4j.conf, startup.sh, health.sh) and decides whether the servers must restart. The restart decision compares a normalised rendering that drops full-line comments and blank lines and masks runtime-variable lines. When only neo4j.conf changed and every changed setting is dynamic (SHOW SETTINGS isDynamic), not set by an env var, and the cluster is Ready with every server up, it runs dbms.setConfigValue on every server first and restarts nothing (ConfigAppliedLive); otherwise it stamps config-restart on the server StatefulSet, rolling every server (ConfigNeedsRestart says why). The ConfigMap is written whenever its raw content changes, after any live apply, so a later restart keeps the values.",
+    "description": "Renders the cluster's {cluster}-config ConfigMap (neo4j.conf, startup.sh, health.sh) and decides whether the servers must restart. The restart decision compares a normalised rendering that drops full-line comments and blank lines and masks runtime-variable lines. When only neo4j.conf changed and every changed setting is dynamic (SHOW SETTINGS isDynamic), not set by an env var, and the cluster is Ready with every server up, it runs dbms.setConfigValue on every server first and restarts nothing (ConfigAppliedLive); otherwise it stamps config-restart on the server StatefulSet, rolling every server (ConfigNeedsRestart says why). The ConfigMap is written whenever its raw content changes, after any live apply, so a later restart keeps the values. Startup-script lines between the restart-neutral markers (the system database role block, which makes servers past minSystemPrimaries system secondaries at their first start and records the role on their volume) never count; a change confined to the membership lines (TOTAL_SERVERS, the discovery endpoint list) restarts nothing unless a scale-up adds a system primary (ScaledWithoutRestart).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
     "emitsEventIds": [
       "ev-config-applied-live",
-      "ev-config-needs-restart"
+      "ev-config-needs-restart",
+      "ev-scaled-without-restart"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-cluster"

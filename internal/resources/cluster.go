@@ -2590,7 +2590,7 @@ if [ ! -d "/data/databases/system" ]; then
 else
     echo "Restart detected (/data/databases/system exists) - skipping minimum primaries count"
 fi
-
+` + buildSystemDatabaseModeBlock(cluster) + `
 # Add server mode constraint if specified
 ` + buildServerModeConstraintConfig(cluster) + `
 
@@ -2601,6 +2601,75 @@ fi
 
 # Start Neo4j
 exec /startup/docker-entrypoint.sh neo4j
+`
+}
+
+// RestartNeutralBegin and RestartNeutralEnd delimit startup-script lines that
+// never require a RUNNING server to restart: they decide something only a
+// server's first start uses and that it records on its data volume and reads
+// back unchanged (its system database role). The operator's restart decision
+// skips everything between them (#467), so neither adding such a block in an
+// operator upgrade nor a value in it changing restarts anything. Never put a
+// setting a running server would need to pick up between these markers. Do not
+// wrap lines that already exist unwrapped either: an existing cluster's script
+// still counts them, so wrapping them would change its hash and restart it.
+// Never change the marker text: an existing script's section would then stop
+// being recognised, its lines would count, and every cluster would restart.
+const (
+	RestartNeutralBegin = "# operator:restart-neutral begin"
+	RestartNeutralEnd   = "# operator:restart-neutral end"
+)
+
+// SystemDatabaseModeFile is where a server records the role it first started
+// with for the `system` database, on its data volume.
+const SystemDatabaseModeFile = "/data/.neo4j-operator/system-database-mode"
+
+// buildSystemDatabaseModeBlock renders the startup-script block that fixes a
+// server's role for the `system` database (#467).
+//
+// Neo4j's discovery rule (clustering/setup/discovery, 5.x and current): the
+// endpoint list must include "each server hosting the system database in
+// primary mode". A server that joins as a system SECONDARY therefore needs no
+// change on the servers already running, so adding it restarts nothing. The
+// Operations Manual also advises it: "it is best to start with three system
+// primaries", and "ephemeral or frequently changing servers are good
+// candidates to host a system secondary" (clustering/introduction).
+//
+// server.cluster.system_database_mode is read at every start and defaults to
+// PRIMARY, so the role is decided once — on the server's first start, from its
+// ordinal: below EffectiveMinSystemPrimaries() it is PRIMARY, at or past it
+// SECONDARY — and recorded on the data volume; every later start reads it back.
+// A server that already has a system store and no record (it predates this
+// block) keeps the default, PRIMARY: an existing server never changes role.
+//
+// The block sits between the restart-neutral markers: it changes nothing for a
+// server that is already running, so neither adding it in an operator upgrade
+// nor the value of OPERATOR_SYSTEM_PRIMARIES restarts one.
+func buildSystemDatabaseModeBlock(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	return `
+` + RestartNeutralBegin + `
+# System database role: fixed at a server's first start, from its ordinal, and
+# recorded on its data volume. A server past the first OPERATOR_SYSTEM_PRIMARIES
+# joins as a system secondary, so adding it needs no restart of the others.
+OPERATOR_SYSTEM_PRIMARIES=` + fmt.Sprintf("%d", cluster.EffectiveMinSystemPrimaries()) + `
+OPERATOR_SYSTEM_DB_MODE_FILE="` + SystemDatabaseModeFile + `"
+OPERATOR_SYSTEM_DB_MODE=""
+if [ -f "$OPERATOR_SYSTEM_DB_MODE_FILE" ]; then
+    OPERATOR_SYSTEM_DB_MODE=$(cat "$OPERATOR_SYSTEM_DB_MODE_FILE")
+elif [ ! -d "/data/databases/system" ]; then
+    if [ "$SERVER_INDEX" -ge "$OPERATOR_SYSTEM_PRIMARIES" ]; then
+        OPERATOR_SYSTEM_DB_MODE="SECONDARY"
+    else
+        OPERATOR_SYSTEM_DB_MODE="PRIMARY"
+    fi
+    mkdir -p "$(dirname "$OPERATOR_SYSTEM_DB_MODE_FILE")"
+    echo "$OPERATOR_SYSTEM_DB_MODE" > "$OPERATOR_SYSTEM_DB_MODE_FILE"
+fi
+if [ "$OPERATOR_SYSTEM_DB_MODE" = "SECONDARY" ]; then
+    echo "server.cluster.system_database_mode=SECONDARY" >> /conf/neo4j.conf
+fi
+echo "System database mode: ${OPERATOR_SYSTEM_DB_MODE:-PRIMARY (server predates the record)}"
+` + RestartNeutralEnd + `
 `
 }
 

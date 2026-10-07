@@ -47,10 +47,11 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `ConfigAppliedLive` | Normal | A `spec.config` change touched only settings Neo4j can change at runtime, so the operator applied it to every running server (`dbms.setConfigValue`) and wrote it to `neo4j.conf`; nothing restarted. Names the settings. Also emitted by `Neo4jEnterpriseStandalone` |
 | `ConfigNeedsRestart` | Normal | A `neo4j.conf` change could not be applied at runtime, so the servers restart as before. The message names the settings and the reason: a setting Neo4j reads only at startup, one also set through an environment variable, or the deployment not `Ready` with every server up. Also emitted by `Neo4jEnterpriseStandalone` |
 
-### Scale-down
+### Scaling
 
 | Reason | Type | Description |
 |---|---|---|
+| `ScaledWithoutRestart` | Normal | A scale-up added only servers that join as `system` secondaries, so the running servers were not restarted; they read the longer discovery list at their next restart. A scale-up that adds a system primary (with the default, from 2 servers to 3+) restarts them instead and raises no such event |
 | `ScaleDownDraining` | Normal | A scale-down step ran: servers cordoned, their databases deallocated, or the drained servers dropped |
 | `ScaleDownBlocked` | Warning | Scale-down refused or stuck — the target is below the `system` database's minimum voting members, or the `DEALLOCATE` dry-run / `DROP SERVER` failed; replicas are held |
 

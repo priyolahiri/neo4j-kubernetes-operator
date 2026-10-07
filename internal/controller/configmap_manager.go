@@ -82,6 +82,82 @@ func (cm *ConfigMapManager) applyLive(ctx context.Context, cluster *neo4jv1beta1
 	return cm.LiveConfig.ApplyLive(ctx, cluster, changes)
 }
 
+// isMembershipLine reports whether a startup-script line only lists or counts
+// the cluster's servers: the discovery endpoint list (dbms.cluster.endpoints on
+// CalVer, dbms.cluster.discovery.v2.endpoints on 5.26) or TOTAL_SERVERS.
+func isMembershipLine(line string) bool {
+	t := strings.TrimSpace(line)
+	return strings.HasPrefix(t, "TOTAL_SERVERS=") ||
+		strings.HasPrefix(t, "dbms.cluster.endpoints=") ||
+		strings.HasPrefix(t, "dbms.cluster.discovery.v2.endpoints=")
+}
+
+// membershipOnlyStartupChange reports whether two startup scripts differ only in
+// their membership lines, and neo4j.conf and health.sh not at all.
+func (cm *ConfigMapManager) membershipOnlyStartupChange(oldCM, newCM *corev1.ConfigMap) bool {
+	for _, key := range []string{"neo4j.conf", "health.sh"} {
+		if cm.normalizeConfigContent(key, oldCM.Data[key]) != cm.normalizeConfigContent(key, newCM.Data[key]) {
+			return false
+		}
+	}
+	withoutMembership := func(script string) string {
+		var kept []string
+		for _, line := range strings.Split(cm.normalizeStartupScript(script), "\n") {
+			if !isMembershipLine(line) {
+				kept = append(kept, line)
+			}
+		}
+		return strings.Join(kept, "\n")
+	}
+	return withoutMembership(oldCM.Data["startup.sh"]) == withoutMembership(newCM.Data["startup.sh"])
+}
+
+// renderedServerCount reads TOTAL_SERVERS from a rendered startup script; 0
+// when it is not there.
+func renderedServerCount(script string) int32 {
+	for _, line := range strings.Split(script, "\n") {
+		t := strings.TrimSpace(line)
+		if v, ok := strings.CutPrefix(t, "TOTAL_SERVERS="); ok {
+			var n int32
+			if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+// addedSystemPrimaries returns the ordinals a scale from oldServers to the
+// cluster's servers adds as system primaries: those below
+// EffectiveMinSystemPrimaries() (see buildSystemDatabaseModeBlock).
+func addedSystemPrimaries(oldServers int32, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []int32 {
+	var out []int32
+	for i := oldServers; i < cluster.Spec.Topology.Servers; i++ {
+		if i < cluster.EffectiveMinSystemPrimaries() {
+			out = append(out, i)
+		}
+	}
+	return out
+}
+
+// scaleNeedsNoRestart reports whether a change confined to the membership
+// lines leaves the running servers alone (#467): a scale-down, or a scale-up
+// whose every added server joins as a system secondary. Neo4j's discovery rule
+// asks for every system PRIMARY in each server's endpoint list; a secondary is
+// found by discovery once it has contacted the cluster, so the servers already
+// running need not restart for it. The new list is still written, for their
+// next restart. A scale-up that adds a system primary restarts, as before.
+func (cm *ConfigMapManager) scaleNeedsNoRestart(oldCM, newCM *corev1.ConfigMap, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, int32) {
+	if !cm.membershipOnlyStartupChange(oldCM, newCM) {
+		return false, 0
+	}
+	oldServers := renderedServerCount(oldCM.Data["startup.sh"])
+	if oldServers == 0 {
+		return false, 0
+	}
+	return len(addedSystemPrimaries(oldServers, cluster)) == 0, oldServers
+}
+
 // onlyNeo4jConfChanged reports whether neo4j.conf is the only file whose
 // restart-relevant content differs. startup.sh and health.sh run only when a
 // container starts, so any change there needs a restart.
@@ -174,6 +250,24 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 				"timeSinceLastUpdate", time.Since(lastUpdate),
 				"minInterval", minInterval)
 			return nil
+		}
+
+		// A scale that adds only system secondaries (or removes servers) is
+		// written for the next restart and restarts nothing (#467).
+		if configMapExists && restartRelevant {
+			if ok, oldServers := cm.scaleNeedsNoRestart(existingConfigMap, desiredConfigMap, cluster); ok {
+				restartRelevant = false
+				logger.Info("Scaled without restarting the running servers",
+					"cluster", cluster.Name, "from", oldServers, "to", cluster.Spec.Topology.Servers)
+				if added := cluster.Spec.Topology.Servers - oldServers; added == 1 {
+					cm.recordEvent(cluster, corev1.EventTypeNormal, EventReasonScaledWithoutRestart,
+						"Adding server %d as a system secondary; the running servers keep running", oldServers)
+				} else if added > 1 {
+					cm.recordEvent(cluster, corev1.EventTypeNormal, EventReasonScaledWithoutRestart,
+						"Adding servers %d-%d as system secondaries; the running servers keep running",
+						oldServers, cluster.Spec.Topology.Servers-1)
+				}
+			}
 		}
 
 		// A change to neo4j.conf alone whose settings are all dynamic is applied
@@ -441,8 +535,19 @@ func (cm *ConfigMapManager) normalizeStartupScript(content string) string {
 	lines := strings.Split(content, "\n")
 	var normalized []string
 
+	inRestartNeutral := false
 	for _, line := range lines {
-		if isCommentOrBlankLine(line) {
+		// Lines between the restart-neutral markers change nothing for a
+		// server that is already running (#467): drop them, markers included.
+		switch strings.TrimSpace(line) {
+		case resources.RestartNeutralBegin:
+			inRestartNeutral = true
+			continue
+		case resources.RestartNeutralEnd:
+			inRestartNeutral = false
+			continue
+		}
+		if inRestartNeutral || isCommentOrBlankLine(line) {
 			continue
 		}
 		// Exclude lines that contain runtime environment variables or timestamps

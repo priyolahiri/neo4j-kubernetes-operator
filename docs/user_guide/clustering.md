@@ -120,9 +120,23 @@ Initial formation waits for `dbms.cluster.minimum_initial_system_primaries_count
 |--------------|----------------------|-----------|
 | 2 servers | 2 | Minimum cluster size |
 | 3 servers | 3 | Odd number for optimal fault tolerance |
-| 4+ servers | 3 (default) | The floor is a minimum, not a cap: servers that have joined by then all become system primaries |
+| 4+ servers | 3 (default) | Servers 0–2 host the `system` database as primaries; servers 3 and up as secondaries (see below) |
 
 This keeps any single server from bootstrapping a solo cluster.
+
+#### System primaries and secondaries
+
+Each server hosts the `system` database (what databases, users and roles exist) either as a **primary**, which votes in its Raft group, or as a **secondary**, which keeps a copy and does not vote. The operator fixes the role at a server's first start, from its ordinal:
+
+- servers below `spec.topology.minSystemPrimaries` (default `min(3, servers)`) are system primaries;
+- the rest are system secondaries;
+- the role is recorded on the server's data volume and kept across restarts.
+
+This follows the Neo4j Operations Manual: start with three system primaries, and give servers that come and go the secondary role. It is also what lets the operator add servers without restarting the ones already running (see [Scale Up/Down](#scale-updown)).
+
+The `system` database stays writable while a majority of its primaries is up. With the default of 3, that means two of servers 0–2, however many servers the cluster has. Raise `minSystemPrimaries` (an odd number) to make more servers system primaries.
+
+A server created before this behaviour existed keeps the role it had: every server in such a cluster stays a system primary. Only servers added later start as secondaries.
 
 ### Cluster Formation Process
 
@@ -350,7 +364,11 @@ kubectl patch neo4jenterprisecluster my-cluster --type='merge' -p='{"spec":{"top
 kubectl edit neo4jenterprisecluster my-cluster
 ```
 
-**Scale-up** just raises the replica count; new servers join and you rebalance databases onto them (`REALLOCATE DATABASES`, or set per-database `TOPOLOGY`).
+**Scale-up** raises the replica count. New servers join, and you rebalance databases onto them (`REALLOCATE DATABASES`, or set a per-database `TOPOLOGY`).
+
+**Servers already running are not restarted when the new servers join as system secondaries.** That covers any scale-up from `minSystemPrimaries` servers or more, for example 3→5. Each new server's discovery list names every server, and the running servers learn about it through discovery. They read the longer list at their next restart. A `ScaledWithoutRestart` event records it.
+
+A scale-up that adds a system primary does restart the running servers one at a time, because Neo4j requires every system primary in each server's discovery list. With the default, that only happens from 2 servers to 3 or more. Scaling down never restarts the servers that stay.
 
 #### Scaling down (automated, safe-by-default)
 
