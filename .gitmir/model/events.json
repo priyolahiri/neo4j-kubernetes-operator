@@ -1060,5 +1060,11 @@
     "name": "ConfigNeedsRestart",
     "description": "Fires when a neo4j.conf change could not be applied at runtime — a setting Neo4j reads only at startup, one also set by an environment variable, or the deployment not Ready with every server up — so the servers restart as before. Names the settings and the reason.",
     "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-scaled-without-restart",
+    "name": "ScaledWithoutRestart",
+    "description": "Fires when a scale-up added only servers that join as system secondaries (ordinals at or past minSystemPrimaries), so the running servers were not restarted; they read the longer discovery list at their next restart.",
+    "moduleId": "mod-cluster"
   }
 ]

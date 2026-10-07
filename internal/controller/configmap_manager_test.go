@@ -257,10 +257,14 @@ func TestCalculateConfigMapHash_IgnoresCommentsAndBlankLines(t *testing.T) {
 }
 
 // rewordComments rewrites every full-line comment, as a new operator version
-// that only edits comments in the rendered files would.
+// that only edits comments in the rendered files would. The restart-neutral
+// markers are left alone: they are structure, not prose (see their doc).
 func rewordComments(content string) string {
 	lines := splitLines(content)
 	for i, l := range lines {
+		if l == resources.RestartNeutralBegin || l == resources.RestartNeutralEnd {
+			continue
+		}
 		if isCommentOrBlankLine(l) && len(l) > 0 && l[0] == '#' && (len(l) < 2 || l[1] != '!') {
 			lines[i] = "# reworded: " + l
 		}

@@ -36,6 +36,9 @@ const (
 	// at runtime (a static setting, an env override, a server not up); the
 	// message says why, and the servers restart as before (#466).
 	EventReasonConfigNeedsRestart = "ConfigNeedsRestart"
+	// EventReasonScaledWithoutRestart — a scale-up added only servers that join
+	// as system secondaries, so the running servers were not restarted (#467).
+	EventReasonScaledWithoutRestart = "ScaledWithoutRestart"
 )
 
 // Rolling upgrade events

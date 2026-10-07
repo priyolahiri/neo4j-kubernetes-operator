@@ -1604,7 +1604,10 @@ type TopologyConfiguration struct {
 	// MinSystemPrimaries sets dbms.cluster.minimum_initial_system_primaries_count
 	// — the number of servers that host the `system` database as a primary, which
 	// is also the floor the cluster can be scaled DOWN to (Neo4j refuses to drop a
-	// server below it). It is applied only at initial cluster formation.
+	// server below it). It is applied at initial cluster formation, and decides
+	// each new server's role at its first start: servers with an ordinal below it
+	// are system primaries, the rest system secondaries, so adding them restarts
+	// none of the running servers. Servers created before this keep their role.
 	//
 	// Default (unset): min(3, servers) — i.e. 2 for a 2-server cluster, 3 for any
 	// cluster of 3+. This lets clusters of 3+ scale down to 3 (the recommended odd
