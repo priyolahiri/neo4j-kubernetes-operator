@@ -541,20 +541,49 @@ func standaloneConfHash(conf string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// renderedConfHash reads the standalone's ConfigMap and returns a stable hash of
-// its neo4j.conf, for stamping onto the pod template (see reconcileStatefulSet).
-// Returns "" when the ConfigMap or its neo4j.conf isn't present yet — the caller
-// then skips the stamp rather than rolling on a transient absence.
-func (r *Neo4jEnterpriseStandaloneReconciler) renderedConfHash(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) string {
+// standaloneConfigSemanticHashAnnotation records, on the StatefulSet itself (not
+// the pod template), a hash of the neo4j.conf the pod's config-hash stamp stands
+// for, with comments and blank lines ignored (normalizeNeo4jConfForRestart). It
+// lets a comment-only conf change keep the running pod's stamp (#465).
+const standaloneConfigSemanticHashAnnotation = "neo4j.com/config-semantic-hash"
+
+// standaloneConfSemanticHash hashes the parts of neo4j.conf a restart depends on.
+func standaloneConfSemanticHash(conf string) string {
+	sum := sha256.Sum256([]byte(normalizeNeo4jConfForRestart(conf)))
+	return hex.EncodeToString(sum[:])
+}
+
+// renderedConfStamp reads the standalone's ConfigMap and returns the config-hash
+// stamp for the pod template (see reconcileStatefulSet) and the semantic hash to
+// record beside it. Returns "", "" when the ConfigMap or its neo4j.conf isn't
+// present yet — the caller then skips the stamp rather than rolling on a
+// transient absence.
+//
+// The stamp stays a hash of the raw conf, as before, so an operator upgrade does
+// not change it. But when the conf changed only in comments or blank lines — the
+// recorded semantic hash still matches — the live stamp is kept, so the pod is
+// not restarted for text Neo4j ignores; the new conf is already in the
+// ConfigMap for its next restart. The first reconcile after an upgrade has no
+// semantic hash recorded yet, so it just records one.
+func (r *Neo4jEnterpriseStandaloneReconciler) renderedConfStamp(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (stamp, semantic string) {
 	cm := &corev1.ConfigMap{}
 	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name + "-config", Namespace: standalone.Namespace}, cm); err != nil {
-		return ""
+		return "", ""
 	}
 	conf := cm.Data["neo4j.conf"]
 	if conf == "" {
-		return ""
+		return "", ""
 	}
-	return standaloneConfHash(conf)
+	stamp, semantic = standaloneConfHash(conf), standaloneConfSemanticHash(conf)
+
+	live := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, live); err == nil {
+		liveStamp := live.Spec.Template.Annotations[standaloneConfigHashAnnotation]
+		if liveStamp != "" && liveStamp != stamp && live.Annotations[standaloneConfigSemanticHashAnnotation] == semantic {
+			stamp = liveStamp
+		}
+	}
+	return stamp, semantic
 }
 
 // splitCSVSet parses a comma-separated annotation value into a set.
@@ -911,11 +940,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	// every-reconcile, hash-gated, error-returning retry. reconcileConfigMap has
 	// already written the ConfigMap this reconcile (it runs first), so the conf
 	// is available; an absent ConfigMap (shouldn't happen) just skips the stamp.
-	if confHash := r.renderedConfHash(ctx, standalone); confHash != "" {
+	confStamp, confSemantic := r.renderedConfStamp(ctx, standalone)
+	if confStamp != "" {
 		if statefulSet.Spec.Template.Annotations == nil {
 			statefulSet.Spec.Template.Annotations = map[string]string{}
 		}
-		statefulSet.Spec.Template.Annotations[standaloneConfigHashAnnotation] = confHash
+		statefulSet.Spec.Template.Annotations[standaloneConfigHashAnnotation] = confStamp
 	}
 
 	// Set owner reference
@@ -954,6 +984,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 				statefulSet.Spec.Replicas = desiredSpec.Replicas
 			}
 			statefulSet.Spec.UpdateStrategy = desiredSpec.UpdateStrategy
+
+			// Record what the template's config-hash stamp stands for. Either the
+			// template below is applied with confStamp, or it matches the recorded
+			// hash and so already carries it — both ways the pair is consistent.
+			if confSemantic != "" {
+				if statefulSet.Annotations == nil {
+					statefulSet.Annotations = map[string]string{}
+				}
+				statefulSet.Annotations[standaloneConfigSemanticHashAnnotation] = confSemantic
+			}
 
 			// Apply the desired template only when our desired hash differs from the
 			// hash recorded last reconcile. Matching hash → leave the stored template

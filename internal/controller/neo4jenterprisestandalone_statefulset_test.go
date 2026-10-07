@@ -421,6 +421,81 @@ func TestReconcileStatefulSet_ConfigHashStampedAndRollsOnConfChange(t *testing.T
 	}
 }
 
+// TestReconcileStatefulSet_CommentOnlyConfChangeKeepsTheStamp pins #465 on the
+// standalone: neo4j.conf rewritten with only its comments changed (as a new
+// operator version would render it) keeps the pod's config-hash stamp, so the
+// pod is not restarted; and a StatefulSet from before the semantic hash existed
+// gets it recorded without being rolled.
+func TestReconcileStatefulSet_CommentOnlyConfChangeKeepsTheStamp(t *testing.T) {
+	r, c := standaloneCMTestReconciler(t)
+	ctx := context.Background()
+
+	sa := standaloneForSTS("5.26.0-enterprise")
+	sa.Spec.Config = map[string]string{"db.transaction.timeout": "30s"}
+	if err := r.reconcileConfigMap(ctx, sa); err != nil {
+		t.Fatalf("configmap: %v", err)
+	}
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("sts create: %v", err)
+	}
+	created := getSTS(t, r)
+	stamp := created.Spec.Template.Annotations[standaloneConfigHashAnnotation]
+	if created.Annotations[standaloneConfigSemanticHashAnnotation] == "" {
+		t.Fatal("the semantic conf hash must be recorded at creation")
+	}
+
+	// An operator-upgraded StatefulSet has no semantic hash yet: it is recorded,
+	// and the pod template is left alone.
+	delete(created.Annotations, standaloneConfigSemanticHashAnnotation)
+	if err := c.Update(ctx, created); err != nil {
+		t.Fatalf("drop semantic hash: %v", err)
+	}
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("sts after upgrade: %v", err)
+	}
+	upgraded := getSTS(t, r)
+	if upgraded.Annotations[standaloneConfigSemanticHashAnnotation] == "" {
+		t.Error("the first reconcile after an upgrade must record the semantic hash")
+	}
+	if upgraded.Spec.Template.Annotations[standaloneConfigHashAnnotation] != stamp ||
+		upgraded.Annotations[standaloneTemplateHashAnnotation] != created.Annotations[standaloneTemplateHashAnnotation] {
+		t.Error("recording the semantic hash must not touch the pod template")
+	}
+
+	// Rewrite neo4j.conf with reworded comments: the stamp, and so the pod, stay.
+	cm := &corev1.ConfigMap{}
+	if err := c.Get(ctx, types.NamespacedName{Name: "sa-config", Namespace: "default"}, cm); err != nil {
+		t.Fatalf("get ConfigMap: %v", err)
+	}
+	cm.Data["neo4j.conf"] = "# reworded by a newer operator\n\n" + rewordComments(cm.Data["neo4j.conf"])
+	if err := c.Update(ctx, cm); err != nil {
+		t.Fatalf("reword conf: %v", err)
+	}
+	rv := getSTS(t, r).ResourceVersion
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("sts after comment change: %v", err)
+	}
+	after := getSTS(t, r)
+	if got := after.Spec.Template.Annotations[standaloneConfigHashAnnotation]; got != stamp {
+		t.Errorf("a comment-only conf change must keep the stamp %s, got %s", stamp, got)
+	}
+	if after.ResourceVersion != rv {
+		t.Error("a comment-only conf change must not update the StatefulSet")
+	}
+
+	// A real change still re-stamps.
+	sa.Spec.Config["db.transaction.timeout"] = "90s"
+	if err := r.reconcileConfigMap(ctx, sa); err != nil {
+		t.Fatalf("configmap 2: %v", err)
+	}
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("sts after setting change: %v", err)
+	}
+	if getSTS(t, r).Spec.Template.Annotations[standaloneConfigHashAnnotation] == stamp {
+		t.Error("a changed setting must change the stamp")
+	}
+}
+
 func hasInitContainer(cs []corev1.Container, name string) bool {
 	for _, c := range cs {
 		if c.Name == name {
