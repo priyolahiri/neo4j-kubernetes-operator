@@ -93,7 +93,19 @@ func clusterDeferredSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []def
 			out = append(out, deferredSetting{Name: resources.AsyncRaftChannelsSetting, Want: "true", Supported: supportsAsyncRaftChannels})
 		}
 	}
+	certManager := cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == resources.CertManagerMode
+	if resources.TLSReloadApplies(cluster.Spec.Image.Tag, certManager) {
+		if _, own := cluster.Spec.Config[resources.TLSReloadSetting]; !own {
+			out = append(out, deferredSetting{Name: resources.TLSReloadSetting, Want: "true", Supported: supportsTLSReload})
+		}
+	}
 	return out
+}
+
+// supportsTLSReload reports whether a Neo4j version has TLS reload (2025.03+).
+func supportsTLSReload(version string) bool {
+	v, err := neo4jclient.ParseVersion(version)
+	return err == nil && v.SupportsTLSReload()
 }
 
 // deferredSettingsSignature identifies a set of deferred settings.

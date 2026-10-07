@@ -280,6 +280,20 @@ func (v *Version) SupportsSplitArchive() bool {
 	return v.Major == 2026 && v.Minor >= 9
 }
 
+// SupportsTLSReload reports whether the server can reload renewed TLS
+// certificates without a restart: dbms.security.tls_reload_enabled and the
+// dbms.security.reloadTLS() procedure, both new in 2025.03
+// (security/ssl-framework, Operations Manual current). Not on 5.26.
+func (v *Version) SupportsTLSReload() bool {
+	if !v.IsCalver {
+		return false
+	}
+	if v.Major > 2025 {
+		return true
+	}
+	return v.Major == 2025 && v.Minor >= 3
+}
+
 // SupportsSkipRecovery checks if version supports --skip-recovery flag (2025.11+).
 func (v *Version) SupportsSkipRecovery() bool {
 	return v.SupportsParallelDownload()

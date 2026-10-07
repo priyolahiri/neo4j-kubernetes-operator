@@ -39,6 +39,13 @@ const (
 	// EventReasonScaledWithoutRestart — a scale-up added only servers that join
 	// as system secondaries, so the running servers were not restarted (#467).
 	EventReasonScaledWithoutRestart = "ScaledWithoutRestart"
+	// EventReasonTLSCertificateReloaded — a renewed TLS certificate was
+	// reloaded on running servers with dbms.security.reloadTLS() (#469).
+	EventReasonTLSCertificateReloaded = "TLSCertificateReloaded"
+	// EventReasonTLSCertificateNeedsRestart — a server could not reload the
+	// renewed certificate (TLS reload not enabled on it yet) and presents the
+	// previous one until it restarts (#469).
+	EventReasonTLSCertificateNeedsRestart = "TLSCertificateNeedsRestart"
 )
 
 // Rolling upgrade events

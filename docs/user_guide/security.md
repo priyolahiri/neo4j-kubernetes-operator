@@ -1069,7 +1069,22 @@ If the plugin auto-renews the token (auto-rotation enabled in the Aura wizard), 
 
 **What it is**: the cert-manager-issued Secret named `{cluster}-tls-secret` that holds `tls.crt`, `tls.key`, and `ca.crt`.
 
-**With `spec.tls.mode: cert-manager`** (the only mode that issues certificates): rotation is fully automatic. cert-manager issues a new Certificate when the existing one approaches expiry (`spec.duration` and `spec.renewBefore` on the `Certificate` resource). The new Secret content is picked up on the next pod restart — schedule a rolling restart yourself if your certificate renewal cadence is shorter than your pod lifetime:
+**With `spec.tls.mode: cert-manager`** (the only mode that issues certificates), cert-manager renews the certificate as it nears expiry (`spec.duration` and `spec.renewBefore` on the `Certificate` resource), and the kubelet updates the files mounted at `/ssl` within a minute or two. What happens next depends on the Neo4j version.
+
+**CalVer 2025.03 and later:** the operator sets `dbms.security.tls_reload_enabled=true`. When the Secret changes, it runs `dbms.security.reloadTLS()` on each server, then checks the certificate a new TLS connection gets. Nothing restarts.
+
+- A `TLSCertificateReloaded` event names the servers that reloaded.
+- New connections get the renewed certificate; existing ones keep theirs.
+- If the files take longer to appear, the operator retries for up to ten minutes after the new certificate was issued.
+
+On a deployment created before this behaviour, each server gets the setting at its next restart, and the operator does not restart servers for it:
+
+- On a cluster, the `RestartPending` condition names the servers still waiting.
+- On a standalone, nothing reports it; the setting takes effect at the pod's next restart.
+- Until then, a renewal reaches those servers only when they restart, and a `TLSCertificateNeedsRestart` Warning names them.
+- To enable reload everywhere at once, restart them, one at a time on a cluster.
+
+**5.26:** Neo4j cannot reload certificates at runtime. The renewed certificate takes effect at each server's next restart, so schedule a rolling restart yourself if certificates renew more often than your pods restart:
 
 ```bash
 kubectl rollout restart statefulset <cluster>-server -n <namespace>
@@ -1090,7 +1105,7 @@ The operator has no bring-your-own-certificate mode: `spec.tls.mode` is `cert-ma
 | `spec.auth.adminSecret` (cluster + standalone) | not required if you've run `ALTER USER`, but recommended for hygiene | **Yes** (`ALTER USER neo4j SET PASSWORD ...`) | No — needs explicit `ALTER USER` |
 | `spec.auraFleetManagement.tokenSecretRef` | No | No | No — set `status.auraFleetManagement.registered: false` to re-register |
 | `Neo4jUser.spec.passwordSecretRef` | No | No | **Yes** (`status.passwordSecretHash`) |
-| TLS Secret (cert-manager) | Yes (rolling restart on renewal) | No | cert-manager auto-renews |
+| TLS Secret (cert-manager) | No on CalVer 2025.03+ (reloaded live); on 5.26, renewal takes effect at the next restart | No | cert-manager renews; the operator reloads it (CalVer 2025.03+) |
 | `Neo4jPlugin.spec.source.authSecret` | Yes | No | No — picked up on next pod start |
 
 ## Operator-labelled Secrets
