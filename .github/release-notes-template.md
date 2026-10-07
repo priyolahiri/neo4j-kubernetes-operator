@@ -66,7 +66,7 @@ Every release must pass, mechanically — a failure in any gate blocks publicati
 - **Install-confidence gate (blocking, inside the release pipeline)** — a matrix on a fresh Kubernetes cluster: Helm install (cluster and namespace-scoped RBAC modes), Helm upgrade with the CRD refresh (from a prior published chart once one exists), documented-order uninstall with live resources, and the kubectl server-side-apply path. A release that cannot cleanly install, upgrade, or uninstall cannot be published.
 - **Signed supply chain** — multi-arch images signed with Sigstore Cosign (verification command above); OLM bundle validated with operator-sdk.
 
-See [Supported Neo4j Versions](https://priyolahiri.github.io/neo4j-kubernetes-operator/user_guide/version_support/) for what "validated" means per Neo4j line, and [CI/CD & Workflows](https://priyolahiri.github.io/neo4j-kubernetes-operator/developer_guide/ci_and_workflows/) for the gate machinery.
+See [Supported Neo4j Versions](https://priyolahiri.github.io/neo4j-kubernetes-operator/__DOCS_VERSION__/user_guide/version_support/) for what "validated" means per Neo4j line, and [CI/CD & Workflows](https://priyolahiri.github.io/neo4j-kubernetes-operator/__DOCS_VERSION__/developer_guide/ci_and_workflows/) for the gate machinery.
 
 ## Release Assets
 
@@ -92,12 +92,12 @@ sudo mv kubectl-neo4j /usr/local/bin/
 kubectl neo4j validate -f manifests/
 ```
 
-Same support terms as the operator: best-effort, no SLA. See the [CLI guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/user_guide/cli/).
+Same support terms as the operator: best-effort, no SLA. See the [CLI guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/__DOCS_VERSION__/user_guide/cli/).
 
 ## Documentation
 
-- [Getting Started Guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/getting_started/)
-- [API Reference](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/api_reference/neo4jenterprisecluster/)
+- [Getting Started Guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/__DOCS_VERSION__/user_guide/getting_started/)
+- [API Reference](https://priyolahiri.github.io/neo4j-kubernetes-operator/__DOCS_VERSION__/api_reference/neo4jenterprisecluster/)
 
 ## Bug Reports
 

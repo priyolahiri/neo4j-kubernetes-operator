@@ -448,6 +448,10 @@ check-cli-docs: ## Verify every kubectl-neo4j command is documented and every CL
 check-cli-asset-names: ## Verify the kubectl-neo4j release asset naming convention matches everywhere it is pinned.
 	@./scripts/check-cli-asset-names.sh
 
+.PHONY: check-release-notes-links
+check-release-notes-links: ## Verify the release notes template links the release's own docs version.
+	@./scripts/check-release-notes-links.sh
+
 .PHONY: check-docs-release-pins
 check-docs-release-pins: ## Verify every documented install command names the current release.
 	@./scripts/check-docs-release-pins.sh

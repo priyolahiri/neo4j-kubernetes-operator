@@ -69,6 +69,9 @@ jobs:
     - name: kubectl-neo4j release asset names agree everywhere
       run: make check-cli-asset-names
 
+    - name: Release notes link the release's own docs version
+      run: make check-release-notes-links
+
     - name: Every kubectl-neo4j command is documented and reachable
       run: make check-cli-docs
 

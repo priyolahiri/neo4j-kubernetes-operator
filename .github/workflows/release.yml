@@ -398,7 +398,11 @@ jobs:
       run: |
         echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_OUTPUT
 
-        sed -e "s|__TAG__|${TAG_NAME}|g" -e "s|__VERSION__|${CLEAN_TAG}|g" \
+        # __DOCS_VERSION__ is vX.Y, the path pages-docs.yml publishes a tag
+        # under (it drops the patch). The site has no unversioned pages, so a
+        # docs link without it 404s.
+        sed -e "s|__DOCS_VERSION__|${TAG_NAME%.*}|g" \
+          -e "s|__TAG__|${TAG_NAME}|g" -e "s|__VERSION__|${CLEAN_TAG}|g" \
           .github/release-notes-template.md > release-notes.md
 
         curl -sSf \
