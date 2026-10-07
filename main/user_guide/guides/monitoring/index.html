@@ -4768,7 +4768,7 @@ string, so a missing value is visible instead of silently absent.</p>
 <td><code>neo4j_operator_cluster_healthy</code></td>
 <td>Gauge</td>
 <td><code>cluster_name</code>, <code>namespace</code></td>
-<td><code>1</code> in phase <code>Ready</code> (also while a server is down, within the grace period); <code>0</code> in <code>Forming</code>, <code>Degraded</code> or <code>Failed</code></td>
+<td><code>1</code> in phase <code>Ready</code> (also while a server is down, within the grace period); <code>0</code> in <code>Forming</code>, <code>Degraded</code> or <code>Failed</code> Every series of a cluster is removed when the cluster is deleted.</td>
 </tr>
 <tr>
 <td><code>neo4j_operator_cluster_replicas_total</code></td>

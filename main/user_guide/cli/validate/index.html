@@ -4114,7 +4114,7 @@
 </tr>
 <tr>
 <td><code>--namespace</code>, <code>-n</code></td>
-<td>Namespace for manifests that omit one.</td>
+<td>Namespace for manifests that omit one. With <code>--connect</code>, it defaults to the kubeconfig context's namespace, else <code>default</code> — where <code>kubectl apply</code> would put them.</td>
 </tr>
 <tr>
 <td><code>--strict</code></td>

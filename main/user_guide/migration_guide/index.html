@@ -4566,6 +4566,24 @@ behaviour changes below take effect on the first reconcile.</p>
   <code>spec.retention</code> for it. Cloud storage keeps <code>AUTO</code> as it was, since it
   seeds differentials. See
   <a href="../property_sharding/#restoring-a-sharded-database">Restoring a sharded database</a>.</li>
+<li><strong>A plugin no longer overrides a standalone's own procedure settings.</strong>
+  On a <code>Neo4jEnterpriseStandalone</code>, a <code>Neo4jPlugin</code> also wrote its security
+  settings (<code>dbms.security.procedures.*</code> and the like) as environment
+  variables, which Neo4j applies over <code>neo4j.conf</code> — so a standalone's own
+  <code>spec.config</code> values for those keys were silently replaced by the plugin's
+  (for example <code>gds.*,apoc.*</code> cut to <code>apoc.*</code>). They now live only in
+  <code>neo4j.conf</code>, merged with yours, and the plugin's <code>spec.security</code> is
+  written there too. <strong>Each standalone with a <code>Neo4jPlugin</code> restarts once on
+  upgrade</strong> as the environment copies are removed. Clusters are unchanged.</li>
+<li><strong>A deleted cluster stops exporting metrics.</strong> Its series —
+  <code>cluster_healthy</code>, <code>cluster_phase</code>, <code>server_health</code> and the rest — stayed
+  exported at their last values until the operator restarted; they are now
+  removed when the cluster is deleted.</li>
+<li><strong><code>kubectl neo4j validate --connect</code> checks namespace-less manifests in the
+  right namespace.</strong> Without <code>-n</code> it looked cross-references up in an empty
+  namespace and reported raw client errors (and could pass a remote composite
+  whose target has no keystore); it now uses the kubeconfig context's
+  namespace, else <code>default</code>.</li>
 <li><strong>A finished one-time backup stays finished.</strong> A <code>Neo4jBackup</code> without a
   schedule that was <code>Completed</code> or <code>Failed</code> turned <code>Waiting</code> whenever its
   target restarted or was briefly missing, and once its Job had been cleaned
