@@ -13,6 +13,7 @@
     ],
     "callsFunctionIds": [
       "sf-reconcile-cluster-configmap",
+      "sf-reconcile-restart-pending",
       "sf-hold-image-drift-until-ready",
       "sf-is-upgrade-required",
       "sf-advance-rolling-upgrade",
@@ -47,7 +48,7 @@
     "name": "Reconcile Cluster ConfigMap",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Renders the cluster's {cluster}-config ConfigMap (neo4j.conf, startup.sh, health.sh) and decides whether the servers must restart. The restart decision compares a normalised rendering that drops full-line comments and blank lines and masks runtime-variable lines. When only neo4j.conf changed and every changed setting is dynamic (SHOW SETTINGS isDynamic), not set by an env var, and the cluster is Ready with every server up, it runs dbms.setConfigValue on every server first and restarts nothing (ConfigAppliedLive); otherwise it stamps config-restart on the server StatefulSet, rolling every server (ConfigNeedsRestart says why). The ConfigMap is written whenever its raw content changes, after any live apply, so a later restart keeps the values. Startup-script lines between the restart-neutral markers (the system database role block, which makes servers past minSystemPrimaries system secondaries at their first start and records the role on their volume) never count; a change confined to the membership lines (TOTAL_SERVERS, the discovery endpoint list) restarts nothing unless a scale-up adds a system primary (ScaledWithoutRestart).",
+    "description": "Renders the cluster's {cluster}-config ConfigMap (neo4j.conf, startup.sh, health.sh) and decides whether the servers must restart. The restart decision compares a normalised rendering that drops full-line comments and blank lines and masks runtime-variable lines. When only neo4j.conf changed and every changed setting is dynamic (SHOW SETTINGS isDynamic), not set by an env var, and the cluster is Ready with every server up, it runs dbms.setConfigValue on every server first and restarts nothing (ConfigAppliedLive); otherwise it stamps config-restart on the server StatefulSet, rolling every server (ConfigNeedsRestart says why). The ConfigMap is written whenever its raw content changes, after any live apply, so a later restart keeps the values. Startup-script lines between the restart-neutral markers (the system database role block, which makes servers past minSystemPrimaries system secondaries at their first start and records the role on their volume) never count; a change confined to the membership lines (TOTAL_SERVERS, the discovery endpoint list) restarts nothing unless a scale-up adds a system primary (ScaledWithoutRestart). It records on the ConfigMap which settings it applies at the next restart and since when (neo4j.com/deferred-settings, neo4j.com/deferred-settings-since).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -56,6 +57,19 @@
       "ev-config-needs-restart",
       "ev-scaled-without-restart"
     ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-reconcile-restart-pending",
+    "name": "Reconcile RestartPending",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Maintains the RestartPending condition for settings the operator applies at each server's next restart instead of restarting for them (today: dbms.cluster.raft.async_channel_acquisition_enabled on 5.26.29+, written per container by the startup script's restart-neutral block). A server is waiting when its Neo4j has the setting (dbms.components() per pod) and its neo4j container started before the ConfigMap first carried it (the neo4j.com/deferred-settings-since annotation). SHOW SETTINGS is not used: on 5.26.31 it misreports this setting. Best-effort; re-reads only when the pods or the settings change.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-cluster"
   },

@@ -128,3 +128,58 @@ func TestSystemDatabaseModeBlock(t *testing.T) {
 		})
 	}
 }
+
+// TestAsyncRaftChannelsBlock pins #468: on 5.26 the setting is enabled only by a
+// container whose own Neo4j is 5.26.29 or later (an older patch would refuse an
+// unknown setting and not start), never twice, and never on CalVer.
+func TestAsyncRaftChannelsBlock(t *testing.T) {
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash not available")
+	}
+	if b := buildAsyncRaftChannelsBlock(systemModeCluster("2026.08.1-enterprise", 3)); b != "" {
+		t.Fatalf("CalVer has the setting on by default; nothing may be rendered, got %q", b)
+	}
+	block := buildAsyncRaftChannelsBlock(systemModeCluster("5.26-enterprise", 3))
+	line := AsyncRaftChannelsSetting + "=true"
+	for _, tc := range []struct {
+		name     string
+		jar      string // kernel jar in $NEO4J_HOME/lib; "" for none
+		conf     string // neo4j.conf before the block
+		wantLine int    // occurrences of the setting afterwards
+	}{
+		{"5.26.28 lacks the setting", "neo4j-kernel-5.26.28.jar", "", 0},
+		{"5.26.29 has it", "neo4j-kernel-5.26.29.jar", "", 1},
+		{"5.26.31 has it", "neo4j-kernel-5.26.31.jar", "", 1},
+		{"a user value is left alone", "neo4j-kernel-5.26.31.jar", AsyncRaftChannelsSetting + "=false\n", 1},
+		{"no kernel jar found", "", "", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := t.TempDir()
+			lib, conf := filepath.Join(root, "lib"), filepath.Join(root, "neo4j.conf")
+			if err := os.MkdirAll(lib, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for _, j := range []string{tc.jar, "neo4j-kernel-api-5.26.0.jar"} {
+				if j != "" {
+					if err := os.WriteFile(filepath.Join(lib, j), nil, 0o644); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if err := os.WriteFile(conf, []byte(tc.conf), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			script := "set -e\nNEO4J_HOME=" + root + "\n" + strings.ReplaceAll(block, "/conf/neo4j.conf", conf)
+			if out, err := exec.CommandContext(t.Context(), "bash", "-c", script).CombinedOutput(); err != nil {
+				t.Fatalf("block failed: %v\n%s", err, out)
+			}
+			got, _ := os.ReadFile(conf)
+			if n := strings.Count(string(got), AsyncRaftChannelsSetting+"="); n != tc.wantLine {
+				t.Errorf("setting appears %d times, want %d (conf %q)", n, tc.wantLine, got)
+			}
+			if tc.conf == "" && tc.wantLine == 1 && !strings.Contains(string(got), line) {
+				t.Errorf("want %q in conf, got %q", line, got)
+			}
+		})
+	}
+}

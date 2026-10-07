@@ -2485,8 +2485,12 @@ func (c *Client) GetLoadedComponents(ctx context.Context) ([]ComponentInfo, erro
 	var components []ComponentInfo
 
 	err := c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {
+		// system, not the default database: every server hosts system, while a
+		// connection to one server (NewClientForPod) fails for a default
+		// database that server does not host.
 		session := c.driver.NewSession(ctx, neo4j.SessionConfig{
-			AccessMode: neo4j.AccessModeRead,
+			AccessMode:   neo4j.AccessModeRead,
+			DatabaseName: "system",
 		})
 		defer session.Close(ctx)
 

@@ -408,6 +408,27 @@ spec:
     autoPauseOnFailure: true
 ```
 
+## 5.26: writes while a server is stopped
+
+On 5.26, writes can stall for about 30 seconds every time one server stops: a restart, a crash or a node drain. The leader waits for a connection to the stopped member before it replicates to the others, for up to `dbms.cluster.network.connect_timeout`. Neo4j documents this for Kubernetes and fixes it from **5.26.29** with `dbms.cluster.raft.async_channel_acquisition_enabled=true`. CalVer has that on by default. On Kind, restarting a follower stalled writes for 32 seconds with it off and not at all with it on.
+
+The operator turns it on for 5.26 clusters:
+
+- **Which servers:** only servers whose own Neo4j is 5.26.29 or later. An older patch would refuse the unknown setting and not start. The `5.26-enterprise` tag floats, so each server decides from its own version when it starts.
+- **New clusters:** have it from the first start.
+- **Existing clusters:** get it at each server's next restart. The operator does not restart them for it. Until then, the `RestartPending` condition names the servers still waiting:
+
+  ```bash
+  kubectl get neo4jenterprisecluster my-cluster \
+    -o jsonpath='{.status.conditions[?(@.type=="RestartPending")].message}'
+  ```
+
+  To apply it sooner, delete those pods one at a time, or run `kubectl rollout restart statefulset my-cluster-server`.
+- **Overriding it:** set the setting in `spec.config` (for example `"false"`). The operator then leaves it to you, and changing it restarts the servers as for any setting Neo4j reads only at startup.
+
+!!! note "`SHOW SETTINGS` reports it as `false`"
+    On 5.26.31, `SHOW SETTINGS` shows this setting as `false`, and not explicitly set, even on a server that runs with it on. 5.26.29 made an existing internal setting public, and `SHOW SETTINGS` does not reflect it. The value Neo4j actually starts with is in the configuration dump at the top of `debug.log`, and the operator's `RestartPending` condition does not rely on `SHOW SETTINGS`.
+
 ## Troubleshooting
 
 ### Common Issues

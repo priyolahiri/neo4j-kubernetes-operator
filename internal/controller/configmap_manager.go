@@ -200,6 +200,11 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 		newConfigHash = cm.calculateConfigMapHash(desiredConfigMap)
 		restartRelevant = oldConfigHash != newConfigHash
 		configChanged = !reflect.DeepEqual(existingConfigMap.Data, desiredConfigMap.Data)
+		// Record which settings the ConfigMap applies at the next restart, and
+		// since when, for the RestartPending condition (#468).
+		if stampDeferredSettings(desiredConfigMap, existingConfigMap, cluster, time.Now()) {
+			configChanged = true
+		}
 
 		if restartRelevant {
 			// Perform detailed analysis to understand what changed
@@ -231,6 +236,7 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 		// ConfigMap doesn't exist, calculate hash for new one
 		newConfigHash = cm.calculateConfigMapHash(desiredConfigMap)
 		configChanged = true
+		stampDeferredSettings(desiredConfigMap, nil, cluster, time.Now())
 		logger.Info("Creating new ConfigMap", "cluster", cluster.Name, "hash", newConfigHash)
 	}
 
