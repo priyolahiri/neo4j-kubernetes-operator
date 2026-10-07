@@ -404,7 +404,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				RequeueAfter:           controller.GetTestRequeueAfter(),
 				TopologyScheduler:      controller.NewTopologyScheduler(mgr.GetClient()),
 				Validator:              validation.NewClusterValidator(mgr.GetClient()),
-				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()),
+				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
 				SplitBrainDetector:     controller.NewSplitBrainDetector(mgr.GetClient()),
 				ServerUnavailableGrace: serverUnavailableGrace,
 			},
@@ -699,7 +699,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				RequeueAfter:           controller.GetTestRequeueAfter(),
 				TopologyScheduler:      controller.NewTopologyScheduler(mgr.GetClient()),
 				Validator:              validation.NewClusterValidator(mgr.GetClient()),
-				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()),
+				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
 				SplitBrainDetector:     controller.NewSplitBrainDetector(mgr.GetClient()),
 				ServerUnavailableGrace: serverUnavailableGrace,
 			}, "Neo4jEnterpriseCluster"

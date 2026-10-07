@@ -2536,6 +2536,37 @@ func (c *Client) SetConfiguration(ctx context.Context, key, value string) error 
 	})
 }
 
+// SettingsDynamic reports, for each of names the server knows, whether it can
+// be changed at runtime with dbms.setConfigValue (SHOW SETTINGS … isDynamic,
+// on 5.26 and CalVer alike). A name missing from the result is not a setting
+// this server knows — for instance an OIDC provider setting for a provider that
+// is not configured — and callers must treat it as needing a restart.
+func (c *Client) SettingsDynamic(ctx context.Context, names []string) (map[string]bool, error) {
+	out := make(map[string]bool, len(names))
+	err := c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {
+		session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+			AccessMode:   neo4j.AccessModeRead,
+			DatabaseName: "system",
+		})
+		defer session.Close(ctx)
+
+		result, err := session.Run(ctx,
+			"SHOW SETTINGS YIELD name, isDynamic WHERE name IN $names RETURN name, isDynamic",
+			map[string]any{"names": names})
+		if err != nil {
+			return fmt.Errorf("failed to run SHOW SETTINGS: %w", err)
+		}
+		for result.Next(ctx) {
+			record := result.Record()
+			name, _ := record.Values[0].(string)
+			dynamic, _ := record.Values[1].(bool)
+			out[name] = dynamic
+		}
+		return result.Err()
+	})
+	return out, err
+}
+
 // SetAllowedProcedures sets the allowed procedures for a plugin
 func (c *Client) SetAllowedProcedures(ctx context.Context, procedures []string) error {
 	return c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {

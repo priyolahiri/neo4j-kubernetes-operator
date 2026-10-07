@@ -1048,5 +1048,17 @@
     "name": "ClusterQuorumLost",
     "description": "Warning, once per transition: a formed cluster has half or fewer of its servers available; its phase goes to Forming and dependents pause until a majority is back (#444).",
     "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-config-applied-live",
+    "name": "ConfigAppliedLive",
+    "description": "Fires when a neo4j.conf change touched only settings Neo4j can change at runtime: the operator ran dbms.setConfigValue on every running server (or the standalone) and wrote the new conf, restarting nothing. Names the settings.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-config-needs-restart",
+    "name": "ConfigNeedsRestart",
+    "description": "Fires when a neo4j.conf change could not be applied at runtime — a setting Neo4j reads only at startup, one also set by an environment variable, or the deployment not Ready with every server up — so the servers restart as before. Names the settings and the reason.",
+    "moduleId": "mod-cluster"
   }
 ]

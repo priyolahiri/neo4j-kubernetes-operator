@@ -31,6 +31,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
@@ -41,6 +42,12 @@ import (
 // ConfigMapManager handles ConfigMap updates and pod restarts
 type ConfigMapManager struct {
 	client.Client
+	// Recorder, when set, receives the ConfigAppliedLive / ConfigNeedsRestart
+	// events of a neo4j.conf change (#466).
+	Recorder record.EventRecorder
+	// LiveConfig applies a dynamic-only neo4j.conf change to the running
+	// servers. Nil restarts the servers for every change, as before #466.
+	LiveConfig     LiveConfigApplier
 	lastUpdateTime map[string]time.Time
 	mu             sync.RWMutex
 }
@@ -49,8 +56,42 @@ type ConfigMapManager struct {
 func NewConfigMapManager(client client.Client) *ConfigMapManager {
 	return &ConfigMapManager{
 		Client:         client,
+		LiveConfig:     newBoltLiveConfigApplier(client),
 		lastUpdateTime: make(map[string]time.Time),
 	}
+}
+
+// WithRecorder sets the recorder for the manager's events and returns it.
+func (cm *ConfigMapManager) WithRecorder(r record.EventRecorder) *ConfigMapManager {
+	cm.Recorder = r
+	return cm
+}
+
+// recordEvent emits an event on the cluster when a recorder is set.
+func (cm *ConfigMapManager) recordEvent(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, eventType, reason, format string, args ...any) {
+	if cm.Recorder != nil {
+		cm.Recorder.Eventf(cluster, eventType, reason, format, args...)
+	}
+}
+
+// applyLive hands the changes to the LiveConfigApplier, if there is one.
+func (cm *ConfigMapManager) applyLive(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, changes map[string]string) (bool, string) {
+	if cm.LiveConfig == nil {
+		return false, ""
+	}
+	return cm.LiveConfig.ApplyLive(ctx, cluster, changes)
+}
+
+// onlyNeo4jConfChanged reports whether neo4j.conf is the only file whose
+// restart-relevant content differs. startup.sh and health.sh run only when a
+// container starts, so any change there needs a restart.
+func (cm *ConfigMapManager) onlyNeo4jConfChanged(oldCM, newCM *corev1.ConfigMap) bool {
+	for _, key := range []string{"startup.sh", "health.sh"} {
+		if cm.normalizeConfigContent(key, oldCM.Data[key]) != cm.normalizeConfigContent(key, newCM.Data[key]) {
+			return false
+		}
+	}
+	return cm.normalizeNeo4jConf(oldCM.Data["neo4j.conf"]) != cm.normalizeNeo4jConf(newCM.Data["neo4j.conf"])
 }
 
 // ReconcileConfigMap handles immediate ConfigMap updates and pod restarts
@@ -133,6 +174,26 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 				"timeSinceLastUpdate", time.Since(lastUpdate),
 				"minInterval", minInterval)
 			return nil
+		}
+
+		// A change to neo4j.conf alone whose settings are all dynamic is applied
+		// to the running servers instead of restarting them (#466). It runs
+		// BEFORE the write: written first, a failure here would leave the
+		// servers on the old values with no difference left to act on.
+		if configMapExists && restartRelevant && cm.onlyNeo4jConfChanged(existingConfigMap, desiredConfigMap) {
+			changes := neo4jConfChanges(existingConfigMap.Data["neo4j.conf"], desiredConfigMap.Data["neo4j.conf"])
+			if applied, reason := cm.applyLive(ctx, cluster, changes); applied {
+				restartRelevant = false
+				logger.Info("Applied neo4j.conf changes to every server without a restart",
+					"cluster", cluster.Name, "settings", sortedSettingNames(changes))
+				cm.recordEvent(cluster, corev1.EventTypeNormal, EventReasonConfigAppliedLive,
+					"Applied %s to %d servers without a restart",
+					strings.Join(sortedSettingNames(changes), ", "), cluster.Spec.Topology.Servers)
+			} else if reason != "" {
+				cm.recordEvent(cluster, corev1.EventTypeNormal, EventReasonConfigNeedsRestart,
+					"Restarting the servers for neo4j.conf changes to %s: %s",
+					strings.Join(sortedSettingNames(changes), ", "), reason)
+			}
 		}
 
 		if err := cm.updateConfigMapImmediate(ctx, cluster, desiredConfigMap); err != nil {

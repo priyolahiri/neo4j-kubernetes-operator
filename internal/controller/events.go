@@ -28,6 +28,14 @@ const (
 	// majority of its servers available; dependents pause until a majority is
 	// back. Emitted once per transition (#444).
 	EventReasonClusterQuorumLost = "ClusterQuorumLost"
+	// EventReasonConfigAppliedLive — a neo4j.conf change touched only settings
+	// Neo4j can change at runtime, so the operator ran dbms.setConfigValue on
+	// every server instead of restarting them (#466).
+	EventReasonConfigAppliedLive = "ConfigAppliedLive"
+	// EventReasonConfigNeedsRestart — a neo4j.conf change could not be applied
+	// at runtime (a static setting, an env override, a server not up); the
+	// message says why, and the servers restart as before (#466).
+	EventReasonConfigNeedsRestart = "ConfigNeedsRestart"
 )
 
 // Rolling upgrade events
