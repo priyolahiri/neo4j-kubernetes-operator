@@ -840,6 +840,12 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 			logger.Error(err, "Failed to delete server StatefulSet")
 		}
 	}
+	// cert-manager leaves the Secret it issued behind when the Certificate is
+	// garbage-collected (#479). Not worth blocking deletion over.
+	if err := deleteIssuedTLSSecret(ctx, r.Client, cluster.Namespace, cluster.Name, cluster.Name+"-tls"); err != nil {
+		logger.Error(err, "Failed to delete the TLS Secret issued for this cluster")
+	}
+
 	logger.Info("Removing finalizer from cluster", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
 	controllerutil.RemoveFinalizer(cluster, ClusterFinalizer)
 	err := r.Update(ctx, cluster)

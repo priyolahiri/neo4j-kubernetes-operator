@@ -1090,6 +1090,8 @@ On a deployment created before this behaviour, each server gets the setting at i
 kubectl rollout restart statefulset <cluster>-server -n <namespace>
 ```
 
+Deleting a cluster or standalone deletes the `{name}-tls-secret` cert-manager issued for it, along with its Certificate. cert-manager itself leaves issued Secrets behind. A Secret of that name that cert-manager did not issue for the deployment's Certificate, such as one you created yourself, is left in place.
+
 The operator has no bring-your-own-certificate mode: `spec.tls.mode` is `cert-manager` or `disabled`, and `spec.tls.certificateSecret` is accepted by the schema but not used (a `ValidationWarning` event is raised when it is set).
 
 ### Neo4jPlugin `source.authSecret` (VerifiedDownload mode)
