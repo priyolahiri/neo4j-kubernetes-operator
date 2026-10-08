@@ -1032,7 +1032,7 @@ Live diagnostics collected from `SHOW SERVERS` and `SHOW DATABASES` once the clu
 | `databases[].requestedStatus` | `string` | Desired status as requested by the operator. |
 | `databases[].role` | `string` | Role on the last-contacted server: `primary`, `secondary`. |
 | `databases[].default` | `bool` | Whether this is the cluster's default database. |
-| `lastCollected` | `string` (RFC3339) | Timestamp of the most recent successful collection. |
+| `lastCollected` | `string` (RFC3339) | When the diagnostics were last written. They are collected on every reconcile but written only when something in them changes (a server, a database, the users, the roles, an error) or at least every 5 minutes, so this is at most 5 minutes old while the cluster is reconciling. The databases' `lastCommittedTxn` and `replicationLag` move with every write and do not count as a change: they are a snapshot from the last write. |
 | `collectionError` | `string` | Error message from the last failed collection; empty on success. |
 
 ### Conditions

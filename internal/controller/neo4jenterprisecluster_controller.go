@@ -2614,6 +2614,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 
 	now := metav1.Now()
 	diagnostics.LastCollected = &now
+	sortServerDiagnostics(diagnostics.Servers)
 
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
@@ -2621,11 +2622,59 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 			return err
 		}
 
+		before := latest.Status.DeepCopy()
 		latest.Status.Diagnostics = diagnostics
 		qm.updateServersCondition(latest, servers, serverErr)
 		qm.updateDatabasesCondition(latest, databases, dbErr)
 
+		// Only write what changed (#475): every status write is a watch event
+		// that reconciles the cluster again at once, so writing a fresh
+		// lastCollected on every pass kept a Ready cluster reconciling
+		// continuously.
+		if !clusterDiagnosticsWriteNeeded(before, &latest.Status, time.Now()) {
+			return nil
+		}
 		return qm.Status().Update(ctx, latest)
+	})
+}
+
+// diagnosticsRefreshInterval is how old status.diagnostics.lastCollected may
+// get while nothing else in the diagnostics changed (#475).
+const diagnosticsRefreshInterval = 5 * time.Minute
+
+// diagnosticsStale reports whether a stored lastCollected is missing or older
+// than diagnosticsRefreshInterval.
+func diagnosticsStale(lastCollected *metav1.Time, now time.Time) bool {
+	return lastCollected == nil || now.Sub(lastCollected.Time) >= diagnosticsRefreshInterval
+}
+
+// clusterDiagnosticsWriteNeeded reports whether a diagnostics pass changed the
+// cluster's status in anything but lastCollected — the server and database
+// lists, users, roles, the collection error, or the ServersHealthy /
+// DatabasesHealthy conditions — or the stored lastCollected is stale.
+func clusterDiagnosticsWriteNeeded(before, after *neo4jv1beta1.Neo4jEnterpriseClusterStatus, now time.Time) bool {
+	var stored *metav1.Time
+	if before.Diagnostics != nil {
+		stored = before.Diagnostics.LastCollected
+	}
+	b, a := before.DeepCopy(), after.DeepCopy()
+	for _, st := range []*neo4jv1beta1.Neo4jEnterpriseClusterStatus{b, a} {
+		if st.Diagnostics != nil {
+			st.Diagnostics.LastCollected = nil
+			st.Diagnostics.Databases = withoutTransactionCounters(st.Diagnostics.Databases)
+			sortServerDiagnostics(st.Diagnostics.Servers)
+		}
+	}
+	return !equality.Semantic.DeepEqual(b, a) || diagnosticsStale(stored, now)
+}
+
+// sortServerDiagnostics orders the SHOW SERVERS rows by name, then address.
+func sortServerDiagnostics(servers []neo4jv1beta1.ServerDiagnosticInfo) {
+	sort.SliceStable(servers, func(i, j int) bool {
+		if servers[i].Name != servers[j].Name {
+			return servers[i].Name < servers[j].Name
+		}
+		return servers[i].Address < servers[j].Address
 	})
 }
 

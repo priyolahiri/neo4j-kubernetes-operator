@@ -2229,9 +2229,26 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStandaloneDiagnostics(ctx co
 		if err := r.Get(ctx, client.ObjectKeyFromObject(standalone), latest); err != nil {
 			return err
 		}
+		// Only write what changed (#475): a fresh lastCollected alone is a
+		// watch event that reconciles the standalone again at once.
+		if !standaloneDiagnosticsWriteNeeded(latest.Status.Diagnostics, diagnostics, time.Now()) {
+			return nil
+		}
 		latest.Status.Diagnostics = diagnostics
 		return r.Status().Update(ctx, latest)
 	})
+}
+
+// standaloneDiagnosticsWriteNeeded reports whether new diagnostics differ from
+// the stored ones in anything but lastCollected, or the stored ones are stale.
+func standaloneDiagnosticsWriteNeeded(before, after *neo4jv1beta1.StandaloneDiagnosticsStatus, now time.Time) bool {
+	if before == nil || after == nil {
+		return before != after
+	}
+	b, a := before.DeepCopy(), after.DeepCopy()
+	b.LastCollected, a.LastCollected = nil, nil
+	b.Databases, a.Databases = withoutTransactionCounters(b.Databases), withoutTransactionCounters(a.Databases)
+	return !equality.Semantic.DeepEqual(b, a) || diagnosticsStale(before.LastCollected, now)
 }
 
 // isStandaloneUpgradeRequired returns true if the Neo4j image tag is changing.

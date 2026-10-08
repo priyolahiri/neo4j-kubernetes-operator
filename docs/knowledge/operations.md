@@ -686,6 +686,19 @@
 - **pinned-by:** `TestCertFingerprint`, `TestReloadRenewedCertificate` (already current, reloaded, files lag, not enabled → never reloaded, reload fails, unreachable), `TestReconcileTLSReload`, `TestReconcileTLSReload_ThrottleAndGiveUp`, `TestTLSSecretOwnerRequest`, `TestClusterDeferredSettings_TLSReload`, `TestStandaloneTLSReloadSetting` (rendering and the upgrade keeping the stamp) (`internal/controller/tls_reload_test.go`); `TestTLSReloadBlock` (`internal/resources/system_database_mode_test.go`); `TestSupportsTLSReload` (`internal/neo4j/version_test.go`).
 - **enforcement:** unit test; the reload itself is walked live.
 
+### id 122 — Diagnostics are written to status only when they change; a status write is a reconcile
+- **scope:** `clusterDiagnosticsWriteNeeded`, `diagnosticsStale`, `diagnosticsRefreshInterval`, `sortServerDiagnostics` and the write in `CollectDiagnostics` (`internal/controller/neo4jenterprisecluster_controller.go`); `standaloneDiagnosticsWriteNeeded` and `updateStandaloneDiagnostics` (`neo4jenterprisestandalone_controller.go`); `sortDatabaseDiagnostics`, `withoutTransactionCounters` (`internal/controller/diagnostics_databases.go`).
+- **rule:**
+  - **What counts as a change:** `status.diagnostics` (and the ServersHealthy/DatabasesHealthy conditions) is written only when something other than `lastCollected` changed, or the stored `lastCollected` is at least 5 minutes old. Not changes:
+    - rows in a different order: SHOW DATABASES and SHOW SERVERS return them unordered, and database rows carry no address, so the lists are sorted before writing and comparing;
+    - the databases' `lastCommittedTxn` and `replicationLag`, which move with every write.
+  - **Why it matters:** the cluster and standalone controllers have no event filter, so any status write re-enqueues the object at once. A per-pass write is a reconcile loop. Any new per-reconcile status field must follow the same compare-before-write rule.
+- **why:** #475. Each pass wrote a fresh `lastCollected`, so a Ready cluster reconciled continuously: 25–37 a minute on Kind in dev mode, each dialling every server for split-brain detection.
+  - The first fix still left 13–29 a minute: the `writer` flag moved between database rows on every pass. Sorting the rows fixed it.
+  - After the fix, measured 2026-10-08 on 2026.08.1 with 3 servers: 5–8 a minute in dev mode, all from the dev cache's 30s resync (`configureDevelopmentCache`), and **2 a minute in production mode**, the 30s requeue.
+- **pinned-by:** `TestClusterDiagnosticsWriteNeeded`, `TestStandaloneDiagnosticsWriteNeeded`, `TestDiagnosticsWriteNeeded_IgnoresRowOrderAndTxnCounters` (`internal/controller/diagnostics_write_test.go`).
+- **enforcement:** unit test; the rate is measured live.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

@@ -122,10 +122,14 @@ func TestToDatabaseDiagnostics_ShardTypesPassThrough(t *testing.T) {
 		{Name: "composite-db", Type: "composite", Access: "read-only"},
 	}
 
-	got := toDatabaseDiagnostics(in)
-	for i, want := range []string{"graph shard", "property shard", "composite"} {
-		if got[i].Type != want {
-			t.Errorf("row %d: expected type %q, got %q", i, want, got[i].Type)
+	// Rows come back sorted (#475), so look them up by name.
+	got := map[string]string{}
+	for _, d := range toDatabaseDiagnostics(in) {
+		got[d.Name] = d.Type
+	}
+	for name, want := range map[string]string{"sharded": "graph shard", "props": "property shard", "composite-db": "composite"} {
+		if got[name] != want {
+			t.Errorf("%s: expected type %q, got %q", name, want, got[name])
 		}
 	}
 }
