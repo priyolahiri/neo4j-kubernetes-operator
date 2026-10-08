@@ -708,6 +708,20 @@
 - **pinned-by:** `TestDrainAlreadyUnderway` (the live error texts, plus a real refusal that must still block), `TestPlanScaleDownStep` (`internal/controller/scale_down_test.go`).
 - **enforcement:** unit test; the race is walked live.
 
+### id 124 — Deleting a TLS deployment deletes the Secret cert-manager issued for it, and only that
+- **scope:** `deleteIssuedTLSSecret` (`internal/controller/tls_secret_cleanup.go`); its calls in the cluster's `handleDeletion` and the standalone's `handleDeletion`.
+- **rule:**
+  - **What is deleted:** on deletion, `{name}-tls-secret` is deleted when its `cert-manager.io/certificate-name` annotation names this deployment's Certificate. That is `{name}-tls` for a cluster and `{name}-tls-cert` for a standalone; the two Kinds name it differently.
+  - **What is kept:** a Secret the user created, or one issued for another Certificate.
+  - **Failure:** logged, never blocks deletion.
+  - **Retention:** data retention does not apply, since a re-created deployment is issued a new certificate.
+- **why:** #479. The operator owns the Certificate, so garbage collection removes it, but cert-manager leaves the Secrets it issues unless it runs with `--enable-certificate-owner-ref` (default false). Every deleted TLS deployment left its certificate and private key behind, and #469's name-based Secret watch then reconciled deployments that no longer existed. Walked live on Kind 2026-10-08:
+  - TLS standalone and TLS cluster deleted: their Secrets were gone.
+  - Non-TLS standalone with a hand-made `ux-tls-secret`: the Secret was kept, with a log line saying why.
+  - The first cut assumed `{name}-tls` for both Kinds, and the live walk caught the standalone's `{name}-tls-cert`.
+- **pinned-by:** `TestDeleteIssuedTLSSecret`, `TestHandleDeletion_DeletesTheIssuedTLSSecret` (both Kinds' real deletion paths) (`internal/controller/tls_secret_cleanup_test.go`).
+- **enforcement:** unit test.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

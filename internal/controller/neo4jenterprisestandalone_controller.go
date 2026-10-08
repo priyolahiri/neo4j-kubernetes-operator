@@ -242,6 +242,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 		return ctrl.Result{}, err
 	}
 
+	// cert-manager leaves the Secret it issued behind when the Certificate is
+	// garbage-collected (#479). Not worth blocking deletion over.
+	if err := deleteIssuedTLSSecret(ctx, r.Client, standalone.Namespace, standalone.Name, standalone.Name+"-tls-cert"); err != nil {
+		logger.Error(err, "Failed to delete the TLS Secret issued for this standalone")
+	}
+
 	// Remove finalizer
 	controllerutil.RemoveFinalizer(standalone, StandaloneFinalizer)
 	if err := r.Update(ctx, standalone); err != nil {
