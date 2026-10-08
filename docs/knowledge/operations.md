@@ -699,6 +699,15 @@
 - **pinned-by:** `TestClusterDiagnosticsWriteNeeded`, `TestStandaloneDiagnosticsWriteNeeded`, `TestDiagnosticsWriteNeeded_IgnoresRowOrderAndTxnCounters` (`internal/controller/diagnostics_write_test.go`).
 - **enforcement:** unit test; the rate is measured live.
 
+### id 123 — A scale-down drain decides from the system leader's view, and "already underway" is progress
+- **scope:** `ListServersFromLeader` (`internal/neo4j/client.go`); `drainAlreadyUnderway` and its uses in the pre-flight dry run, the DEALLOCATE step and the DROP step (`internal/controller/scale_down.go`).
+- **rule:**
+  - **Read from the leader:** the drain reads `SHOW SERVERS` from the system database's leader, through a write-routed session. A read session goes to a follower, whose copy of `system` can lag the leader where CORDON, DEALLOCATE and DROP SERVER take effect.
+  - **Already underway is progress:** a Neo4j refusal saying a server "is already deallocating", "already deallocated" or "already dropped" means the step was already taken. The pass ends quietly and the next one reads again; it never raises `ScaleDownBlocked`. Every other refusal still blocks: an infeasible topology, a single-primary database, the voting floor.
+- **why:** #476. Acting on a lagging read, a pass re-ran the dry run on servers the leader had already started deallocating or had dropped. Neo4j refused it, and the operator raised `ScaleDownBlocked` while the scale-down went on to complete. Measured on Kind 2026-10-08 (2026.08.1, 3↔5 servers, with the #475 reconcile loop still present to make the race likely): on main, one of three rounds raised the false warning; with the fix, none of five rounds did, and the fallback never fired, so the leader read alone kept the view current.
+- **pinned-by:** `TestDrainAlreadyUnderway` (the live error texts, plus a real refusal that must still block), `TestPlanScaleDownStep` (`internal/controller/scale_down_test.go`).
+- **enforcement:** unit test; the race is walked live.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

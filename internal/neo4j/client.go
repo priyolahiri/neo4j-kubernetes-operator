@@ -2007,8 +2007,21 @@ func getCredentials(ctx context.Context, k8sClient client.Client, namespace, sec
 // Returns an empty slice on a standalone (single-node) deployment — the
 // procedure still works but produces a list of 1.
 func (c *Client) ListServers(ctx context.Context) ([]ServerInfo, error) {
+	return c.listServers(ctx, neo4j.AccessModeRead)
+}
+
+// ListServersFromLeader is ListServers read on the system database's leader.
+// A read session is routed to a follower, whose copy of `system` can lag the
+// leader where CORDON, DEALLOCATE and DROP SERVER take effect: a scale-down
+// that acted on such a read re-ran a step Neo4j had already taken and raised a
+// false ScaleDownBlocked (#476). A write session goes to the leader.
+func (c *Client) ListServersFromLeader(ctx context.Context) ([]ServerInfo, error) {
+	return c.listServers(ctx, neo4j.AccessModeWrite)
+}
+
+func (c *Client) listServers(ctx context.Context, mode neo4j.AccessMode) ([]ServerInfo, error) {
 	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
-		AccessMode:   neo4j.AccessModeRead,
+		AccessMode:   mode,
 		DatabaseName: "system",
 	})
 	defer session.Close(ctx)
