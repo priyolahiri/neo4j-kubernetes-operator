@@ -8458,7 +8458,7 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>lastCollected</code></td>
 <td><code>string</code> (RFC3339)</td>
-<td>Timestamp of the most recent successful collection.</td>
+<td>When the diagnostics were last written. They are collected on every reconcile but written only when something in them changes (a server, a database, the users, the roles, an error) or at least every 5 minutes, so this is at most 5 minutes old while the cluster is reconciling. The databases' <code>lastCommittedTxn</code> and <code>replicationLag</code> move with every write and do not count as a change: they are a snapshot from the last write.</td>
 </tr>
 <tr>
 <td><code>collectionError</code></td>

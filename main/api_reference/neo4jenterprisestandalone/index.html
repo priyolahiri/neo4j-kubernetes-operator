@@ -6112,7 +6112,7 @@ changes meaning under a running deployment.</p>
 <tr>
 <td><code>lastCollected</code></td>
 <td><code>*metav1.Time</code></td>
-<td>Timestamp of last successful collection</td>
+<td>When the diagnostics were last written: only when something in them changes, or at least every 5 minutes (database transaction counters do not count as a change)</td>
 </tr>
 <tr>
 <td><code>collectionError</code></td>
