@@ -17,6 +17,8 @@ limitations under the License.
 package controller
 
 import (
+	"sort"
+
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
@@ -53,5 +55,52 @@ func toDatabaseDiagnostics(databases []neo4jclient.DatabaseInfo) []neo4jv1beta1.
 			ReplicationLag:   d.ReplicationLag,
 		})
 	}
+	sortDatabaseDiagnostics(out)
+	return out
+}
+
+// sortDatabaseDiagnostics orders the rows deterministically. SHOW DATABASES
+// returns them in no stable order (one row per database per server, with no
+// address to tell copies apart), so unsorted the same databases read as a
+// change on every pass and the status was rewritten each time (#475).
+func sortDatabaseDiagnostics(dbs []neo4jv1beta1.DatabaseDiagnosticInfo) {
+	sort.SliceStable(dbs, func(i, j int) bool {
+		a, b := dbs[i], dbs[j]
+		switch {
+		case a.Name != b.Name:
+			return a.Name < b.Name
+		case a.Role != b.Role:
+			return a.Role < b.Role
+		case a.Writer != b.Writer:
+			return a.Writer
+		case a.Status != b.Status:
+			return a.Status < b.Status
+		case a.RequestedStatus != b.RequestedStatus:
+			return a.RequestedStatus < b.RequestedStatus
+		case a.Type != b.Type:
+			return a.Type < b.Type
+		case a.Access != b.Access:
+			return a.Access < b.Access
+		default:
+			return a.LastCommittedTxn < b.LastCommittedTxn
+		}
+	})
+}
+
+// withoutTransactionCounters returns a copy of the rows without their
+// LastCommittedTxn and ReplicationLag, re-sorted. Those move with every write
+// to the database; status shows them as a snapshot, refreshed whenever
+// anything else changes and at least every diagnosticsRefreshInterval, so they
+// do not on their own make a diagnostics pass a change (#475).
+func withoutTransactionCounters(dbs []neo4jv1beta1.DatabaseDiagnosticInfo) []neo4jv1beta1.DatabaseDiagnosticInfo {
+	if dbs == nil {
+		return nil
+	}
+	out := make([]neo4jv1beta1.DatabaseDiagnosticInfo, len(dbs))
+	copy(out, dbs)
+	for i := range out {
+		out[i].LastCommittedTxn, out[i].ReplicationLag = 0, 0
+	}
+	sortDatabaseDiagnostics(out)
 	return out
 }

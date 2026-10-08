@@ -583,7 +583,7 @@ Live diagnostics collected from `SHOW DATABASES`, `SHOW USERS` and `SHOW ROLES` 
 | `userCount` | `int` | Total number of users observed, even when `users` is truncated |
 | `roles` | `[]RoleDiagnosticInfo` | Roles from `SHOW ROLES` (`role`, `immutable`); a bounded summary — see `roleCount` |
 | `roleCount` | `int` | Total number of roles observed, even when `roles` is truncated |
-| `lastCollected` | `*metav1.Time` | Timestamp of last successful collection |
+| `lastCollected` | `*metav1.Time` | When the diagnostics were last written: only when something in them changes, or at least every 5 minutes (database transaction counters do not count as a change) |
 | `collectionError` | `string` | Error message if collection failed (empty on success) |
 
 #### `observedGeneration` (int64)

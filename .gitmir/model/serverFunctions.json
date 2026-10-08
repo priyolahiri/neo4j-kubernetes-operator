@@ -142,7 +142,7 @@
     "name": "Collect Cluster Diagnostics",
     "serverUnitId": "su-diagnostics",
     "operation": "business_action",
-    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down —, fills the address of a server that is down from the per-cluster address book (SHOW SERVERS reports none for it), and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller.",
+    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down —, fills the address of a server that is down from the per-cluster address book (SHOW SERVERS reports none for it), and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -157,7 +157,7 @@
     "name": "Collect Standalone Diagnostics",
     "serverUnitId": "su-diagnostics",
     "operation": "business_action",
-    "description": "Runs SHOW DATABASES (plus users/roles) against a Ready standalone instance and writes status.diagnostics; non-fatal, mirroring the cluster path's collectionError-only error handling.",
+    "description": "Runs SHOW DATABASES (plus users/roles) against a Ready standalone instance and writes status.diagnostics; non-fatal, mirroring the cluster path's collectionError-only error handling. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
