@@ -722,6 +722,29 @@
 - **pinned-by:** `TestDeleteIssuedTLSSecret`, `TestHandleDeletion_DeletesTheIssuedTLSSecret` (both Kinds' real deletion paths) (`internal/controller/tls_secret_cleanup_test.go`).
 - **enforcement:** unit test.
 
+### id 125 — A Ready deployment polls on its own interval; a Ready cluster's full split-brain check runs at most every `--split-brain-check-interval` unless a server pod changed
+- **scope:** `readyPollInterval`, `serverPodsFingerprint`, `splitBrainCheckSkippable`, `skipSplitBrainCheck`, `recordCleanSplitBrainCheck` (`internal/controller/reconcile_cadence.go`); their use in `verifyNeo4jClusterFormation` and in the Ready return of the cluster and standalone `Reconcile`; flags `--ready-poll-interval` and `--split-brain-check-interval` (`cmd/main.go`, Helm `readyPollInterval`, `splitBrainCheckInterval`).
+- **rule:**
+  - **Ready poll:** only the Ready return uses `--ready-poll-interval` (default 30s). Every other return keeps `RequeueAfter`: forming, rolling, short of a server, upgrading. A long poll must never slow a deployment that is converging. A shorter TLS-reload requeue still wins.
+  - **When the full check is skipped:** all of these must hold.
+    - The cluster's phase is `Ready`. `Degraded`, `Forming` and recovery check in full.
+    - `SHOW SERVERS` through the client Service lists at least `spec.topology.servers` servers `Enabled` and `Available`.
+    - A clean full check is on record within the interval, against the same server pods. The fingerprint is each pod's name, UID, phase, readiness, container restart counts and whether it is being deleted, so a pod that is deleted or recreated, restarts a container or changes readiness checks on that pass.
+  - **What is recorded:** only a full check that compared every server's view (phase `Ready`) and found the cluster whole. The full path clears the record first, so a split-brain, a shortfall, an error or the legacy fallback leaves nothing, and the next pass checks in full.
+  - **In memory:** an operator restart or a leader change checks in full on its first pass.
+  - **Flags:** `--split-brain-check-interval=0s` checks on every pass; a negative value, or a `--ready-poll-interval` that is not positive, stops the operator at startup.
+- **why:** with the loop of #475 fixed (id 122), a Ready cluster still reconciled twice a minute, and every pass opened a Bolt connection to each server for split-brain detection. Across a fleet of large clusters that is N connections per cluster every 30 seconds. The fingerprint keeps detection prompt where it matters: a server that comes back and forms its own cluster does so when its pod is recreated or restarts. Measured on Kind 2026-10-08, production mode, 2026.08.1, 3 servers:
+  - **Defaults, quiet cluster, 11 minutes:** 24 reconciles, 2 full checks five minutes apart, 6 per-pod connections instead of 72.
+  - **A server pod deleted:** full checks on every pass while it was down, one when its pod started and one the moment it turned ready (its fingerprint changed), then skips. The phase stayed `Ready`.
+  - **A container restarted (`kill 1` in the neo4j container):** full checks when it went down, when it restarted (its restart count changed) and when it turned ready.
+  - **Operator restarted:** its first pass checked in full.
+  - **`--ready-poll-interval=2m`, 10 minutes:** 7 reconciles. That is 5 polls, plus 2 passes that follow the 5-minute diagnostics refresh write of id 122. There was 1 full check.
+  - **Standalone with `--ready-poll-interval=2m`, 10 minutes:** 7 reconciles, the same pattern: 5 polls two minutes apart, plus 2 passes after the diagnostics refresh.
+  - **`--split-brain-check-interval=0s`:** 5 minutes, 11 reconciles, 11 full checks and 33 per-pod connections: the previous behaviour.
+  - **First cut:** a pass skipped while a server pod was terminating, before its replacement existed. The rollout check still held the cluster in the shortfall path, but a pod being deleted is a change, so `deletionTimestamp` joined the fingerprint.
+- **pinned-by:** `TestReadyPollInterval`, `TestServerPodsFingerprint`, `TestSplitBrainCheckSkippable`, `TestSkipSplitBrainCheck_TracksTheLastCleanCheck` (`internal/controller/reconcile_cadence_test.go`).
+- **enforcement:** unit test; the cadence is measured live.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

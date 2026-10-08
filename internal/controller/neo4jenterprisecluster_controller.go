@@ -72,6 +72,17 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// server before its phase turns Degraded (#444); zero uses
 	// DefaultServerUnavailableGrace. Set from --server-unavailable-grace.
 	ServerUnavailableGrace time.Duration
+	// ReadyPollInterval is how long a Ready cluster waits for its next pass
+	// when nothing in Kubernetes changes; zero uses RequeueAfter. Set from
+	// --ready-poll-interval.
+	ReadyPollInterval time.Duration
+	// SplitBrainCheckInterval is how long a Ready cluster whose server pods
+	// have not changed goes between full split-brain checks; zero checks on
+	// every pass. Set from --split-brain-check-interval.
+	SplitBrainCheckInterval time.Duration
+	// splitBrainChecks records, per cluster (key ns/name), the last full
+	// split-brain check that found the cluster whole (splitBrainCheck).
+	splitBrainChecks sync.Map
 	// RestartPendingChecker reads each server's settings for the RestartPending
 	// condition (#468). nil uses Bolt; tests inject a fake.
 	RestartPendingChecker *restartPendingChecker
@@ -783,7 +794,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	// Reload a renewed TLS certificate on the running servers (#469).
-	requeue := r.RequeueAfter
+	requeue := readyPollInterval(r.ReadyPollInterval, r.RequeueAfter)
 	if d := r.reconcileClusterTLSReload(ctx, cluster); d > 0 && (requeue == 0 || d < requeue) {
 		requeue = d
 	}
@@ -816,6 +827,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, cluster)
 	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
 	r.availabilityAnnounced.Delete(clusterKey(cluster))
+	r.splitBrainChecks.Delete(clusterKey(cluster))
 	forgetServerAddresses(cluster)
 
 	// Clean up PVCs if retention policy is Delete (default behavior)
@@ -2153,14 +2165,29 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 	}
 	r.clearConnectivityFailures(ctx, cluster)
 
-	// Now perform split-brain detection since Neo4j is responsive
-	logger.Info("Neo4j is responsive, performing split-brain detection")
-
 	// Use the reconciler's SplitBrainDetector if available, otherwise create a new one
 	splitBrainDetector := r.SplitBrainDetector
 	if splitBrainDetector == nil {
 		splitBrainDetector = NewSplitBrainDetector(r.Client)
 	}
+
+	// A Ready cluster that is whole through the client Service, and whose
+	// server pods have not changed since a full check found it whole, waits
+	// for --split-brain-check-interval between full checks: each one opens a
+	// Bolt connection to every server.
+	skip, podsFingerprint := r.skipSplitBrainCheck(ctx, cluster, splitBrainDetector, servers)
+	if skip {
+		available := countAvailableServers(servers)
+		logger.V(1).Info("Skipping split-brain detection: a recent check found the cluster whole and no server pod has changed",
+			"available", available, "expected", expectedServers, "interval", r.SplitBrainCheckInterval)
+		return formationCheck{formed: true, message: fmt.Sprintf("Cluster formation complete: %d/%d servers available", available, expectedServers), servers: servers}, nil
+	}
+	// Only a check that finds the cluster whole is recorded below; any other
+	// outcome leaves nothing, so the next pass checks again.
+	r.splitBrainChecks.Delete(clusterKey(cluster))
+
+	// Now perform split-brain detection since Neo4j is responsive
+	logger.Info("Neo4j is responsive, performing split-brain detection")
 	analysis, err := splitBrainDetector.DetectSplitBrain(ctx, cluster)
 	if err != nil {
 		logger.Error(err, "Failed to perform split-brain detection, falling back to legacy check")
@@ -2225,6 +2252,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		}
 
 		if availableServers >= expectedServers {
+			r.recordCleanSplitBrainCheck(cluster, podsFingerprint, time.Now())
 			return formationCheck{formed: true, message: fmt.Sprintf("Cluster formation complete: %d/%d servers available", availableServers, expectedServers), servers: servers}, nil
 		}
 		return formationCheck{message: fmt.Sprintf("Cluster forming: %d/%d servers available", availableServers, expectedServers), servers: servers}, nil
