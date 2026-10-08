@@ -276,7 +276,7 @@
     "name": "Drain Server For Scale-Down",
     "serverUnitId": "su-scale-down",
     "operation": "business_action",
-    "description": "Drives one cordon/deallocate/wait/drop step per reconcile for servers being removed by a topology scale-down, gating on a DEALLOCATE dry-run and the system database's minimum-voting-member floor before ever cordoning a server.",
+    "description": "Drives one cordon/deallocate/wait/drop step per reconcile for servers being removed by a topology scale-down, gating on a DEALLOCATE dry-run and the system database's minimum-voting-member floor before ever cordoning a server. Each step is decided from SHOW SERVERS read on the system leader (a follower's view can lag), and a refusal saying a server is already deallocating or dropped is treated as progress, not a block (#476).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

@@ -23,6 +23,7 @@ package controller
 // requirement was found.)
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 
@@ -132,4 +133,23 @@ func TestPlanScaleDownStep(t *testing.T) {
 		step := planScaleDownStep([]neo4jclient.ServerInfo{sv(a(3), "Enabled"), {ID: "id-y", State: "Deallocated"}})
 		assert.Equal(t, scaleDownCordon, step.phase)
 	})
+}
+
+// TestDrainAlreadyUnderway pins #476 with the errors Neo4j 2026.08.1 returned
+// live when a pass re-ran a drain step it had already taken: progress, not a
+// block. A real refusal (an infeasible topology) still blocks.
+func TestDrainAlreadyUnderway(t *testing.T) {
+	for msg, want := range map[string]bool{
+		"DRYRUN DEALLOCATE DATABASES FROM SERVER 'a', 'b': Neo4jError: Neo.ClientError.Statement.ArgumentError (Could not deallocate server(s) 'a,b'. Server 'a' is already deallocating.)": true,
+		"DRYRUN DEALLOCATE DATABASES FROM SERVER 'a', 'b': Neo4jError: Neo.ClientError.Statement.ArgumentError (Could not deallocate server(s) 'a,b'. Server 'a' is already dropped.)":      true,
+		"Could not deallocate server(s) 'a'. Database 'neo4j' has only one primary and cannot be moved":                                                                                     false,
+		"connection refused": false,
+	} {
+		if got := drainAlreadyUnderway(errors.New(msg)); got != want {
+			t.Errorf("%q: got %v, want %v", msg, got, want)
+		}
+	}
+	if drainAlreadyUnderway(nil) {
+		t.Error("nil is not an error")
+	}
 }

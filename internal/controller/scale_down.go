@@ -195,6 +195,24 @@ func planScaleDownStep(active []neo4jclient.ServerInfo) scaleDownStep {
 	}
 }
 
+// drainAlreadyUnderway reports whether Neo4j refused a drain step because the
+// server is already past it — "Server '…' is already deallocating." or "…
+// is already dropped." (2026.08.1). It means the pass acted on a view older
+// than Neo4j's, so it is progress, never a reason to report the scale-down as
+// blocked (#476).
+func drainAlreadyUnderway(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	for _, s := range []string{"is already deallocating", "is already deallocated", "is already dropped"} {
+		if strings.Contains(msg, s) {
+			return true
+		}
+	}
+	return false
+}
+
 // hostsOnlySystem reports whether a server hosts no user databases — only the
 // `system` database (or nothing). Such a draining server is safe to DROP.
 func hostsOnlySystem(s neo4jclient.ServerInfo) bool {
@@ -261,7 +279,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	}
 	defer nc.Close()
 
-	servers, err := nc.ListServers(ctx)
+	servers, err := nc.ListServersFromLeader(ctx)
 	if err != nil {
 		logger.Info("Scale-down drain: SHOW SERVERS failed, holding replicas", "error", err)
 		return nil
@@ -354,6 +372,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 			activeIDs = append(activeIDs, serverIdentifier(s))
 		}
 		if derr := nc.DeallocateServers(ctx, activeIDs, true); derr != nil {
+			if drainAlreadyUnderway(derr) {
+				logger.V(1).Info("Scale-down drain: a server is already further along than this read showed; next pass", "error", derr.Error())
+				return nil
+			}
 			msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. Give single-primary databases an additional primary (ALTER DATABASE ... SET TOPOLOGY) or keep the servers — the operator will not auto-reduce topology. No server has been cordoned; replicas are held until this is resolvable.", desired, derr)
 			if !scaleDownConditionIs(cluster, ConditionReasonScaleDownBlocked) {
 				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
@@ -376,6 +398,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 			"Scale-down: cordoned %d server(s): %s", len(step.serverIDs), strings.Join(step.serverIDs, ", "))
 	case scaleDownDeallocate:
 		if derr := nc.DeallocateServers(ctx, step.serverIDs, true); derr != nil {
+			if drainAlreadyUnderway(derr) {
+				logger.V(1).Info("Scale-down drain: a server is already further along than this read showed; next pass", "error", derr.Error())
+				return nil
+			}
 			msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. Reduce database topology (ALTER DATABASE ... SET TOPOLOGY) or keep the servers — the operator will not auto-reduce topology. Replicas are held until this is resolvable.", desired, derr)
 			if !scaleDownConditionIs(cluster, ConditionReasonScaleDownBlocked) {
 				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
@@ -384,7 +410,9 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 			return nil
 		}
 		if derr := nc.DeallocateServers(ctx, step.serverIDs, false); derr != nil {
-			logger.Error(derr, "Scale-down drain: deallocate failed", "servers", step.serverIDs)
+			if !drainAlreadyUnderway(derr) {
+				logger.Error(derr, "Scale-down drain: deallocate failed", "servers", step.serverIDs)
+			}
 			return nil
 		}
 		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonScaleDownDraining,
@@ -394,6 +422,9 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	case scaleDownDrop:
 		for _, id := range step.serverIDs {
 			if derr := nc.DropServer(ctx, id); derr != nil {
+				if drainAlreadyUnderway(derr) {
+					continue // dropped already: progress, not a block (#476)
+				}
 				// A DROP failure here is typically the system-db minimum-voting-
 				// members floor (defensive — the pre-flight above normally
 				// catches it). Surface it as blocked rather than looping.
