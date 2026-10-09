@@ -397,6 +397,90 @@ behaviour changes below take effect on the first reconcile.
 - Operator flag `--server-unavailable-grace` (default `5m`) and Helm value
   `serverUnavailableGrace`.
 
+## Upgrading from v1.19.x
+
+Apply the new CRDs with the operator; the only change is the description of
+`spec.topology.minSystemPrimaries`. **Upgrading the operator restarts no
+server.** The new startup-script blocks it adds take effect at each server's
+next restart, and the operator does not restart servers for them. The
+behaviour changes below take effect on the first reconcile.
+
+### Behaviour changes
+
+- **A new cluster of more than three servers has three `system` primaries.**
+  Each server's role for the `system` database is now fixed at its first
+  start: servers below `spec.topology.minSystemPrimaries` (default
+  `min(3, servers)`) are primaries, the rest secondaries. Before, every server
+  was a primary. `system` (databases, users, roles) stays writable while a
+  majority of its primaries is up — with the default, two of servers 0–2,
+  however large the cluster. Set `minSystemPrimaries` to an odd number above
+  3 if you need more. Servers that already exist keep their role. See
+  [System primaries and secondaries](clustering.md#system-primaries-and-secondaries).
+- **Scaling up restarts nothing**, as long as every added server is a system
+  secondary (with the default, any scale-up from three servers or more); a
+  `ScaledWithoutRestart` event says so. A scale-up that adds a system
+  primary, such as 2 → 3, still restarts the servers. Scaling down restarts
+  nothing.
+- **Changing a setting Neo4j can change at runtime restarts nothing.** When a
+  `spec.config` change touches only dynamic settings, the operator applies it
+  to every running server (`dbms.setConfigValue`) and then writes it to
+  `neo4j.conf`, raising `ConfigAppliedLive`. Anything else restarts the
+  servers as before, and `ConfigNeedsRestart` names the setting and the
+  reason. A change to comments or blank lines in the rendered configuration
+  restarts nothing either. See
+  [Which changes restart the servers](configuration.md#which-changes-restart-the-servers).
+- **5.26 clusters stop stalling writes while a server is down.** On
+  5.26.29 and later the operator enables
+  `dbms.cluster.raft.async_channel_acquisition_enabled`, which stops the
+  leader waiting up to 30 seconds for a stopped member. Existing servers get
+  it at their next restart; until then the new `RestartPending` condition
+  names them. See
+  [5.26: writes while a server is stopped](clustering.md#526-writes-while-a-server-is-stopped).
+- **Renewed TLS certificates are reloaded without a restart** with
+  `spec.tls.mode: cert-manager` on CalVer 2025.03 and later. The operator
+  enables `dbms.security.tls_reload_enabled` and reloads each renewal,
+  raising `TLSCertificateReloaded`. Existing
+  servers get the setting at their next restart (`RestartPending` names them
+  on a cluster); until then a renewal reaches them only when they restart,
+  and a `TLSCertificateNeedsRestart` Warning names them. On 5.26 a renewal
+  still takes effect at the next restart. See
+  [TLS certificate rotation](security.md#tls-certificate-rotation).
+- **Deleting a TLS deployment deletes its certificate Secret.** cert-manager
+  leaves the Secrets it issues behind, so `{name}-tls-secret` (a certificate
+  and private key) outlived every deleted cluster and standalone. The
+  operator now deletes it when cert-manager issued it for that deployment's
+  Certificate; a Secret of that name you created yourself is kept.
+- **A Ready cluster reconciles twice a minute, not continuously.** Each pass
+  wrote a fresh `status.diagnostics.lastCollected`, which re-queued the
+  cluster at once. Diagnostics are now written when they change, or at least
+  every 5 minutes, so `lastCollected` can be up to 5 minutes old on a healthy
+  cluster; alert on the conditions (`ServersHealthy`, `DatabasesHealthy`),
+  not on its age. The standalone is the same.
+- **Split-brain detection is paced on a quiet cluster.** The full check,
+  which connects to every server, runs on a `Ready` cluster at most every
+  5 minutes while no server pod changes, and at once when one is deleted,
+  recreated, restarts or changes readiness, or when a server is missing from
+  `SHOW SERVERS`. `--split-brain-check-interval=0s` checks on every pass, as
+  before. See [Many large clusters](guides/performance.md#many-large-clusters).
+- **A scale-down no longer raises a false `ScaleDownBlocked`.** A drain step
+  Neo4j had already taken ("already deallocating", "already dropped") was
+  reported as a blocked scale-down while it went on to complete.
+
+### New, no action needed
+
+- Operator flags `--ready-poll-interval` (default `30s`) and
+  `--split-brain-check-interval` (default `5m`); Helm values
+  `readyPollInterval` and `splitBrainCheckInterval`.
+- Condition `RestartPending` on `Neo4jEnterpriseCluster`.
+- Events `ConfigAppliedLive`, `ConfigNeedsRestart`, `ScaledWithoutRestart`,
+  `TLSCertificateReloaded` and `TLSCertificateNeedsRestart`.
+- Annotations the operator records: `neo4j.com/deferred-settings` and
+  `neo4j.com/deferred-settings-since` on the cluster ConfigMap,
+  `neo4j.com/tls-certificate` on the StatefulSet of a TLS deployment, and
+  `neo4j.com/config-semantic-hash` on the standalone's StatefulSet. Each
+  cluster server records its `system` role in
+  `/data/.neo4j-operator/system-database-mode`.
+
 ## Upgrading between future releases
 
 When a newer version ships:
@@ -407,7 +491,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.19.0/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.20.0/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:
