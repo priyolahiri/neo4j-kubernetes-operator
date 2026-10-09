@@ -337,6 +337,7 @@ kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail
 - **`plugins/`** - Plugin installation examples (APOC, GDS, Bloom, etc.)
 - **`property_sharding/`** - Property-sharded database examples (Neo4j 2025.12+)
 - **`security/`** - NetworkPolicy and policy-as-code examples
+- **`observability/`** - An OpenTelemetry Collector for Neo4j's metrics and its logs on standard output (`spec.monitoring.logs`)
 - **`users-roles/`** - Declarative user, role, and privilege management via the `Neo4jUser` and `Neo4jRole` CRDs
 - **`end-to-end/`** - Complete deployment scenarios for production use
 
