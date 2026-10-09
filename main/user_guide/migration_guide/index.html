@@ -800,15 +800,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#upgrading-from-v119x" class="md-nav__link">
+  <a href="#upgrading-from-v1190" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Upgrading from v1.19.x
+        Upgrading from v1.19.0
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Upgrading from v1.19.x">
+    <nav class="md-nav" aria-label="Upgrading from v1.19.0">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -4219,15 +4219,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#upgrading-from-v119x" class="md-nav__link">
+  <a href="#upgrading-from-v1190" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Upgrading from v1.19.x
+        Upgrading from v1.19.0
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Upgrading from v1.19.x">
+    <nav class="md-nav" aria-label="Upgrading from v1.19.0">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -4704,7 +4704,7 @@ behaviour changes below take effect on the first reconcile.</p>
 <li>Operator flag <code>--server-unavailable-grace</code> (default <code>5m</code>) and Helm value
   <code>serverUnavailableGrace</code>.</li>
 </ul>
-<h2 id="upgrading-from-v119x">Upgrading from v1.19.x<a class="headerlink" href="#upgrading-from-v119x" title="Anchor link to this section">&para;</a></h2>
+<h2 id="upgrading-from-v1190">Upgrading from v1.19.0<a class="headerlink" href="#upgrading-from-v1190" title="Anchor link to this section">&para;</a></h2>
 <p>Apply the new CRDs with the operator; the only change is the description of
 <code>spec.topology.minSystemPrimaries</code>. <strong>Upgrading the operator restarts no
 server.</strong> The new startup-script blocks it adds take effect at each server's
@@ -4802,7 +4802,7 @@ behaviour changes below take effect on the first reconcile.</p>
    bundle for the version you are upgrading to (replace the tag):</li>
 </ol>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.20.0/neo4j-kubernetes-operator.yaml
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.19.1/neo4j-kubernetes-operator.yaml
 </span></code></pre></div>
 <ol>
 <li><strong>Upgrade the operator</strong> via Helm:</li>
