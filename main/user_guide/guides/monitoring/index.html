@@ -1829,6 +1829,8 @@
       
         
       
+        
+      
     
     
     
@@ -2338,6 +2340,34 @@
     
   
     Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../opentelemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenTelemetry
   
 
     
@@ -4550,7 +4580,7 @@
 
 
 <h1 id="monitoring">Monitoring<a class="headerlink" href="#monitoring" title="Anchor link to this section">&para;</a></h1>
-<p>This guide explains how to expose Neo4j metrics for Prometheus and where the operator wires things for you. For a complete end-to-end setup with Grafana dashboards and alerting, see the <a href="../prometheus-grafana-setup/">Prometheus and Grafana Setup Guide</a>.</p>
+<p>This guide explains how to expose Neo4j metrics for Prometheus and where the operator wires things for you. For a complete end-to-end setup with Grafana dashboards and alerting, see the <a href="../prometheus-grafana-setup/">Prometheus and Grafana Setup Guide</a>. To send Neo4j's metrics and logs into an OpenTelemetry pipeline instead, see <a href="../opentelemetry/">OpenTelemetry</a>.</p>
 <h2 id="enable-metrics-via-specmonitoring">Enable metrics via <code>spec.monitoring</code><a class="headerlink" href="#enable-metrics-via-specmonitoring" title="Anchor link to this section">&para;</a></h2>
 <p>The operator uses Neo4j's built-in Prometheus endpoint (see https://neo4j.com/docs/operations-manual/current/monitoring/metrics/expose/). When <code>spec.monitoring.enabled</code> is true, the operator:</p>
 <ul>

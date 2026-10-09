@@ -1825,6 +1825,8 @@
       
         
       
+        
+      
     
     
     
@@ -1910,6 +1912,34 @@
     
   
     Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/opentelemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenTelemetry
   
 
     
@@ -5806,7 +5836,10 @@ separate Neo4jPlugin resources for all plugin management:</p>
 </span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">  </span><span class="nt">slowQueryThreshold</span><span class="p">:</span><span class="w"> </span><span class="s">"5s"</span>
 </span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">  </span><span class="nt">queryLogLevel</span><span class="p">:</span><span class="w"> </span><span class="s">"INFO"</span>
 </span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">  </span><span class="nt">obfuscateLiterals</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">false</span>
+</span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">  </span><span class="nt">logs</span><span class="p">:</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">    </span><span class="nt">stdout</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">query</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">security</span><span class="p p-Indicator">]</span><span class="w">   </span><span class="c1"># Neo4j's logs on standard output as JSON</span>
 </span></code></pre></div>
+<p><code>logs.stdout</code> lists the logs (<code>query</code>, <code>security</code>, <code>debug</code>) to also write to the container's standard output, one JSON object per line, for a node-level log collector. Turning it on or off restarts the pod once; changing the list afterwards restarts nothing. Same field as <a href="../neo4jenterprisecluster/#monitoringlogsspec">Neo4jEnterpriseCluster's</a>; see <a href="../../user_guide/guides/opentelemetry/">OpenTelemetry</a>.</p>
 <h4 id="audit-auditspec"><code>audit</code> (AuditSpec)<a class="headerlink" href="#audit-auditspec" title="Anchor link to this section">&para;</a></h4>
 <p>Compliance-oriented logging — <code>security.log</code> + <code>query.log</code> tuning for
 PCI / HIPAA / GDPR. Same shape as

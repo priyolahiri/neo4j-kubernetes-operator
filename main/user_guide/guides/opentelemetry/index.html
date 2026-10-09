@@ -12,13 +12,13 @@
         <meta name="author" content="Priyo Lahiri">
       
       
-        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/seed-uri/">
+        <link rel="canonical" href="https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/opentelemetry/">
       
       
-        <link rel="prev" href="../plugins/">
+        <link rel="prev" href="../prometheus-grafana-setup/">
       
       
-        <link rel="next" href="../../aura_fleet_management/">
+        <link rel="next" href="../kubernetes-events/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>Seed URI - Neo4j Kubernetes Operator</title>
+        <title>OpenTelemetry - Neo4j Kubernetes Operator</title>
       
     
     
@@ -82,7 +82,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#neo4j-database-seed-uri-feature-guide" class="md-skip">
+        <a href="#opentelemetry" class="md-skip">
           Skip to content
         </a>
       
@@ -122,7 +122,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              Seed URI
+              OpenTelemetry
             
           </span>
         </div>
@@ -570,10 +570,8 @@
       
   
   
-    
   
   
-  
     
     
       
@@ -612,11 +610,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
         
           
           <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
@@ -637,7 +635,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
           <label class="md-nav__title" for="__nav_3">
             <span class="md-nav__icon md-icon"></span>
             
@@ -904,37 +902,10 @@
                 
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-  <span class="md-ellipsis">
-    
-  
-    Seed URI
-  
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="./" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../seed-uri/" class="md-nav__link">
         
   
   
@@ -950,392 +921,6 @@
   
 
       </a>
-      
-        
-
-<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      Table of contents
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Overview
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#supported-uri-schemes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Supported URI Schemes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#basic-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Basic Usage
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Basic Usage">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#simple-seed-uri-database" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Simple Seed URI Database
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#seeding-a-sharded-database" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Seeding a Sharded Database
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pvc-backed-seeds" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PVC-backed seeds
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#authentication-methods" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Authentication Methods
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Authentication Methods">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-system-wide-authentication-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. System-Wide Authentication (Recommended)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-explicit-credentials-via-secrets" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Explicit Credentials via Secrets
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#credential-requirements-by-provider" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Credential Requirements by Provider
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Credential Requirements by Provider">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#amazon-s3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Amazon S3
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#google-cloud-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Google Cloud Storage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#azure-blob-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Azure Blob Storage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#httphttpsftp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        HTTP/HTTPS/FTP
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#advanced-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Advanced Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Advanced Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#point-in-time-recovery-neo4j-2025x-only" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Point-in-Time Recovery (Neo4j 2025.x only)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#seed-provider-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Seed provider configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#file-format-considerations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        File Format Considerations
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="File Format Considerations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#backup-files-backup-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Backup Files (.backup) - Recommended
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#dump-files-dump-legacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Dump Files (.dump) - Legacy
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#database-topology-with-seed-uris" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Topology with Seed URIs
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#conflict-prevention" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Conflict Prevention
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#status-and-events" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status and Events
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#common-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common Issues
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#debugging-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Debugging Commands
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#security-best-practices" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security Best Practices
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Examples
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#neo4j-version-compatibility" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4j Version Compatibility
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#migration-from-s3seedprovider" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Migration from S3SeedProvider
-      
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -1961,8 +1546,10 @@
       
   
   
+    
   
   
+  
     
     
       
@@ -1993,11 +1580,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
         
           
           <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="">
@@ -2018,7 +1605,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2229,8 +1816,10 @@
                 
   
   
+    
   
   
+  
     
     
       
@@ -2248,11 +1837,11 @@
       
     
     
-    <li class="md-nav__item md-nav__item--nested">
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
       
         
         
-        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" >
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_8" checked>
         
           
           <label class="md-nav__link" for="__nav_6_8" id="__nav_6_8_label" tabindex="0">
@@ -2273,7 +1862,7 @@
             <span class="md-nav__icon md-icon"></span>
           </label>
         
-        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="false">
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_8_label" aria-expanded="true">
           <label class="md-nav__title" for="__nav_6_8">
             <span class="md-nav__icon md-icon"></span>
             
@@ -2344,10 +1933,37 @@
                 
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../opentelemetry/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenTelemetry
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
         
   
   
@@ -2363,6 +1979,87 @@
   
 
       </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#the-collector" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The Collector
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="The Collector">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#logs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Logs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#metrics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Metrics
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#things-to-know" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Things to know
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#see-also" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        See also
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -4165,44 +3862,22 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#overview" class="md-nav__link">
+  <a href="#the-collector" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Overview
+        The Collector
       
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#supported-uri-schemes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Supported URI Schemes
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#basic-usage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Basic Usage
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Basic Usage">
+    <nav class="md-nav" aria-label="The Collector">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#simple-seed-uri-database" class="md-nav__link">
+  <a href="#logs" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Simple Seed URI Database
+        Logs
       
     </span>
   </a>
@@ -4210,21 +3885,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#seeding-a-sharded-database" class="md-nav__link">
+  <a href="#metrics" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Seeding a Sharded Database
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#pvc-backed-seeds" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        PVC-backed seeds
+        Metrics
       
     </span>
   </a>
@@ -4237,188 +3901,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#authentication-methods" class="md-nav__link">
+  <a href="#things-to-know" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Authentication Methods
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Authentication Methods">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#1-system-wide-authentication-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        1. System-Wide Authentication (Recommended)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#2-explicit-credentials-via-secrets" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        2. Explicit Credentials via Secrets
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#credential-requirements-by-provider" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Credential Requirements by Provider
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Credential Requirements by Provider">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#amazon-s3" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Amazon S3
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#google-cloud-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Google Cloud Storage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#azure-blob-storage" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Azure Blob Storage
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#httphttpsftp" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        HTTP/HTTPS/FTP
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#advanced-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Advanced Configuration
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Advanced Configuration">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#point-in-time-recovery-neo4j-2025x-only" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Point-in-Time Recovery (Neo4j 2025.x only)
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#seed-provider-configuration" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Seed provider configuration
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#file-format-considerations" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        File Format Considerations
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="File Format Considerations">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#backup-files-backup-recommended" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Backup Files (.backup) - Recommended
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#dump-files-dump-legacy" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Dump Files (.dump) - Legacy
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#database-topology-with-seed-uris" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Database Topology with Seed URIs
+        Things to know
       
     </span>
   </a>
@@ -4426,104 +3912,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#conflict-prevention" class="md-nav__link">
+  <a href="#see-also" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Conflict Prevention
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#status-and-events" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Status and Events
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#troubleshooting" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Troubleshooting
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Troubleshooting">
-      <ul class="md-nav__list">
-        
-          <li class="md-nav__item">
-  <a href="#common-issues" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common Issues
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#debugging-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Debugging Commands
-      
-    </span>
-  </a>
-  
-</li>
-        
-      </ul>
-    </nav>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#security-best-practices" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Security Best Practices
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#examples" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Examples
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#neo4j-version-compatibility" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Neo4j Version Compatibility
-      
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#migration-from-s3seedprovider" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Migration from S3SeedProvider
+        See also
       
     </span>
   </a>
@@ -4547,7 +3939,7 @@
 
 
   
-    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/seed-uri.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
+    <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/edit/main/docs/user_guide/guides/opentelemetry.md" title="Edit this page" class="md-content__button md-icon" rel="edit">
       
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M10 20H6V4h7v5h5v3.1l2-2V8l-6-6H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h4zm10.2-7c.1 0 .3.1.4.2l1.3 1.3c.2.2.2.6 0 .8l-1 1-2.1-2.1 1-1c.1-.1.2-.2.4-.2m0 3.9L14.1 23H12v-2.1l6.1-6.1z"/></svg>
     </a>
@@ -4555,376 +3947,99 @@
   
 
 
-<h1 id="neo4j-database-seed-uri-feature-guide">Neo4j Database Seed URI Feature Guide<a class="headerlink" href="#neo4j-database-seed-uri-feature-guide" title="Anchor link to this section">&para;</a></h1>
-<p>This guide explains how to create Neo4j databases from existing backups or dumps using the seed URI feature in the Neo4j Kubernetes Operator.</p>
-<h2 id="overview">Overview<a class="headerlink" href="#overview" title="Anchor link to this section">&para;</a></h2>
-<p>The seed URI feature allows you to create new Neo4j databases by restoring them from existing backup files stored in cloud storage or accessible via HTTP/FTP. This is useful for:</p>
-<ul>
-<li><strong>Database Migration</strong>: Moving databases between environments</li>
-<li><strong>Testing with Production Data</strong>: Creating test databases from production backups</li>
-<li><strong>Disaster Recovery</strong>: Restoring databases to specific points in time</li>
-<li><strong>Development Environment Setup</strong>: Seeding development databases with sample data</li>
-</ul>
-<h2 id="supported-uri-schemes">Supported URI Schemes<a class="headerlink" href="#supported-uri-schemes" title="Anchor link to this section">&para;</a></h2>
-<p>The operator registers Neo4j's modern seed providers via <code>dbms.databases.seed_from_uri_providers</code> (set automatically on both cluster and standalone pods). The registered providers are version-gated:</p>
-<ul>
-<li><code>CloudSeedProvider</code>, <code>FileSeedProvider</code>, <code>URLConnectionSeedProvider</code> — always registered (all supported Neo4j versions).</li>
-<li><code>ServerSeedProvider</code> — registered only on Neo4j <strong>2026.04+</strong> (the class is not present in earlier releases).</li>
-<li>The deprecated <code>S3SeedProvider</code> is <strong>never</strong> registered — <code>CloudSeedProvider</code> handles <code>s3://</code> via the cloud SDK's default credential chain.</li>
-</ul>
-<p>These providers cover the following URI schemes:</p>
+<h1 id="opentelemetry">OpenTelemetry<a class="headerlink" href="#opentelemetry" title="Anchor link to this section">&para;</a></h1>
+<p>Get Neo4j's metrics and logs into an OpenTelemetry pipeline. Neo4j has no OTLP exporter on either supported line (5.26 or CalVer). It publishes metrics on a Prometheus endpoint and writes logs with Log4j. An OpenTelemetry Collector reads both, adds the Kubernetes metadata, and sends them on over OTLP.</p>
+<p>The operator does its part with two <code>spec.monitoring</code> settings, on <code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code> alike:</p>
 <table>
 <thead>
 <tr>
-<th>Scheme</th>
-<th>Provider</th>
-<th>Example</th>
+<th>Setting</th>
+<th>What it does</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>s3://</code></td>
-<td>CloudSeedProvider</td>
-<td><code>s3://my-bucket/backup.backup</code></td>
+<td><code>enabled: true</code></td>
+<td>Turns on Neo4j's Prometheus endpoint on port 2004 and adds <code>prometheus.io/scrape</code>, <code>prometheus.io/port</code> and <code>prometheus.io/path</code> annotations to the Neo4j pods.</td>
 </tr>
 <tr>
-<td><code>gs://</code></td>
-<td>CloudSeedProvider</td>
-<td><code>gs://my-bucket/backup.backup</code></td>
-</tr>
-<tr>
-<td><code>azb://</code></td>
-<td>CloudSeedProvider</td>
-<td><code>azb://account.blob.core.windows.net/container/backup.backup</code></td>
-</tr>
-<tr>
-<td><code>https://</code></td>
-<td>URLConnectionSeedProvider</td>
-<td><code>https://backup-server.com/backup.backup</code></td>
-</tr>
-<tr>
-<td><code>http://</code></td>
-<td>URLConnectionSeedProvider</td>
-<td><code>http://backup-server.com/backup.backup</code></td>
-</tr>
-<tr>
-<td><code>ftp://</code></td>
-<td>URLConnectionSeedProvider</td>
-<td><code>ftp://ftp.server.com/backup.backup</code></td>
-</tr>
-<tr>
-<td><code>file://</code></td>
-<td>FileSeedProvider</td>
-<td><code>file:///path/backup.backup</code></td>
+<td><code>logs.stdout: [...]</code></td>
+<td>Writes the listed logs (<code>query</code>, <code>security</code>, <code>debug</code>) to the container's standard output as JSON, besides their files under <code>/logs</code>. <code>neo4j.log</code> is on standard output already.</td>
 </tr>
 </tbody>
 </table>
-<p>The <code>seedURI</code> must point at the <strong>exact <code>.backup</code> file</strong>, never a directory — Neo4j seeds a single database from one backup file. (For a DIFF backup, the single DIFF-file URI is sufficient; Neo4j resolves the full parent chain from the same directory.)</p>
-<h2 id="basic-usage">Basic Usage<a class="headerlink" href="#basic-usage" title="Anchor link to this section">&para;</a></h2>
-<h3 id="simple-seed-uri-database">Simple Seed URI Database<a class="headerlink" href="#simple-seed-uri-database" title="Anchor link to this section">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabase</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-database</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mydb</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="c1"># Seed from S3 backup using system-wide authentication</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">  </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="s">"s3://my-backups/database.backup"</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">  </span><span class="c1"># Optional: specify database topology</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">  </span><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span>
-</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">1</span>
-</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>
-</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">  </span><span class="nt">wait</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
-</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">  </span><span class="nt">ifNotExists</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">  </span><span class="nt">monitoring</span><span class="p">:</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="nt">enabled</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="nt">logs</span><span class="p">:</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">      </span><span class="nt">stdout</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="nv">query</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="nv">security</span><span class="p p-Indicator">]</span>
 </span></code></pre></div>
-<h3 id="seeding-a-sharded-database">Seeding a Sharded Database<a class="headerlink" href="#seeding-a-sharded-database" title="Anchor link to this section">&para;</a></h3>
-<p><code>Neo4jShardedDatabase</code> supports three mutually-exclusive seed sources (<code>seedURI</code>, <code>seedURIs</code>, and <code>seedBackupRef</code> — the validator rejects combining them):</p>
-<ul>
-<li><strong><code>seedURI</code></strong> — a single URI; Neo4j expects per-shard backup artifacts named with shard suffixes (e.g. <code>&lt;db&gt;-g000</code>, <code>&lt;db&gt;-p000</code>).</li>
-<li><strong><code>seedURIs</code></strong> — a per-shard map keyed by shard name, for multi-location backups:</li>
-</ul>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">seedURIs</span><span class="p">:</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">  </span><span class="nt">mydb-g000</span><span class="p">:</span><span class="w"> </span><span class="s">"s3://my-backups/mydb-g000.backup"</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">mydb-p000</span><span class="p">:</span><span class="w"> </span><span class="s">"s3://my-backups/mydb-p000.backup"</span>
+<p>Turning <code>logs.stdout</code> on or off restarts each server once, since Neo4j reads its log configuration path only at startup. A <code>ConfigNeedsRestart</code> event names <code>server.logs.config</code>. Changing the list afterwards restarts nothing: Neo4j re-reads the file every 30 seconds, and the kubelet updates it in place, so the change takes effect usually within two minutes.</p>
+<h2 id="the-collector">The Collector<a class="headerlink" href="#the-collector" title="Anchor link to this section">&para;</a></h2>
+<p><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/observability/otel-collector.yaml"><code>examples/observability/otel-collector.yaml</code></a> is a Collector per node (a DaemonSet) using the <code>otel/opentelemetry-collector-contrib</code> image. It has been run against both lines, a 3-server CalVer cluster and a 5.26 standalone:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>examples/observability/otel-collector.yaml
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>kubectl<span class="w"> </span>-n<span class="w"> </span>otel<span class="w"> </span>logs<span class="w"> </span>ds/otel-collector<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-m3<span class="w"> </span><span class="s1">'type: Str(query)'</span>
 </span></code></pre></div>
-<ul>
-<li><strong><code>seedBackupRef</code></strong> — names a <code>Neo4jBackup</code> CR (same namespace) whose most-recent Succeeded run is resolved into a concrete seed at reconcile time. The backup may be a <code>shardedDatabase</code>-scoped backup (the whole family) <strong>or an all-databases backup</strong> — the operator picks this family out of the all-databases backup's catalogued <code>shardedFamilies</code>. Storage handling: <strong>cloud</strong> single-family backups resolve to a directory <code>seedURI</code>; <strong>cloud all-databases</strong> backups resolve to explicit per-shard cloud URIs (a directory scan can't isolate one family from the shared all-databases directory); <strong>PVC</strong> backups resolve to per-shard URLs served through an in-cluster HTTP proxy (see <a href="#pvc-backed-seeds">PVC-backed seeds</a>). When restoring an all-databases backup's family under a <strong>different</strong> target name, set <code>spec.seedSourceDatabase</code> to the source family name. If the referenced backup has no Succeeded run yet, the sharded database stays in <code>Pending</code> and the reconciler requeues (it does not fail).</li>
-</ul>
-<p><code>seedBackupRef</code> is also mutually exclusive with <code>seedURI</code> / <code>seedURIs</code>.</p>
-<h3 id="pvc-backed-seeds">PVC-backed seeds<a class="headerlink" href="#pvc-backed-seeds" title="Anchor link to this section">&para;</a></h3>
-<p>When a seed source resolves to a backup stored on a PVC, the operator spawns a short-lived <code>backup-seed-proxy-&lt;owner&gt;</code> Deployment + Service that mounts the backup PVC read-only and serves the <code>.backup</code> files over HTTP. Neo4j then fetches each file via <code>URLConnectionSeedProvider</code> at the exact <code>.backup</code> filename.</p>
-<p>Lifecycle and hardening:</p>
-<ul>
-<li>A <strong>NetworkPolicy</strong> restricts the proxy's ingress to the target cluster's server pods (effective on enforcing CNIs; a no-op elsewhere).</li>
-<li>The proxy stack (Deployment + Service + NetworkPolicy) is <strong>torn down automatically as soon as the seed completes</strong>: when a <code>Neo4jRestore</code> reaches <code>Completed</code>/<code>Failed</code>, or when the <code>Neo4jShardedDatabase</code> becomes <code>Ready</code>. It does not keep serving the backup PVC for the lifetime of the owning CR.</li>
-<li>The proxy is also owner-referenced to the consuming CR, so deleting the CR removes any leftovers.</li>
-</ul>
-<h2 id="authentication-methods">Authentication Methods<a class="headerlink" href="#authentication-methods" title="Anchor link to this section">&para;</a></h2>
-<h3 id="1-system-wide-authentication-recommended">1. System-Wide Authentication (Recommended)<a class="headerlink" href="#1-system-wide-authentication-recommended" title="Anchor link to this section">&para;</a></h3>
-<p>Use cloud-native authentication mechanisms that don't require explicit credentials.</p>
-<blockquote>
-<p><strong>Where the identity must be bound:</strong> <code>CREATE DATABASE … OPTIONS { seedURI }</code> runs inside the Neo4j JVM <strong>on the server pods</strong> — not in a backup/restore Job. Under pod identity (IRSA / GKE Workload Identity / Azure Workload Identity) the IAM binding therefore goes on the <strong>server pods' ServiceAccount</strong> (<code>spec.podServiceAccountAnnotations</code> on the cluster or standalone), not on the <code>neo4j-backup-sa</code> used by backup Jobs (<code>Neo4jBackup</code>'s <code>cloud.identity.autoCreate.annotations</code> only annotates the Job SA and has no effect on seeding).</p>
-</blockquote>
-<p><strong>AWS S3:</strong></p>
-<ul>
-<li>IAM roles for service accounts (IRSA)</li>
-<li>EC2 instance profiles</li>
-<li>Environment variables on nodes</li>
-</ul>
-<p><strong>Google Cloud Storage:</strong></p>
-<ul>
-<li>Workload Identity</li>
-<li>Service account keys via mounted volumes</li>
-<li>Compute Engine default service accounts</li>
-</ul>
-<p><strong>Azure Blob Storage:</strong></p>
-<ul>
-<li>Managed identities</li>
-<li>Service principal environment variables</li>
-</ul>
-<h3 id="2-explicit-credentials-via-secrets">2. Explicit Credentials via Secrets<a class="headerlink" href="#2-explicit-credentials-via-secrets" title="Anchor link to this section">&para;</a></h3>
-<p>For environments where system-wide authentication isn't available, you can reference a credentials Secret with <code>spec.seedCredentials.secretRef</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">v1</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Secret</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup-credentials</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nt">data</span><span class="p">:</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">AWS_ACCESS_KEY_ID</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;base64-encoded-key&gt;</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">AWS_SECRET_ACCESS_KEY</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">&lt;base64-encoded-secret&gt;</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="nn">---</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jDatabase</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-database</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">mydb</span>
-</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="s">"s3://my-backups/database.backup"</span>
-</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a>
-</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">  </span><span class="nt">seedCredentials</span><span class="p">:</span>
-</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">    </span><span class="nt">secretRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup-credentials</span>
+<p>It prints everything with the <code>debug</code> exporter. Replace that with your backend's OTLP exporter:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">exporters</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">otlphttp</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">endpoint</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://otlp.example.com</span>
 </span></code></pre></div>
-<blockquote>
-<p><strong>Important — where the credentials must live:</strong> <code>CREATE DATABASE … OPTIONS { seedURI }</code> is executed by the Neo4j JVM <strong>on the server pods</strong>, so the cloud SDK's default credential chain resolves against the <em>server pods'</em> environment. For credentials to be visible there, the Secret must be projected onto the hosting cluster or standalone CR via <code>spec.extraEnvFrom</code>:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jEnterpriseCluster</span><span class="w">   </span><span class="c1"># or Neo4jEnterpriseStandalone</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">extraEnvFrom</span><span class="p">:</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">secretRef</span><span class="p">:</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">      </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">backup-credentials</span>
-</span></code></pre></div>
-<p>The operator validates this projection before seeding. If the Secret is missing from <code>extraEnvFrom</code>, it emits an actionable error with a copy-pasteable snippet. Add the annotation <code>neo4j.com/auto-inherit-seed-creds: "true"</code> on the hosting cluster/standalone CR to let the operator patch <code>spec.extraEnvFrom</code> automatically — note this triggers a rolling restart of the server pods. When relying on IRSA / GKE Workload Identity / Azure Workload Identity, no Secret projection is needed.</p>
-</blockquote>
-<h2 id="credential-requirements-by-provider">Credential Requirements by Provider<a class="headerlink" href="#credential-requirements-by-provider" title="Anchor link to this section">&para;</a></h2>
-<h3 id="amazon-s3">Amazon S3<a class="headerlink" href="#amazon-s3" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Required:</strong></p>
+<h3 id="logs">Logs<a class="headerlink" href="#logs" title="Anchor link to this section">&para;</a></h3>
+<p>The <code>filelog</code> receiver reads the <code>neo4j</code> container's log files on the node (<code>/var/log/pods/*/neo4j/*.log</code>):</p>
 <ul>
-<li><code>AWS_ACCESS_KEY_ID</code></li>
-<li><code>AWS_SECRET_ACCESS_KEY</code></li>
+<li>the <code>container</code> operator unwraps the runtime's framing and adds <code>k8s.namespace.name</code>, <code>k8s.pod.name</code> and <code>k8s.container.name</code>;</li>
+<li>the <code>json_parser</code> operator parses each JSON line into attributes, takes the record's timestamp from Neo4j's <code>time</code> field and its severity from <code>level</code>. Plain-text lines, <code>neo4j.log</code>, pass through as they are.</li>
 </ul>
-<p><strong>Optional:</strong></p>
-<ul>
-<li><code>AWS_SESSION_TOKEN</code> (for temporary credentials)</li>
-<li><code>AWS_REGION</code></li>
-<li><code>AWS_ENDPOINT_URL_S3</code> — required for <strong>MinIO / S3-compatible</strong> stores. The <code>endpointURL</code>/<code>forcePathStyle</code> fields on <code>Neo4jBackup</code>/<code>Neo4jRestore</code> only affect their <strong>Job pods</strong>; the server pods doing seedURI fetches read the SDK's standard env vars, so put the endpoint in the Secret you project via <code>spec.extraEnvFrom</code>. (A <code>Neo4jRestore</code> that resolves to a custom-endpoint backup — on a cluster or a standalone — emits a <code>SeedEndpointNotProjected</code> Warning event when the operator can verify the endpoint is missing from the server pods.)</li>
-</ul>
-<h3 id="google-cloud-storage">Google Cloud Storage<a class="headerlink" href="#google-cloud-storage" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Required:</strong></p>
-<ul>
-<li><code>GOOGLE_APPLICATION_CREDENTIALS</code> (service account JSON key)</li>
-</ul>
-<p><strong>Optional:</strong></p>
-<ul>
-<li><code>GOOGLE_CLOUD_PROJECT</code></li>
-</ul>
-<h3 id="azure-blob-storage">Azure Blob Storage<a class="headerlink" href="#azure-blob-storage" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Required:</strong></p>
-<ul>
-<li><code>AZURE_STORAGE_ACCOUNT</code></li>
-<li>Either <code>AZURE_STORAGE_KEY</code> OR <code>AZURE_STORAGE_SAS_TOKEN</code></li>
-</ul>
-<h3 id="httphttpsftp">HTTP/HTTPS/FTP<a class="headerlink" href="#httphttpsftp" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Optional:</strong></p>
-<ul>
-<li><code>USERNAME</code></li>
-<li><code>PASSWORD</code></li>
-<li><code>AUTH_HEADER</code> (for custom authentication)</li>
-</ul>
-<h2 id="advanced-configuration">Advanced Configuration<a class="headerlink" href="#advanced-configuration" title="Anchor link to this section">&para;</a></h2>
-<h3 id="point-in-time-recovery-neo4j-2025x-only">Point-in-Time Recovery (Neo4j 2025.x only)<a class="headerlink" href="#point-in-time-recovery-neo4j-2025x-only" title="Anchor link to this section">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">seedConfig</span><span class="p">:</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="c1"># Restore to specific timestamp</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="nt">restoreUntil</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-15T10:30:00Z"</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="c1"># Or restore to specific transaction ID</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">restoreUntil</span><span class="p">:</span><span class="w"> </span><span class="s">"txId:12345"</span>
-</span></code></pre></div>
-<h3 id="seed-provider-configuration">Seed provider configuration<a class="headerlink" href="#seed-provider-configuration" title="Anchor link to this section">&para;</a></h3>
-<p><code>spec.seedConfig.config</code> is a string map rendered into the <code>seedConfig</code> option of <code>CREATE DATABASE</code> as comma-separated <code>key=value</code> pairs. It is consumed by the (deprecated) <code>S3SeedProvider</code>, e.g. <code>region</code>. <code>CloudSeedProvider</code> — which the operator uses for <code>s3://</code>, <code>gs://</code> and <code>azb://</code> — resolves credentials and region from the environment / SDK default chain instead (see <code>spec.extraEnvFrom</code> above), so most deployments leave it empty. Keys and values must be simple: no <code>,</code>, <code>=</code>, quotes, backticks or newlines.</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">seedConfig</span><span class="p">:</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">    </span><span class="nt">region</span><span class="p">:</span><span class="w"> </span><span class="s">"eu-west-1"</span>
-</span></code></pre></div>
-<h2 id="file-format-considerations">File Format Considerations<a class="headerlink" href="#file-format-considerations" title="Anchor link to this section">&para;</a></h2>
-<h3 id="backup-files-backup-recommended">Backup Files (.backup) - Recommended<a class="headerlink" href="#backup-files-backup-recommended" title="Anchor link to this section">&para;</a></h3>
-<ul>
-<li><strong>Performance</strong>: Much faster restore times</li>
-<li><strong>Features</strong>: Support for point-in-time recovery, compression</li>
-<li><strong>Use Cases</strong>: Production workloads, large datasets</li>
-</ul>
-<h3 id="dump-files-dump-legacy">Dump Files (.dump) - Legacy<a class="headerlink" href="#dump-files-dump-legacy" title="Anchor link to this section">&para;</a></h3>
-<ul>
-<li><strong>Performance</strong>: Slower restore times for large datasets</li>
-<li><strong>Compatibility</strong>: Cross-version compatibility, human-readable</li>
-<li><strong>Use Cases</strong>: Development, testing, cross-version migrations</li>
-</ul>
-<p>The operator will warn when using dump files:
-<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>Warning: Using dump file format. For better performance with large databases,
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>         consider using Neo4j backup format (.backup) instead.
-</span></code></pre></div></p>
-<h2 id="database-topology-with-seed-uris">Database Topology with Seed URIs<a class="headerlink" href="#database-topology-with-seed-uris" title="Anchor link to this section">&para;</a></h2>
-<p>You can specify how the restored database should be distributed across your cluster:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">topology</span><span class="p">:</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">  </span><span class="nt">primaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">2</span><span class="w">    </span><span class="c1"># Number of primary servers</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">  </span><span class="nt">secondaries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3</span><span class="w">  </span><span class="c1"># Number of secondary servers</span>
-</span></code></pre></div>
-<p>The operator validates that your topology doesn't exceed cluster capacity and provides warnings for suboptimal configurations.</p>
-<h2 id="conflict-prevention">Conflict Prevention<a class="headerlink" href="#conflict-prevention" title="Anchor link to this section">&para;</a></h2>
-<p>The operator prevents conflicting configurations:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">  </span><span class="c1"># ERROR: Cannot specify both seedURI and initialData</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">seedURI</span><span class="p">:</span><span class="w"> </span><span class="s">"s3://my-backups/database.backup"</span>
-</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">  </span><span class="nt">initialData</span><span class="p">:</span>
-</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">    </span><span class="nt">cypherStatements</span><span class="p">:</span>
-</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"CREATE</span><span class="nv"> </span><span class="s">(:Person</span><span class="nv"> </span><span class="s">{name:</span><span class="nv"> </span><span class="s">'Alice'})"</span>
-</span></code></pre></div>
-<p>The validator rejects this combination ("seedURI and initialData cannot be specified together"): the seed provides the initial data, so remove <code>initialData</code> — the resource does not reconcile while both are set.</p>
-<h2 id="status-and-events">Status and Events<a class="headerlink" href="#status-and-events" title="Anchor link to this section">&para;</a></h2>
-<p>The operator provides detailed status and events during seed restoration:</p>
-<p><strong>Events:</strong></p>
-<ul>
-<li><code>DatabaseCreatedFromSeed</code>: Database successfully created from seed URI</li>
-<li><code>DataSeeded</code>: Database seeded from URI successfully</li>
-<li><code>ValidationWarning</code>: Validation warnings (e.g., suboptimal topology)</li>
-<li><code>ValidationFailed</code>: Configuration validation failed (the database is not created)</li>
-<li><code>CreationFailed</code>: Database creation failed</li>
-<li><code>SeedCredsMissing</code> / <code>SeedCredsAutoInherited</code>: seed credentials Secret not projected onto the hosting cluster / auto-projected under <code>neo4j.com/auto-inherit-seed-creds</code> (see <a href="../kubernetes-events/">Kubernetes Events</a>)</li>
-</ul>
-<p><strong>Status Conditions:</strong></p>
-<ul>
-<li><code>Ready</code>: <code>True</code> when the database is ready and available; when <code>False</code>, its reason names the cause (for example <code>ValidationFailed</code>, <code>SeedCredsMissing</code>)</li>
-</ul>
-<h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
-<h3 id="common-issues">Common Issues<a class="headerlink" href="#common-issues" title="Anchor link to this section">&para;</a></h3>
-<ol>
-<li><strong>Authentication Failures</strong></li>
-<li>Verify credentials in referenced secret</li>
-<li>Check IAM roles/permissions for system-wide auth</li>
-<li>
-<p>Ensure workload identity is properly configured</p>
-</li>
-<li>
-<p><strong>URI Access Failures</strong></p>
-</li>
-<li>Verify the backup file exists at the specified URI</li>
-<li>Check network connectivity from Neo4j pods</li>
-<li>
-<p>Ensure URI format is correct</p>
-</li>
-<li>
-<p><strong>Validation Errors</strong></p>
-</li>
-<li>Check that referenced cluster exists and is ready</li>
-<li>Verify topology doesn't exceed cluster capacity</li>
-<li>
-<p>Ensure no conflicts between seedURI and initialData</p>
-</li>
-<li>
-<p><strong>Performance Issues</strong></p>
-</li>
-<li>Consider using .backup format instead of .dump</li>
-<li>Ensure adequate resources for restoration</li>
-</ol>
-<h3 id="debugging-commands">Debugging Commands<a class="headerlink" href="#debugging-commands" title="Anchor link to this section">&para;</a></h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="c1"># Check database status</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jdatabase<span class="w"> </span>my-database<span class="w"> </span>-o<span class="w"> </span>yaml
-</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
-</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="c1"># View operator logs</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>-n<span class="w"> </span>neo4j-operator-system<span class="w"> </span>-l<span class="w"> </span>control-plane<span class="o">=</span>controller-manager<span class="w"> </span>--tail<span class="o">=</span>-1
-</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a>
-</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="c1"># Check events</span>
-</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jdatabase<span class="w"> </span>my-database
-</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a>
-</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="c1"># Verify database in Neo4j</span>
-</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>-it<span class="w"> </span>&lt;neo4j-pod&gt;<span class="w"> </span>--<span class="w"> </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="s2">"SHOW DATABASES"</span>
-</span></code></pre></div>
-<h2 id="security-best-practices">Security Best Practices<a class="headerlink" href="#security-best-practices" title="Anchor link to this section">&para;</a></h2>
-<ol>
-<li><strong>Use System-Wide Authentication</strong>: Prefer IAM roles, workload identity, and managed identities over explicit credentials</li>
-<li><strong>Rotate Credentials</strong>: Regularly rotate any explicit credentials stored in secrets</li>
-<li><strong>Least Privilege</strong>: Grant minimal required permissions for backup access</li>
-<li><strong>Network Security</strong>: Use private endpoints and VPNs for sensitive backup access</li>
-<li><strong>Audit Access</strong>: Monitor and log backup access for compliance</li>
-</ol>
-<h2 id="examples">Examples<a class="headerlink" href="#examples" title="Anchor link to this section">&para;</a></h2>
-<p>See the <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/databases">examples/databases/</a> directory for comprehensive examples:</p>
-<ul>
-<li><code>database-from-s3-seed.yaml</code> - S3 with explicit credentials</li>
-<li><code>database-from-gcs-seed.yaml</code> - Google Cloud Storage with workload identity</li>
-<li><code>database-from-azure-seed.yaml</code> - Azure Blob Storage with both key and SAS token auth</li>
-<li><code>database-from-http-seed.yaml</code> - HTTP/HTTPS/FTP examples</li>
-<li><code>database-dump-vs-backup-seed.yaml</code> - Performance comparison between formats</li>
-</ul>
-<h2 id="neo4j-version-compatibility">Neo4j Version Compatibility<a class="headerlink" href="#neo4j-version-compatibility" title="Anchor link to this section">&para;</a></h2>
+<p>What each log carries:</p>
 <table>
 <thead>
 <tr>
-<th>Feature</th>
-<th>Neo4j 5.26+</th>
-<th>Neo4j 2025.x</th>
+<th>Log</th>
+<th>Layout</th>
+<th>Fields</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Basic seed URI</td>
-<td>✅</td>
-<td>✅</td>
+<td><code>query</code></td>
+<td><code>QueryLogJsonLayout</code></td>
+<td><code>type</code> (<code>query</code> or <code>transaction</code>), <code>event</code> (<code>start</code>, <code>success</code>, <code>fail</code>), <code>database</code>, <code>query</code>, <code>queryParameters</code>, <code>elapsedTimeMs</code>, <code>planning</code>, <code>cpu</code>, <code>waiting</code>, <code>allocatedBytes</code>, <code>pageHits</code>, <code>pageFaults</code>, <code>authenticatedUser</code>, <code>executingUser</code>, <code>source</code>, <code>runtime</code>, <code>annotationData</code>, <code>errorInfo</code>, <code>transactionId</code>; CalVer adds <code>queryLang</code></td>
 </tr>
 <tr>
-<td>CloudSeedProvider</td>
-<td>✅</td>
-<td>✅</td>
+<td><code>security</code></td>
+<td><code>StructuredJsonLayout</code></td>
+<td><code>type</code> (<code>security</code>), <code>level</code>, <code>message</code>, <code>authenticatedUser</code>, <code>executingUser</code>, <code>database</code>, <code>source</code></td>
 </tr>
 <tr>
-<td>Point-in-time recovery</td>
-<td>❌</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>All URI schemes</td>
-<td>✅</td>
-<td>✅</td>
-</tr>
-<tr>
-<td>Topology specification</td>
-<td>✅</td>
-<td>✅</td>
+<td><code>debug</code></td>
+<td><code>StructuredLayoutWithMessage</code></td>
+<td><code>level</code>, <code>category</code> (the logging class), <code>message</code></td>
 </tr>
 </tbody>
 </table>
-<h2 id="migration-from-s3seedprovider">Migration from S3SeedProvider<a class="headerlink" href="#migration-from-s3seedprovider" title="Anchor link to this section">&para;</a></h2>
-<p>The operator uses Neo4j's modern CloudSeedProvider instead of the deprecated S3SeedProvider:</p>
+<p>The lines differ in small ways a pipeline should allow for. <code>annotationData</code> is a string on 5.26 and an object on CalVer. And <code>debug.log</code> itself stays plain text on 5.26 and JSON on CalVer, as Neo4j ships it. Its standard-output copy is JSON on both.</p>
+<h3 id="metrics">Metrics<a class="headerlink" href="#metrics" title="Anchor link to this section">&para;</a></h3>
+<p>The <code>prometheus</code> receiver discovers pods and keeps those labelled <code>app.kubernetes.io/name: neo4j</code> and <code>app.kubernetes.io/managed-by: neo4j-operator</code> that carry the scrape annotation. Other pods can carry the same annotations, which is why it also filters on the operator's labels.</p>
+<p>Neo4j turns its metric names into Prometheus names by replacing dots with underscores. For metrics about a database, it puts the database <strong>in the name</strong>: <code>neo4j_database_&lt;db&gt;_transaction_committed_total</code>. The receiver's <code>metric_relabel_configs</code> move it into a <code>database</code> attribute, giving one metric name per measurement across all databases:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>neo4j_database_neo4j_transaction_committed_total   -&gt;  neo4j_database_transaction_committed_total{database="neo4j"}
+</span></code></pre></div>
+<p>The rule moves a name made of letters and digits only. A database name with a dash or dot, such as a property shard (<code>products-g000</code>), reaches Prometheus as underscores, so it cannot be told apart from the metric name that follows. Such metrics keep the database in their name rather than being split in the wrong place. If you set <code>spec.monitoring.metricsPrefix</code>, replace the leading <code>neo4j_</code> in the rule with your prefix.</p>
+<p>Neo4j enables only a subset of its metrics by default (<code>server.metrics.filter</code>), and the subset differs between versions. Set <code>spec.monitoring.metricsFilter</code> to choose them, for example <code>"*"</code> for all.</p>
+<h2 id="things-to-know">Things to know<a class="headerlink" href="#things-to-know" title="Anchor link to this section">&para;</a></h2>
 <ul>
-<li>✅ <strong>Use</strong>: CloudSeedProvider with system-wide authentication</li>
-<li>❌ <strong>Don't Use</strong>: S3SeedProvider (deprecated in Neo4j 5.x)</li>
+<li><strong>The endpoint has no authentication or encryption.</strong> The operator binds it to <code>0.0.0.0:2004</code> so it can be scraped. With <code>spec.networkPolicy</code> enabled, port 2004 stays open to any pod for the same reason. Keep it off the Internet: don't expose it through a Service of type <code>LoadBalancer</code> or an Ingress.</li>
+<li><strong>Query logs carry query text and parameters.</strong> Shipping them widens who can read them. Consider <code>spec.monitoring.obfuscateLiterals: true</code>, and <code>db.logs.query.parameter_logging_enabled: "false"</code> in <code>spec.config</code>.</li>
+<li><strong>Query log volume.</strong> With <code>monitoring.enabled: true</code>, the operator logs queries slower than <code>slowQueryThreshold</code> (default <code>5s</code>) at <code>queryLogLevel</code> (default <code>INFO</code>). With <code>monitoring.enabled: false</code>, Neo4j's own defaults apply, <code>VERBOSE</code> with a <code>0s</code> threshold, which logs every query at start and end.</li>
+<li><strong>Leave <code>debug.log</code> as it is.</strong> Neo4j support reads that file. The operator writes the standard-output copy with an additional appender and does not change the file's format.</li>
+<li><strong>Your own log configuration.</strong> <code>spec.config</code> may not set <code>server.logs.config</code> while a log is listed in <code>logs.stdout</code>; validation refuses the combination, naming the field.</li>
 </ul>
-<p>This approach provides better security, broader cloud support, and future compatibility.</p>
+<h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
+<ul>
+<li><a href="../monitoring/">Monitoring</a> and <a href="../prometheus-grafana-setup/">Prometheus &amp; Grafana</a></li>
+<li><a href="../../../api_reference/neo4jenterprisecluster/#monitoringlogsspec"><code>MonitoringLogsSpec</code></a></li>
+<li>Neo4j Operations Manual: <a href="https://neo4j.com/docs/operations-manual/current/monitoring/logging/">Logging</a> and <a href="https://neo4j.com/docs/operations-manual/current/monitoring/metrics/">Metrics</a> (CalVer); <a href="https://neo4j.com/docs/operations-manual/5/monitoring/logging/">Logging</a> and <a href="https://neo4j.com/docs/operations-manual/5/monitoring/metrics/">Metrics</a> (5.26)</li>
+</ul>
 
 
 
@@ -4962,7 +4077,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../plugins/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Plugin Management">
+          <a href="../prometheus-grafana-setup/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Prometheus &amp; Grafana">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
@@ -4972,20 +4087,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Plugin Management
+                Prometheus & Grafana
               </div>
             </div>
           </a>
         
         
           
-          <a href="../../aura_fleet_management/" class="md-footer__link md-footer__link--next" aria-label="Next: Aura Fleet Management">
+          <a href="../kubernetes-events/" class="md-footer__link md-footer__link--next" aria-label="Next: Kubernetes Events">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Aura Fleet Management
+                Kubernetes Events
               </div>
             </div>
             <div class="md-footer__button md-icon">

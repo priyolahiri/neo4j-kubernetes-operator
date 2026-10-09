@@ -1825,6 +1825,8 @@
       
         
       
+        
+      
     
     
     
@@ -1910,6 +1912,34 @@
     
   
     Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/opentelemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenTelemetry
   
 
     
@@ -3589,10 +3619,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v1191" class="md-nav__link">
+  <a href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.19.1+)
+        Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.20+)
       
     </span>
   </a>
@@ -3996,10 +4026,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v1191" class="md-nav__link">
+  <a href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.19.1+)
+        Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.20+)
       
     </span>
   </a>
@@ -4187,14 +4217,19 @@ cluster only when it <em>needs</em> clustering.</p>
 <td>Two changes promise <em>nothing happens</em> on upgrade: learn mode must revoke nothing on existing roles, and <code>serverDefaultCypherLanguage</code> must record what a deployment already runs without rewriting <code>neo4j.conf</code> (a rewrite rolls the servers — observed once, on a sharding cluster). Only an object created by the <em>previous</em> operator exercises either</td>
 </tr>
 <tr>
-<td><strong>Restarts the operator avoids</strong> (live <code>spec.config</code>, scale, upgrade; v1.19.1+)</td>
+<td><strong>Restarts the operator avoids</strong> (live <code>spec.config</code>, scale, upgrade; v1.20+)</td>
 <td>Standalone (5.26) <strong>and</strong> Cluster (CalVer), plus Phase 2b's 5.26 cluster</td>
 <td>The restart decision is made separately per kind: the cluster's ConfigMap hash with restart-neutral startup blocks, the standalone's semantic hash. Scaling exists only on a cluster, and the 5.26 async-channel block only on a 5.26 cluster, so only a 5.26 cluster created under the previous release shows that upgrading restarts nothing there</td>
 </tr>
 <tr>
-<td><strong>TLS reload on renewal, and the issued Secret on deletion</strong> (v1.19.1+)</td>
+<td><strong>TLS reload on renewal, and the issued Secret on deletion</strong> (v1.20+)</td>
 <td>Phase 2b: a CalVer TLS cluster created under the previous release, and a fresh CalVer TLS standalone</td>
 <td>Reload needs CalVer 2025.03+ and cert-manager, and the Phase 1 standalone is 5.26. An upgraded cluster is the only place the "enabled at the next restart" path (<code>RestartPending</code>, <code>TLSCertificateNeedsRestart</code>) shows; a fresh standalone shows reload enabled from the start</td>
+</tr>
+<tr>
+<td><strong>Neo4j telemetry into OpenTelemetry</strong> (<code>spec.monitoring.logs</code>, the Prometheus endpoint; v1.20+)</td>
+<td>Standalone (5.26) <strong>and</strong> Cluster (CalVer), with the example Collector</td>
+<td>The log configuration is rendered per line (<code>debug.log</code> is text on 5.26, JSON on CalVer) and reaches each kind through a different ConfigMap mount (<code>/conf</code> vs <code>/operator-conf</code>), so both are walked. The Collector is not a Neo4j JVM, so it does not count against the one-deployment rule</td>
 </tr>
 <tr>
 <td><strong>Server default Cypher language</strong> (<code>serverDefaultCypherLanguage</code>)</td>
@@ -4471,6 +4506,10 @@ back to 1 replica.</p>
 <td>Change a dynamic setting in <code>spec.config</code> (e.g. <code>db.transaction.timeout</code>): a <code>ConfigAppliedLive</code> event names it, the pod keeps its UID and restart count, <code>SHOW SETTINGS YIELD name, value WHERE name = 'db.transaction.timeout'</code> reads the new value, and it survives a pod delete. Change a static one (<code>db.tx_log.buffer.size</code>): a <code>ConfigNeedsRestart</code> event names it and the pod restarts</td>
 </tr>
 <tr>
+<td>Logs on standard output (5.26)</td>
+<td>Set <code>spec.monitoring.logs.stdout: [query, debug]</code>: the pod restarts <strong>once</strong> and a <code>ConfigNeedsRestart</code> event names <code>server.logs.config</code>; <code>SHOW SETTINGS</code> reads <code>server.logs.config=/conf/server-logs.xml</code>; <code>kubectl logs</code> carries one JSON object per query and per debug event, while <code>/logs/debug.log</code> stays Neo4j's text format. Change the list to <code>[query, security]</code>: <strong>no restart</strong> (same pod UID, restart count unchanged) and, within about two minutes, security events appear on standard output and debug events stop. Remove <code>logs</code>: one restart, the ConfigMap loses <code>server-logs.xml</code>, <code>server.logs.config</code> is back to the default. With <code>server.logs.config</code> also in <code>spec.config</code>: <code>Failed</code>, naming <code>spec.config[server.logs.config]</code>, nothing rolled</td>
+</tr>
+<tr>
 <td>Server default Cypher language (5.26)</td>
 <td>The Phase 1 standalone records <code>status.effectiveCypherLanguage=CYPHER_5</code> and its ConfigMap contains <strong>no</strong> <code>db.query.default_language</code>. A standalone with <code>serverDefaultCypherLanguage: CYPHER_25</code>, and one with <code>db.query.default_language</code> in <code>spec.config</code>, are each <code>Failed</code> naming the field, with <strong>no StatefulSet created</strong></td>
 </tr>
@@ -4648,7 +4687,7 @@ standalone backup" as one of Phase 1's outputs.</p>
 </tr>
 <tr>
 <td>A lost server is an outage, not formation (#444)</td>
-<td>Delete one server pod: the cluster <strong>stays <code>Ready</code></strong> throughout (watch <code>.status.phase</code> every few seconds — it must never read <code>Forming</code>), <code>Degraded=True</code> (reason <code>ServersUnavailable</code>) names the pod while it is down, <code>ServersHealthy</code> turns <code>False</code> and <code>neo4j_operator_server_health</code> drops to <code>0</code> for that pod's address — still <strong>one series per server</strong>, none left behind afterwards — and a <code>Neo4jUser</code> applied meanwhile reaches <code>Ready</code>. When it rejoins, <code>Degraded=False</code> and no <code>ClusterFormationStarted</code> event was raised. Kill one server's container instead (<code>kubectl exec &lt;pod&gt; -c neo4j -- kill 1</code>) and sample <code>.status.phase</code> every second: it never reads <code>Forming</code> either (the v1.19.1 walk caught it doing so once, while the client Service still routed to the dying container). Then hold a server down past the grace: redeploy the operator with <code>--server-unavailable-grace=2m</code>, <code>kubectl cordon</code> the Kind node and delete one server pod (it stays <code>Pending</code>; give the operator Deployment a toleration for <code>node.kubernetes.io/unschedulable</code> first if you will restart it while cordoned). At 2 minutes: phase <code>Degraded</code>, <code>Ready=False</code>/<code>ClusterDegraded</code>, <strong>one</strong> <code>ClusterDegraded</code> Warning; a new <code>Neo4jUser</code> still reconciles; an image change is held (<code>UpgradeDeferred</code>, StatefulSet image unchanged — revert it afterwards). Delete a second pod: phase <code>Forming</code>, one <code>ClusterQuorumLost</code> Warning, a new <code>Neo4jUser</code> waits with <code>ClusterNotReady</code>. <code>kubectl uncordon</code> → <code>Degraded</code> (already past the grace), then <code>Ready</code>; the waiting user reconciles. Walked on 2026.08.1, 2026-10-03</td>
+<td>Delete one server pod: the cluster <strong>stays <code>Ready</code></strong> throughout (watch <code>.status.phase</code> every few seconds — it must never read <code>Forming</code>), <code>Degraded=True</code> (reason <code>ServersUnavailable</code>) names the pod while it is down, <code>ServersHealthy</code> turns <code>False</code> and <code>neo4j_operator_server_health</code> drops to <code>0</code> for that pod's address — still <strong>one series per server</strong>, none left behind afterwards — and a <code>Neo4jUser</code> applied meanwhile reaches <code>Ready</code>. When it rejoins, <code>Degraded=False</code> and no <code>ClusterFormationStarted</code> event was raised. Kill one server's container instead (<code>kubectl exec &lt;pod&gt; -c neo4j -- kill 1</code>) and sample <code>.status.phase</code> every second: it never reads <code>Forming</code> either (the v1.20.0 walk caught it doing so once, while the client Service still routed to the dying container). Then hold a server down past the grace: redeploy the operator with <code>--server-unavailable-grace=2m</code>, <code>kubectl cordon</code> the Kind node and delete one server pod (it stays <code>Pending</code>; give the operator Deployment a toleration for <code>node.kubernetes.io/unschedulable</code> first if you will restart it while cordoned). At 2 minutes: phase <code>Degraded</code>, <code>Ready=False</code>/<code>ClusterDegraded</code>, <strong>one</strong> <code>ClusterDegraded</code> Warning; a new <code>Neo4jUser</code> still reconciles; an image change is held (<code>UpgradeDeferred</code>, StatefulSet image unchanged — revert it afterwards). Delete a second pod: phase <code>Forming</code>, one <code>ClusterQuorumLost</code> Warning, a new <code>Neo4jUser</code> waits with <code>ClusterNotReady</code>. <code>kubectl uncordon</code> → <code>Degraded</code> (already past the grace), then <code>Ready</code>; the waiting user reconciles. Walked on 2026.08.1, 2026-10-03</td>
 </tr>
 <tr>
 <td>Scaling up restarts nothing</td>
@@ -4657,6 +4696,10 @@ standalone backup" as one of Phase 1's outputs.</p>
 <tr>
 <td>Live config change (cluster)</td>
 <td>Change a dynamic setting in <code>spec.config</code>: <code>ConfigAppliedLive</code>, no pod restarts, and <code>SHOW SETTINGS</code> on <strong>each</strong> server (<code>kubectl exec &lt;pod&gt; -- cypher-shell -a bolt://localhost:7687 -d system …</code>; <code>-d system</code> because the default <code>neo4j</code> database is not on every server) reads the new value. Remove it: each server reads the default again. Change a static one: <code>ConfigNeedsRestart</code> names it and the servers roll</td>
+</tr>
+<tr>
+<td>Neo4j telemetry through an OpenTelemetry Collector</td>
+<td><code>kubectl apply -f examples/observability/otel-collector.yaml</code> (a Collector DaemonSet with the <code>debug</code> exporter; delete it afterwards). With <code>spec.monitoring.enabled: true</code>, <code>kubectl -n otel logs ds/otel-collector</code> shows metrics from the three server pods <strong>only</strong> (no other annotated pods), the database moved out of the name into a <code>database</code> attribute (<code>neo4j_database_transaction_committed_total</code>, <code>database: neo4j</code>). Set <code>spec.monitoring.logs.stdout: [query]</code>: <strong>one</strong> rolling restart with <code>ConfigNeedsRestart</code>; a query run afterwards arrives as a record with <code>type: query</code>, <code>database</code>, <code>elapsedTimeMs</code>, <code>queryLang</code>, <code>k8s.pod.name</code>, Neo4j's own timestamp and severity <code>INFO</code>. Change to <code>[query, security, debug]</code>: no pod restarts, the StatefulSet's generation is unchanged, and security and debug records arrive within about two minutes. Remove <code>logs</code>: one rolling restart, <code>server-logs.xml</code> gone from the ConfigMap. A cluster created under the previous operator is untouched by the upgrade (generation, pods and ConfigMap unchanged)</td>
 </tr>
 <tr>
 <td>Split-brain checks are paced, not skipped</td>
@@ -4670,7 +4713,7 @@ standalone backup" as one of Phase 1's outputs.</p>
 </table>
 <p>3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
 walk. → <strong>Tear down the cluster fully</strong> before Phase 3.</p>
-<h3 id="phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v1191">Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.19.1+)<a class="headerlink" href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v1191" title="Anchor link to this section">&para;</a></h3>
+<h3 id="phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120">Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.20+)<a class="headerlink" href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120" title="Anchor link to this section">&para;</a></h3>
 <p>Three short deployments, <strong>one at a time</strong>, each torn down before the next.
 The first two are created under the <strong>previous release</strong> (as in Phase 1's
 upgrade row), so start each with the previous operator, then deploy <code>main</code>
@@ -5287,6 +5330,15 @@ the first walk. The scripted steps already do.</p>
 <td style="text-align: center;"></td>
 </tr>
 <tr>
+<td>Neo4j telemetry into OpenTelemetry (logs on stdout, metrics, Collector)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (5.26, logs)</td>
+<td style="text-align: center;">✅ (CalVer, Collector end to end)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
 <td>Plugins (APOC)</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (ConfigMap)</td>
@@ -5504,10 +5556,10 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 </thead>
 <tbody>
 <tr>
-<td><strong>v1.19.1 release verification</strong></td>
+<td><strong>v1.20.0 release verification</strong></td>
 <td>2026-10-09</td>
 <td>✅ Phases 0-3, the new Phase 2b and Phase 5 (Parts A, B, E) pass on <code>3a5adaa</code> (Phases 0-2) and <code>255bd85</code> (2b onward; #483 was CLI-only); Phase 4 <strong>not run</strong> (nothing under <code>internal/aura/</code> or <code>api/v1beta1/aura*</code> changed); Parts C/D left to the extended suite. Walked on the existing dev Kind cluster plus two Part E clusters; <strong>two defects fixed and six rows or docs corrected in the journey-fix PR</strong></td>
-<td><strong>Upgrade from v1.19.0 restarts nothing:</strong> the standalone (<code>CYPHER_5</code>, byte-identical <code>neo4j.conf</code>, generation 1, same pod UID, role rows unchanged, scheduled backup <code>Ready</code>), a 5.26.31 cluster (restart-neutral blocks added, <code>neo4j.com/deferred-settings</code>, <code>RestartPending</code> naming three servers, then two after one restarted), a CalVer TLS cluster, and the sharding cluster (template hash, generation and conf unchanged; <code>CYPHER_25</code> re-derived). <strong>New this release, live:</strong> <code>ConfigAppliedLive</code>/<code>ConfigNeedsRestart</code> on the standalone and on each cluster server (and reset on removal); scale 3→5 and 3→4 with <code>ScaledWithoutRestart</code>, the new servers <code>secondary</code> and recorded on disk, 0 failed writes; with async channels no write gap over 2s while a follower restarted; <code>TLSCertificateReloaded</code> without a restart on the restarted cluster server and on a fresh standalone, <code>TLSCertificateNeedsRestart</code> for the others; <code>{name}-tls-secret</code> gone with its cluster and standalone, a hand-made one kept; split-brain full checks 5 minutes apart, immediate on a pod delete, a rejoin and a container kill; composites walked on both lines. <strong>Fixed in the journey-fix PR:</strong> a container kill wrote <code>phase: Forming</code> once on a formed cluster (twice in two tries) — an unreachable formed cluster with a Ready majority of pods is now left as it is for the grace period (rule 105); a database name under 3 or over 63 characters passed validation and failed at <code>CREATE DATABASE</code>. <strong>Rows and docs corrected:</strong> <code>--ready-poll-interval</code> has no visible effect in dev mode (30s informer resync — the row now says production mode, and <code>operator-modes.md</code> says so); the pinning row's <code>lastCollected</code> (refreshed every 5 minutes since #475); <code>--problems</code> prints the healthy line; <code>SHOW SETTINGS</code> per server needs <code>-d system</code>; a fresh TLS standalone rolls once after its first <code>Ready</code>; <code>ccdr-e2e-up</code> with a renamed upstream bound 6443 beside the dev cluster (fixed in <code>hack/ccdr-two-cluster.sh</code>); the SSO rolebinding example said usernames cannot contain <code>@</code>; the sharding guide now says a database sharing the logical name's prefix blocks the backup, and the API reference that deleting a <code>Neo4jShardedDatabase</code> keeps its databases. <strong>Open (pre-existing, not blocking):</strong> any alias or constituent change re-emits <code>PrivilegesApplied "N added"</code> on every role with nothing changed; <code>diagnose</code> shows a crash-loop in its Terminated window as ⚠ and exits 0; <code>SeedBackupPending</code> repeated on every pass exhausts the event budget, so <code>SeedCredsAutoInherited</code> never reached the API; a fresh cert-manager standalone rolls once for its <code>tls-cert-sans</code> stamp; <code>TLSCertificateNeedsRestart</code> uses singular wording for several servers and repeats every 30s; <code>PluginInstalled</code> emitted 66 times in 35 minutes; the sharded controller re-runs <code>CREATE … IF NOT EXISTS</code> every pass; deleting a <code>Neo4jShardedDatabase</code> keeps its databases (now documented); an offline restore from a PVC directory without <code>sourceDatabase</code> fails with no reason; the <code>ImagePullBackOff</code> guidance says Enterprise images are not public. <strong>Environment:</strong> <code>kind load</code> of a multi-arch image needed <code>docker save \| ctr import --platform</code>; no Bolt wedge</td>
+<td><strong>Upgrade from v1.19.0 restarts nothing:</strong> the standalone (<code>CYPHER_5</code>, byte-identical <code>neo4j.conf</code>, generation 1, same pod UID, role rows unchanged, scheduled backup <code>Ready</code>), a 5.26.31 cluster (restart-neutral blocks added, <code>neo4j.com/deferred-settings</code>, <code>RestartPending</code> naming three servers, then two after one restarted), a CalVer TLS cluster, and the sharding cluster (template hash, generation and conf unchanged; <code>CYPHER_25</code> re-derived). <strong>New this release, live:</strong> <code>ConfigAppliedLive</code>/<code>ConfigNeedsRestart</code> on the standalone and on each cluster server (and reset on removal); scale 3→5 and 3→4 with <code>ScaledWithoutRestart</code>, the new servers <code>secondary</code> and recorded on disk, 0 failed writes; with async channels no write gap over 2s while a follower restarted; <code>TLSCertificateReloaded</code> without a restart on the restarted cluster server and on a fresh standalone, <code>TLSCertificateNeedsRestart</code> for the others; <code>{name}-tls-secret</code> gone with its cluster and standalone, a hand-made one kept; split-brain full checks 5 minutes apart, immediate on a pod delete, a rejoin and a container kill; composites walked on both lines. <strong>Fixed in the journey-fix PR:</strong> a container kill wrote <code>phase: Forming</code> once on a formed cluster (twice in two tries) — an unreachable formed cluster with a Ready majority of pods is now left as it is for the grace period (rule 105); a database name under 3 or over 63 characters passed validation and failed at <code>CREATE DATABASE</code>. <strong>Rows and docs corrected:</strong> <code>--ready-poll-interval</code> has no visible effect in dev mode (30s informer resync — the row now says production mode, and <code>operator-modes.md</code> says so); the pinning row's <code>lastCollected</code> (refreshed every 5 minutes since #475); <code>--problems</code> prints the healthy line; <code>SHOW SETTINGS</code> per server needs <code>-d system</code>; a fresh TLS standalone rolls once after its first <code>Ready</code>; <code>ccdr-e2e-up</code> with a renamed upstream bound 6443 beside the dev cluster (fixed in <code>hack/ccdr-two-cluster.sh</code>); the SSO rolebinding example said usernames cannot contain <code>@</code>; the sharding guide now says a database sharing the logical name's prefix blocks the backup, and the API reference that deleting a <code>Neo4jShardedDatabase</code> keeps its databases. <strong>Open (pre-existing, not blocking):</strong> any alias or constituent change re-emits <code>PrivilegesApplied "N added"</code> on every role with nothing changed; <code>diagnose</code> shows a crash-loop in its Terminated window as ⚠ and exits 0; <code>SeedBackupPending</code> repeated on every pass exhausts the event budget, so <code>SeedCredsAutoInherited</code> never reached the API; a fresh cert-manager standalone rolls once for its <code>tls-cert-sans</code> stamp; <code>TLSCertificateNeedsRestart</code> uses singular wording for several servers and repeats every 30s; <code>PluginInstalled</code> emitted 66 times in 35 minutes; the sharded controller re-runs <code>CREATE … IF NOT EXISTS</code> every pass; deleting a <code>Neo4jShardedDatabase</code> keeps its databases (now documented); an offline restore from a PVC directory without <code>sourceDatabase</code> fails with no reason; the <code>ImagePullBackOff</code> guidance says Enterprise images are not public. <strong>Environment:</strong> <code>kind load</code> of a multi-arch image needed <code>docker save \| ctr import --platform</code>; no Bolt wedge. <strong>Added after the walk, walked on its own the same day (<code>spec.monitoring.logs</code>, OpenTelemetry):</strong> a 2026.08.1 cluster created under the previous operator was untouched by the upgrade; turning <code>logs.stdout</code> on and off each rolled the servers once (<code>ConfigNeedsRestart</code> on <code>server.logs.config</code>); changing the list reloaded without a restart in 45s (cluster) and 92s (5.26.31 standalone); the example Collector (contrib 0.162.0) received query, security and debug records with pod attributes, Neo4j's timestamps and severities, and metrics from the Neo4j pods only with the <code>database</code> attribute; a conflicting <code>spec.config</code> <code>server.logs.config</code> was refused. Found on the way: a 45-second log window looked like missing 5.26 debug records (a quiet standalone logs little after startup); records had no severity until the example mapped <code>level</code></td>
 </tr>
 <tr>
 <td><strong>v1.19.0 release verification</strong></td>

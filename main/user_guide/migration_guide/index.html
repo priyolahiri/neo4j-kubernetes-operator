@@ -800,15 +800,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#upgrading-from-v1190" class="md-nav__link">
+  <a href="#upgrading-from-v119x" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Upgrading from v1.19.0
+        Upgrading from v1.19.x
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Upgrading from v1.19.0">
+    <nav class="md-nav" aria-label="Upgrading from v1.19.x">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -2124,6 +2124,8 @@
       
         
       
+        
+      
     
     
     
@@ -2209,6 +2211,34 @@
     
   
     Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../guides/opentelemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenTelemetry
   
 
     
@@ -4219,15 +4249,15 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#upgrading-from-v1190" class="md-nav__link">
+  <a href="#upgrading-from-v119x" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Upgrading from v1.19.0
+        Upgrading from v1.19.x
       
     </span>
   </a>
   
-    <nav class="md-nav" aria-label="Upgrading from v1.19.0">
+    <nav class="md-nav" aria-label="Upgrading from v1.19.x">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
@@ -4704,10 +4734,11 @@ behaviour changes below take effect on the first reconcile.</p>
 <li>Operator flag <code>--server-unavailable-grace</code> (default <code>5m</code>) and Helm value
   <code>serverUnavailableGrace</code>.</li>
 </ul>
-<h2 id="upgrading-from-v1190">Upgrading from v1.19.0<a class="headerlink" href="#upgrading-from-v1190" title="Anchor link to this section">&para;</a></h2>
-<p>Apply the new CRDs with the operator; the only change is the description of
-<code>spec.topology.minSystemPrimaries</code>. <strong>Upgrading the operator restarts no
-server.</strong> The new startup-script blocks it adds take effect at each server's
+<h2 id="upgrading-from-v119x">Upgrading from v1.19.x<a class="headerlink" href="#upgrading-from-v119x" title="Anchor link to this section">&para;</a></h2>
+<p>Apply the new CRDs with the operator. They add <code>spec.monitoring.logs</code> to
+<code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code>, and change the
+description of <code>spec.topology.minSystemPrimaries</code>. <strong>Upgrading the operator
+restarts no server.</strong> The new startup-script blocks it adds take effect at each server's
 next restart, and the operator does not restart servers for them. The
 behaviour changes below take effect on the first reconcile.</p>
 <h3 id="behaviour-changes_2">Behaviour changes<a class="headerlink" href="#behaviour-changes_2" title="Anchor link to this section">&para;</a></h3>
@@ -4781,6 +4812,13 @@ behaviour changes below take effect on the first reconcile.</p>
 </ul>
 <h3 id="new-no-action-needed_3">New, no action needed<a class="headerlink" href="#new-no-action-needed_3" title="Anchor link to this section">&para;</a></h3>
 <ul>
+<li><code>spec.monitoring.logs.stdout</code> (clusters and standalones) writes Neo4j's
+  <code>query</code>, <code>security</code> and <code>debug</code> logs to standard output as JSON, besides
+  their files, for an OpenTelemetry Collector or another node-level log
+  collector. Turning it on restarts each server once; deployments that do not
+  set it are unchanged. See <a href="../guides/opentelemetry/">OpenTelemetry</a>, which
+  includes a tested Collector configuration for these logs and Neo4j's
+  metrics. Apply the new CRDs to use it.</li>
 <li>Operator flags <code>--ready-poll-interval</code> (default <code>30s</code>) and
   <code>--split-brain-check-interval</code> (default <code>5m</code>); Helm values
   <code>readyPollInterval</code> and <code>splitBrainCheckInterval</code>.</li>
@@ -4802,7 +4840,7 @@ behaviour changes below take effect on the first reconcile.</p>
    bundle for the version you are upgrading to (replace the tag):</li>
 </ol>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.19.1/neo4j-kubernetes-operator.yaml
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.20.0/neo4j-kubernetes-operator.yaml
 </span></code></pre></div>
 <ol>
 <li><strong>Upgrade the operator</strong> via Helm:</li>

@@ -1825,6 +1825,8 @@
       
         
       
+        
+      
     
     
     
@@ -1910,6 +1912,34 @@
     
   
     Prometheus & Grafana
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/guides/opentelemetry/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OpenTelemetry
   
 
     
@@ -2903,6 +2933,17 @@
     <span class="md-ellipsis">
       
         MonitoringSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#monitoringlogsspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MonitoringLogsSpec
       
     </span>
   </a>
@@ -5174,6 +5215,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#monitoringlogsspec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MonitoringLogsSpec
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#querysamplingconfig" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -7281,8 +7333,37 @@ sharded database. The server default is <code>serverDefaultCypherLanguage</code>
 <td><a href="#querymetricsexportconfig"><code>*QueryMetricsExportConfig</code></a></td>
 <td>Metrics export configuration</td>
 </tr>
+<tr>
+<td><code>logs</code></td>
+<td><a href="#monitoringlogsspec"><code>*MonitoringLogsSpec</code></a></td>
+<td>Neo4j's own logs on the containers' standard output, as JSON, for a node-level log collector. Applies whether or not <code>enabled</code> is <code>true</code>.</td>
+</tr>
 </tbody>
 </table>
+<h3 id="monitoringlogsspec">MonitoringLogsSpec<a class="headerlink" href="#monitoringlogsspec" title="Anchor link to this section">&para;</a></h3>
+<p>Neo4j writes <code>query.log</code>, <code>security.log</code> and <code>debug.log</code> to files under <code>/logs</code>; only <code>neo4j.log</code> reaches the container's standard output. Listing a log here also writes it to standard output, one JSON object per line, where an OpenTelemetry Collector or another node-level log collector picks it up with the pod's metadata. The files keep their usual formats. See <a href="../../user_guide/guides/opentelemetry/">OpenTelemetry</a>.</p>
+<table>
+<thead>
+<tr>
+<th>Field</th>
+<th>Type</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>stdout</code></td>
+<td><code>[]string</code></td>
+<td>Logs to write to standard output: <code>query</code> (Neo4j's <code>QueryLogJsonLayout</code>), <code>security</code> (<code>StructuredJsonLayout</code>), <code>debug</code> (<code>StructuredLayoutWithMessage</code>). A set of up to three.</td>
+</tr>
+</tbody>
+</table>
+<p>The operator renders the log configuration (<code>server-logs.xml</code>) into the ConfigMap and points <code>server.logs.config</code> at the mounted copy:</p>
+<ul>
+<li><strong>Turning it on or off restarts each server once.</strong> <code>server.logs.config</code> is read at startup; a <code>ConfigNeedsRestart</code> event says so.</li>
+<li><strong>Changing the list afterwards restarts nothing.</strong> Neo4j re-reads the file it is pointed at every 30 seconds, and the kubelet updates the mount, so the change takes effect usually within two minutes.</li>
+<li><code>spec.config</code> may not set <code>server.logs.config</code> while a log is listed; validation refuses it.</li>
+</ul>
 <h3 id="querysamplingconfig">QuerySamplingConfig<a class="headerlink" href="#querysamplingconfig" title="Anchor link to this section">&para;</a></h3>
 <p>Query sampling configuration for performance monitoring.</p>
 <table>
