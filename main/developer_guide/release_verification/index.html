@@ -3589,6 +3589,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.20+)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#phase-3-property-sharding-cluster-the-calver-ci-anchor-3-servers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3985,6 +3996,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.20+)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#phase-3-property-sharding-cluster-the-calver-ci-anchor-3-servers" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4163,6 +4185,16 @@ cluster only when it <em>needs</em> clustering.</p>
 <td><strong>Upgrading from the previous release</strong></td>
 <td>Start of Phase 1, and Phase 3</td>
 <td>Two changes promise <em>nothing happens</em> on upgrade: learn mode must revoke nothing on existing roles, and <code>serverDefaultCypherLanguage</code> must record what a deployment already runs without rewriting <code>neo4j.conf</code> (a rewrite rolls the servers — observed once, on a sharding cluster). Only an object created by the <em>previous</em> operator exercises either</td>
+</tr>
+<tr>
+<td><strong>Restarts the operator avoids</strong> (live <code>spec.config</code>, scale, upgrade; v1.20+)</td>
+<td>Standalone (5.26) <strong>and</strong> Cluster (CalVer), plus Phase 2b's 5.26 cluster</td>
+<td>The restart decision is made separately per kind: the cluster's ConfigMap hash with restart-neutral startup blocks, the standalone's semantic hash. Scaling exists only on a cluster, and the 5.26 async-channel block only on a 5.26 cluster, so only a 5.26 cluster created under the previous release shows that upgrading restarts nothing there</td>
+</tr>
+<tr>
+<td><strong>TLS reload on renewal, and the issued Secret on deletion</strong> (v1.20+)</td>
+<td>Phase 2b: a CalVer TLS cluster created under the previous release, and a fresh CalVer TLS standalone</td>
+<td>Reload needs CalVer 2025.03+ and cert-manager, and the Phase 1 standalone is 5.26. An upgraded cluster is the only place the "enabled at the next restart" path (<code>RestartPending</code>, <code>TLSCertificateNeedsRestart</code>) shows; a fresh standalone shows reload enabled from the start</td>
 </tr>
 <tr>
 <td><strong>Server default Cypher language</strong> (<code>serverDefaultCypherLanguage</code>)</td>
@@ -4435,6 +4467,10 @@ back to 1 replica.</p>
 <td>A role mixing <code>spec.privileges</code> with rules — ACCESS, <code>MATCH</code> with <code>nodes: ["*"]</code>, <code>READ</code> on two properties of a label, a <code>deny</code>, a relationship segment, and a dashed database name — goes <code>Ready</code> and stores the expected rows. A rule naming a database that does not exist → <code>PrivilegesResolve=False</code> whose message says <code>Named by spec.privilegeRules[N].onDatabase</code>; apply that <code>Neo4jDatabase</code> → resolved in <strong>seconds</strong>, not the 30s requeue (that is the watch). A <code>READ</code> rule without <code>properties</code> → <code>Failed</code> naming <code>spec.privilegeRules[N].properties</code>, existing privileges untouched</td>
 </tr>
 <tr>
+<td>Live config change (standalone)</td>
+<td>Change a dynamic setting in <code>spec.config</code> (e.g. <code>db.transaction.timeout</code>): a <code>ConfigAppliedLive</code> event names it, the pod keeps its UID and restart count, <code>SHOW SETTINGS YIELD name, value WHERE name = 'db.transaction.timeout'</code> reads the new value, and it survives a pod delete. Change a static one (<code>db.tx_log.buffer.size</code>): a <code>ConfigNeedsRestart</code> event names it and the pod restarts</td>
+</tr>
+<tr>
 <td>Server default Cypher language (5.26)</td>
 <td>The Phase 1 standalone records <code>status.effectiveCypherLanguage=CYPHER_5</code> and its ConfigMap contains <strong>no</strong> <code>db.query.default_language</code>. A standalone with <code>serverDefaultCypherLanguage: CYPHER_25</code>, and one with <code>db.query.default_language</code> in <code>spec.config</code>, are each <code>Failed</code> naming the field, with <strong>no StatefulSet created</strong></td>
 </tr>
@@ -4615,6 +4651,14 @@ standalone backup" as one of Phase 1's outputs.</p>
 <td>Delete one server pod: the cluster <strong>stays <code>Ready</code></strong> throughout (watch <code>.status.phase</code> every few seconds — it must never read <code>Forming</code>), <code>Degraded=True</code> (reason <code>ServersUnavailable</code>) names the pod while it is down, <code>ServersHealthy</code> turns <code>False</code> and <code>neo4j_operator_server_health</code> drops to <code>0</code> for that pod's address — still <strong>one series per server</strong>, none left behind afterwards — and a <code>Neo4jUser</code> applied meanwhile reaches <code>Ready</code>. When it rejoins, <code>Degraded=False</code> and no <code>ClusterFormationStarted</code> event was raised. Then hold a server down past the grace: redeploy the operator with <code>--server-unavailable-grace=2m</code>, <code>kubectl cordon</code> the Kind node and delete one server pod (it stays <code>Pending</code>; give the operator Deployment a toleration for <code>node.kubernetes.io/unschedulable</code> first if you will restart it while cordoned). At 2 minutes: phase <code>Degraded</code>, <code>Ready=False</code>/<code>ClusterDegraded</code>, <strong>one</strong> <code>ClusterDegraded</code> Warning; a new <code>Neo4jUser</code> still reconciles; an image change is held (<code>UpgradeDeferred</code>, StatefulSet image unchanged — revert it afterwards). Delete a second pod: phase <code>Forming</code>, one <code>ClusterQuorumLost</code> Warning, a new <code>Neo4jUser</code> waits with <code>ClusterNotReady</code>. <code>kubectl uncordon</code> → <code>Degraded</code> (already past the grace), then <code>Ready</code>; the waiting user reconciles. Walked on 2026.08.1, 2026-10-03</td>
 </tr>
 <tr>
+<td>Scaling up restarts nothing</td>
+<td>Under a loop writing a node every second, scale <code>servers</code> 3 → 5: <code>Ready</code> within about a minute, servers 0–2 keep their pod UIDs and restart counts, a <code>ScaledWithoutRestart</code> event, no failed write. <code>SHOW DATABASE system YIELD address, role</code> lists the two new servers as <code>secondary</code>, and each has <code>/data/.neo4j-operator/system-database-mode</code> reading <code>SECONDARY</code>. Restart server-3: still <code>secondary</code>. Scale 5 → 3: nothing restarts. (A scale-up that adds a system primary, such as 2 → 3, still restarts: that is a unit test, <code>TestScale_RestartDecision</code>)</td>
+</tr>
+<tr>
+<td>Live config change (cluster)</td>
+<td>Change a dynamic setting in <code>spec.config</code>: <code>ConfigAppliedLive</code>, no pod restarts, and <code>SHOW SETTINGS</code> on <strong>each</strong> server (<code>kubectl exec &lt;pod&gt; -- cypher-shell -a bolt://localhost:7687 …</code>) reads the new value. Remove it: each server reads the default again. Change a static one: <code>ConfigNeedsRestart</code> names it and the servers roll</td>
+</tr>
+<tr>
 <td>Split-brain checks are paced, not skipped</td>
 <td>With the operator's logs at debug, leave the Ready cluster alone for 11 minutes: <code>Starting split-brain detection</code> appears about every 5 minutes (<code>--split-brain-check-interval</code>), and the passes between log <code>Skipping split-brain detection</code>. Delete one server pod: the pass that sees it gone checks in full, and so does the first pass after it rejoins — not five minutes later. Kill a server's container (<code>kubectl exec &lt;pod&gt; -c neo4j -- kill 1</code>): the restart count changes the pod fingerprint, so the pass after it checks in full. Redeploy with <code>--split-brain-check-interval=0s</code>: every pass checks in full. With <code>--ready-poll-interval=2m</code>, a quiet Ready cluster reconciles about once every 2 minutes. Walked on 2026.08.1, 2026-10-08</td>
 </tr>
@@ -4626,6 +4670,43 @@ standalone backup" as one of Phase 1's outputs.</p>
 </table>
 <p>3 servers (not 2) keeps split-brain / 3-primary quorum behaviour in the routine
 walk. → <strong>Tear down the cluster fully</strong> before Phase 3.</p>
+<h3 id="phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120">Phase 2b — Upgrading clusters restarts nothing, and TLS renewal (v1.20+)<a class="headerlink" href="#phase-2b-upgrading-clusters-restarts-nothing-and-tls-renewal-v120" title="Anchor link to this section">&para;</a></h3>
+<p>Three short deployments, <strong>one at a time</strong>, each torn down before the next.
+The first two are created under the <strong>previous release</strong> (as in Phase 1's
+upgrade row), so start each with the previous operator, then deploy <code>main</code>
+with its CRDs. Before upgrading, note the StatefulSet's <code>metadata.generation</code>
+and every server pod's UID and restart count.</p>
+<table>
+<thead>
+<tr>
+<th>Scenario</th>
+<th>Verify</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5.26 cluster upgraded from the previous release</td>
+<td>3 servers on <code>5.26-enterprise</code> (5.26.29 or later; check <code>CALL dbms.components()</code>). After <code>main</code> runs: generation, pod UIDs and restart counts unchanged; the ConfigMap's <code>startup.sh</code> gained the blocks between <code># operator:restart-neutral begin</code> and <code>end</code>, and the ConfigMap carries <code>neo4j.com/deferred-settings</code> naming <code>dbms.cluster.raft.async_channel_acquisition_enabled</code>; <code>RestartPending=True</code> names all three servers. Delete server-1: when it is back, <code>RestartPending</code> no longer names it. The existing servers stay system primaries</td>
+</tr>
+<tr>
+<td>5.26 scale without restart</td>
+<td>Scale that cluster 3 → 4: <code>ScaledWithoutRestart</code>, servers 0–2 keep their UIDs, server-3 hosts <code>system</code> as <code>secondary</code>. Optional, with a loop writing every second: deleting server-1 (which now has the setting) leaves no gap in the writes longer than a few seconds, where one without it stalls up to 30s</td>
+</tr>
+<tr>
+<td>CalVer TLS cluster upgraded from the previous release</td>
+<td>3 servers on the CI anchor with <code>spec.tls.mode: cert-manager</code>. After <code>main</code> runs: nothing restarts, and <code>RestartPending</code> names all three servers with <code>dbms.security.tls_reload_enabled</code>. Renew the certificate by deleting <code>&lt;name&gt;-tls-secret</code> (cert-manager issues it again): one <code>TLSCertificateNeedsRestart</code> Warning names all three. Delete server-1 and wait for it, then renew again: <code>TLSCertificateReloaded</code> names <code>server-1</code> with <strong>no restart</strong>, and <code>echo \| openssl s_client -connect localhost:7687 2&gt;/dev/null \| openssl x509 -noout -fingerprint -sha256</code> inside server-1 matches the new Secret's <code>tls.crt</code>; the Warning names the other two</td>
+</tr>
+<tr>
+<td>TLS Secret deleted with its cluster</td>
+<td>Delete that cluster: <code>&lt;name&gt;-tls-secret</code> is gone with it</td>
+</tr>
+<tr>
+<td>CalVer TLS standalone, created fresh</td>
+<td>A <code>Neo4jEnterpriseStandalone</code> on the CI anchor with cert-manager TLS: its <code>neo4j.conf</code> has <code>dbms.security.tls_reload_enabled=true</code>. Renew (delete <code>&lt;name&gt;-tls-secret</code>): <code>TLSCertificateReloaded</code>, same pod UID, and the presented certificate is the new one within about two minutes. Delete the standalone: <code>&lt;name&gt;-tls-secret</code> is gone. A non-TLS standalone with a hand-made <code>&lt;name&gt;-tls-secret</code>, deleted: the Secret is kept, and the operator logs why</td>
+</tr>
+</tbody>
+</table>
+<p>→ <strong>Tear down</strong> each deployment before the next, and the last before Phase 3.</p>
 <h3 id="phase-3-property-sharding-cluster-the-calver-ci-anchor-3-servers">Phase 3 — Property sharding (cluster, the CalVer CI anchor, 3 servers)<a class="headerlink" href="#phase-3-property-sharding-cluster-the-calver-ci-anchor-3-servers" title="Anchor link to this section">&para;</a></h3>
 <p>Sharding's documented floor is <strong>4Gi + 1 core per server</strong>. To fit a laptop we
 deliberately relax it — <strong>this phase is operator-mechanics verification, not
@@ -5173,8 +5254,35 @@ the first walk. The scripted steps already do.</p>
 <td>Upgrade from the previous release (nothing revoked, nothing restarted)</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;">✅ (Phase 2b, 5.26 and CalVer TLS)</td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Restarts avoided (live config, scale)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (live config)</td>
+<td style="text-align: center;">✅ (scale, live config; 5.26 in Phase 2b)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>TLS reload on renewal; issued Secret removed on deletion</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (CalVer, Phase 2b)</td>
+<td style="text-align: center;">✅ (upgraded servers, Phase 2b)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Split-brain pacing, Ready poll interval</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 </tr>
