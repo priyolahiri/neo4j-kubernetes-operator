@@ -50,12 +50,13 @@ die() { printf '\033[1;31m[ccdr]\033[0m %s\n' "$*" >&2; exit 1; }
 # written — so `ccdr-e2e-up` could never create the downstream, and the Part E
 # walk it exists to automate was still being done by hand.
 #
-# The upstream keeps 6443, so existing habits and any tooling that assumes it
-# still work. The downstream drops the line entirely and lets Kind pick a free
-# port — no second hardcoded number to collide with something else later.
+# The dev cluster keeps 6443, so existing habits and any tooling that assumes
+# it still work. Every other cluster drops the line and lets Kind pick a free
+# port: the downstream, and an upstream renamed with CCDR_UPSTREAM_CLUSTER so
+# the dev cluster can stay up beside the rig — which still holds 6443.
 cluster_config() {
     local name="$1" out="$2"
-    if [ "${name}" = "${UPSTREAM}" ]; then
+    if [ "${name}" = "neo4j-operator-dev" ]; then
         cp "${REPO_ROOT}/hack/kind-config.yaml" "${out}"
     else
         grep -v '^  apiServerPort:' "${REPO_ROOT}/hack/kind-config.yaml" > "${out}"

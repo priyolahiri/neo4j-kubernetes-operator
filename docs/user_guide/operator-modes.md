@@ -160,6 +160,7 @@ Development mode is optimized for faster iteration, but it **must run in-cluster
 - **Cache strategy**: `on-demand` (or `none` if `--ultra-fast`)
 - **skip-cache-wait**: auto-enabled if not explicitly set
 - **API rate limits**: QPS 100, Burst 200
+- **Cache resync**: every informer resyncs every 30 seconds, so every resource reconciles at least that often; `--ready-poll-interval` has no visible effect in dev mode
 - **Controllers loaded**: defaults to all controllers (one per CRD; see [Controller Selection](#controller-selection-dev-mode)); narrow with `--controllers`
 
 Helm always sets `--metrics-bind-address` and `--health-probe-bind-address`, so the dev-mode defaults above only apply when you run the binary directly or override those values.

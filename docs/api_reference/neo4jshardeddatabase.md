@@ -237,6 +237,10 @@ Restore is performed by re-creating the sharded database from a backup rather th
 - Seed a fresh sharded database from a backup with `spec.seedBackupRef` (resolves the named `Neo4jBackup`'s latest Succeeded run into a seed URI).
 - Recover an existing sharded database destructively with `spec.replaceExisting: true` + `spec.force: true`, which drops and recreates the database from the seed (`Neo4jRestore` rejects sharded targets and points here).
 
+### Deleting a Neo4jShardedDatabase
+
+Deleting the resource does **not** drop the database: the sharded family (`<name>`, `<name>-g000`, `<name>-p000`…) stays in Neo4j with its data, unlike a `Neo4jDatabase`, whose deletion drops its database. To remove the data too, drop it yourself: `CYPHER 25 DROP DATABASE <name>` against `system`. A new `Neo4jShardedDatabase` with the same `spec.name` and the default `ifNotExists: true` finds the existing family instead of creating one (`CREATE DATABASE … IF NOT EXISTS` is then a no-op).
+
 ### Neo4jShardedDatabaseStatus
 
 ```yaml
