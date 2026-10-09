@@ -25,7 +25,7 @@ work but is unsupported.
 
 `.tool-versions` lists the tool versions for [mise](https://mise.jdx.dev/) / asdf
 (`mise install` pins them): Go 1.27.0, Kind 0.27.0, kubectl 1.36.0, kustomize
-5.4.3, helm 3.16.0, golangci-lint 2.13.1. The Go-based tools (kustomize,
+5.4.3, helm 3.16.0, golangci-lint 2.14.0. The Go-based tools (kustomize,
 controller-gen, envtest, ginkgo, golangci-lint, etc.) are auto-downloaded into
 `bin/` by the Makefile at the versions pinned **there** (e.g. `GINKGO_VERSION`,
 `GOLANGCI_LINT_VERSION`) — those are what CI uses, and you don't install them by

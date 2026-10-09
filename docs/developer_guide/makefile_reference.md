@@ -1020,7 +1020,7 @@ make catalog-push CATALOG_IMG=ghcr.io/my-org/catalog:v1.0
 
 #### `make golangci-lint`
 **Description**: Download golangci-lint for code quality
-**Version**: v2.13.1 (`GOLANGCI_LINT_VERSION`; the Makefile builds it against the current Go toolchain)
+**Version**: v2.14.0 (`GOLANGCI_LINT_VERSION`; the Makefile builds it against the current Go toolchain)
 **Location**: `bin/golangci-lint`
 
 #### `make ginkgo`

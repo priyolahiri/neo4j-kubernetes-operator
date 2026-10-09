@@ -5,5 +5,5 @@ kind 0.27.0
 kubectl 1.36.0
 kustomize 5.4.3
 helm 3.16.0
-golangci-lint 2.13.1
+golangci-lint 2.14.0
 ginkgo 2.32.1

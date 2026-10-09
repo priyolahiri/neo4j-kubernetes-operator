@@ -2076,7 +2076,7 @@
     "name": "Reconcile Server Shortfall",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Sets the status of a cluster that is not fully formed. Feeds the formation result, the ClusterFormed memory, whether a template rollout is in flight and the Degraded condition's lastTransitionTime to the shortfall assessment, then writes Ready (Degraded condition True) within the grace period, Degraded past it, or Forming — for first formation, rollouts, scale-ups, split-brain or the loss of a majority (#444). ClusterDegraded and ClusterQuorumLost are deduplicated in memory, since the informer cache can return the previous phase.",
+    "description": "Sets the status of a cluster that is not fully formed. Feeds the formation result, the ClusterFormed memory, whether a template rollout is in flight and the Degraded condition's lastTransitionTime to the shortfall assessment, then writes Ready (Degraded condition True) within the grace period, Degraded past it, or Forming — for first formation, rollouts, scale-ups, split-brain or the loss of a majority (#444). When Neo4j could not be queried it also feeds the number of Ready server pods and when the connection-failure streak began; an Unmeasured verdict writes nothing. ClusterDegraded and ClusterQuorumLost are deduplicated in memory, since the informer cache can return the previous phase.",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -2100,7 +2100,7 @@
     "name": "Assess Server Shortfall",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Pure decision for a formed cluster short of servers: a server that stays Enabled in SHOW SERVERS but is not Available is lost, one never Enabled is joining. With more than half the expected servers available the verdict is WithinGrace, then Degraded once the shortfall outlasts the grace period; half or fewer is QuorumLost; never formed, a rollout, a split-brain, Neo4j unreachable or fewer Enabled servers than expected is Forming.",
+    "description": "Pure decision for a formed cluster short of servers: a server that stays Enabled in SHOW SERVERS but is not Available is lost, one never Enabled is joining. With more than half the expected servers available the verdict is WithinGrace, then Degraded once the shortfall outlasts the grace period; half or fewer is QuorumLost; never formed, a rollout, a split-brain, Neo4j unreachable or fewer Enabled servers than expected is Forming — except that a formed cluster Neo4j cannot be asked about, while Kubernetes reports a majority of its server pods Ready and the connection-failure streak is younger than the grace period, is Unmeasured, and nothing is written.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

@@ -112,6 +112,27 @@ func IsValidDatabaseName(name string) bool {
 	return name != "" && len(name) <= maxDatabaseNameLength && neo4jDatabaseNamePattern.MatchString(name)
 }
 
+// Neo4j's length rule for a database it creates, the same on 5.26 and CalVer
+// ("Length must be between 3 and 63 characters",
+// database-administration/standard-databases/naming-databases.adoc). A name
+// outside it passed validation and then failed at CREATE DATABASE.
+const (
+	minCreatedDatabaseNameLength = 3
+	maxCreatedDatabaseNameLength = 63
+)
+
+// validateCreatedDatabaseNameLength applies Neo4j's 3–63 character rule to a
+// database the operator creates. It is kept apart from validateDatabaseName,
+// which also checks names that may refer to an alias (a user's home database).
+func validateCreatedDatabaseNameLength(name string, fldPath *field.Path) field.ErrorList {
+	if name == "" || (len(name) >= minCreatedDatabaseNameLength && len(name) <= maxCreatedDatabaseNameLength) {
+		return nil
+	}
+	return field.ErrorList{field.Invalid(fldPath, name,
+		fmt.Sprintf("Neo4j requires a database name of %d to %d characters; this one has %d",
+			minCreatedDatabaseNameLength, maxCreatedDatabaseNameLength, len(name)))}
+}
+
 // validateDatabaseName checks that the database name follows Neo4j naming rules.
 func validateDatabaseName(name string, fldPath *field.Path) (field.ErrorList, []string) {
 	var allErrs field.ErrorList
@@ -155,6 +176,7 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1beta1
 		result.Errors = append(result.Errors, nameErrs...)
 		result.Warnings = append(result.Warnings, nameWarnings...)
 	}
+	result.Errors = append(result.Errors, validateCreatedDatabaseNameLength(database.Spec.Name, field.NewPath("spec", "name"))...)
 
 	// Fields the schema accepts but nothing reads: warn, never reject. Placed
 	// before the cluster lookup so the warning is not lost when it fails.

@@ -1328,3 +1328,21 @@ func TestSeedConfig_RestoreUntilVersionGate(t *testing.T) {
 		t.Errorf("restoreUntil must be accepted on CalVer, errors: %v", calverRes.Errors)
 	}
 }
+
+// Neo4j refuses a database name outside 3–63 characters at CREATE DATABASE;
+// the v1.20.0 journey saw "w3" pass validation and fail there.
+func TestValidateCreatedDatabaseNameLength(t *testing.T) {
+	path := field.NewPath("spec", "name")
+	for name, wantErr := range map[string]bool{
+		"ab":                    true,
+		"abc":                   false,
+		strings.Repeat("a", 63): false,
+		strings.Repeat("a", 64): true,
+		"":                      false, // reported as required elsewhere
+	} {
+		errs := validateCreatedDatabaseNameLength(name, path)
+		if (len(errs) > 0) != wantErr {
+			t.Errorf("%d characters: errors=%v, want error=%v", len(name), errs, wantErr)
+		}
+	}
+}

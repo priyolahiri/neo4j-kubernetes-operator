@@ -40,8 +40,10 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -69,6 +71,12 @@ const (
 	// verdictDegraded: as verdictWithinGrace, for longer than the grace
 	// period. Phase Degraded.
 	verdictDegraded availabilityVerdict = "Degraded"
+	// verdictUnmeasured: formed, Neo4j could not be asked, and Kubernetes
+	// still reports a majority of the server pods Ready — for less than the
+	// grace period. Typically the client Service still routing to a server
+	// whose container has just died. Nothing is written: the phase and the
+	// conditions stay as they were until a pass can ask Neo4j again.
+	verdictUnmeasured availabilityVerdict = "Unmeasured"
 )
 
 // shortfallInput is everything assessServerShortfall decides from, so the
@@ -84,6 +92,11 @@ type shortfallInput struct {
 	// Servers is SHOW SERVERS through the client Service; nil when Neo4j
 	// could not be queried.
 	Servers []neo4jclient.ServerInfo
+	// ReadyServerPods is how many server pods Kubernetes reports Ready, and
+	// UnreachableSince when the operator first failed to reach Neo4j in the
+	// current streak. Both are read only when Servers is nil.
+	ReadyServerPods  int
+	UnreachableSince *time.Time
 	// Expected is spec.topology.servers.
 	Expected int
 	// UnavailableSince is when the Degraded condition went True for missing
@@ -107,7 +120,18 @@ type shortfallAssessment struct {
 // still has a majority and for how long it has been short.
 func assessServerShortfall(in shortfallInput) shortfallAssessment {
 	a := shortfallAssessment{Verdict: verdictForming, Expected: in.Expected}
-	if !in.Formed || in.RolloutInFlight || in.SplitBrain || in.Servers == nil || in.Expected < 1 {
+	if !in.Formed || in.RolloutInFlight || in.SplitBrain || in.Expected < 1 {
+		return a
+	}
+	if in.Servers == nil {
+		// Unreachable is not evidence of a lost majority while Kubernetes
+		// still has one Ready: a server whose container died stays in the
+		// client Service's endpoints for a moment, and the check lands on it.
+		// Persistent unreachability still reads as Forming once it outlasts
+		// the grace period, so dependents that need Bolt pause.
+		if in.ReadyServerPods*2 > in.Expected && in.UnreachableSince != nil && in.Now.Sub(*in.UnreachableSince) < in.Grace {
+			a.Verdict = verdictUnmeasured
+		}
 		return a
 	}
 
@@ -318,6 +342,39 @@ func (r *Neo4jEnterpriseClusterReconciler) firstAnnouncement(cluster *neo4jv1bet
 		return false
 	}
 	return !loaded || prev != verdict
+}
+
+// readyServerPods counts the cluster's server pods Kubernetes reports Ready.
+func (r *Neo4jEnterpriseClusterReconciler) readyServerPods(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) int {
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(cluster.Namespace), client.MatchingLabels{
+		"neo4j.com/cluster":    cluster.Name,
+		"neo4j.com/clustering": "true",
+	}); err != nil {
+		return 0
+	}
+	n := 0
+	for i := range pods.Items {
+		if isPodReady(&pods.Items[i]) {
+			n++
+		}
+	}
+	return n
+}
+
+// unreachableSince is when the current streak of failed connections to the
+// cluster began; nil when the last attempt succeeded.
+func (r *Neo4jEnterpriseClusterReconciler) unreachableSince(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *time.Time {
+	v, ok := r.connectivityFailures.Load(clusterKey(cluster))
+	if !ok {
+		return nil
+	}
+	streak, ok := v.(*connectivityFailureStreak)
+	if !ok {
+		return nil
+	}
+	since := streak.since
+	return &since
 }
 
 // serverUnavailableGrace is the configured grace period, or the default.

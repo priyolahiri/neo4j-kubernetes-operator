@@ -2282,6 +2282,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 	}
 	if formed {
 		in.RolloutInFlight = r.serverRolloutInFlight(ctx, cluster)
+		if formation.servers == nil {
+			in.ReadyServerPods = r.readyServerPods(ctx, cluster)
+			in.UnreachableSince = r.unreachableSince(cluster)
+		}
 	}
 	a := assessServerShortfall(in)
 	log.FromContext(ctx).V(1).Info("Cluster is not fully formed",
@@ -2297,6 +2301,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 	}
 	degradedMsg := a.summary() + ". " + detail
 	switch a.Verdict {
+	case verdictUnmeasured:
+		// Nothing is known to have changed, so nothing is written; the next
+		// pass asks Neo4j again.
+
 	case verdictQuorumLost:
 		if r.firstAnnouncement(cluster, a.Verdict, false) {
 			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterQuorumLost,

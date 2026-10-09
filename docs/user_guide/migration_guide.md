@@ -462,6 +462,14 @@ behaviour changes below take effect on the first reconcile.
   recreated, restarts or changes readiness, or when a server is missing from
   `SHOW SERVERS`. `--split-brain-check-interval=0s` checks on every pass, as
   before. See [Many large clusters](guides/performance.md#many-large-clusters).
+- **A crashed server container no longer turns the cluster `Forming`.** When
+  Neo4j cannot be queried at all — the check landed on a container that had
+  just died — a formed cluster with a majority of its server pods Ready now
+  keeps its phase. If it stays unreachable for the grace period (a wrong
+  admin password, say) it turns `Forming` as before.
+- **`Neo4jDatabase` names must be 3 to 63 characters**, as Neo4j requires.
+  A name outside that range used to pass validation and fail at
+  `CREATE DATABASE`; it is now refused by validation, naming the rule.
 - **A scale-down no longer raises a false `ScaleDownBlocked`.** A drain step
   Neo4j had already taken ("already deallocating", "already dropped") was
   reported as a blocked scale-down while it went on to complete.

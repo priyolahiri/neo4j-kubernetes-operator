@@ -76,8 +76,20 @@ func TestAssessServerShortfall(t *testing.T) {
 			shortfallInput{Formed: true, RolloutInFlight: true, Servers: availServers(3, 2), Expected: 3}, verdictForming, 0},
 		{"split-brain stays Forming",
 			shortfallInput{Formed: true, SplitBrain: true, Servers: availServers(3, 2), Expected: 3}, verdictForming, 0},
-		{"Neo4j unreachable stays Forming",
-			shortfallInput{Formed: true, Servers: nil, Expected: 3}, verdictForming, 0},
+		{"Neo4j unreachable, no streak on record: Forming",
+			shortfallInput{Formed: true, Servers: nil, Expected: 3, ReadyServerPods: 3}, verdictForming, 0},
+		{"Neo4j unreachable while a majority of pods are Ready: nothing written",
+			shortfallInput{Formed: true, Servers: nil, Expected: 3, ReadyServerPods: 2, UnreachableSince: ago(10 * time.Second)}, verdictUnmeasured, 0},
+		{"Neo4j unreachable with half the pods Ready: not a majority, Forming",
+			shortfallInput{Formed: true, Servers: nil, Expected: 4, ReadyServerPods: 2, UnreachableSince: ago(10 * time.Second)}, verdictForming, 0},
+		{"Neo4j unreachable with no majority of pods Ready: Forming",
+			shortfallInput{Formed: true, Servers: nil, Expected: 3, ReadyServerPods: 1, UnreachableSince: ago(10 * time.Second)}, verdictForming, 0},
+		{"Neo4j unreachable for the whole grace period: Forming",
+			shortfallInput{Formed: true, Servers: nil, Expected: 3, ReadyServerPods: 3, UnreachableSince: ago(grace)}, verdictForming, 0},
+		{"Neo4j unreachable before it ever formed: Forming",
+			shortfallInput{Servers: nil, Expected: 3, ReadyServerPods: 3, UnreachableSince: ago(10 * time.Second)}, verdictForming, 0},
+		{"Neo4j unreachable during a rollout: Forming",
+			shortfallInput{Formed: true, RolloutInFlight: true, Servers: nil, Expected: 3, ReadyServerPods: 3, UnreachableSince: ago(10 * time.Second)}, verdictForming, 0},
 		{"scale-up: servers Neo4j never enabled are joining, not lost",
 			shortfallInput{Formed: true, Servers: availServers(3, 3), Expected: 5}, verdictForming, 0},
 		{"a Free server is not counted as known",
@@ -454,4 +466,37 @@ func TestPluginWaitsForEveryServer(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.False(t, info.IsReady)
+}
+
+// A server's container dies: until Kubernetes takes it out of the client
+// Service's endpoints the Bolt check can land on it and fail, so the pass has
+// no server list. The journey for v1.20.0 saw that write phase Forming once on
+// a formed cluster; it must write nothing while a majority of server pods is
+// Ready, and still turn Forming once the cluster has been unreachable for the
+// grace period.
+func TestReconcileServerShortfall_UnreachableWithReadyMajorityWritesNothing(t *testing.T) {
+	ctx := context.Background()
+	r, rec := shortfallReconciler(t, availCluster(neo4jv1beta1.PhaseReady, cond(ConditionTypeReady, metav1.ConditionTrue, ConditionReasonReady)))
+	for i, ready := range []bool{true, true, false} {
+		pod := serverPod(fmt.Sprintf("c-server-%d", i), fmt.Sprintf("u%d", i), ready, 0)
+		require.NoError(t, r.Create(ctx, &pod))
+	}
+	require.Equal(t, 2, r.readyServerPods(ctx, refetch(t, r)))
+
+	unreachable := formationCheck{message: "Waiting for Neo4j to accept connections"}
+	r.recordConnectivityFailure(refetch(t, r))
+	before := refetch(t, r)
+	r.reconcileServerShortfall(ctx, before, unreachable, unreachable.message)
+	after := refetch(t, r)
+	assert.Equal(t, neo4jv1beta1.PhaseReady, after.Status.Phase)
+	assert.Equal(t, before.ResourceVersion, after.ResourceVersion, "nothing is written")
+	assert.Empty(t, drainEvents(rec))
+
+	// Unreachable for the whole grace period: Forming, as before.
+	v, _ := r.connectivityFailures.Load(clusterKey(after))
+	streak, ok := v.(*connectivityFailureStreak)
+	require.True(t, ok)
+	streak.since = time.Now().Add(-DefaultServerUnavailableGrace)
+	r.reconcileServerShortfall(ctx, refetch(t, r), unreachable, unreachable.message)
+	assert.Equal(t, neo4jv1beta1.PhaseForming, refetch(t, r).Status.Phase)
 }
