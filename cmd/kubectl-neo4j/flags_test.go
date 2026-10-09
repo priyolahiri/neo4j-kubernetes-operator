@@ -20,6 +20,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -55,11 +56,17 @@ func TestEveryCommandAcceptsShortNamespaceFlag(t *testing.T) {
 
 	for name, run := range commands {
 		t.Run(name, func(t *testing.T) {
+			args := []string{"-n", "neo4j"}
+			if name == "support-bundle" {
+				// With a reachable kubeconfig it really writes a bundle, by
+				// default into the working directory — the package source.
+				args = append(args, "-o", filepath.Join(t.TempDir(), "bundle.tar.gz"))
+			}
 			stderr := captureStderr(t, func(f *os.File) {
 				// The command will fail on something else — no cluster, no
 				// input file — and that is fine. All this asserts is that it
 				// got PAST flag parsing.
-				run([]string{"-n", "neo4j"}, f, f)
+				run(args, f, f)
 			})
 			assert.NotContains(t, stderr, "flag provided but not defined",
 				"%s does not accept -n", name)
