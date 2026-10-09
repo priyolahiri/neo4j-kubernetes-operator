@@ -80,6 +80,8 @@ The operator includes comprehensive split-brain detection that runs automaticall
 
 Detection is **skipped** for single-server clusters (a single node cannot split-brain) and while the cluster has not yet reached `status.phase=Ready` (divergent views during initial formation are expected, not split-brain).
 
+On a `Ready` cluster the full check runs at most every `--split-brain-check-interval` (default `5m`; Helm `splitBrainCheckInterval`) while nothing changes — but at once when a server pod is deleted or recreated, restarts a container or changes readiness, or when `SHOW SERVERS` is short of a server. So a server that comes back and forms its own cluster is caught on the pass its pod changes, not five minutes later. `0s` checks on every reconcile. See [Many large clusters](../guides/performance.md#many-large-clusters).
+
 ### Detection Logs
 
 Monitor operator logs for split-brain detection:

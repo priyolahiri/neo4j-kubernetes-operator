@@ -120,6 +120,14 @@ var (
 	// serverUnavailableGrace is --server-unavailable-grace, handed to the
 	// cluster reconciler in both modes.
 	serverUnavailableGrace = controller.DefaultServerUnavailableGrace
+
+	// readyPollInterval is --ready-poll-interval, handed to the cluster and
+	// standalone reconcilers in both modes.
+	readyPollInterval = controller.GetTestRequeueAfter()
+
+	// splitBrainCheckInterval is --split-brain-check-interval, handed to the
+	// cluster reconciler in both modes.
+	splitBrainCheckInterval = controller.DefaultSplitBrainCheckInterval
 )
 
 // Build metadata, stamped by the Dockerfile:
@@ -199,6 +207,23 @@ func main() {
 		serverUnavailableGraceFlag = flag.Duration("server-unavailable-grace", controller.DefaultServerUnavailableGrace,
 			"How long a formed Neo4jEnterpriseCluster may be short of a server before its phase turns Degraded (it stays Ready, with the Degraded condition True, until then)")
 
+		// How long a Ready cluster or standalone waits for its next pass when
+		// nothing in Kubernetes changes. That pass is how the operator notices
+		// what only Neo4j knows — a server or database turning unhealthy — so
+		// raising it trades detection time for fewer Bolt queries across a
+		// fleet. Forming, upgrading and short-of-a-server deployments keep
+		// their own cadence.
+		readyPollIntervalFlag = flag.Duration("ready-poll-interval", controller.GetTestRequeueAfter(),
+			"How long a Ready Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone waits for its next reconcile when nothing in Kubernetes changes")
+
+		// How long a Ready cluster whose server pods have not changed goes
+		// between full split-brain checks, each of which opens a Bolt
+		// connection to every server. A deleted, recreated, restarted or
+		// un-ready server pod, or any server missing from SHOW SERVERS, checks
+		// at once.
+		splitBrainCheckIntervalFlag = flag.Duration("split-brain-check-interval", controller.DefaultSplitBrainCheckInterval,
+			"How long a Ready Neo4jEnterpriseCluster whose server pods have not changed goes between full split-brain checks (0 checks on every reconcile)")
+
 		// Development mode specific flags
 		// Must stay in sync with the dev controller registry in
 		// setupDevelopmentControllers — a key that is registered but missing here
@@ -230,6 +255,16 @@ func main() {
 		os.Exit(1)
 	}
 	serverUnavailableGrace = *serverUnavailableGraceFlag
+	if *readyPollIntervalFlag <= 0 {
+		fmt.Fprintf(os.Stderr, "--ready-poll-interval must be a positive duration, got %s\n", *readyPollIntervalFlag)
+		os.Exit(1)
+	}
+	readyPollInterval = *readyPollIntervalFlag
+	if *splitBrainCheckIntervalFlag < 0 {
+		fmt.Fprintf(os.Stderr, "--split-brain-check-interval must not be negative, got %s\n", *splitBrainCheckIntervalFlag)
+		os.Exit(1)
+	}
+	splitBrainCheckInterval = *splitBrainCheckIntervalFlag
 
 	// Validate and normalize mode
 	operatorMode := OperatorMode(strings.ToLower(*mode))
@@ -398,26 +433,29 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 		{
 			name: "Neo4jEnterpriseCluster",
 			controller: &controller.Neo4jEnterpriseClusterReconciler{
-				Client:                 mgr.GetClient(),
-				Scheme:                 mgr.GetScheme(),
-				Recorder:               mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
-				RequeueAfter:           controller.GetTestRequeueAfter(),
-				TopologyScheduler:      controller.NewTopologyScheduler(mgr.GetClient()),
-				Validator:              validation.NewClusterValidator(mgr.GetClient()),
-				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
-				SplitBrainDetector:     controller.NewSplitBrainDetector(mgr.GetClient()),
-				ServerUnavailableGrace: serverUnavailableGrace,
+				Client:                  mgr.GetClient(),
+				Scheme:                  mgr.GetScheme(),
+				Recorder:                mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+				RequeueAfter:            controller.GetTestRequeueAfter(),
+				TopologyScheduler:       controller.NewTopologyScheduler(mgr.GetClient()),
+				Validator:               validation.NewClusterValidator(mgr.GetClient()),
+				ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
+				SplitBrainDetector:      controller.NewSplitBrainDetector(mgr.GetClient()),
+				ServerUnavailableGrace:  serverUnavailableGrace,
+				ReadyPollInterval:       readyPollInterval,
+				SplitBrainCheckInterval: splitBrainCheckInterval,
 			},
 		},
 		{
 			name: "Neo4jEnterpriseStandalone",
 			controller: &controller.Neo4jEnterpriseStandaloneReconciler{
-				Client:           mgr.GetClient(),
-				Scheme:           mgr.GetScheme(),
-				Recorder:         mgr.GetEventRecorderFor("neo4j-enterprise-standalone-controller"),
-				RequeueAfter:     controller.GetTestRequeueAfter(),
-				Validator:        validation.NewStandaloneValidator(),
-				ConfigMapManager: controller.NewConfigMapManager(mgr.GetClient()),
+				Client:            mgr.GetClient(),
+				Scheme:            mgr.GetScheme(),
+				Recorder:          mgr.GetEventRecorderFor("neo4j-enterprise-standalone-controller"),
+				RequeueAfter:      controller.GetTestRequeueAfter(),
+				Validator:         validation.NewStandaloneValidator(),
+				ConfigMapManager:  controller.NewConfigMapManager(mgr.GetClient()),
+				ReadyPollInterval: readyPollInterval,
 			},
 		},
 		{
@@ -693,25 +731,28 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 	return map[string]func() (interface{ SetupWithManager(ctrl.Manager) error }, string){
 		"cluster": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jEnterpriseClusterReconciler{
-				Client:                 mgr.GetClient(),
-				Scheme:                 mgr.GetScheme(),
-				Recorder:               mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
-				RequeueAfter:           controller.GetTestRequeueAfter(),
-				TopologyScheduler:      controller.NewTopologyScheduler(mgr.GetClient()),
-				Validator:              validation.NewClusterValidator(mgr.GetClient()),
-				ConfigMapManager:       controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
-				SplitBrainDetector:     controller.NewSplitBrainDetector(mgr.GetClient()),
-				ServerUnavailableGrace: serverUnavailableGrace,
+				Client:                  mgr.GetClient(),
+				Scheme:                  mgr.GetScheme(),
+				Recorder:                mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+				RequeueAfter:            controller.GetTestRequeueAfter(),
+				TopologyScheduler:       controller.NewTopologyScheduler(mgr.GetClient()),
+				Validator:               validation.NewClusterValidator(mgr.GetClient()),
+				ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
+				SplitBrainDetector:      controller.NewSplitBrainDetector(mgr.GetClient()),
+				ServerUnavailableGrace:  serverUnavailableGrace,
+				ReadyPollInterval:       readyPollInterval,
+				SplitBrainCheckInterval: splitBrainCheckInterval,
 			}, "Neo4jEnterpriseCluster"
 		},
 		"standalone": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jEnterpriseStandaloneReconciler{
-				Client:           mgr.GetClient(),
-				Scheme:           mgr.GetScheme(),
-				Recorder:         mgr.GetEventRecorderFor("neo4j-enterprise-standalone-controller"),
-				RequeueAfter:     controller.GetTestRequeueAfter(),
-				Validator:        validation.NewStandaloneValidator(),
-				ConfigMapManager: controller.NewConfigMapManager(mgr.GetClient()),
+				Client:            mgr.GetClient(),
+				Scheme:            mgr.GetScheme(),
+				Recorder:          mgr.GetEventRecorderFor("neo4j-enterprise-standalone-controller"),
+				RequeueAfter:      controller.GetTestRequeueAfter(),
+				Validator:         validation.NewStandaloneValidator(),
+				ConfigMapManager:  controller.NewConfigMapManager(mgr.GetClient()),
+				ReadyPollInterval: readyPollInterval,
 			}, "Neo4jEnterpriseStandalone"
 		},
 		"database": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {

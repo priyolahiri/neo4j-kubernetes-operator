@@ -212,5 +212,11 @@ Get container args based on configuration
 {{- with .Values.serverUnavailableGrace }}
 - --server-unavailable-grace={{ . }}
 {{- end }}
+{{- with .Values.readyPollInterval }}
+- --ready-poll-interval={{ . }}
+{{- end }}
+{{- with .Values.splitBrainCheckInterval }}
+- --split-brain-check-interval={{ . }}
+{{- end }}
 
 {{- end }}

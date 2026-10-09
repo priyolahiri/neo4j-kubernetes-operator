@@ -69,6 +69,10 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	RequeueAfter     time.Duration
 	Validator        *validation.StandaloneValidator
 	ConfigMapManager *ConfigMapManager
+	// ReadyPollInterval is how long a Ready standalone waits for its next pass
+	// when nothing in Kubernetes changes; zero uses RequeueAfter. Set from
+	// --ready-poll-interval.
+	ReadyPollInterval time.Duration
 	// LiveConfig applies a dynamic-only neo4j.conf change to the running pod
 	// instead of restarting it (#466). nil uses Bolt.
 	LiveConfig StandaloneLiveConfigApplier
@@ -404,6 +408,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	// Reload a renewed TLS certificate without a restart (#469).
 	requeue := r.RequeueAfter
 	if standalone.Status.Phase == "Ready" {
+		requeue = readyPollInterval(r.ReadyPollInterval, r.RequeueAfter)
 		if d := r.reconcileStandaloneTLSReload(ctx, standalone); d > 0 && (requeue == 0 || d < requeue) {
 			requeue = d
 		}

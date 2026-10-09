@@ -4,7 +4,7 @@
     "name": "Reconcile Cluster",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series.",
+    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified, requeueing a Ready cluster after --ready-poll-interval (default 30s; every other path keeps RequeueAfter) — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series.",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -95,7 +95,7 @@
     "name": "Reconcile Standalone",
     "serverUnitId": "su-neo4jenterprisestandalone",
     "operation": "business_action",
-    "description": "Top-level standalone reconcile: validates the spec (including admin-secret password shape), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check on image-tag drift, and updates status once the StatefulSet reports one ready replica. With spec.podServiceAccountAnnotations it creates the `<name>-neo4j` ServiceAccount before the StatefulSet and runs the pod under it, and deletes it once the field is removed and no pod uses it. The pod template carries a hash of the raw neo4j.conf, so a changed conf restarts the pod; a change only in comments or blank lines keeps the running pod's hash (the normalised conf hash is recorded on the StatefulSet) and restarts nothing. A neo4j.conf change of dynamic settings only is applied to the running pod with dbms.setConfigValue before the conf is written, and the pod keeps its hash. With cert-manager TLS on CalVer 2025.03+, its conf enables TLS reload (applied at the next restart, ignored by the restart decision) and a renewed certificate is reloaded on the running pod. On deletion it deletes the {name}-tls-secret cert-manager issued for its {name}-tls-cert Certificate (#479).",
+    "description": "Top-level standalone reconcile: validates the spec (including admin-secret password shape), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check on image-tag drift, and updates status once the StatefulSet reports one ready replica. A Ready standalone requeues after --ready-poll-interval (default 30s); otherwise RequeueAfter. With spec.podServiceAccountAnnotations it creates the `<name>-neo4j` ServiceAccount before the StatefulSet and runs the pod under it, and deletes it once the field is removed and no pod uses it. The pod template carries a hash of the raw neo4j.conf, so a changed conf restarts the pod; a change only in comments or blank lines keeps the running pod's hash (the normalised conf hash is recorded on the StatefulSet) and restarts nothing. A neo4j.conf change of dynamic settings only is applied to the running pod with dbms.setConfigValue before the conf is written, and the pod keeps its hash. With cert-manager TLS on CalVer 2025.03+, its conf enables TLS reload (applied at the next restart, ignored by the restart decision) and a renewed certificate is reloaded on the running pod. On deletion it deletes the {name}-tls-secret cert-manager issued for its {name}-tls-cert Certificate (#479).",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -243,7 +243,7 @@
     "name": "Detect Split Brain",
     "serverUnitId": "su-splitbrain-detector",
     "operation": "business_action",
-    "description": "Queries each running server pod's own SHOW SERVERS view, groups pods that see similar cluster configurations, and flags a split-brain when a minority group's servers are not a subset of the majority group's visible servers. Runs only on a cluster that has been healthy: phase Ready or Degraded.",
+    "description": "Queries each running server pod's own SHOW SERVERS view, groups pods that see similar cluster configurations, and flags a split-brain when a minority group's servers are not a subset of the majority group's visible servers. Runs only on a cluster that has been healthy: phase Ready or Degraded. On a Ready cluster whose server pods have not changed it runs at most every --split-brain-check-interval (default 5m; 0 runs it every pass), as decided by Verify Cluster Formation.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -388,7 +388,7 @@
     "name": "Verify Cluster Formation",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Checks Bolt connectivity (tracking a consecutive-failure streak for outage forensics), then runs split-brain detection with a legacy SHOW SERVERS count fallback to decide whether the cluster has formed with the expected number of Enabled+Available servers. Returns the SHOW SERVERS list it saw and whether the shortfall is a split-brain, for the shortfall assessment.",
+    "description": "Checks Bolt connectivity (tracking a consecutive-failure streak for outage forensics), then runs split-brain detection with a legacy SHOW SERVERS count fallback to decide whether the cluster has formed with the expected number of Enabled+Available servers. On a Ready cluster the full split-brain check is skipped, and the cluster counted formed from SHOW SERVERS through the client Service, when that lists every expected server Enabled and Available and a full check found the cluster whole within --split-brain-check-interval (default 5m) against the same server pods: none deleted, recreated, restarted or changed readiness since. Only such a clean check is recorded (in memory, per cluster); any other outcome clears the record, so the next pass checks in full. Returns the SHOW SERVERS list it saw and whether the shortfall is a split-brain, for the shortfall assessment.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

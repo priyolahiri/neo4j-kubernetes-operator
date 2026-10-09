@@ -11,6 +11,19 @@ The Neo4j Enterprise Operator includes several performance optimizations for pro
 - **Status Update Optimization**: Status updates only occur when cluster state actually changes, reducing unnecessary API server load
 - **ConfigMap Debouncing**: A short debounce interval coalesces rapid successive configuration changes, preventing restart loops
 
+### Many large clusters
+
+A `Ready` cluster or standalone is reconciled whenever something in Kubernetes changes (its spec, a pod, the StatefulSet) and, when nothing does, again after `--ready-poll-interval` (default `30s`). That timed pass is how the operator notices what only Neo4j knows — a server or database turning unhealthy with no pod changing. Each pass queries Neo4j over Bolt, so one operator watching many clusters can raise the interval: at `2m`, a database that goes offline shows in `DatabasesHealthy` within two minutes instead of thirty seconds. A cluster that is forming, upgrading, rolling or short of a server is not affected; it keeps its own cadence.
+
+Split-brain detection is the expensive part of a cluster's pass: it opens a Bolt connection to **every** server and compares their views of the cluster. A `Ready` cluster runs it in full at most every `--split-brain-check-interval` (default `5m`), and in between relies on `SHOW SERVERS` through the client Service. It runs at once, on that pass, when:
+
+- a server pod has been deleted or recreated, restarted a container, or changed readiness since the last full check — the moments a server can come back on its own and form a separate cluster;
+- `SHOW SERVERS` lists fewer `Enabled`, `Available` servers than `spec.topology.servers`;
+- the cluster is not `Ready` (`Degraded` checks on every pass);
+- the operator has restarted, so it has no clean check on record.
+
+`--split-brain-check-interval=0s` restores a full check on every pass. With Helm, set `readyPollInterval` and `splitBrainCheckInterval`.
+
 ### Resource Management
 - **Memory Validation**: Automatic validation ensures Neo4j memory settings don't exceed available resources
 - **Resource Recommendations**: Built-in recommendations for optimal CPU and memory allocation based on cluster size

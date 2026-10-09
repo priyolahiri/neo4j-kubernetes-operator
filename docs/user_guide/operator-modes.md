@@ -38,6 +38,8 @@ CLI flags and Helm values always override these defaults.
 --privilege-normalisation=learn|probe          # how Neo4jRole privileges are matched (default learn)
 --kubernetes-cluster-name=<name>               # adds a k8s_cluster label to server_health and the replica metrics
 --server-unavailable-grace=5m                  # how long a formed cluster may be short of a server before it turns Degraded
+--ready-poll-interval=30s                      # how often a Ready cluster or standalone is re-checked when nothing in Kubernetes changes
+--split-brain-check-interval=5m                # how long a Ready cluster with unchanged server pods goes between full split-brain checks (0 = every reconcile)
 --zap-log-level=debug|info|warn|error|dpanic|panic|fatal
 ```
 
@@ -46,7 +48,7 @@ CLI flags and Helm values always override these defaults.
 - `developmentMode: true` adds `--mode=dev` and `--zap-devel=true`.
 - `metrics.enabled` controls `--metrics-bind-address` (`0` disables). Port comes from `metrics.service.port`.
 - `metrics.secure` (default `true`) adds `--metrics-secure=true`, so the metrics endpoint is served over **HTTPS** on that port — the plain `curl http://…:8080/metrics` below only works with `metrics.secure: false` or the binary's own defaults.
-- `privilegeNormalisation: learn|probe` passes `--privilege-normalisation` (see [Privilege drift reconciliation](user_role_management.md#privilege-drift-reconciliation)); `kubernetesClusterName` passes `--kubernetes-cluster-name`; `serverUnavailableGrace` passes `--server-unavailable-grace` (see [Server availability](../api_reference/neo4jenterprisecluster.md#server-availability)).
+- `privilegeNormalisation: learn|probe` passes `--privilege-normalisation` (see [Privilege drift reconciliation](user_role_management.md#privilege-drift-reconciliation)); `kubernetesClusterName` passes `--kubernetes-cluster-name`; `serverUnavailableGrace` passes `--server-unavailable-grace` (see [Server availability](../api_reference/neo4jenterprisecluster.md#server-availability)); `readyPollInterval` passes `--ready-poll-interval` and `splitBrainCheckInterval` passes `--split-brain-check-interval` (see [Many large clusters](guides/performance.md#many-large-clusters)).
 - `--health-probe-bind-address=:8081` is always set by the chart.
 - `leaderElection.enabled: true` passes `--leader-elect=true`.
 - `rbac.perNamespaceRoles: true` (with `operatorMode=namespaces` + a static `watchNamespaces` list) replaces the manager ClusterRole with one Role per namespace — see [Multi-Namespace Scope](#multi-namespace-scope).

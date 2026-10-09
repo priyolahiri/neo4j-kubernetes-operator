@@ -63,6 +63,23 @@ privilegeNormalisation: learn
 # longer than that to restart and rejoin (large page caches, slow storage).
 serverUnavailableGrace: ""
 
+# How long a Ready Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone waits
+# for its next reconcile when nothing in Kubernetes changes. That pass is how
+# the operator notices what only Neo4j knows (a server or database turning
+# unhealthy), so a longer interval means fewer Bolt queries across many
+# clusters and slower detection of those. Forming, upgrading and
+# short-of-a-server deployments keep their own cadence. A Go duration
+# ("2m"); empty uses the operator default, 30s.
+readyPollInterval: ""
+
+# How long a Ready Neo4jEnterpriseCluster goes between full split-brain checks
+# while none of its server pods changes. Each check opens a Bolt connection to
+# every server. A server pod that is deleted, recreated, restarts or turns
+# un-ready, or a server missing from SHOW SERVERS, is checked at once whatever
+# this says. A Go duration ("10m"); "0s" checks on every reconcile; empty uses
+# the operator default, 5m.
+splitBrainCheckInterval: ""
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true
