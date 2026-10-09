@@ -470,7 +470,7 @@ func TestPluginWaitsForEveryServer(t *testing.T) {
 
 // A server's container dies: until Kubernetes takes it out of the client
 // Service's endpoints the Bolt check can land on it and fail, so the pass has
-// no server list. The journey for v1.20.0 saw that write phase Forming once on
+// no server list. The journey for v1.19.1 saw that write phase Forming once on
 // a formed cluster; it must write nothing while a majority of server pods is
 // Ready, and still turn Forming once the cluster has been unreachable for the
 // grace period.

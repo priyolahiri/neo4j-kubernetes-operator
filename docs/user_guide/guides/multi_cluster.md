@@ -52,7 +52,7 @@ spec:
       project: default
       source:
         repoURL: https://github.com/priyolahiri/neo4j-kubernetes-operator
-        targetRevision: v1.20.0    # pin a release; never track main
+        targetRevision: v1.19.1    # pin a release; never track main
         path: charts/neo4j-operator
         helm:
           values: |

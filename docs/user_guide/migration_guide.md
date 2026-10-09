@@ -397,7 +397,7 @@ behaviour changes below take effect on the first reconcile.
 - Operator flag `--server-unavailable-grace` (default `5m`) and Helm value
   `serverUnavailableGrace`.
 
-## Upgrading from v1.19.x
+## Upgrading from v1.19.0
 
 Apply the new CRDs with the operator; the only change is the description of
 `spec.topology.minSystemPrimaries`. **Upgrading the operator restarts no
@@ -499,7 +499,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.20.0/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.19.1/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:
