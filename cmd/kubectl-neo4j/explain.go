@@ -91,6 +91,15 @@ var conditionGuidance = map[string]guidance{
 		meaning:         "a scale-down is waiting for servers to hand off their data before they can be removed.",
 		action:          "Wait. Removing the pods by hand loses the data those servers still hold.",
 	},
+	controller.ConditionTypeRestartPending: {
+		problemWhenTrue: true,
+		meaning: "one or more servers have not restarted since the operator added a setting it applies at each " +
+			"server's next restart instead of restarting them for it: async Raft channels on 5.26.29+, TLS reload " +
+			"on CalVer 2025.03+ with cert-manager TLS. The message names the servers and the settings.",
+		action: "Nothing is broken; the cluster runs as before until those servers restart. Each server picks the " +
+			"setting up at its next restart and drops out of the message. To apply it now, delete the named server " +
+			"pods one at a time, waiting for each to rejoin.",
+	},
 	controller.ConditionTypeClusterNotReady: {
 		problemWhenTrue: true,
 		meaning:         "this resource depends on a Neo4j deployment that is not Ready yet.",
