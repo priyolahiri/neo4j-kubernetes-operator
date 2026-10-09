@@ -65,9 +65,10 @@ Non-negotiables from that doc (repeated here because they bite hardest):
    operator**, not `main`: swap the Deployment's image to
    `ghcr.io/priyolahiri/neo4j-kubernetes-operator:<previous tag>` (and its
    CRDs), create the row's objects, then deploy `main` — first without its
-   CRDs, then with them — exactly as the row describes. Phase 3 has the same
-   shape for a sharding cluster. Tear down after each so the rest of the phase
-   starts from a clean `main` install.
+   CRDs, then with them — exactly as the row describes. Phase 2b (a 5.26
+   cluster, then a CalVer TLS cluster) and Phase 3 (a sharding cluster) have
+   the same shape. Tear down after each so the rest of the phase starts from a
+   clean `main` install.
 
 4. **Build the CLI from the same tree** — it ships on the operator's tag, so
    Phase 0 verifies it on this pass, and Phases 1-3 use it as a lens:
