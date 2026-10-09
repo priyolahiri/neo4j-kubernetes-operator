@@ -4495,6 +4495,7 @@ Explicit flags and Helm values always override the mode defaults.</p>
 <li><strong>Cache strategy</strong>: <code>on-demand</code> (or <code>none</code> if <code>--ultra-fast</code>)</li>
 <li><strong>skip-cache-wait</strong>: auto-enabled if not explicitly set</li>
 <li><strong>API rate limits</strong>: QPS 100, Burst 200</li>
+<li><strong>Cache resync</strong>: every informer resyncs every 30 seconds, so every resource reconciles at least that often; <code>--ready-poll-interval</code> has no visible effect in dev mode</li>
 <li><strong>Controllers loaded</strong>: defaults to all controllers (one per CRD; see <a href="#controller-selection-dev-mode">Controller Selection</a>); narrow with <code>--controllers</code></li>
 </ul>
 <p>Helm always sets <code>--metrics-bind-address</code> and <code>--health-probe-bind-address</code>, so the dev-mode defaults above only apply when you run the binary directly or override those values.</p>

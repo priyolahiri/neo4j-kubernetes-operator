@@ -5112,7 +5112,10 @@ with <code>spec.instanceRef</code> (the cluster) + <code>spec.shardedDatabase</c
 resolves the logical database name (<code>spec.name</code>, e.g. <code>products</code>) from that resource.
 A single backup captures every shard consistently in one <code>neo4j-admin database backup</code>
 invocation via a <code>{logical-name}*</code> glob — you do <strong>not</strong> list the individual shard
-databases (<code>products-g000</code>, <code>products-p000</code>, …).</p>
+databases (<code>products-g000</code>, <code>products-p000</code>, …). Because of the glob, the backup is
+refused while any other database's name starts with the logical name (for example
+<code>products-archive</code> beside <code>products</code>), naming it: rename or drop that database, or
+pick a logical name no other database begins with.</p>
 <blockquote>
 <p>ℹ️ An <strong>all-databases</strong> backup (<code>spec.allDatabases</code>) <strong>catalogues</strong> each sharded
 family's per-shard artifacts in <code>status.history[].shardedFamilies</code> (family names also

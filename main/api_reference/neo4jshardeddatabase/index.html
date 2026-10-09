@@ -2798,6 +2798,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#deleting-a-neo4jshardeddatabase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleting a Neo4jShardedDatabase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#neo4jshardeddatabasestatus" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4463,6 +4474,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#deleting-a-neo4jshardeddatabase" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleting a Neo4jShardedDatabase
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#neo4jshardeddatabasestatus" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5128,6 +5150,8 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <li>Seed a fresh sharded database from a backup with <code>spec.seedBackupRef</code> (resolves the named <code>Neo4jBackup</code>'s latest Succeeded run into a seed URI).</li>
 <li>Recover an existing sharded database destructively with <code>spec.replaceExisting: true</code> + <code>spec.force: true</code>, which drops and recreates the database from the seed (<code>Neo4jRestore</code> rejects sharded targets and points here).</li>
 </ul>
+<h3 id="deleting-a-neo4jshardeddatabase">Deleting a Neo4jShardedDatabase<a class="headerlink" href="#deleting-a-neo4jshardeddatabase" title="Anchor link to this section">&para;</a></h3>
+<p>Deleting the resource does <strong>not</strong> drop the database: the sharded family (<code>&lt;name&gt;</code>, <code>&lt;name&gt;-g000</code>, <code>&lt;name&gt;-p000</code>…) stays in Neo4j with its data, unlike a <code>Neo4jDatabase</code>, whose deletion drops its database. To remove the data too, drop it yourself: <code>CYPHER 25 DROP DATABASE &lt;name&gt;</code> against <code>system</code>. A new <code>Neo4jShardedDatabase</code> with the same <code>spec.name</code> and the default <code>ifNotExists: true</code> finds the existing family instead of creating one (<code>CREATE DATABASE … IF NOT EXISTS</code> is then a no-op).</p>
 <h3 id="neo4jshardeddatabasestatus">Neo4jShardedDatabaseStatus<a class="headerlink" href="#neo4jshardeddatabasestatus" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="nt">status</span><span class="p">:</span>
 </span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span><span class="nt">conditions</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[]</span><span class="l l-Scalar l-Scalar-Plain">metav1.Condition</span><span class="w">         </span><span class="c1"># Standard conditions</span>
