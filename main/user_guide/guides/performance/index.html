@@ -2136,6 +2136,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#many-large-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Many large clusters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#resource-management" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3950,6 +3961,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#many-large-clusters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Many large clusters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#resource-management" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4117,6 +4139,16 @@
 <li><strong>Status Update Optimization</strong>: Status updates only occur when cluster state actually changes, reducing unnecessary API server load</li>
 <li><strong>ConfigMap Debouncing</strong>: A short debounce interval coalesces rapid successive configuration changes, preventing restart loops</li>
 </ul>
+<h3 id="many-large-clusters">Many large clusters<a class="headerlink" href="#many-large-clusters" title="Anchor link to this section">&para;</a></h3>
+<p>A <code>Ready</code> cluster or standalone is reconciled whenever something in Kubernetes changes (its spec, a pod, the StatefulSet) and, when nothing does, again after <code>--ready-poll-interval</code> (default <code>30s</code>). That timed pass is how the operator notices what only Neo4j knows — a server or database turning unhealthy with no pod changing. Each pass queries Neo4j over Bolt, so one operator watching many clusters can raise the interval: at <code>2m</code>, a database that goes offline shows in <code>DatabasesHealthy</code> within two minutes instead of thirty seconds. A cluster that is forming, upgrading, rolling or short of a server is not affected; it keeps its own cadence.</p>
+<p>Split-brain detection is the expensive part of a cluster's pass: it opens a Bolt connection to <strong>every</strong> server and compares their views of the cluster. A <code>Ready</code> cluster runs it in full at most every <code>--split-brain-check-interval</code> (default <code>5m</code>), and in between relies on <code>SHOW SERVERS</code> through the client Service. It runs at once, on that pass, when:</p>
+<ul>
+<li>a server pod has been deleted or recreated, restarted a container, or changed readiness since the last full check — the moments a server can come back on its own and form a separate cluster;</li>
+<li><code>SHOW SERVERS</code> lists fewer <code>Enabled</code>, <code>Available</code> servers than <code>spec.topology.servers</code>;</li>
+<li>the cluster is not <code>Ready</code> (<code>Degraded</code> checks on every pass);</li>
+<li>the operator has restarted, so it has no clean check on record.</li>
+</ul>
+<p><code>--split-brain-check-interval=0s</code> restores a full check on every pass. With Helm, set <code>readyPollInterval</code> and <code>splitBrainCheckInterval</code>.</p>
 <h3 id="resource-management">Resource Management<a class="headerlink" href="#resource-management" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><strong>Memory Validation</strong>: Automatic validation ensures Neo4j memory settings don't exceed available resources</li>

@@ -4732,6 +4732,7 @@ split-brain from servers that simply never started.</p>
 <li><strong>Automatic Repair</strong>: Restarts those orphaned/minority pods to rejoin the main cluster</li>
 </ol>
 <p>Detection is <strong>skipped</strong> for single-server clusters (a single node cannot split-brain) and while the cluster has not yet reached <code>status.phase=Ready</code> (divergent views during initial formation are expected, not split-brain).</p>
+<p>On a <code>Ready</code> cluster the full check runs at most every <code>--split-brain-check-interval</code> (default <code>5m</code>; Helm <code>splitBrainCheckInterval</code>) while nothing changes — but at once when a server pod is deleted or recreated, restarts a container or changes readiness, or when <code>SHOW SERVERS</code> is short of a server. So a server that comes back and forms its own cluster is caught on the pass its pod changes, not five minutes later. <code>0s</code> checks on every reconcile. See <a href="../../guides/performance/#many-large-clusters">Many large clusters</a>.</p>
 <h3 id="detection-logs">Detection Logs<a class="headerlink" href="#detection-logs" title="Anchor link to this section">&para;</a></h3>
 <p>Monitor operator logs for split-brain detection:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Check for split-brain detection logs</span>
