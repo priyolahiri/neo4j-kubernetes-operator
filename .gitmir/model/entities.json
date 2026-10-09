@@ -97,6 +97,13 @@
         "note": "Default true; enables Prometheus metrics, query logging, and live diagnostics collection"
       },
       {
+        "id": "f-neo4jenterprisecluster-monitoring-logs-stdout",
+        "name": "monitoring.logs.stdout",
+        "type": "[]string",
+        "isNullable": true,
+        "note": "Logs to also write to standard output as JSON (query, security, debug) for a node-level log collector such as an OpenTelemetry Collector; the operator renders server-logs.xml into the ConfigMap and points server.logs.config at the mount. On/off restarts each server once; changing the list reloads without a restart."
+      },
+      {
         "id": "f-neo4jenterprisecluster-audit-enabled",
         "name": "audit.enabled",
         "type": "bool",
@@ -313,6 +320,13 @@
         "type": "bool",
         "isNullable": true,
         "note": "Default true; enables Prometheus metrics, query logging, and live diagnostics collection"
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-monitoring-logs-stdout",
+        "name": "monitoring.logs.stdout",
+        "type": "[]string",
+        "isNullable": true,
+        "note": "Logs to also write to standard output as JSON (query, security, debug) for a node-level log collector such as an OpenTelemetry Collector; the operator renders server-logs.xml into the ConfigMap and points server.logs.config at the mount. On/off restarts each server once; changing the list reloads without a restart."
       },
       {
         "id": "f-neo4jenterprisestandalone-audit-enabled",

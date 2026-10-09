@@ -657,6 +657,21 @@ Query performance monitoring and analytics configuration.
 | `metricsPrefix` | `string` | Custom prefix for Neo4j metric names (maps to `server.metrics.prefix`) |
 | `sampling` | [`*QuerySamplingConfig`](#querysamplingconfig) | Query sampling configuration |
 | `metricsExport` | [`*QueryMetricsExportConfig`](#querymetricsexportconfig) | Metrics export configuration |
+| `logs` | [`*MonitoringLogsSpec`](#monitoringlogsspec) | Neo4j's own logs on the containers' standard output, as JSON, for a node-level log collector. Applies whether or not `enabled` is `true`. |
+
+### MonitoringLogsSpec
+
+Neo4j writes `query.log`, `security.log` and `debug.log` to files under `/logs`; only `neo4j.log` reaches the container's standard output. Listing a log here also writes it to standard output, one JSON object per line, where an OpenTelemetry Collector or another node-level log collector picks it up with the pod's metadata. The files keep their usual formats. See [OpenTelemetry](../user_guide/guides/opentelemetry.md).
+
+| Field | Type | Description |
+|---|---|---|
+| `stdout` | `[]string` | Logs to write to standard output: `query` (Neo4j's `QueryLogJsonLayout`), `security` (`StructuredJsonLayout`), `debug` (`StructuredLayoutWithMessage`). A set of up to three. |
+
+The operator renders the log configuration (`server-logs.xml`) into the ConfigMap and points `server.logs.config` at the mounted copy:
+
+- **Turning it on or off restarts each server once.** `server.logs.config` is read at startup; a `ConfigNeedsRestart` event says so.
+- **Changing the list afterwards restarts nothing.** Neo4j re-reads the file it is pointed at every 30 seconds, and the kubelet updates the mount, so the change takes effect usually within two minutes.
+- `spec.config` may not set `server.logs.config` while a log is listed; validation refuses it.
 
 ### QuerySamplingConfig
 

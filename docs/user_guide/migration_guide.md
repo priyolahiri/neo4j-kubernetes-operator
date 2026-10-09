@@ -397,11 +397,12 @@ behaviour changes below take effect on the first reconcile.
 - Operator flag `--server-unavailable-grace` (default `5m`) and Helm value
   `serverUnavailableGrace`.
 
-## Upgrading from v1.19.0
+## Upgrading from v1.19.x
 
-Apply the new CRDs with the operator; the only change is the description of
-`spec.topology.minSystemPrimaries`. **Upgrading the operator restarts no
-server.** The new startup-script blocks it adds take effect at each server's
+Apply the new CRDs with the operator. They add `spec.monitoring.logs` to
+`Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`, and change the
+description of `spec.topology.minSystemPrimaries`. **Upgrading the operator
+restarts no server.** The new startup-script blocks it adds take effect at each server's
 next restart, and the operator does not restart servers for them. The
 behaviour changes below take effect on the first reconcile.
 
@@ -476,6 +477,13 @@ behaviour changes below take effect on the first reconcile.
 
 ### New, no action needed
 
+- `spec.monitoring.logs.stdout` (clusters and standalones) writes Neo4j's
+  `query`, `security` and `debug` logs to standard output as JSON, besides
+  their files, for an OpenTelemetry Collector or another node-level log
+  collector. Turning it on restarts each server once; deployments that do not
+  set it are unchanged. See [OpenTelemetry](guides/opentelemetry.md), which
+  includes a tested Collector configuration for these logs and Neo4j's
+  metrics. Apply the new CRDs to use it.
 - Operator flags `--ready-poll-interval` (default `30s`) and
   `--split-brain-check-interval` (default `5m`); Helm values
   `readyPollInterval` and `splitBrainCheckInterval`.
@@ -499,7 +507,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.19.1/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.20.0/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:

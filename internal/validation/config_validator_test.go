@@ -431,3 +431,23 @@ func TestConfigValidator_RejectsNewlineInValue(t *testing.T) {
 		t.Fatalf("expected newline rejection, got: %v", errs)
 	}
 }
+
+func TestValidateStdoutLogs(t *testing.T) {
+	logs := &neo4jv1beta1.MonitoringSpec{Logs: &neo4jv1beta1.MonitoringLogsSpec{Stdout: []string{"query"}}}
+	if errs := ValidateStdoutLogs(logs, map[string]string{"db.transaction.timeout": "30s"}); len(errs) != 0 {
+		t.Errorf("no conflict, got %v", errs)
+	}
+	errs := ValidateStdoutLogs(logs, map[string]string{"server.logs.config": "/elsewhere.xml"})
+	if len(errs) != 1 || errs[0].Field != "spec.config[server.logs.config]" {
+		t.Fatalf("want one error on spec.config[server.logs.config], got %v", errs)
+	}
+	for name, mon := range map[string]*neo4jv1beta1.MonitoringSpec{
+		"no monitoring": nil,
+		"no logs":       {},
+		"empty list":    {Logs: &neo4jv1beta1.MonitoringLogsSpec{}},
+	} {
+		if errs := ValidateStdoutLogs(mon, map[string]string{"server.logs.config": "/elsewhere.xml"}); len(errs) != 0 {
+			t.Errorf("%s: the user's own server.logs.config is theirs to set, got %v", name, errs)
+		}
+	}
+}

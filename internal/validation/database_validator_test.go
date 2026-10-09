@@ -1330,7 +1330,7 @@ func TestSeedConfig_RestoreUntilVersionGate(t *testing.T) {
 }
 
 // Neo4j refuses a database name outside 3–63 characters at CREATE DATABASE;
-// the v1.19.1 journey saw "w3" pass validation and fail there.
+// the v1.20.0 journey saw "w3" pass validation and fail there.
 func TestValidateCreatedDatabaseNameLength(t *testing.T) {
 	path := field.NewPath("spec", "name")
 	for name, wantErr := range map[string]bool{

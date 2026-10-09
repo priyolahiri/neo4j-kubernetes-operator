@@ -99,6 +99,7 @@ func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1beta1.Neo4jEnter
 	// keys and memory settings a cluster rejected — and, for memory, then
 	// crash-looped on Neo4j's own "Invalid memory configuration".
 	allErrs = append(allErrs, NewConfigValidator().ValidateConfigMap(standalone.Spec.Config)...)
+	allErrs = append(allErrs, ValidateStdoutLogs(standalone.Spec.Monitoring, standalone.Spec.Config)...)
 	allErrs = append(allErrs, ValidateServerCypherLanguage(standalone.Spec.ServerDefaultCypherLanguage,
 		standalone.Spec.Image.Tag, ConfigAt{Path: field.NewPath("spec", "config"), Config: standalone.Spec.Config})...)
 	allErrs = append(allErrs, NewMemoryValidator().ValidateResourcesAndConfig(
