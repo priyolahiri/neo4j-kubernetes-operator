@@ -304,7 +304,11 @@ monitoring:
   slowQueryThreshold: "5s"
   queryLogLevel: "INFO"
   obfuscateLiterals: false
+  logs:
+    stdout: [query, security]   # Neo4j's logs on standard output as JSON
 ```
+
+`logs.stdout` lists the logs (`query`, `security`, `debug`) to also write to the container's standard output, one JSON object per line, for a node-level log collector. Turning it on or off restarts the pod once; changing the list afterwards restarts nothing. Same field as [Neo4jEnterpriseCluster's](neo4jenterprisecluster.md#monitoringlogsspec); see [OpenTelemetry](../user_guide/guides/opentelemetry.md).
 
 #### `audit` (AuditSpec)
 

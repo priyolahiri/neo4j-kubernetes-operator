@@ -1,0 +1,174 @@
+# OpenTelemetry Collector for Neo4j telemetry: Neo4j's own logs from the pods'
+# standard output (spec.monitoring.logs.stdout) and its Prometheus metrics
+# (spec.monitoring.enabled), exported over OTLP.
+#
+# One Collector per node (DaemonSet). Replace the debug exporter with your
+# backend's OTLP endpoint. Guide: docs/user_guide/guides/opentelemetry.md
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: otel
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+  namespace: otel
+---
+# Pod discovery for the Prometheus receiver.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector-neo4j
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector-neo4j
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: otel-collector-neo4j
+subjects:
+  - kind: ServiceAccount
+    name: otel-collector
+    namespace: otel
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+  namespace: otel
+data:
+  config.yaml: |
+    receivers:
+      # Neo4j's logs: every line its container writes. neo4j.log is plain
+      # text; the logs listed in spec.monitoring.logs.stdout are JSON.
+      filelog/neo4j:
+        include: [/var/log/pods/*/neo4j/*.log]
+        include_file_path: true
+        start_at: end
+        operators:
+          # CRI/Docker framing, plus k8s.namespace.name, k8s.pod.name and
+          # k8s.container.name from the file path.
+          - type: container
+          - type: json_parser
+            if: 'body matches "^\\{"'
+            parse_from: body
+            parse_to: attributes
+            timestamp:
+              parse_from: attributes.time
+              layout: '%Y-%m-%d %H:%M:%S.%L%z'
+            severity:
+              parse_from: attributes.level
+
+      # Neo4j's metrics: every pod the operator annotates for scraping.
+      prometheus/neo4j:
+        config:
+          scrape_configs:
+            - job_name: neo4j
+              scrape_interval: 30s
+              kubernetes_sd_configs:
+                - role: pod
+              relabel_configs:
+                # Neo4j pods the operator manages, and only those: other pods
+                # carry the same prometheus.io annotations.
+                - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name, __meta_kubernetes_pod_label_app_kubernetes_io_managed_by]
+                  action: keep
+                  regex: neo4j;neo4j-operator
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+                  action: keep
+                  regex: "true"
+                - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                  action: replace
+                  regex: ([^:]+)(?::\d+)?;(\d+)
+                  replacement: $$1:$$2
+                  target_label: __address__
+                - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+                  action: replace
+                  regex: (.+)
+                  target_label: __metrics_path__
+                - source_labels: [__meta_kubernetes_namespace]
+                  target_label: k8s_namespace_name
+                - source_labels: [__meta_kubernetes_pod_name]
+                  target_label: k8s_pod_name
+              # Neo4j puts the database in the metric NAME:
+              # neo4j_database_<db>_transaction_committed_total. Move it to a
+              # `database` label. Only names of letters and digits are moved;
+              # a name with a dash or dot (a property shard, products-g000)
+              # becomes underscores and stays in the metric name rather than
+              # being split in the wrong place. With spec.monitoring.metricsPrefix
+              # set, replace the leading neo4j_ with your prefix.
+              metric_relabel_configs:
+                - source_labels: [__name__]
+                  regex: neo4j_database_([a-z0-9]+)_((?:causal_clustering|check_point|cluster|cypher|db|ids_in_use|index|log|neo4j|pool|store|transaction)_.+)
+                  target_label: database
+                  replacement: $$1
+                - source_labels: [__name__]
+                  regex: neo4j_database_([a-z0-9]+)_((?:causal_clustering|check_point|cluster|cypher|db|ids_in_use|index|log|neo4j|pool|store|transaction)_.+)
+                  target_label: __name__
+                  replacement: neo4j_database_$$2
+
+    processors:
+      batch: {}
+
+    exporters:
+      # Replace with your backend, e.g.
+      # otlphttp:
+      #   endpoint: https://otlp.example.com
+      debug:
+        verbosity: detailed
+
+    service:
+      pipelines:
+        logs:
+          receivers: [filelog/neo4j]
+          processors: [batch]
+          exporters: [debug]
+        metrics:
+          receivers: [prometheus/neo4j]
+          processors: [batch]
+          exporters: [debug]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: otel-collector
+  namespace: otel
+spec:
+  selector:
+    matchLabels:
+      app: otel-collector
+  template:
+    metadata:
+      labels:
+        app: otel-collector
+    spec:
+      serviceAccountName: otel-collector
+      containers:
+        - name: otel-collector
+          image: otel/opentelemetry-collector-contrib:0.162.0
+          args: ["--config=/conf/config.yaml"]
+          securityContext:
+            runAsUser: 0   # reads the node's /var/log/pods
+          resources:
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {memory: 512Mi}
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+            - name: varlogpods
+              mountPath: /var/log/pods
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: otel-collector
+        - name: varlogpods
+          hostPath:
+            path: /var/log/pods

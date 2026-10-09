@@ -162,6 +162,7 @@ nav:
       - Monitoring:
           - Overview: user_guide/guides/monitoring.md
           - Prometheus & Grafana: user_guide/guides/prometheus-grafana-setup.md
+          - OpenTelemetry: user_guide/guides/opentelemetry.md
           - Kubernetes Events: user_guide/guides/kubernetes-events.md
       - Performance:
           - Tuning Neo4j Workloads: user_guide/performance.md

@@ -313,3 +313,19 @@ type ConfigAt struct {
 	Path   *field.Path
 	Config map[string]string
 }
+
+// ValidateStdoutLogs refuses spec.config setting server.logs.config while
+// spec.monitoring.logs.stdout lists a log: the operator points that setting at
+// the log configuration it renders, and the user's value would replace it, so
+// the listed logs would silently never reach standard output. The CRD already
+// rejects unknown and repeated entries.
+func ValidateStdoutLogs(mon *neo4jv1beta1.MonitoringSpec, config map[string]string) field.ErrorList {
+	if mon == nil || mon.Logs == nil || len(mon.Logs.Stdout) == 0 {
+		return nil
+	}
+	if _, set := config["server.logs.config"]; !set {
+		return nil
+	}
+	return field.ErrorList{field.Forbidden(field.NewPath("spec", "config").Key("server.logs.config"),
+		"spec.monitoring.logs.stdout needs the operator's own log configuration; remove server.logs.config from spec.config, or remove spec.monitoring.logs")}
+}

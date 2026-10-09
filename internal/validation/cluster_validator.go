@@ -205,6 +205,7 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	}
 	allErrs = append(allErrs, ValidateServerCypherLanguage(
 		cluster.Spec.ServerDefaultCypherLanguage, cluster.Spec.Image.Tag, legacyLanguage...)...)
+	allErrs = append(allErrs, ValidateStdoutLogs(cluster.Spec.Monitoring, cluster.Spec.Config)...)
 
 	// Property sharding validation (version requirements)
 	allErrs = append(allErrs, v.validatePropertySharding(cluster)...)

@@ -1,6 +1,6 @@
 # Monitoring
 
-This guide explains how to expose Neo4j metrics for Prometheus and where the operator wires things for you. For a complete end-to-end setup with Grafana dashboards and alerting, see the [Prometheus and Grafana Setup Guide](prometheus-grafana-setup.md).
+This guide explains how to expose Neo4j metrics for Prometheus and where the operator wires things for you. For a complete end-to-end setup with Grafana dashboards and alerting, see the [Prometheus and Grafana Setup Guide](prometheus-grafana-setup.md). To send Neo4j's metrics and logs into an OpenTelemetry pipeline instead, see [OpenTelemetry](opentelemetry.md).
 
 ## Enable metrics via `spec.monitoring`
 

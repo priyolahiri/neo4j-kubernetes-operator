@@ -7,7 +7,7 @@
     asset at all — the module is published on the Go proxy:
 
     ```bash
-    go install github.com/priyolahiri/neo4j-kubernetes-operator/cmd/kubectl-neo4j@v1.19.1
+    go install github.com/priyolahiri/neo4j-kubernetes-operator/cmd/kubectl-neo4j@v1.20.0
     ```
 
     It installs into `$(go env GOPATH)/bin` under the name `kubectl-neo4j`,
@@ -42,7 +42,7 @@
     Binaries are attached to every [release](https://github.com/priyolahiri/neo4j-kubernetes-operator/releases). Pick your platform:
 
     ```bash
-    VERSION=1.19.1     # the release you want
+    VERSION=1.20.0     # the release you want
     OS=darwin          # darwin | linux (Windows: see below)
     ARCH=arm64         # arm64 | amd64
 

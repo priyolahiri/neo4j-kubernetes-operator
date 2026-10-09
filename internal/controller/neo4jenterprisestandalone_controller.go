@@ -528,6 +528,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 			}
 			configMap.Data["neo4j.conf"] = merged
 			configMap.Data["health.sh"] = desired.Data["health.sh"]
+			// The log configuration is wholly the operator's: written when a
+			// log is listed, removed when none is, so a server that restarts
+			// without the setting does not find a stale file.
+			if xml, ok := desired.Data[resources.ServerLogsConfigKey]; ok {
+				configMap.Data[resources.ServerLogsConfigKey] = xml
+			} else {
+				delete(configMap.Data, resources.ServerLogsConfigKey)
+			}
 
 			if configMap.Annotations == nil {
 				configMap.Annotations = make(map[string]string)
@@ -1527,6 +1535,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 		configLines = append(configLines, "")
 	}
 
+	// Neo4j's logs on standard output (spec.monitoring.logs.stdout), read from
+	// the ConfigMap mount so a changed list reloads without a restart; the
+	// setting itself is static. See resources/server_logs.go.
+	if len(resources.StdoutLogs(standalone.Spec.Monitoring)) > 0 {
+		configLines = append(configLines,
+			"# Neo4j logs on standard output (spec.monitoring.logs)",
+			resources.ServerLogsConfigLine(resources.StandaloneServerLogsConfigPath),
+			"")
+	}
+
 	// Audit logging — appended AFTER monitoring so audit-driven values
 	// override monitoring defaults on shared keys. BuildAuditConfig
 	// returns "" when spec.audit is nil, so the call is unconditional.
@@ -1623,11 +1641,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 			Name:      fmt.Sprintf("%s-config", standalone.Name),
 			Namespace: standalone.Namespace,
 		},
-		Data: map[string]string{
-			"neo4j.conf": neo4jConf,
-			"health.sh":  buildStandaloneHealthScript(),
-		},
+		Data: standaloneConfigMapData(standalone, neo4jConf),
 	}
+}
+
+// standaloneConfigMapData is the standalone ConfigMap's content: neo4j.conf,
+// the health script and, when spec.monitoring.logs.stdout lists a log, the
+// server-logs.xml Neo4j reads from the mount.
+func standaloneConfigMapData(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, neo4jConf string) map[string]string {
+	data := map[string]string{
+		"neo4j.conf": neo4jConf,
+		"health.sh":  buildStandaloneHealthScript(),
+	}
+	if stdout := resources.StdoutLogs(standalone.Spec.Monitoring); len(stdout) > 0 {
+		data[resources.ServerLogsConfigKey] = resources.BuildServerLogsXML(standalone.Spec.Image.Tag, stdout)
+	}
+	return data
 }
 
 // buildStandaloneHealthScript creates a health check script for standalone deployments

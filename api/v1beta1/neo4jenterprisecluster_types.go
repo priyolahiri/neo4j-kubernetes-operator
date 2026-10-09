@@ -1944,6 +1944,30 @@ type MonitoringSpec struct {
 
 	// Metrics export configuration
 	MetricsExport *QueryMetricsExportConfig `json:"metricsExport,omitempty"`
+
+	// Logs writes Neo4j's own logs to the container's standard output as
+	// JSON, besides the files under /logs, so a node-level log collector (an
+	// OpenTelemetry Collector, Fluent Bit, …) picks them up with the pod's
+	// metadata. Applies whether or not enabled is true.
+	// +optional
+	Logs *MonitoringLogsSpec `json:"logs,omitempty"`
+}
+
+// MonitoringLogsSpec selects the Neo4j logs written to standard output.
+type MonitoringLogsSpec struct {
+	// Stdout lists the logs to write to standard output, one JSON object per
+	// line: query (Neo4j's QueryLogJsonLayout), security (StructuredJsonLayout)
+	// and debug (StructuredLayoutWithMessage). The files under /logs are
+	// written as before. neo4j.log is on standard output already. Turning
+	// this on or off restarts each server once, since server.logs.config is
+	// read at startup; changing the list afterwards takes effect without a
+	// restart, usually within two minutes (the kubelet's ConfigMap refresh,
+	// then Log4j's 30-second check).
+	// +listType=set
+	// +kubebuilder:validation:MaxItems=3
+	// +kubebuilder:validation:items:Enum=query;security;debug
+	// +optional
+	Stdout []string `json:"stdout,omitempty"`
 }
 
 // QuerySamplingConfig defines query sampling

@@ -703,17 +703,23 @@ func BuildMetricsServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClust
 func BuildConfigMapForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.ConfigMap {
 	config := buildNeo4jConfigForEnterprise(cluster)
 
+	data := map[string]string{
+		"neo4j.conf": config,
+		"startup.sh": buildStartupScriptForEnterprise(cluster),
+		"health.sh":  buildHealthScript(cluster),
+	}
+	// Neo4j's logs on standard output: the file is read from this mount and
+	// reloaded by Log4j, so the restart decision never hashes it.
+	if stdout := StdoutLogs(cluster.Spec.Monitoring); len(stdout) > 0 {
+		data[ServerLogsConfigKey] = BuildServerLogsXML(cluster.Spec.Image.Tag, stdout)
+	}
 	return &corev1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      fmt.Sprintf("%s-config", cluster.Name),
 			Namespace: cluster.Namespace,
 			Labels:    getLabelsForEnterprise(cluster, "config"),
 		},
-		Data: map[string]string{
-			"neo4j.conf": config,
-			"startup.sh": buildStartupScriptForEnterprise(cluster),
-			"health.sh":  buildHealthScript(cluster),
-		},
+		Data: data,
 	}
 }
 
@@ -1910,6 +1916,13 @@ server.metrics.csv.enabled=false
 	if cluster.Spec.Monitoring != nil && cluster.Spec.Monitoring.Enabled {
 		config += "\n# Query Monitoring and Metrics\n"
 		config += BuildMonitoringConfig(cluster.Spec.Monitoring)
+	}
+
+	// Neo4j's logs on standard output (spec.monitoring.logs.stdout), read from
+	// the ConfigMap mount so a changed list reloads without a restart; the
+	// setting itself is static. See server_logs.go.
+	if len(StdoutLogs(cluster.Spec.Monitoring)) > 0 {
+		config += "\n# Neo4j logs on standard output (spec.monitoring.logs)\n" + ServerLogsConfigLine(ClusterServerLogsConfigPath) + "\n"
 	}
 
 	// Audit logging — emitted AFTER monitoring so audit-driven values
