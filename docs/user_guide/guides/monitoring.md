@@ -285,7 +285,9 @@ spec:
 ```
 
 The operator connects for diagnostics once the cluster has formed. No extra
-configuration is needed — diagnostics run automatically on every reconcile cycle.
+configuration is needed — diagnostics are collected on every reconcile (every 30
+seconds on a quiet `Ready` deployment, `--ready-poll-interval`) and written to
+status when something in them changes, or at least every 5 minutes.
 
 ### Viewing Diagnostic Status
 

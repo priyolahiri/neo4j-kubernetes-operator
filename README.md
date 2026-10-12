@@ -152,6 +152,7 @@ has a dedicated reference page and guide on the
 | Neo4j Aura orchestration (beta) | [Aura Orchestration](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/aura_orchestration/) |
 | Aura Fleet Management (monitor self-managed from Aura) | [Aura Fleet Management](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/aura_fleet_management/) |
 | Monitoring & metrics | [Monitoring](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/monitoring/) |
+| OpenTelemetry (Neo4j metrics and logs) | [OpenTelemetry](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/opentelemetry/) |
 | Upgrades | [Upgrade Guide](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/migration_guide/) |
 | Troubleshooting | [Troubleshooting](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/guides/troubleshooting/) |
 | `kubectl-neo4j` CLI | [CLI](https://priyolahiri.github.io/neo4j-kubernetes-operator/main/user_guide/cli/) |

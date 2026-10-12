@@ -1027,7 +1027,7 @@ Server-specific upgrade progress.
 
 ### DiagnosticsStatus
 
-Live diagnostics collected from `SHOW SERVERS` and `SHOW DATABASES` once the cluster has formed, including while it is degraded with a server down. On by default; `spec.monitoring.enabled: false` turns it off. Updated on every reconcile cycle.
+Live diagnostics collected from `SHOW SERVERS` and `SHOW DATABASES` once the cluster has formed, including while it is degraded with a server down. On by default; `spec.monitoring.enabled: false` turns it off. Collected on every reconcile and written to status when something in them changes, or at least every 5 minutes (see `lastCollected`).
 
 | Field | Type | Description |
 |---|---|---|

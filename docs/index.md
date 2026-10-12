@@ -95,7 +95,9 @@ and avoiding cluster-wide failure modes when the validator is unavailable.
 **Live observability.** Operator status fields surface Neo4j cluster state
 sourced from `SHOW SERVERS`, `SHOW DATABASES`, `SHOW USERS`, and
 `SHOW ROLES` queries. Server health, database topology, user counts, and
-privilege drift are visible via `kubectl describe`.
+privilege drift are visible via `kubectl describe`. Neo4j's own metrics and
+logs reach an OpenTelemetry pipeline through a Collector — see
+[OpenTelemetry](user_guide/guides/opentelemetry.md).
 
 **Multi-version support.** Neo4j 5.26 LTS (the final SemVer release) and the
 CalVer release line — 2025.x, 2026.x, and onward — are both supported, with

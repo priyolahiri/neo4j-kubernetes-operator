@@ -842,7 +842,7 @@ neo4j_dbms_bolt_connections_idle
 
 ### Metrics show stale data
 
-- The operator records metrics on every reconcile cycle (~30s default)
+- The operator records metrics on every reconcile: every 30s by default on a quiet `Ready` deployment, set by `--ready-poll-interval`
 - Until the cluster has formed, diagnostics metrics like `server_health` are not updated (once formed, they keep updating while a server is down)
 - Check reconcile logs: `kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i reconcile`
 

@@ -578,7 +578,7 @@ databaseStatus:
 
 #### `diagnostics` (StandaloneDiagnosticsStatus)
 
-Live diagnostics collected from `SHOW DATABASES`, `SHOW USERS` and `SHOW ROLES` while the standalone is in `Ready` phase. On by default; `spec.monitoring.enabled: false` turns it off. Updated on every reconcile cycle. Collection errors are stored in `diagnostics.collectionError` and never block reconciliation.
+Live diagnostics collected from `SHOW DATABASES`, `SHOW USERS` and `SHOW ROLES` while the standalone is in `Ready` phase. On by default; `spec.monitoring.enabled: false` turns it off. Collected on every reconcile and written to status when something in them changes, or at least every 5 minutes. Collection errors are stored in `diagnostics.collectionError` and never block reconciliation.
 
 | Field | Type | Description |
 |---|---|---|
