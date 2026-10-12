@@ -37,7 +37,7 @@
     "id": "su-rolling-upgrade",
     "name": "Rolling Upgrade State Machine",
     "kind": "worker",
-    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet.",
+    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts.",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],
@@ -47,7 +47,8 @@
     "moduleId": "mod-cluster",
     "paths": [
       "internal/controller/rolling_upgrade.go",
-      "internal/controller/rolling_upgrade_statemachine.go"
+      "internal/controller/rolling_upgrade_statemachine.go",
+      "internal/controller/upgrade_database_gate.go"
     ]
   },
   {

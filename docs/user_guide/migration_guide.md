@@ -497,6 +497,21 @@ behaviour changes below take effect on the first reconcile.
   cluster server records its `system` role in
   `/data/.neo4j-operator/system-database-mode`.
 
+## Upgrading from v1.20.x
+
+### Behaviour changes
+
+- **A rolling upgrade waits for each restarted server's databases.** Before
+  the next server restarts, every database copy on the one that just did must
+  have caught up (`dbms.cluster.statusCheck`, and `SHOW DATABASES` for
+  single-primary databases and secondaries); `status.upgradeStatus.message`
+  names the databases it is waiting for. A server used to count as done once
+  it rejoined, while its databases could still be catching up, and restarting
+  the next one then left a database with three primaries a single working
+  copy. Upgrades of clusters with many databases take somewhat longer — about
+  15 seconds per server with 30 databases on a laptop — and stay within
+  `upgradeTimeout`.
+
 ## Upgrading between future releases
 
 When a newer version ships:

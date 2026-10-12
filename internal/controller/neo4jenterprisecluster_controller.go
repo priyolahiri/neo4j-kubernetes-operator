@@ -90,6 +90,9 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// TLSReloadDeps replaces the network in TLS-reload tests (#469); nil in
 	// production.
 	TLSReloadDeps *tlsReloadDeps
+	// UpgradeGates replaces the network in rolling-upgrade tests (#488); nil
+	// in production.
+	UpgradeGates *upgradeGates
 	// fleetFailures dedupes the AuraFleetManagementFailed event so a
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.

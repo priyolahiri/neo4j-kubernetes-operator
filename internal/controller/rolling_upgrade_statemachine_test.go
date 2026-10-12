@@ -87,20 +87,36 @@ func TestPlanUpgradeRollStep(t *testing.T) {
 		assert.Equal(t, rollWait, planUpgradeRollStep(o))
 	})
 
-	t.Run("lowers once the rolled server rejoined", func(t *testing.T) {
+	t.Run("waits while the rejoined server's databases are catching up (#488)", func(t *testing.T) {
+		// Available is server-level: a database copy can still be starting
+		// or catching up, and restarting the next server would leave it
+		// short of a majority.
 		o := base
 		o.Partition = 2
 		o.UpdatedReplicas = 1
 		o.LastRolledAvailable = true
+		o.LastRolledDatabasesCaughtUp = false
+		assert.Equal(t, rollWait, planUpgradeRollStep(o))
+	})
+
+	t.Run("lowers once the rolled server rejoined and its databases caught up", func(t *testing.T) {
+		o := base
+		o.Partition = 2
+		o.UpdatedReplicas = 1
+		o.LastRolledAvailable = true
+		o.LastRolledDatabasesCaughtUp = true
 		assert.Equal(t, rollLower, planUpgradeRollStep(o))
 	})
 
-	t.Run("done when partition 0 pod (system-DB seed, rolled last) rejoined", func(t *testing.T) {
+	t.Run("done when partition 0 pod (system-DB seed, rolled last) rejoined and caught up", func(t *testing.T) {
 		o := base
 		o.Partition = 0
 		o.UpdatedReplicas = 3
 		o.LastRolledAvailable = true
+		o.LastRolledDatabasesCaughtUp = true
 		assert.Equal(t, rollDone, planUpgradeRollStep(o))
+		o.LastRolledDatabasesCaughtUp = false
+		assert.Equal(t, rollWait, planUpgradeRollStep(o), "the last server's databases are gated too")
 	})
 }
 
