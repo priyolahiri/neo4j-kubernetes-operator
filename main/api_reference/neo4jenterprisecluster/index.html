@@ -8446,7 +8446,7 @@ visible via <code>kubectl get svc</code>.</p>
 </tbody>
 </table>
 <h3 id="diagnosticsstatus">DiagnosticsStatus<a class="headerlink" href="#diagnosticsstatus" title="Anchor link to this section">&para;</a></h3>
-<p>Live diagnostics collected from <code>SHOW SERVERS</code> and <code>SHOW DATABASES</code> once the cluster has formed, including while it is degraded with a server down. On by default; <code>spec.monitoring.enabled: false</code> turns it off. Updated on every reconcile cycle.</p>
+<p>Live diagnostics collected from <code>SHOW SERVERS</code> and <code>SHOW DATABASES</code> once the cluster has formed, including while it is degraded with a server down. On by default; <code>spec.monitoring.enabled: false</code> turns it off. Collected on every reconcile and written to status when something in them changes, or at least every 5 minutes (see <code>lastCollected</code>).</p>
 <table>
 <thead>
 <tr>

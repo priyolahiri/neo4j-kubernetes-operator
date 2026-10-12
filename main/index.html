@@ -4132,7 +4132,9 @@ and avoiding cluster-wide failure modes when the validator is unavailable.</p>
 <p><strong>Live observability.</strong> Operator status fields surface Neo4j cluster state
 sourced from <code>SHOW SERVERS</code>, <code>SHOW DATABASES</code>, <code>SHOW USERS</code>, and
 <code>SHOW ROLES</code> queries. Server health, database topology, user counts, and
-privilege drift are visible via <code>kubectl describe</code>.</p>
+privilege drift are visible via <code>kubectl describe</code>. Neo4j's own metrics and
+logs reach an OpenTelemetry pipeline through a Collector — see
+<a href="user_guide/guides/opentelemetry/">OpenTelemetry</a>.</p>
 <p><strong>Multi-version support.</strong> Neo4j 5.26 LTS (the final SemVer release) and the
 CalVer release line — 2025.x, 2026.x, and onward — are both supported, with
 automatic version detection for Cypher 25 syntax and version-appropriate

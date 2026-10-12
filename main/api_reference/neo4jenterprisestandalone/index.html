@@ -6107,7 +6107,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-25-7"><a id="__codelineno-25-7" name="__codelineno-25-7" href="#__codelineno-25-7"></a><span class="w">  </span><span class="nt">lastHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="s">"2025-01-20T10:30:00Z"</span>
 </span></code></pre></div>
 <h4 id="diagnostics-standalonediagnosticsstatus"><code>diagnostics</code> (StandaloneDiagnosticsStatus)<a class="headerlink" href="#diagnostics-standalonediagnosticsstatus" title="Anchor link to this section">&para;</a></h4>
-<p>Live diagnostics collected from <code>SHOW DATABASES</code>, <code>SHOW USERS</code> and <code>SHOW ROLES</code> while the standalone is in <code>Ready</code> phase. On by default; <code>spec.monitoring.enabled: false</code> turns it off. Updated on every reconcile cycle. Collection errors are stored in <code>diagnostics.collectionError</code> and never block reconciliation.</p>
+<p>Live diagnostics collected from <code>SHOW DATABASES</code>, <code>SHOW USERS</code> and <code>SHOW ROLES</code> while the standalone is in <code>Ready</code> phase. On by default; <code>spec.monitoring.enabled: false</code> turns it off. Collected on every reconcile and written to status when something in them changes, or at least every 5 minutes. Collection errors are stored in <code>diagnostics.collectionError</code> and never block reconciliation.</p>
 <table>
 <thead>
 <tr>
