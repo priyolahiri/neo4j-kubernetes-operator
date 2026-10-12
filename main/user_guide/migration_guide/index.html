@@ -839,6 +839,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v120x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.20.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.20.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4288,6 +4316,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v120x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.20.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.20.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4831,6 +4887,20 @@ behaviour changes below take effect on the first reconcile.</p>
   <code>neo4j.com/config-semantic-hash</code> on the standalone's StatefulSet. Each
   cluster server records its <code>system</code> role in
   <code>/data/.neo4j-operator/system-database-mode</code>.</li>
+</ul>
+<h2 id="upgrading-from-v120x">Upgrading from v1.20.x<a class="headerlink" href="#upgrading-from-v120x" title="Anchor link to this section">&para;</a></h2>
+<h3 id="behaviour-changes_3">Behaviour changes<a class="headerlink" href="#behaviour-changes_3" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>A rolling upgrade waits for each restarted server's databases.</strong> Before
+  the next server restarts, every database copy on the one that just did must
+  have caught up (<code>dbms.cluster.statusCheck</code>, and <code>SHOW DATABASES</code> for
+  single-primary databases and secondaries); <code>status.upgradeStatus.message</code>
+  names the databases it is waiting for. A server used to count as done once
+  it rejoined, while its databases could still be catching up, and restarting
+  the next one then left a database with three primaries a single working
+  copy. Upgrades of clusters with many databases take somewhat longer — about
+  15 seconds per server with 30 databases on a laptop — and stay within
+  <code>upgradeTimeout</code>.</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>

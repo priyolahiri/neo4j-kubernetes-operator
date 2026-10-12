@@ -4744,6 +4744,10 @@ and every server pod's UID and restart count.</p>
 <td>Delete that cluster: <code>&lt;name&gt;-tls-secret</code> is gone with it</td>
 </tr>
 <tr>
+<td>Rolling upgrade waits for each server's databases (#488)</td>
+<td>Needs two published patch images of one line (e.g. 5.26.30 → 5.26.31). A 3-server cluster with about 30 databases of 3 primaries each (<code>CREATE DATABASE dNN TOPOLOGY 3 PRIMARIES WAIT</code>) and a client writing to a few of them through <code>neo4j://</code> routing. Change the image: at least one step shows <code>status.upgradeStatus.message</code> "waiting for its databases to catch up (…)" naming databases, and <code>CALL dbms.cluster.statusCheck([])</code> run on the server just restarted shows those databases not yet <code>APPLYING</code> at that moment; the partition lowers only after they are. No client write fails; a few seconds' pause per database whose leader restarts is expected</td>
+</tr>
+<tr>
 <td>CalVer TLS standalone, created fresh</td>
 <td>A <code>Neo4jEnterpriseStandalone</code> on the CI anchor with cert-manager TLS: its <code>neo4j.conf</code> has <code>dbms.security.tls_reload_enabled=true</code>. A new TLS standalone restarts once about 30 seconds after its first <code>Ready</code> (the <code>neo4j.com/tls-cert-sans</code> stamp is added once its Secret exists; pre-existing), so note the pod UID after that. Renew (delete <code>&lt;name&gt;-tls-secret</code>): <code>TLSCertificateReloaded</code>, same pod UID, and the presented certificate is the new one within about two minutes. Delete the standalone: <code>&lt;name&gt;-tls-secret</code> is gone. A non-TLS standalone with a hand-made <code>&lt;name&gt;-tls-secret</code>, deleted: the Secret is kept, and the operator logs why</td>
 </tr>
