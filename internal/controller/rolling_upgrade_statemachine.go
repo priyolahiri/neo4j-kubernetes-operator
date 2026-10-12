@@ -43,7 +43,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -113,6 +112,10 @@ type upgradeRollObservation struct {
 	// most recently rolled pod (ordinal == Partition). Ignored while
 	// Partition == Replicas (nothing rolled yet).
 	LastRolledAvailable bool
+	// LastRolledDatabasesCaughtUp is the database gate for the same pod
+	// (#488): every database copy on it replicating and applying, and at its
+	// requested status. See upgrade_database_gate.go.
+	LastRolledDatabasesCaughtUp bool
 }
 
 type upgradeRollDecision int
@@ -145,6 +148,12 @@ func planUpgradeRollStep(o upgradeRollObservation) upgradeRollDecision {
 	// Kubernetes readiness only checks HTTP 7474; the restarted server must
 	// also be Enabled+Available in SHOW SERVERS before the next pod rolls.
 	if o.Partition < o.Replicas && !o.LastRolledAvailable {
+		return rollWait
+	}
+	// Available is a server-level state: its databases can still be starting
+	// or catching up, and restarting the next server then would leave them
+	// short of a majority (#488).
+	if o.Partition < o.Replicas && !o.LastRolledDatabasesCaughtUp {
 		return rollWait
 	}
 	if o.Partition == 0 {
@@ -430,6 +439,7 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeRolling(
 	kubernetesSettled := obs.ObservedGeneration >= obs.Generation &&
 		obs.UpdatedReplicas >= obs.Replicas-obs.Partition &&
 		obs.ReadyReplicas >= obs.Replicas
+	var lagging []string
 	if kubernetesSettled && partition < replicas {
 		podName := fmt.Sprintf("%s-server-%d", cluster.Name, partition)
 		available, err := r.isServerAvailable(ctx, cluster, podName)
@@ -437,11 +447,31 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeRolling(
 			logger.V(1).Info("SHOW SERVERS gate not yet answerable (retrying)", "pod", podName, "error", err.Error())
 		}
 		obs.LastRolledAvailable = available
+		if available {
+			caughtUp, notReady, err := r.lastRolledDatabasesCaughtUp(ctx, cluster, podName)
+			switch {
+			case err != nil:
+				logger.V(1).Info("Database gate not yet answerable (retrying)", "pod", podName, "error", err.Error())
+			case !caughtUp:
+				lagging = notReady
+				logger.Info("Waiting for the restarted server's databases to catch up", "pod", podName, "databases", notReady)
+				if msg := databaseGateMessage(partition, notReady); us.Message != msg {
+					if err := r.patchUpgradeStatus(ctx, cluster, func(s *neo4jv1beta1.UpgradeStatus) { s.Message = msg }); err != nil {
+						logger.V(1).Info("Failed to record the database gate message", "error", err.Error())
+					}
+				}
+			}
+			obs.LastRolledDatabasesCaughtUp = caughtUp
+		}
 	}
 
 	switch planUpgradeRollStep(obs) {
 	case rollWait:
 		if upgradeStepDeadlineExceeded(us, orch.getUpgradeTimeout(cluster), time.Now()) {
+			if len(lagging) > 0 {
+				return r.failUpgrade(ctx, cluster, fmt.Errorf(
+					"timed out waiting for the databases on server ordinal %d to catch up (%s)", partition, databaseNameList(lagging)))
+			}
 			return r.failUpgrade(ctx, cluster, fmt.Errorf(
 				"timed out waiting for server ordinal %d to roll and rejoin the cluster", partition))
 		}
@@ -674,6 +704,9 @@ func (r *Neo4jEnterpriseClusterReconciler) isServerAvailable(
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	podName string,
 ) (bool, error) {
+	if r.UpgradeGates != nil && r.UpgradeGates.serverAvailable != nil {
+		return r.UpgradeGates.serverAvailable(ctx, cluster, podName)
+	}
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err != nil {
 		return false, err
@@ -685,7 +718,7 @@ func (r *Neo4jEnterpriseClusterReconciler) isServerAvailable(
 		return false, err
 	}
 	for _, s := range servers {
-		if strings.Contains(s.Address, podName) && s.State == "Enabled" && s.Health == "Available" {
+		if addressIsPod(s.Address, podName) && s.State == "Enabled" && s.Health == "Available" {
 			return true, nil
 		}
 	}

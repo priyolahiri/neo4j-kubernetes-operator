@@ -3104,4 +3104,95 @@ func (c *Client) IsFleetManagementInstalled(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
+// ===== Rolling upgrade gates =====
+
+// ClusterStatusCheckRow is one row of dbms.cluster.statusCheck: one member of
+// one clustered database, as seen by the server the procedure ran on.
+type ClusterStatusCheckRow struct {
+	Database              string
+	ServerID              string
+	Address               string
+	ReplicationSuccessful bool
+	// MemberStatus is APPLYING (can replicate and is applying transactions),
+	// REPLICATING (can take part in replication but cannot apply) or
+	// UNAVAILABLE (too far behind the leader, or unreachable).
+	MemberStatus string
+	// Requester marks the row for the server the procedure ran on.
+	Requester bool
+	Error     string
+}
+
+// ClusterStatusCheck runs dbms.cluster.statusCheck for every clustered
+// database on the server this client is connected to (5.24+ and CalVer). It
+// replicates a dummy transaction per database, so it reports which members
+// can replicate and apply right now. Single-primary databases and
+// secondaries are not covered (Operations Manual, monitoring replication).
+func (c *Client) ClusterStatusCheck(ctx context.Context, timeout time.Duration) ([]ClusterStatusCheckRow, error) {
+	var rows []ClusterStatusCheckRow
+	err := c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {
+		session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+			AccessMode:   neo4j.AccessModeRead,
+			DatabaseName: "system",
+		})
+		defer session.Close(ctx)
+		result, err := session.Run(ctx,
+			"CALL dbms.cluster.statusCheck([], $timeout) YIELD database, serverId, address, replicationSuccessful, memberStatus, requester, error "+
+				"RETURN database, serverId, address, replicationSuccessful, memberStatus, requester, error",
+			map[string]any{"timeout": timeout.Milliseconds()})
+		if err != nil {
+			return fmt.Errorf("failed to run dbms.cluster.statusCheck: %w", err)
+		}
+		for result.Next(ctx) {
+			v := result.Record().Values
+			rows = append(rows, ClusterStatusCheckRow{
+				Database:              columnString(v[0]),
+				ServerID:              columnString(v[1]),
+				Address:               columnString(v[2]),
+				ReplicationSuccessful: v[3] == true,
+				MemberStatus:          columnString(v[4]),
+				Requester:             v[5] == true,
+				Error:                 columnString(v[6]),
+			})
+		}
+		return result.Err()
+	})
+	return rows, err
+}
+
+// DatabaseAllocation is one row of SHOW DATABASES: one database on one server.
+type DatabaseAllocation struct {
+	Name            string
+	Address         string
+	Role            string
+	CurrentStatus   string
+	RequestedStatus string
+}
+
+// DatabaseAllocations lists every database on every server, with the server's
+// address, from SHOW DATABASES.
+func (c *Client) DatabaseAllocations(ctx context.Context) ([]DatabaseAllocation, error) {
+	var rows []DatabaseAllocation
+	err := c.executeWithCircuitBreaker(ctx, func(ctx context.Context) error {
+		session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+			AccessMode:   neo4j.AccessModeRead,
+			DatabaseName: "system",
+		})
+		defer session.Close(ctx)
+		result, err := session.Run(ctx,
+			"SHOW DATABASES YIELD name, address, role, currentStatus, requestedStatus RETURN name, address, role, currentStatus, requestedStatus", nil)
+		if err != nil {
+			return fmt.Errorf("failed to run SHOW DATABASES: %w", err)
+		}
+		for result.Next(ctx) {
+			v := result.Record().Values
+			rows = append(rows, DatabaseAllocation{
+				Name: columnString(v[0]), Address: columnString(v[1]), Role: columnString(v[2]),
+				CurrentStatus: columnString(v[3]), RequestedStatus: columnString(v[4]),
+			})
+		}
+		return result.Err()
+	})
+	return rows, err
+}
+
 // ===== Property Sharding Support =====

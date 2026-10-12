@@ -257,7 +257,7 @@
         "from": "Rolling",
         "to": "Rolling",
         "label": "lower the partition by one ordinal",
-        "condition": "the current ordinal's StatefulSet rollout is settled and it reports Enabled+Available in SHOW SERVERS",
+        "condition": "the current ordinal's StatefulSet rollout is settled, every server pod is Ready, the restarted server reports Enabled+Available in SHOW SERVERS (matched by host, not substring), and its databases have caught up: on that server dbms.cluster.statusCheck reports every database copy replicationSuccessful and APPLYING with no error, and SHOW DATABASES shows every database it hosts at its requested status (#488). While a database lags, status.upgradeStatus.message names it and the reconcile requeues.",
         "effects": [
           {
             "kind": "update",

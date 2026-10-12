@@ -16,9 +16,11 @@ The operator performs a safe, ordered rolling upgrade:
 
 1. **Freezes all pods** — sets the StatefulSet partition to block any automatic restarts.
 2. **Restarts pods highest-ordinal-first** — pods `N-1`, `N-2`, … `1` are restarted in order. Kubernetes StatefulSet partition-based rolling always restarts pods from highest ordinal to lowest, so pod `0` is naturally the last to restart.
-3. **Verifies cluster membership after each pod** — after Kubernetes reports the pod Ready, the operator also queries `SHOW SERVERS` to confirm the server is `Enabled`/`Available` in the Neo4j cluster before moving to the next pod. This closes the gap where a pod can pass the Kubernetes readiness probe while still joining the cluster.
+3. **Verifies the server and its databases after each pod** — after Kubernetes reports the pod Ready, the operator checks that the server is `Enabled`/`Available` in `SHOW SERVERS`, and then, on that server, that every one of its databases has caught up: `dbms.cluster.statusCheck` must report each clustered database replicating with the server's own copy `APPLYING`, and `SHOW DATABASES` must show every database on it at its requested status (which covers single-primary databases and secondaries). Only then does the next pod restart. A server is Available as soon as it rejoins, while its databases can still be starting or catching up; restarting the next server in that window would leave a database with three primaries one working copy. While the walk waits, `status.upgradeStatus.message` names the databases it is waiting for. A database that has not caught up within `upgradeTimeout` stops the upgrade (`Failed`, or `Paused` with `autoPauseOnFailure`), and `status.upgradeStatus.lastError` names it.
 4. **Rolls pod 0 last** — the operator attempts to detect which pod holds the primary role for the `system` database (via `SHOW DATABASES`) and logs a warning if it is not ordinal 0. Ordinal 0 is always the last pod rolled regardless, so the system-database primary is preserved as long as possible.
 5. **Waits for cluster stabilisation** — after all pods are updated the operator waits for the cluster health and consensus state to be consistently stable before marking the upgrade complete.
+
+Writes stay available throughout, with one expected pause: when a server that leads a database restarts, that database elects a new leader, and its writes pause until the election finishes and the drivers' routing catches up — typically 2–5 seconds, measured up to 12 seconds on a busy laptop cluster with 30 databases. Neo4j has no procedure to hand leadership over ahead of a restart, so applications should use the drivers' retrying transaction functions (`executeWrite` and equivalents), which ride over it.
 
 Watch progress with:
 
@@ -42,7 +44,7 @@ operator restarts:
 | Phase | What's happening |
 |---|---|
 | `Staging` | Pre-upgrade health check, version-compatibility check, StatefulSet frozen (partition = replica count), new image applied to the template |
-| `Rolling` | Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness **and** Neo4j cluster membership (`SHOW SERVERS`) are verified before the partition is lowered |
+| `Rolling` | Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (`SHOW SERVERS`) **and** that pod's databases (`dbms.cluster.statusCheck`, `SHOW DATABASES`) are verified before the partition is lowered |
 | `Stabilizing` | All pods updated; the operator waits for consistently stable cluster health and consensus |
 | `Verifying` | Every server's reported version is checked against the target before the upgrade is declared done |
 | `Completed` / `Failed` / `Paused` | Terminal. `Paused` means a health check failed with `autoPauseOnFailure: true` — the cluster is left as-is for you to investigate |
@@ -102,8 +104,8 @@ spec:
     strategy: RollingUpgrade
     preUpgradeHealthCheck: true   # validate cluster health before upgrading (default true)
     autoPauseOnFailure: true      # pause the upgrade for manual intervention if a check fails (default true)
-    upgradeTimeout: 30m           # per-pod Kubernetes readiness timeout (default 30m)
-    healthCheckTimeout: 5m        # per-pod Neo4j cluster-membership timeout (default 5m)
+    upgradeTimeout: 30m           # per-pod step: readiness, rejoin and databases caught up (default 30m)
+    healthCheckTimeout: 5m        # post-upgrade version verification (Verifying) timeout (default 5m)
     stabilizationTimeout: 3m      # post-upgrade cluster-stabilization wait (default 3m)
     postUpgradeHealthCheck: true  # validate cluster health after upgrade (default true)
 ```
