@@ -817,6 +817,16 @@
 - **pinned-by:** `TestCollectDiagnosticsDuringUpgrade_Gating`, `TestReconcile_CollectsDiagnosticsDuringAnUpgrade` (`internal/controller/upgrade_diagnostics_test.go`) — removing the call or the interval fails them.
 - **enforcement:** unit test.
 
+### id 132 — Cluster and standalone clients share one driver per deployment and credentials
+- **scope:** `driverCache`, `drivers`, `tlsMaterialDigest`, `ForgetCluster`, `ForgetStandalone` (`internal/neo4j/driver_cache.go`); `NewClientForEnterprise`, `NewClientForEnterpriseStandalone`, `Client.Close`, `tlsSecretNames` (`internal/neo4j/client.go`); the deletion handlers of both reconcilers.
+- **rule:**
+  - `NewClientForEnterprise` and `NewClientForEnterpriseStandalone` take their driver from the process-wide cache; each still returns a Client of its own (own circuit breaker), and `Close` releases the driver instead of closing it. `NewClientForPod` (per-pod, split-brain/upgrade gates/live config) keeps a driver of its own.
+  - **The key is everything the driver is built from:** the deployment's UID, the URI, the username, and SHA-256 digests of the password and of the TLS material (`tlsMaterialDigest` reads the same Secrets as `buildTLSConfig`, via `tlsSecretNames`). A deployment whose key changes gets a new driver; the old one is closed by its last holder. Add any new driver input to the key, or a stale driver is reused.
+  - Drivers unused for 10 minutes are closed (a sweep on each acquire), and deletion forgets the deployment's at once. The cache is safe for the cluster controller's parallel workers and the database, user and role controllers using the same clients.
+- **why:** every pass built fresh drivers and closed them: new TCP connections, TLS handshakes and a login for each, each a `security.log` line — 35 logins in 2 minutes on one quiet 3-server cluster (2026-10-13, Kind, 5.26.31), now 3 in 4 minutes (the per-pod split-brain checks); a standalone made 0 in 3 minutes. A server restart: diagnostics showed it Unavailable 5s later and Available again 11s after that, with no operator errors — pooled connections to a gone pod are discarded (`ConnectionLivenessCheckTimeout`).
+- **pinned-by:** `TestDriverCache`, `TestDriverCacheConcurrent`, `TestNewClientForEnterpriseSharesTheDriver` (`internal/neo4j/driver_cache_test.go`) — dropping the password or the TLS digest from the key, or retiring nothing on a key change, fails them; the TLS case is a renewed CA with the URI unchanged.
+- **enforcement:** unit test (race detector).
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

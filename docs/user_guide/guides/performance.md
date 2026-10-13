@@ -15,6 +15,8 @@ The Neo4j Enterprise Operator includes several performance optimizations for pro
 
 A `Ready` cluster or standalone is reconciled whenever something in Kubernetes changes (its spec, a pod, the StatefulSet) and, when nothing does, again after `--ready-poll-interval` (default `30s`). That timed pass is how the operator notices what only Neo4j knows — a server or database turning unhealthy with no pod changing. Each pass queries Neo4j over Bolt, so one operator watching many clusters can raise the interval: at `2m`, a database that goes offline shows in `DatabasesHealthy` within two minutes instead of thirty seconds. A cluster that is forming, upgrading, rolling or short of a server is not affected; it keeps its own cadence.
 
+The operator keeps one Neo4j driver per cluster or standalone and reuses its connections from pass to pass, so a pass does not open new connections, perform TLS handshakes or log in again. On a quiet 3-server cluster that took the operator's logins, each a line in Neo4j's `security.log`, from about 17 a minute to under one. The driver is replaced when the admin password or the TLS certificates change, and closed when the deployment is deleted or has not been reconciled for 10 minutes.
+
 Split-brain detection is the expensive part of a cluster's pass: it opens a Bolt connection to **every** server and compares their views of the cluster. A `Ready` cluster runs it in full at most every `--split-brain-check-interval` (default `5m`), and in between relies on `SHOW SERVERS` through the client Service. It runs at once, on that pass, when:
 
 - a server pod has been deleted or recreated, restarted a container, or changed readiness since the last full check — the moments a server can come back on its own and form a separate cluster;

@@ -61,6 +61,10 @@ type Client struct {
 	// credentials, so an unverified connection is worth reporting, not hiding.
 	tlsVerificationDisabled bool
 
+	// release returns a shared driver to the cache (driver_cache.go); nil for
+	// a driver of the client's own, which Close closes.
+	release func()
+
 	// Mutex for thread-safe operations
 	mutex sync.RWMutex
 }
@@ -319,11 +323,7 @@ func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, res
 	// Try loading CA cert from secrets in priority order:
 	// 1. User-specified TrustedCASecret (explicit override)
 	// 2. Auto-discovered cert-manager Secret ({name}-tls-secret)
-	secretNames := []string{}
-	if tlsSpec.TrustedCASecret != "" {
-		secretNames = append(secretNames, tlsSpec.TrustedCASecret)
-	}
-	secretNames = append(secretNames, fmt.Sprintf("%s-tls-secret", resourceName))
+	secretNames := tlsSecretNames(resourceName, tlsSpec)
 
 	// serverCert holds the first tls.crt seen, as the pinning fallback for
 	// case 3. Collected on the same pass so a missing ca.crt costs no extra Get.
@@ -395,6 +395,16 @@ func buildTLSConfig(ctx context.Context, k8sClient client.Client, namespace, res
 	return nil, true
 }
 
+// tlsSecretNames lists the Secrets buildTLSConfig reads, in priority order;
+// tlsMaterialDigest reads the same ones.
+func tlsSecretNames(resourceName string, tlsSpec *neo4jv1beta1.TLSSpec) []string {
+	var names []string
+	if tlsSpec.TrustedCASecret != "" {
+		names = append(names, tlsSpec.TrustedCASecret)
+	}
+	return append(names, fmt.Sprintf("%s-tls-secret", resourceName))
+}
+
 // serverCertPool turns the tls.crt of a TLS Secret into a trust store holding
 // exactly the certificates that Secret contains, and returns the leaf alongside
 // it for logging. Nil, nil if the input holds no parseable certificate — the
@@ -442,9 +452,6 @@ func parseLeafCertificate(pemBytes []byte) *x509.Certificate {
 
 // NewClientForEnterpriseStandalone creates a new optimized Neo4j client for standalone deployments
 func NewClientForEnterpriseStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, k8sClient client.Client, adminSecretName string) (*Client, error) {
-	// Tracks whether buildTLSConfig had to disable certificate verification.
-	var tlsVerificationDisabled bool
-
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, standalone.Namespace, adminSecretName)
 	if err != nil {
@@ -457,39 +464,48 @@ func NewClientForEnterpriseStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseSt
 	// Configure optimized driver with connection pooling
 	auth := neo4j.BasicAuth(credentials.Username, credentials.Password, "")
 
-	config := func(c *config.Config) {
-		// Optimized connection pool settings for standalone
-		c.MaxConnectionLifetime = 30 * time.Minute
-		c.MaxConnectionPoolSize = 10                      // Reduced for standalone deployment
-		c.ConnectionAcquisitionTimeout = 30 * time.Second // Increased for Neo4j initialization time
-		c.SocketConnectTimeout = 15 * time.Second         // Increased for Neo4j startup time
-		c.SocketKeepalive = true
-		c.ConnectionLivenessCheckTimeout = 10 * time.Second
+	// One driver per standalone and credentials, shared across passes
+	// (driver_cache.go); built here only when there is none.
+	key := newDriverKey(standalone.UID, uri, credentials,
+		tlsMaterialDigest(context.Background(), k8sClient, standalone.Namespace, standalone.Name, standalone.Spec.TLS))
+	shared, err := drivers.acquire(driverTarget("standalone", standalone.Namespace, standalone.Name), key, func() (neo4j.DriverWithContext, bool, error) {
+		// Tracks whether buildTLSConfig had to disable certificate verification.
+		var tlsVerificationDisabled bool
+		config := func(c *config.Config) {
+			// Optimized connection pool settings for standalone
+			c.MaxConnectionLifetime = 30 * time.Minute
+			c.MaxConnectionPoolSize = 10                      // Reduced for standalone deployment
+			c.ConnectionAcquisitionTimeout = 30 * time.Second // Increased for Neo4j initialization time
+			c.SocketConnectTimeout = 15 * time.Second         // Increased for Neo4j startup time
+			c.SocketKeepalive = true
+			c.ConnectionLivenessCheckTimeout = 10 * time.Second
 
-		// Connection pool optimization
-		c.MaxTransactionRetryTime = 30 * time.Second
-		c.FetchSize = 1000 // Optimized fetch size for memory efficiency
+			// Connection pool optimization
+			c.MaxTransactionRetryTime = 30 * time.Second
+			c.FetchSize = 1000 // Optimized fetch size for memory efficiency
 
-		// Configure TLS if enabled
-		if tlsCfg, insecure := buildTLSConfig(context.Background(), k8sClient, standalone.Namespace, standalone.Name, standalone.Spec.TLS); tlsCfg != nil {
-			tlsVerificationDisabled = insecure
-			c.TlsConfig = tlsCfg
+			// Configure TLS if enabled
+			if tlsCfg, insecure := buildTLSConfig(context.Background(), k8sClient, standalone.Namespace, standalone.Name, standalone.Spec.TLS); tlsCfg != nil {
+				tlsVerificationDisabled = insecure
+				c.TlsConfig = tlsCfg
+			}
 		}
-	}
-
-	// Create driver with retry logic for connection establishment
-	driver, err := neo4j.NewDriverWithContext(uri, auth, config)
+		driver, err := neo4j.NewDriverWithContext(uri, auth, config)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to create Neo4j driver: %w", err)
+		}
+		return driver, tlsVerificationDisabled, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Neo4j driver: %w", err)
+		return nil, err
 	}
 
 	// Test driver connectivity with proper timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err = driver.VerifyConnectivity(ctx)
-	if err != nil {
-		driver.Close(context.Background())
+	if err := shared.driver.VerifyConnectivity(ctx); err != nil {
+		drivers.release(shared)
 		return nil, fmt.Errorf("failed to verify Neo4j connectivity: %w", err)
 	}
 
@@ -507,21 +523,19 @@ func NewClientForEnterpriseStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseSt
 	}
 
 	client := &Client{
-		tlsVerificationDisabled: tlsVerificationDisabled,
-		driver:                  driver,
+		tlsVerificationDisabled: shared.tlsVerificationDisabled,
+		driver:                  shared.driver,
 		enterpriseCluster:       nil, // No cluster for standalone
 		credentials:             credentials,
 		circuitBreaker:          circuitBreaker,
 		poolMetrics:             poolMetrics,
+		release:                 func() { drivers.release(shared) },
 	}
 
 	return client, nil
 }
 
 func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sClient client.Client, adminSecretName string) (*Client, error) {
-	// Tracks whether buildTLSConfig had to disable certificate verification.
-	var tlsVerificationDisabled bool
-
 	// Get credentials from secret
 	credentials, err := getCredentials(context.Background(), k8sClient, cluster.Namespace, adminSecretName)
 	if err != nil {
@@ -534,41 +548,52 @@ func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sCli
 	// Configure optimized driver with connection pooling
 	auth := neo4j.BasicAuth(credentials.Username, credentials.Password, "")
 
-	config := func(c *config.Config) {
-		// Optimized connection pool settings
-		c.MaxConnectionLifetime = 30 * time.Minute
-		c.MaxConnectionPoolSize = 20 // Reduced from 50 for better memory efficiency
-		// Connection acquisition is gated by SocketConnectTimeout (TCP) plus,
-		// for the routing scheme, the time to fetch the routing table from the
-		// initial member. 10s is generous for a healthy cluster (sub-second
-		// in practice) and tight enough that an unreachable cluster surfaces
-		// quickly — important because the operator's reconciles otherwise
-		// queue behind a stuck Bolt call.
-		c.ConnectionAcquisitionTimeout = 10 * time.Second
-		c.SocketConnectTimeout = 5 * time.Second
-		c.SocketKeepalive = true
-		c.ConnectionLivenessCheckTimeout = 10 * time.Second
+	// One driver per cluster and credentials, shared across passes
+	// (driver_cache.go); built here only when there is none.
+	key := newDriverKey(cluster.UID, uri, credentials,
+		tlsMaterialDigest(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS))
+	shared, err := drivers.acquire(driverTarget("cluster", cluster.Namespace, cluster.Name), key, func() (neo4j.DriverWithContext, bool, error) {
+		// Tracks whether buildTLSConfig had to disable certificate verification.
+		var tlsVerificationDisabled bool
+		config := func(c *config.Config) {
+			// Optimized connection pool settings
+			c.MaxConnectionLifetime = 30 * time.Minute
+			c.MaxConnectionPoolSize = 20 // Reduced from 50 for better memory efficiency
+			// Connection acquisition is gated by SocketConnectTimeout (TCP) plus,
+			// for the routing scheme, the time to fetch the routing table from the
+			// initial member. 10s is generous for a healthy cluster (sub-second
+			// in practice) and tight enough that an unreachable cluster surfaces
+			// quickly — important because the operator's reconciles otherwise
+			// queue behind a stuck Bolt call.
+			c.ConnectionAcquisitionTimeout = 10 * time.Second
+			c.SocketConnectTimeout = 5 * time.Second
+			c.SocketKeepalive = true
+			c.ConnectionLivenessCheckTimeout = 10 * time.Second
 
-		// Connection pool optimization
-		c.MaxTransactionRetryTime = 15 * time.Second
-		c.FetchSize = 1000 // Optimized fetch size for memory efficiency
+			// Connection pool optimization
+			c.MaxTransactionRetryTime = 15 * time.Second
+			c.FetchSize = 1000 // Optimized fetch size for memory efficiency
 
-		// Configure TLS if enabled
-		if tlsCfg, insecure := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
-			tlsVerificationDisabled = insecure
-			c.TlsConfig = tlsCfg
+			// Configure TLS if enabled
+			if tlsCfg, insecure := buildTLSConfig(context.Background(), k8sClient, cluster.Namespace, cluster.Name, cluster.Spec.TLS); tlsCfg != nil {
+				tlsVerificationDisabled = insecure
+				c.TlsConfig = tlsCfg
+			}
+
+			// Add custom resolver for better connection management
+			c.AddressResolver = func(address config.ServerAddress) []config.ServerAddress {
+				// Return the same address for now, can be extended for load balancing
+				return []config.ServerAddress{address}
+			}
 		}
-
-		// Add custom resolver for better connection management
-		c.AddressResolver = func(address config.ServerAddress) []config.ServerAddress {
-			// Return the same address for now, can be extended for load balancing
-			return []config.ServerAddress{address}
+		driver, err := neo4j.NewDriverWithContext(uri, auth, config)
+		if err != nil {
+			return nil, false, fmt.Errorf("failed to create Neo4j driver: %w", err)
 		}
-	}
-
-	driver, err := neo4j.NewDriverWithContext(uri, auth, config)
+		return driver, tlsVerificationDisabled, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Neo4j driver: %w", err)
+		return nil, err
 	}
 
 	// Initialize circuit breaker
@@ -585,12 +610,13 @@ func NewClientForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, k8sCli
 	}
 
 	client := &Client{
-		tlsVerificationDisabled: tlsVerificationDisabled,
-		driver:                  driver,
+		tlsVerificationDisabled: shared.tlsVerificationDisabled,
+		driver:                  shared.driver,
 		enterpriseCluster:       cluster,
 		credentials:             credentials,
 		circuitBreaker:          circuitBreaker,
 		poolMetrics:             poolMetrics,
+		release:                 func() { drivers.release(shared) },
 	}
 
 	return client, nil
@@ -659,6 +685,12 @@ func (c *Client) Close() error {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
+	if c.driver != nil && c.release != nil {
+		c.release()
+		c.release = nil
+		c.driver = nil
+		return nil
+	}
 	if c.driver != nil {
 		err := c.driver.Close(context.Background())
 		c.driver = nil // Set to nil after closing for proper cleanup
