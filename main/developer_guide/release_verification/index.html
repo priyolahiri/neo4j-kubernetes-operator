@@ -4729,7 +4729,7 @@ and every server pod's UID and restart count.</p>
 <tbody>
 <tr>
 <td>5.26 cluster upgraded from the previous release</td>
-<td>3 servers on <code>5.26-enterprise</code> (5.26.29 or later; check <code>CALL dbms.components()</code>). After <code>main</code> runs: generation, pod UIDs and restart counts unchanged; the ConfigMap's <code>startup.sh</code> gained the blocks between <code># operator:restart-neutral begin</code> and <code>end</code>, and the ConfigMap carries <code>neo4j.com/deferred-settings</code> naming <code>dbms.cluster.raft.async_channel_acquisition_enabled</code>; <code>RestartPending=True</code> names all three servers. Delete server-1: when it is back, <code>RestartPending</code> no longer names it. The existing servers stay system primaries</td>
+<td>3 servers on <code>5.26-enterprise</code> (5.26.29 or later; check <code>CALL dbms.components()</code>). After <code>main</code> runs: generation, pod UIDs and restart counts unchanged; the ConfigMap's <code>startup.sh</code> gained the blocks between <code># operator:restart-neutral begin</code> and <code>end</code>, and the ConfigMap carries <code>neo4j.com/deferred-settings</code> naming <code>dbms.cluster.raft.async_channel_acquisition_enabled</code>; <code>RestartPending=True</code> names all three servers. A <code>ConfigAppliedLive</code> event names <code>dbms.cluster.network.connect_timeout</code> (the operator's 5s default, applied without a restart). Delete server-1: when it is back, <code>RestartPending</code> no longer names it. The existing servers stay system primaries</td>
 </tr>
 <tr>
 <td>5.26 scale without restart</td>
@@ -4737,7 +4737,7 @@ and every server pod's UID and restart count.</p>
 </tr>
 <tr>
 <td>CalVer TLS cluster upgraded from the previous release</td>
-<td>3 servers on the CI anchor with <code>spec.tls.mode: cert-manager</code>. After <code>main</code> runs: nothing restarts, and <code>RestartPending</code> names all three servers with <code>dbms.security.tls_reload_enabled</code>. Renew the certificate by deleting <code>&lt;name&gt;-tls-secret</code> (cert-manager issues it again): one <code>TLSCertificateNeedsRestart</code> Warning names all three. Delete server-1 and wait for it, then renew again: <code>TLSCertificateReloaded</code> names <code>server-1</code> with <strong>no restart</strong>, and <code>echo \| openssl s_client -connect localhost:7687 2&gt;/dev/null \| openssl x509 -noout -fingerprint -sha256</code> inside server-1 matches the new Secret's <code>tls.crt</code>; the Warning names the other two</td>
+<td>3 servers on the CI anchor with <code>spec.tls.mode: cert-manager</code>. After <code>main</code> runs: nothing restarts, <code>RestartPending</code> names all three servers with <code>dbms.security.tls_reload_enabled</code>, and a <code>ConfigAppliedLive</code> event names <code>dbms.cluster.network.connect_timeout</code>. Renew the certificate by deleting <code>&lt;name&gt;-tls-secret</code> (cert-manager issues it again): one <code>TLSCertificateNeedsRestart</code> Warning names all three. Delete server-1 and wait for it, then renew again: <code>TLSCertificateReloaded</code> names <code>server-1</code> with <strong>no restart</strong>, and <code>echo \| openssl s_client -connect localhost:7687 2&gt;/dev/null \| openssl x509 -noout -fingerprint -sha256</code> inside server-1 matches the new Secret's <code>tls.crt</code>; the Warning names the other two</td>
 </tr>
 <tr>
 <td>TLS Secret deleted with its cluster</td>
@@ -4745,7 +4745,7 @@ and every server pod's UID and restart count.</p>
 </tr>
 <tr>
 <td>Rolling upgrade waits for each server's databases (#488)</td>
-<td>Needs two published patch images of one line (e.g. 5.26.30 → 5.26.31). A 3-server cluster with about 30 databases of 3 primaries each (<code>CREATE DATABASE dNN TOPOLOGY 3 PRIMARIES WAIT</code>) and a client writing to a few of them through <code>neo4j://</code> routing. Change the image: at least one step shows <code>status.upgradeStatus.message</code> "waiting for its databases to catch up (…)" naming databases, and <code>CALL dbms.cluster.statusCheck([])</code> run on the server just restarted shows those databases not yet <code>APPLYING</code> at that moment; the partition lowers only after they are. No client write fails; a few seconds' pause per database whose leader restarts is expected</td>
+<td>Needs two published patch images of one line (e.g. 5.26.30 → 5.26.31). A 3-server cluster with about 30 databases of 3 primaries each (<code>CREATE DATABASE dNN TOPOLOGY 3 PRIMARIES WAIT</code>) and a client writing to a few of them through <code>neo4j://</code> routing. Change the image: at least one step shows <code>status.upgradeStatus.message</code> "waiting for its databases to catch up (…)" naming databases, and <code>CALL dbms.cluster.statusCheck([])</code> run on the server just restarted (<code>cypher-shell -a bolt://localhost:7687</code> in its pod — the default <code>neo4j://</code> routes to the <code>system</code> leader) shows those databases not yet <code>APPLYING</code> at that moment; the partition lowers only after they are. No write made through a retrying transaction function fails; brief retryable errors and stalls of a few seconds around each restart are expected</td>
 </tr>
 <tr>
 <td>CalVer TLS standalone, created fresh</td>
