@@ -1821,6 +1821,16 @@ server.cluster.raft.listen_address=0.0.0.0:7000
 server.backup.enabled=true
 server.backup.listen_address=0.0.0.0:6362
 
+# Give up on a server that does not answer after 5s (Neo4j's default is 30s,
+# sized for clusters across networks). A replaced pod comes back on a new IP,
+# but the other servers' JVMs can resolve its name to the old one for up to
+# 30s, and a connection to an address nobody holds waits out this whole
+# timeout. At 30s, Neo4j's own leadership balancing could send a transfer to
+# the restarted server over such a connection and hold writes on that database
+# for ~10s; at 5s it did not (5.26.31, 3 servers, under write load). Override
+# in spec.config.
+dbms.cluster.network.connect_timeout=5s
+
 # Note: Single RAFT and cluster discovery settings are dynamically added by startup script
 `, memoryConfig.HeapInitialSize, memoryConfig.HeapMaxSize, memoryConfig.PageCacheSize)
 
