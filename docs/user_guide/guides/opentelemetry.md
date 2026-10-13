@@ -71,6 +71,7 @@ Neo4j enables only a subset of its metrics by default (`server.metrics.filter`),
 
 - **The endpoint has no authentication or encryption.** The operator binds it to `0.0.0.0:2004` so it can be scraped. With `spec.networkPolicy` enabled, port 2004 stays open to any pod for the same reason. Keep it off the Internet: don't expose it through a Service of type `LoadBalancer` or an Ingress.
 - **Query logs carry query text and parameters.** Shipping them widens who can read them. Consider `spec.monitoring.obfuscateLiterals: true`, and `db.logs.query.parameter_logging_enabled: "false"` in `spec.config`.
+- **Security log volume.** The operator reuses its connections to each deployment, so its own logins show up in `security.log` a few times an hour rather than on every reconcile.
 - **Query log volume.** With `monitoring.enabled: true`, the operator logs queries slower than `slowQueryThreshold` (default `5s`) at `queryLogLevel` (default `INFO`). With `monitoring.enabled: false`, Neo4j's own defaults apply, `VERBOSE` with a `0s` threshold, which logs every query at start and end.
 - **Leave `debug.log` as it is.** Neo4j support reads that file. The operator writes the standard-output copy with an additional appender and does not change the file's format.
 - **Your own log configuration.** `spec.config` may not set `server.logs.config` while a log is listed in `logs.stdout`; validation refuses the combination, naming the field.

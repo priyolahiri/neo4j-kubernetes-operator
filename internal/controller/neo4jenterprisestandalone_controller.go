@@ -252,6 +252,8 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 		logger.Error(err, "Failed to delete the TLS Secret issued for this standalone")
 	}
 
+	neo4jclient.ForgetStandalone(standalone.Namespace, standalone.Name)
+
 	// Remove finalizer
 	controllerutil.RemoveFinalizer(standalone, StandaloneFinalizer)
 	if err := r.Update(ctx, standalone); err != nil {

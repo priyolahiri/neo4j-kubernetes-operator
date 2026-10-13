@@ -522,6 +522,10 @@ behaviour changes below take effect on the first reconcile.
   at most once per `--ready-poll-interval`. Alerts on them should allow for a
   server being down for a minute or so, as the documented examples (5 minutes)
   do.
+- **The operator reuses its Neo4j connections.** It used to open new ones, and
+  log in, on every pass: about 17 `logged in` lines a minute in `security.log`
+  for one quiet 3-server cluster, now under one. A changed admin password or
+  TLS certificate still takes effect at the next pass.
 - **The `<cluster>-discovery` Role, RoleBinding and Service are deleted.** The
   Role and RoleBinding let the server pods list Services and Endpoints; the
   Service exposed the V1 discovery port 5000. Nothing used them: discovery reads

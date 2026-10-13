@@ -847,6 +847,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.availabilityAnnounced.Delete(clusterKey(cluster))
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	forgetServerAddresses(cluster)
+	neo4jclient.ForgetCluster(cluster.Namespace, cluster.Name)
 
 	// Clean up PVCs if retention policy is Delete (default behavior)
 	retentionPolicy := cluster.Spec.Storage.RetentionPolicy
