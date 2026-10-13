@@ -80,6 +80,17 @@ readyPollInterval: ""
 # the operator default, 5m.
 splitBrainCheckInterval: ""
 
+# How many Neo4jEnterpriseClusters are reconciled at once, so a cluster whose
+# servers are slow to answer does not hold up the others. A cluster is never
+# reconciled twice at once. Empty uses the operator default, 4.
+clusterMaxConcurrentReconciles: ""
+
+# The longest one reconcile of one Neo4jEnterpriseCluster may take before it
+# is cancelled and retried, so a pass stuck on a server that stopped answering
+# gives its worker back. A Go duration ("15m"); "0s" for no limit; empty uses
+# the operator default, 10m.
+clusterReconcileTimeout: ""
+
 serviceAccount:
   # Specifies whether a service account should be created
   create: true

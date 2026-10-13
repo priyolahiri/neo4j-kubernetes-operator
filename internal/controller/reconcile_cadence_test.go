@@ -182,3 +182,22 @@ func TestSkipSplitBrainCheck_TracksTheLastCleanCheck(t *testing.T) {
 		t.Error("interval 0: must check on every pass and record nothing")
 	}
 }
+
+// Clusters are reconciled MaxConcurrentReconciles at a time (at least one),
+// each pass bounded by ReconcileTimeout (zero: none).
+func TestClusterControllerOptions(t *testing.T) {
+	opts := (&Neo4jEnterpriseClusterReconciler{}).controllerOptions()
+	if opts.MaxConcurrentReconciles != 1 || opts.ReconciliationTimeout != 0 {
+		t.Errorf("zero values: got %d workers, timeout %s; want 1 and none", opts.MaxConcurrentReconciles, opts.ReconciliationTimeout)
+	}
+	if opts.RateLimiter == nil {
+		t.Error("the rate limiter must be kept")
+	}
+	opts = (&Neo4jEnterpriseClusterReconciler{
+		MaxConcurrentReconciles: DefaultClusterMaxConcurrentReconciles,
+		ReconcileTimeout:        DefaultClusterReconcileTimeout,
+	}).controllerOptions()
+	if opts.MaxConcurrentReconciles != 4 || opts.ReconciliationTimeout != 10*time.Minute {
+		t.Errorf("defaults: got %d workers, timeout %s; want 4 and 10m", opts.MaxConcurrentReconciles, opts.ReconciliationTimeout)
+	}
+}
