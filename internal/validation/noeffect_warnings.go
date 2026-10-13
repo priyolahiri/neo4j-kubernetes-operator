@@ -81,7 +81,24 @@ func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpris
 					"for hard placement"))
 		}
 	}
+	if w := maxUnavailableNoEffectWarning(cluster.Spec.UpgradeStrategy,
+		"the operator restarts one server at a time, as Neo4j's rolling upgrade requires, and waits for "+
+			"its databases to catch up before the next: restarting two at once can leave a database without "+
+			"a majority of its primaries. Remove it, or set it to 1"); w != "" {
+		warnings = append(warnings, w)
+	}
 	return append(warnings, AuthProviderWarnings(cluster.Spec.Auth, field.NewPath("spec", "auth"))...)
+}
+
+// maxUnavailableNoEffectWarning warns on spec.upgradeStrategy.
+// maxUnavailableDuringUpgrade set to anything but 1. The CRD defaults it to 1
+// wherever upgradeStrategy is present, so 1 is indistinguishable from "never
+// mentioned" and must stay silent.
+func maxUnavailableNoEffectWarning(strategy *neo4jv1beta1.UpgradeStrategySpec, instead string) string {
+	if strategy == nil || strategy.MaxUnavailableDuringUpgrade == nil || *strategy.MaxUnavailableDuringUpgrade == 1 {
+		return ""
+	}
+	return NoEffectWarning(field.NewPath("spec", "upgradeStrategy", "maxUnavailableDuringUpgrade"), instead)
 }
 
 // NoEffectWarnings reports standalone spec fields that are set but not read,
@@ -103,6 +120,10 @@ func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnt
 			"it selects the cluster SSL policy and only applies to Neo4jEnterpriseCluster; a standalone has "+
 				"no intra-cluster traffic, so remove it. Bolt and HTTPS TLS on a standalone are governed by "+
 				"spec.tls.mode and spec.tls.issuerRef"))
+	}
+	if w := maxUnavailableNoEffectWarning(standalone.Spec.UpgradeStrategy,
+		"a standalone has one server; remove it"); w != "" {
+		warnings = append(warnings, w)
 	}
 	return append(warnings, AuthProviderWarnings(standalone.Spec.Auth, field.NewPath("spec", "auth"))...)
 }

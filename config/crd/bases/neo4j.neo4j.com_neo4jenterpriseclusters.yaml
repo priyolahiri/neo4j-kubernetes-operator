@@ -6220,8 +6220,12 @@ spec:
                     type: string
                   maxUnavailableDuringUpgrade:
                     default: 1
-                    description: MaxUnavailableDuringUpgrade specifies max unavailable
-                      replicas during upgrade
+                    description: |-
+                      MaxUnavailableDuringUpgrade is accepted but has no effect: the operator
+                      restarts one server at a time, as Neo4j's rolling upgrade requires, and
+                      waits for its databases to catch up before the next. Restarting two
+                      servers at once can leave a database without a majority of its primaries.
+                      A value other than 1 raises a ValidationWarning.
                     format: int32
                     type: integer
                   postUpgradeHealthCheck:

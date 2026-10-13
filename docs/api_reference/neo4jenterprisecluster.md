@@ -903,7 +903,7 @@ Configures how the operator handles Neo4j version upgrades.
 |---|---|---|
 | `strategy` | `string` | Upgrade strategy: `"RollingUpgrade"` (default) or `"Recreate"` |
 | `preUpgradeHealthCheck` | `bool` | Enable health validation before upgrade (default: `true`) |
-| `maxUnavailableDuringUpgrade` | `*int32` | Max unavailable replicas during upgrade (default: `1`) |
+| `maxUnavailableDuringUpgrade` | `*int32` | Accepted but has no effect: the operator restarts one server at a time, as Neo4j's rolling upgrade requires, and waits for its databases to catch up before the next. A value other than `1` (the default) raises a `ValidationWarning` |
 | `upgradeTimeout` | `string` | Timeout for the entire upgrade process (default: `"30m"`) |
 | `postUpgradeHealthCheck` | `bool` | Enable health validation after upgrade (default: `true`) |
 | `healthCheckTimeout` | `string` | Timeout for health checks (default: `"5m"`) |

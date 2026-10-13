@@ -1477,7 +1477,11 @@ type UpgradeStrategySpec struct {
 	// +kubebuilder:default=true
 	PreUpgradeHealthCheck bool `json:"preUpgradeHealthCheck,omitempty"`
 
-	// MaxUnavailableDuringUpgrade specifies max unavailable replicas during upgrade
+	// MaxUnavailableDuringUpgrade is accepted but has no effect: the operator
+	// restarts one server at a time, as Neo4j's rolling upgrade requires, and
+	// waits for its databases to catch up before the next. Restarting two
+	// servers at once can leave a database without a majority of its primaries.
+	// A value other than 1 raises a ValidationWarning.
 	// +kubebuilder:default=1
 	MaxUnavailableDuringUpgrade *int32 `json:"maxUnavailableDuringUpgrade,omitempty"`
 

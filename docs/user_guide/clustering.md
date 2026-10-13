@@ -401,7 +401,6 @@ spec:
     strategy: RollingUpgrade
     preUpgradeHealthCheck: true
     postUpgradeHealthCheck: true
-    maxUnavailableDuringUpgrade: 1
     upgradeTimeout: 30m
     healthCheckTimeout: 5m
     stabilizationTimeout: 3m
