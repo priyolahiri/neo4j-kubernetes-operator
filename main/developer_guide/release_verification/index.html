@@ -4698,6 +4698,10 @@ standalone backup" as one of Phase 1's outputs.</p>
 <td>Change a dynamic setting in <code>spec.config</code>: <code>ConfigAppliedLive</code>, no pod restarts, and <code>SHOW SETTINGS</code> on <strong>each</strong> server (<code>kubectl exec &lt;pod&gt; -- cypher-shell -a bolt://localhost:7687 -d system …</code>; <code>-d system</code> because the default <code>neo4j</code> database is not on every server) reads the new value. Remove it: each server reads the default again. Change a static one: <code>ConfigNeedsRestart</code> names it and the servers roll</td>
 </tr>
 <tr>
+<td>Connections reused between passes</td>
+<td>On the phase's quiet <code>Ready</code> cluster, count the operator's logins over 4 minutes, after it has run for a minute: <code>kubectl exec &lt;pod&gt; -c neo4j -- grep -c 'logged in' /logs/security.log</code> on each server, before and after. A handful (the per-pod split-brain checks, every 5 minutes), not ~17 a minute. Then delete one server pod: <code>status.diagnostics</code> shows it <code>Unavailable</code> and then <code>Available</code> again, and the operator logs no errors for the cluster</td>
+</tr>
+<tr>
 <td>Clusters reconciled in parallel</td>
 <td>The operator log shows <code>Starting workers</code> for <code>neo4jenterprisecluster</code> with <code>"worker count": 4</code>. Alongside the phase's cluster, apply three more clusters on an image tag that does not exist (e.g. <code>2099.01.0-enterprise</code>: their pods stay in <code>ImagePullBackOff</code>, no JVM starts, so the one-deployment rule holds): the real cluster reaches <code>Ready</code> in its usual time, the three stay <code>Forming</code> naming <code>ImagePullBackOff</code> in <code>status.message</code>, and the operator log shows passes of different clusters overlapping. Adding <code>--cluster-max-concurrent-reconciles=2</code> to the Deployment changes the worker count to 2; <code>=0</code> stops the operator at startup with a message naming the flag. Delete the three afterwards</td>
 </tr>
