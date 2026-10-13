@@ -8039,7 +8039,7 @@ for details.</p>
 <tr>
 <td><code>maxUnavailableDuringUpgrade</code></td>
 <td><code>*int32</code></td>
-<td>Max unavailable replicas during upgrade (default: <code>1</code>)</td>
+<td>Accepted but has no effect: the operator restarts one server at a time, as Neo4j's rolling upgrade requires, and waits for its databases to catch up before the next. A value other than <code>1</code> (the default) raises a <code>ValidationWarning</code></td>
 </tr>
 <tr>
 <td><code>upgradeTimeout</code></td>
