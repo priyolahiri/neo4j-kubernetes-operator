@@ -536,26 +536,18 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	// Create RBAC resources for Kubernetes discovery
+	// The ServiceAccount the server pods run under (it carries
+	// spec.podServiceAccountAnnotations for cloud workload identity). LIST
+	// discovery needs no Kubernetes API access, so it is bound to no Role.
 	serviceAccount := resources.BuildDiscoveryServiceAccountForEnterprise(cluster)
 	if err := r.createOrUpdateResource(ctx, serviceAccount, cluster); err != nil {
-		logger.Error(err, "Failed to create discovery ServiceAccount", "serviceAccount", serviceAccount.Name)
+		logger.Error(err, "Failed to create the server ServiceAccount", "serviceAccount", serviceAccount.Name)
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create ServiceAccount %s: %v", serviceAccount.Name, err))
 		return ctrl.Result{}, err
 	}
-
-	role := resources.BuildDiscoveryRoleForEnterprise(cluster)
-	if err := r.createOrUpdateResource(ctx, role, cluster); err != nil {
-		logger.Error(err, "Failed to create discovery Role", "role", role.Name)
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Role %s: %v", role.Name, err))
-		return ctrl.Result{}, err
-	}
-
-	roleBinding := resources.BuildDiscoveryRoleBindingForEnterprise(cluster)
-	if err := r.createOrUpdateResource(ctx, roleBinding, cluster); err != nil {
-		logger.Error(err, "Failed to create discovery RoleBinding", "roleBinding", roleBinding.Name)
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create RoleBinding %s: %v", roleBinding.Name, err))
-		return ctrl.Result{}, err
+	if err := r.deleteLegacyDiscoveryRBAC(ctx, cluster); err != nil {
+		// Not fatal: the grant is unused, and the next pass retries.
+		logger.V(1).Info("Could not delete the legacy discovery Role/RoleBinding", "error", err.Error())
 	}
 
 	// Create Services

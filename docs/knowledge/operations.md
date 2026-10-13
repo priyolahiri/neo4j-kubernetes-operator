@@ -803,6 +803,13 @@
 - **pinned-by:** `TestClusterControllerOptions`, `TestReconcileLeavesIgnoredClustersAlone` (`internal/controller/reconcile_cadence_test.go`); the envtest spec "Neo4jEnterpriseCluster parallel reconciles" (`internal/controller/cluster_parallel_reconcile_test.go`), and every envtest cluster spec, run with `DefaultClusterMaxConcurrentReconciles` workers under `-race` in `make test-unit` — an unguarded counter planted in `Reconcile` made the parallel spec fail with 11 data races.
 - **enforcement:** unit test (race detector) + code review.
 
+### id 130 — The server pods' ServiceAccount is bound to no Role
+- **scope:** the ServiceAccount step and `deleteLegacyDiscoveryRBAC` (`internal/controller/neo4jenterprisecluster_controller.go`, `internal/controller/legacy_discovery_rbac.go`); `BuildDiscoveryServiceAccountForEnterprise`, `LegacyDiscoveryRBACName` (`internal/resources/cluster.go`).
+- **rule:** The cluster's server pods run under `{cluster}-discovery` (kept for its name and for `spec.podServiceAccountAnnotations`), and the operator binds it to no Role: LIST discovery resolves pod FQDNs through DNS and Neo4j never calls the Kubernetes API with it. Each reconcile deletes a `{cluster}-discovery` Role or RoleBinding **only if the cluster controls it** (owner reference); one someone else created is kept. Never reintroduce a pod-side API grant without a reader of it — K8S discovery would be one, and it would change INV-4.
+- **why:** releases up to v1.20 created a Role granting get/list/watch on services and endpoints, a leftover from Neo4j's K8S resolver, which the operator stopped using long ago (the startup script's comment blamed "K8S ClusterIP returns a single VIP", a past single-Service misuse; Neo4j's K8S resolver needs one Service per server). Nothing in the server pod used it — Neo4j with LIST, the trust-store and plugin init containers (the plugin download authenticates with its own mounted Secret), the startup and health scripts — so the pods held API credentials for no reader. Deleting a Role or RoleBinding changes no pod template: nothing restarts.
+- **pinned-by:** `TestDeleteLegacyDiscoveryRBAC` (`internal/controller/legacy_discovery_rbac_test.go`); the envtest spec "creates the ServiceAccount and no discovery Role or RoleBinding" (`internal/controller/cluster_server_rbac_test.go`).
+- **enforcement:** unit test + envtest.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

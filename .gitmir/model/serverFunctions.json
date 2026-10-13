@@ -4,7 +4,7 @@
     "name": "Reconcile Cluster",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified, requeueing a Ready cluster after --ready-poll-interval (default 30s; every other path keeps RequeueAfter) — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series.",
+    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified, requeueing a Ready cluster after --ready-poll-interval (default 30s; every other path keeps RequeueAfter) — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series. The server pods run under the {cluster}-discovery ServiceAccount, bound to no Role (LIST discovery never calls the Kubernetes API); a {cluster}-discovery Role or RoleBinding the cluster controls, created by releases up to v1.20, is deleted.",
     "readsFieldIds": [
       "status.phase"
     ],

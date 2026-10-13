@@ -29,7 +29,6 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
-	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -1018,47 +1017,6 @@ func BuildDiscoveryServiceAccountForEnterprise(cluster *neo4jv1beta1.Neo4jEnterp
 			Namespace:   cluster.Namespace,
 			Labels:      getLabelsForEnterprise(cluster, "discovery-service-account"),
 			Annotations: annotations,
-		},
-	}
-}
-
-// BuildDiscoveryRoleForEnterprise creates a Role for Kubernetes discovery
-func BuildDiscoveryRoleForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *rbacv1.Role {
-	return &rbacv1.Role{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      getDiscoveryRoleNameForEnterprise(cluster),
-			Namespace: cluster.Namespace,
-			Labels:    getLabelsForEnterprise(cluster, "discovery-role"),
-		},
-		Rules: []rbacv1.PolicyRule{
-			{
-				APIGroups: []string{""},
-				Resources: []string{"services", "endpoints"},
-				Verbs:     []string{"get", "list", "watch"},
-			},
-		},
-	}
-}
-
-// BuildDiscoveryRoleBindingForEnterprise creates a RoleBinding for Kubernetes discovery
-func BuildDiscoveryRoleBindingForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *rbacv1.RoleBinding {
-	return &rbacv1.RoleBinding{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      getDiscoveryRoleBindingNameForEnterprise(cluster),
-			Namespace: cluster.Namespace,
-			Labels:    getLabelsForEnterprise(cluster, "discovery-role-binding"),
-		},
-		Subjects: []rbacv1.Subject{
-			{
-				Kind:      "ServiceAccount",
-				Name:      getDiscoveryServiceAccountNameForEnterprise(cluster),
-				Namespace: cluster.Namespace,
-			},
-		},
-		RoleRef: rbacv1.RoleRef{
-			APIGroup: "rbac.authorization.k8s.io",
-			Kind:     "Role",
-			Name:     getDiscoveryRoleNameForEnterprise(cluster),
 		},
 	}
 }
@@ -2597,10 +2555,11 @@ echo "Multi-server cluster: using LIST discovery with static pod FQDNs"
 
 cat >> /conf/neo4j.conf << EOF
 
-# Multi-node cluster using LIST discovery with static pod FQDNs via headless service.
-# LIST discovery provides deterministic peer addresses (one per pod) unlike K8S ClusterIP
-# which returns a single VIP. This ensures all TOTAL_SERVERS members are discovered
-# before RAFT elects the bootstrap server, preventing split-brain formation.
+# LIST discovery: the FQDN of every server pod (headless service), known before
+# any pod starts, so all TOTAL_SERVERS members are found before a bootstrap
+# server is chosen. Neo4j's K8S resolver would instead need one Service per
+# server, advertised as that server's address, and Kubernetes API access from
+# the pod; LIST needs neither (docs/knowledge/invariants.md INV-4).
 ` + buildVersionSpecificDiscoveryConfig(cluster) + `
 EOF
 
@@ -3272,16 +3231,18 @@ func formatMemorySizeForNeo4j(bytes int64) string {
 	}
 }
 
-// Helper functions for Kubernetes discovery resources
+// getDiscoveryServiceAccountNameForEnterprise names the ServiceAccount the
+// server pods run under. The name predates LIST discovery, which needs no
+// Kubernetes API access; it is kept so existing clusters keep their account.
 func getDiscoveryServiceAccountNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 
-func getDiscoveryRoleNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
-	return fmt.Sprintf("%s-discovery", cluster.Name)
-}
-
-func getDiscoveryRoleBindingNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+// LegacyDiscoveryRBACName is the name of the Role and RoleBinding releases up
+// to v1.20 created beside that ServiceAccount, granting the server pods
+// get/list/watch on services and endpoints that LIST discovery never used.
+// The cluster controller deletes the ones it owns (operations.md id 130).
+func LegacyDiscoveryRBACName(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 
