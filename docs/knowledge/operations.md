@@ -810,6 +810,13 @@
 - **pinned-by:** `TestDeleteLegacyDiscoveryRBAC` (`internal/controller/legacy_discovery_rbac_test.go`); the envtest spec "creates the ServiceAccount and no discovery Role or RoleBinding" (`internal/controller/cluster_server_rbac_test.go`).
 - **enforcement:** unit test + envtest.
 
+### id 131 — Diagnostics keep running during an upgrade; nothing else of the normal pass does
+- **scope:** the upgrade branch of `Reconcile` (`internal/controller/neo4jenterprisecluster_controller.go`); `collectDiagnosticsDuringUpgrade`, `upgradeDiagnostics` (`internal/controller/upgrade_diagnostics.go`).
+- **rule:** While an upgrade is active, a pass runs the upgrade step and then `CollectDiagnostics` — at most once per `--ready-poll-interval` per cluster, only once the cluster has formed, never with `spec.monitoring.enabled: false`, never fatal. Nothing else of the normal pass runs: the StatefulSet apply would undo the partition freeze, split-brain detection restarts pods, the availability logic would mark the cluster Degraded for servers that are down on purpose, and live config, fleet registration and the rest change things. Diagnostics read Neo4j and write only `status.diagnostics`, `ServersHealthy`, `DatabasesHealthy` and `server_health`, which nothing in the upgrade owns.
+- **why:** the upgrade branch used to return straight after the step, so those fields kept their pre-upgrade values for the whole upgrade (up to `upgradeTimeout` per server): `ServersHealthy=True` and `server_health=1` while servers were restarting, and a server that never came back showed healthy until the upgrade gave up. The rate limit is because a status write reconciles the cluster again, and servers change state often during an upgrade. The documented alerts wait 5 minutes, longer than a server takes to restart.
+- **pinned-by:** `TestCollectDiagnosticsDuringUpgrade_Gating`, `TestReconcile_CollectsDiagnosticsDuringAnUpgrade` (`internal/controller/upgrade_diagnostics_test.go`) — removing the call or the interval fails them.
+- **enforcement:** unit test.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

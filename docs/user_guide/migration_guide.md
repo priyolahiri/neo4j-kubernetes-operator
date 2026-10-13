@@ -515,6 +515,13 @@ behaviour changes below take effect on the first reconcile.
   than `1` raises a `ValidationWarning`.** It never had an effect: servers
   restart one at a time, as Neo4j's rolling upgrade requires. Remove it, or
   leave it at `1`.
+- **Diagnostics keep updating during a rolling upgrade.** `status.diagnostics`,
+  the `ServersHealthy` and `DatabasesHealthy` conditions and the
+  `neo4j_operator_server_health` metric used to keep their values from before
+  the upgrade until it finished; they now follow the servers as they restart,
+  at most once per `--ready-poll-interval`. Alerts on them should allow for a
+  server being down for a minute or so, as the documented examples (5 minutes)
+  do.
 - **The `<cluster>-discovery` Role and RoleBinding are deleted.** They let the
   server pods list Services and Endpoints, which nothing used: discovery reads
   pod addresses from DNS. Upgrading the operator deletes the ones it created and

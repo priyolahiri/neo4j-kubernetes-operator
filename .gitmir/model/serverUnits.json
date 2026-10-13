@@ -48,7 +48,8 @@
     "paths": [
       "internal/controller/rolling_upgrade.go",
       "internal/controller/rolling_upgrade_statemachine.go",
-      "internal/controller/upgrade_database_gate.go"
+      "internal/controller/upgrade_database_gate.go",
+      "internal/controller/upgrade_diagnostics.go"
     ]
   },
   {

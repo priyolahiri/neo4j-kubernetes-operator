@@ -289,6 +289,15 @@ configuration is needed — diagnostics are collected on every reconcile (every 
 seconds on a quiet `Ready` deployment, `--ready-poll-interval`) and written to
 status when something in them changes, or at least every 5 minutes.
 
+Collection carries on during a rolling upgrade, at most once per
+`--ready-poll-interval`, so `status.diagnostics`, the two conditions and the
+`server_health` metric follow the servers as they restart: a server that is
+down when a sample is taken shows `Unavailable`, and `ServersHealthy` turns
+`False`. A server is usually back within 30 seconds of its restart, so a sample
+can miss it. The example alert below waits 5 minutes, far longer than a server
+takes to restart, so a normal upgrade does not fire it; a server that does not
+come back does.
+
 ### Viewing Diagnostic Status
 
 ```bash
