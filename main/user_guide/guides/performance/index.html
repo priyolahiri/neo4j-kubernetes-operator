@@ -4165,7 +4165,7 @@
 <p>The Neo4j Enterprise Operator includes several performance optimizations for production environments:</p>
 <h3 id="reconciliation-efficiency">Reconciliation Efficiency<a class="headerlink" href="#reconciliation-efficiency" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><strong>Optimized Rate Limiting</strong>: The cluster controller caps reconciliations at roughly 10 per minute (a token-bucket limiter of one token every 6 seconds with a burst of 10), backed by exponential backoff from 5 seconds up to 30 seconds, to prevent excessive API calls</li>
+<li><strong>Retry pacing</strong>: A cluster reconcile that fails is retried with exponential backoff from 5 seconds up to 30 seconds, and retries across all clusters share a token bucket of one every 6 seconds with a burst of 10. Scheduled passes (such as <code>--ready-poll-interval</code>) and changes in Kubernetes are not paced by it</li>
 <li><strong>Status Update Optimization</strong>: Status updates only occur when cluster state actually changes, reducing unnecessary API server load</li>
 <li><strong>ConfigMap Debouncing</strong>: A short debounce interval coalesces rapid successive configuration changes, preventing restart loops</li>
 </ul>
@@ -4179,6 +4179,8 @@
 <li>the operator has restarted, so it has no clean check on record.</li>
 </ul>
 <p><code>--split-brain-check-interval=0s</code> restores a full check on every pass. With Helm, set <code>readyPollInterval</code> and <code>splitBrainCheckInterval</code>.</p>
+<p>Clusters are reconciled <strong>four at a time</strong> (<code>--cluster-max-concurrent-reconciles</code>), so a cluster whose servers are slow to answer, or a pass that is busy upgrading one, does not hold up the others. A single cluster is never reconciled twice at once. Raise it if one operator runs many clusters; every worker can hold Bolt connections to one cluster's servers and makes its own requests to the Kubernetes API.</p>
+<p>Each pass of one cluster is cut off after <code>--cluster-reconcile-timeout</code> (default <code>10m</code>, <code>0s</code> for no limit) and retried, so a pass stuck on a server that accepted a query and stopped answering gives its worker back. A normal pass takes seconds, and one against unreachable servers far less than the limit, because every Neo4j connection and query has its own timeout. With Helm, set <code>clusterMaxConcurrentReconciles</code> and <code>clusterReconcileTimeout</code>.</p>
 <h3 id="resource-management">Resource Management<a class="headerlink" href="#resource-management" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><strong>Memory Validation</strong>: Automatic validation ensures Neo4j memory settings don't exceed available resources</li>

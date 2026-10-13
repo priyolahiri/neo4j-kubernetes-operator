@@ -4912,6 +4912,13 @@ behaviour changes below take effect on the first reconcile.</p>
   database whose leadership moved to a server that had just restarted. To keep
   30s, set it in <code>spec.config</code>. See
   <a href="../clustering/#writes-while-a-restarted-server-rejoins">Writes while a restarted server rejoins</a>.</li>
+<li><strong>Clusters are reconciled four at a time</strong> instead of one, and each
+  cluster's reconcile is cut off and retried after 10 minutes. One slow or
+  unreachable cluster no longer delays the others. The new flags
+  <code>--cluster-max-concurrent-reconciles</code> and <code>--cluster-reconcile-timeout</code>
+  (Helm <code>clusterMaxConcurrentReconciles</code>, <code>clusterReconcileTimeout</code>) change
+  them; <code>--cluster-max-concurrent-reconciles=1</code> restores the old behaviour.
+  See <a href="../guides/performance/#many-large-clusters">Many large clusters</a>.</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
