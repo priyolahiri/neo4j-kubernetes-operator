@@ -46,13 +46,6 @@ const (
 	HTTPPort = 7474
 	// HTTPSPort is the default port for Neo4j HTTPS API
 	HTTPSPort = 7473
-	// LegacyClusterPort is the Neo4j V1 discovery / cluster port. Deprecated;
-	// not used by this operator at runtime — V2 discovery on DiscoveryPort
-	// (6000) is the only active path. The constant is kept because the
-	// {cluster}-discovery K8s Service still exposes port 5000 (pending a
-	// separate removal pass). It is no longer added to the headless service,
-	// internals service, or pod containerPorts (issue #117-adjacent cleanup).
-	LegacyClusterPort = 5000
 	// DiscoveryPort is the default port for Neo4j cluster discovery
 	DiscoveryPort = 6000
 	// RoutingPort is the default port for Neo4j routing service
@@ -435,55 +428,6 @@ func BuildHeadlessServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClus
 					Name:       "backup",
 					Port:       BackupPort,
 					TargetPort: intstr.FromInt(BackupPort),
-					Protocol:   corev1.ProtocolTCP,
-				},
-			},
-		},
-	}
-}
-
-// BuildDiscoveryServiceForEnterprise creates the ClusterIP service "<cluster>-discovery"
-// over the cluster's member pods (those carrying the neo4j.com/clustering label).
-// PublishNotReadyAddresses is set to true so not-yet-ready pods are still listed.
-//
-// Neo4j itself does not use this Service for discovery: the operator configures
-// LIST discovery with static pod FQDNs on the headless Service (see
-// buildVersionSpecificDiscoveryConfig), so cluster formation does not depend on
-// this Service or on the neo4j.com/clustering label.
-func BuildDiscoveryServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
-	// Minimal labels - just what's needed for discovery
-	labels := map[string]string{
-		"app.kubernetes.io/name":       "neo4j",
-		"app.kubernetes.io/instance":   cluster.Name,
-		"app.kubernetes.io/managed-by": "neo4j-operator",
-		"neo4j.com/cluster":            cluster.Name,
-		// Marks the cluster's member pods. The operator selects on it (this
-		// Service's selector, split-brain pod listing); Neo4j does not read it —
-		// discovery is LIST with static pod FQDNs.
-		"neo4j.com/clustering": "true",
-	}
-
-	// Selector to match pods with clustering label
-	selector := map[string]string{
-		"neo4j.com/cluster":    cluster.Name,
-		"neo4j.com/clustering": "true",
-	}
-
-	return &corev1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      fmt.Sprintf("%s-discovery", cluster.Name),
-			Namespace: cluster.Namespace,
-			Labels:    labels,
-		},
-		Spec: corev1.ServiceSpec{
-			Type:                     corev1.ServiceTypeClusterIP, // Regular ClusterIP service
-			Selector:                 selector,
-			PublishNotReadyAddresses: true, // Allow discovery during startup
-			Ports: []corev1.ServicePort{
-				{
-					Name:       "tcp-discovery",
-					Port:       LegacyClusterPort,
-					TargetPort: intstr.FromInt(LegacyClusterPort),
 					Protocol:   corev1.ProtocolTCP,
 				},
 			},
@@ -3238,11 +3182,12 @@ func getDiscoveryServiceAccountNameForEnterprise(cluster *neo4jv1beta1.Neo4jEnte
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 
-// LegacyDiscoveryRBACName is the name of the Role and RoleBinding releases up
-// to v1.20 created beside that ServiceAccount, granting the server pods
-// get/list/watch on services and endpoints that LIST discovery never used.
-// The cluster controller deletes the ones it owns (operations.md id 130).
-func LegacyDiscoveryRBACName(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+// LegacyDiscoveryName is the name of the objects releases up to v1.20 created
+// beside that ServiceAccount and nothing uses: a Role and RoleBinding granting
+// the server pods get/list/watch on services and endpoints, and a ClusterIP
+// Service on the V1 discovery port 5000, which LIST discovery never used. The
+// cluster controller deletes the ones it owns (operations.md id 130).
+func LegacyDiscoveryName(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 

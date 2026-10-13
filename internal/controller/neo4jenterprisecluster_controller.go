@@ -185,8 +185,10 @@ const (
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=endpoints,verbs=get;list;watch;create;update;patch;delete
 // Endpoints permission is CRITICAL for Neo4j Kubernetes discovery to resolve pod IPs behind services
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
+// Roles and RoleBindings: only to delete the legacy {cluster}-discovery ones
+// (deleteLegacyDiscoveryObjects); the operator creates none.
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;delete
+//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;delete
 //+kubebuilder:rbac:groups=cert-manager.io,resources=certificates,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=cert-manager.io,resources=issuers,verbs=get;list;watch
 //+kubebuilder:rbac:groups=cert-manager.io,resources=clusterissuers,verbs=get;list;watch
@@ -551,15 +553,14 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create ServiceAccount %s: %v", serviceAccount.Name, err))
 		return ctrl.Result{}, err
 	}
-	if err := r.deleteLegacyDiscoveryRBAC(ctx, cluster); err != nil {
-		// Not fatal: the grant is unused, and the next pass retries.
-		logger.V(1).Info("Could not delete the legacy discovery Role/RoleBinding", "error", err.Error())
+	if err := r.deleteLegacyDiscoveryObjects(ctx, cluster); err != nil {
+		// Not fatal: nothing uses them, and the next pass retries.
+		logger.V(1).Info("Could not delete the legacy discovery Role, RoleBinding or Service", "error", err.Error())
 	}
 
 	// Create Services
 	services := []*corev1.Service{
 		resources.BuildHeadlessServiceForEnterprise(cluster),  // Headless service for StatefulSet
-		resources.BuildDiscoveryServiceForEnterprise(cluster), // Discovery service for Neo4j K8s discovery
 		resources.BuildInternalsServiceForEnterprise(cluster), // Internals service for client connections
 		resources.BuildClientServiceForEnterprise(cluster),    // Client service for external access
 		resources.BuildMetricsServiceForEnterprise(cluster),   // Metrics service for Prometheus scraping
@@ -3308,9 +3309,15 @@ func (r *Neo4jEnterpriseClusterReconciler) controllerOptions() controller.Option
 		RateLimiter: workqueue.NewTypedMaxOfRateLimiter(
 			// Exponential backoff starting at 5 seconds
 			workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Second, 30*time.Second),
-			// Overall rate limiting (max 10 reconciliations per minute)
+			// A guard against a retry storm across every cluster (controller-
+			// runtime's default: 10 a second, bursts of 100). It paces only
+			// failed and Requeue passes, never RequeueAfter or watch events;
+			// the per-cluster backoff above does the real pacing. It used to
+			// be one every 6 seconds (bursts of 10), which, after a shared
+			// failure such as an API-server blip, held the 20th cluster's first
+			// retry for a minute and the 30th's for two (operations.md id 129).
 			&workqueue.TypedBucketRateLimiter[reconcile.Request]{
-				Limiter: rate.NewLimiter(rate.Every(6*time.Second), 10),
+				Limiter: rate.NewLimiter(rate.Limit(10), 100),
 			},
 		),
 	}

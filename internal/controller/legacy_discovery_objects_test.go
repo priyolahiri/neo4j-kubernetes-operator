@@ -22,6 +22,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,9 +36,10 @@ import (
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-// The {cluster}-discovery Role and RoleBinding releases up to v1.20 created
-// are deleted when the cluster owns them, and left alone when it does not.
-func TestDeleteLegacyDiscoveryRBAC(t *testing.T) {
+// The {cluster}-discovery Role, RoleBinding and Service releases up to v1.20
+// created are deleted when the cluster owns them, and left alone when it does
+// not; the ServiceAccount of that name is never touched.
+func TestDeleteLegacyDiscoveryObjects(t *testing.T) {
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
@@ -48,11 +50,16 @@ func TestDeleteLegacyDiscoveryRBAC(t *testing.T) {
 			Rules: []rbacv1.PolicyRule{{APIGroups: []string{""}, Resources: []string{"services", "endpoints"}, Verbs: []string{"get", "list", "watch"}}}}
 		binding := &rbacv1.RoleBinding{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
 			RoleRef: rbacv1.RoleRef{APIGroup: "rbac.authorization.k8s.io", Kind: "Role", Name: key.Name}}
+		svc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace},
+			Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "tcp-discovery", Port: 5000}}}}
+		sa := &corev1.ServiceAccount{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}}
+		require.NoError(t, controllerutil.SetControllerReference(cluster, sa, scheme))
 		if owned {
 			require.NoError(t, controllerutil.SetControllerReference(cluster, role, scheme))
 			require.NoError(t, controllerutil.SetControllerReference(cluster, binding, scheme))
+			require.NoError(t, controllerutil.SetControllerReference(cluster, svc, scheme))
 		}
-		return []client.Object{role, binding}
+		return []client.Object{role, binding, svc, sa}
 	}
 	exists := func(c client.Client, obj client.Object) bool {
 		err := c.Get(context.Background(), key, obj)
@@ -63,22 +70,25 @@ func TestDeleteLegacyDiscoveryRBAC(t *testing.T) {
 	t.Run("owned by the cluster: deleted", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(legacy(true), cluster)...).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: scheme}
-		require.NoError(t, r.deleteLegacyDiscoveryRBAC(context.Background(), cluster))
+		require.NoError(t, r.deleteLegacyDiscoveryObjects(context.Background(), cluster))
 		assert.False(t, exists(c, &rbacv1.Role{}), "the Role is gone")
 		assert.False(t, exists(c, &rbacv1.RoleBinding{}), "the RoleBinding is gone")
+		assert.False(t, exists(c, &corev1.Service{}), "the port-5000 Service is gone")
+		assert.True(t, exists(c, &corev1.ServiceAccount{}), "the ServiceAccount stays")
 	})
 
 	t.Run("not owned by the cluster: kept", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(legacy(false), cluster)...).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: scheme}
-		require.NoError(t, r.deleteLegacyDiscoveryRBAC(context.Background(), cluster))
+		require.NoError(t, r.deleteLegacyDiscoveryObjects(context.Background(), cluster))
 		assert.True(t, exists(c, &rbacv1.Role{}), "someone else's Role is kept")
 		assert.True(t, exists(c, &rbacv1.RoleBinding{}), "someone else's RoleBinding is kept")
+		assert.True(t, exists(c, &corev1.Service{}), "someone else's Service is kept")
 	})
 
 	t.Run("nothing there: no error", func(t *testing.T) {
 		c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: scheme}
-		assert.NoError(t, r.deleteLegacyDiscoveryRBAC(context.Background(), cluster))
+		assert.NoError(t, r.deleteLegacyDiscoveryObjects(context.Background(), cluster))
 	})
 }

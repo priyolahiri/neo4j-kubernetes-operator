@@ -97,8 +97,6 @@ func GetTestRequeueAfter() time.Duration {
 //+kubebuilder:rbac:groups=batch,resources=jobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=batch,resources=cronjobs,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups="",resources=serviceaccounts,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=roles,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=rbac.authorization.k8s.io,resources=rolebindings,verbs=get;list;watch;create;update;patch;delete
 // Note: pods/exec RBAC was historically declared here for the old
 // sidecar-exec backup architecture. That architecture was replaced by
 // Job-based backups (see docs/plans/2026-02-20-backup-restore-overhaul.md)

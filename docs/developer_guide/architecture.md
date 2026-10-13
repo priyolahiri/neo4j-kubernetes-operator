@@ -435,7 +435,7 @@ These are free `Build*ForEnterprise` / `Build*ForStandalone` functions, not stat
 #### Server-Based Resource Patterns:
 - **StatefulSet Naming**: `{cluster-name}-server` for clusters, `{standalone-name}` for standalone
 - **Pod Naming**: `{cluster-name}-server-0`, `{cluster-name}-server-1`, etc.
-- **Service Names**: `{cluster-name}-client`, `{cluster-name}-discovery`
+- **Service Names**: `{cluster-name}-headless`, `{cluster-name}-internals`, `{cluster-name}-client`, `{cluster-name}-metrics` (when monitoring is on)
 - **Backup Resources**: per-CR Kubernetes Jobs spawned by the `Neo4jBackup` controller (one-shot: `<cr-name>-backup`; CronJob children: `<cr-name>-<unix-seconds>`). No persistent backup pod or sidecars.
 - **Truststore mount**: `/truststore/truststore.jks` (read-only, populated by the `truststore-init` init container; password is the JVM default `changeit`)
 - **User-supplied volumes**: `spec.extraVolumes` are appended to the pod spec verbatim; `spec.extraVolumeMounts` are appended to the Neo4j container's mounts after operator-managed mounts. Operator-managed paths (`/data`, `/logs`, `/conf`, `/ssl`, `/plugins`, `/truststore`, `/truststore-ca`, `/var/lib/neo4j/...`) are off-limits and rejected by the validator.

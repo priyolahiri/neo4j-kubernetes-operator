@@ -522,12 +522,17 @@ behaviour changes below take effect on the first reconcile.
   at most once per `--ready-poll-interval`. Alerts on them should allow for a
   server being down for a minute or so, as the documented examples (5 minutes)
   do.
-- **The `<cluster>-discovery` Role and RoleBinding are deleted.** They let the
-  server pods list Services and Endpoints, which nothing used: discovery reads
+- **The `<cluster>-discovery` Role, RoleBinding and Service are deleted.** The
+  Role and RoleBinding let the server pods list Services and Endpoints; the
+  Service exposed the V1 discovery port 5000. Nothing used them: discovery reads
   pod addresses from DNS. Upgrading the operator deletes the ones it created and
   restarts nothing; the `<cluster>-discovery` ServiceAccount stays, with any
-  `spec.podServiceAccountAnnotations`. A Role or RoleBinding of that name that
-  the operator did not create is left alone.
+  `spec.podServiceAccountAnnotations`. An object of that name that the operator
+  did not create is left alone. The operator's own ClusterRole now only reads
+  and deletes Roles and RoleBindings.
+- **A failed cluster reconcile is retried on its own backoff** (5–30 seconds).
+  Retries used to share one slot every 6 seconds across all clusters, so after
+  a failure that hit many clusters at once some waited minutes.
 - **Clusters get `dbms.cluster.network.connect_timeout=5s`** (Neo4j's default
   is 30s). Upgrading the operator applies it to the running servers without a
   restart (a `ConfigAppliedLive` event); Neo4j's Raft connections take it up at
