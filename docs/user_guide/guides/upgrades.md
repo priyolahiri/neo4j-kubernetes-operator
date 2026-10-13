@@ -33,6 +33,10 @@ kubectl rollout status statefulset/<cluster>-server -n <namespace>
 # Operator upgrade status
 kubectl get neo4jenterprisecluster <name> -o jsonpath='{.status.upgradeStatus}'
 
+# Each server's state, kept current during the upgrade
+kubectl get neo4jenterprisecluster <name> \
+  -o jsonpath='{range .status.diagnostics.servers[*]}{.name}{"\t"}{.health}{"\n"}{end}'
+
 # Operator logs
 kubectl logs -n neo4j-operator-system -l control-plane=controller-manager -f | grep -i upgrade
 ```

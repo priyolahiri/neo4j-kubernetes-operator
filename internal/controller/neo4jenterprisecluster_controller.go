@@ -122,6 +122,9 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// outage is distinguishable from a transient blip in logs and events
 	// (#263 forensics). Cleared on the first successful connection.
 	connectivityFailures sync.Map
+	// upgradeDiagnostics records, per cluster (key ns/name), when diagnostics
+	// were last collected during an upgrade (collectDiagnosticsDuringUpgrade).
+	upgradeDiagnostics sync.Map
 	// availabilityAnnounced records, per cluster (key ns/name), which
 	// availability transition — Degraded or QuorumLost — has had its Warning
 	// event, so a reconcile that reads the cluster from a cache that has not
@@ -418,7 +421,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// (line ~838 applies the builder's UpdateStrategy) and unfreeze a staged
 	// roll. isUpgradeRequired starts a NEW upgrade on image drift.
 	if upgradeStateMachineActive(cluster) || r.isUpgradeRequired(ctx, cluster) {
-		return r.handleRollingUpgrade(ctx, cluster)
+		res, err := r.handleRollingUpgrade(ctx, cluster)
+		// Only the read-only half of the normal pass keeps running (id 131).
+		r.collectDiagnosticsDuringUpgrade(ctx, cluster)
+		return res, err
 	}
 
 	// #262: image drift while the cluster is NOT Ready must never reach the

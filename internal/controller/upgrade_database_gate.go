@@ -60,6 +60,8 @@ const (
 type upgradeGates struct {
 	serverAvailable   func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (bool, error)
 	databasesCaughtUp func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (bool, []string, error)
+	// diagnostics replaces CollectDiagnostics during an upgrade.
+	diagnostics func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error
 }
 
 // addressIsPod reports whether a Neo4j server address ("host:port") belongs
