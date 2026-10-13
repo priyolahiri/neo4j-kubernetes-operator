@@ -28,47 +28,39 @@ import (
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-// markClusterReady makes an envtest cluster Ready for the controllers that
-// wait on one (backup, restore, database). envtest runs no pods, so only a
-// patch can do it — and the cluster controller reconciles a new cluster at
-// once: a pass that began before the patch can write its own phase over it
-// afterwards. So the patch is re-applied until Ready has held for two seconds;
-// once a pass has observed Ready it keeps it. With one cluster worker that
-// pass usually ran late, behind other specs' clusters, which is why a single
-// patch used to be enough.
-func markClusterReady(ctx context.Context, key types.NamespacedName) {
-	var heldSince time.Time
-	Eventually(func() bool {
-		c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-		if err := k8sClient.Get(ctx, key, c); err != nil {
-			heldSince = time.Time{}
-			return false
-		}
-		if c.Status.Phase == neo4jv1beta1.PhaseReady && readyConditionTrue(c.Status.Conditions) {
-			if heldSince.IsZero() {
-				heldSince = time.Now()
-			}
-			return time.Since(heldSince) >= 2*time.Second
-		}
-		heldSince = time.Time{}
-		patch := client.MergeFrom(c.DeepCopy())
-		c.Status.Phase = neo4jv1beta1.PhaseReady
-		c.Status.Conditions = []metav1.Condition{{
-			Type:               "Ready",
-			Status:             metav1.ConditionTrue,
-			Reason:             "TestReady",
-			LastTransitionTime: metav1.Now(),
-		}}
-		_ = k8sClient.Status().Patch(ctx, c, patch)
-		return false
-	}, 60*time.Second, 200*time.Millisecond).Should(BeTrue(), "cluster %s did not stay Ready", key)
+// standInLabel marks a cluster that stands in for a Ready cluster in specs of
+// the controllers that wait on one (backup, restore). The suite's cluster
+// controller leaves such clusters alone (its Ignore seam): envtest runs no
+// pods, so it would rightly take them out of Ready, and with several workers
+// it does so before the spec's controller looks. Set it before Create.
+const standInLabel = "test.neo4j.com/stand-in"
+
+// standInLabels is the label set a stand-in cluster is created with.
+func standInLabels() map[string]string { return map[string]string{standInLabel: "true"} }
+
+func isStandInCluster(c *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	return c.Labels[standInLabel] == "true"
 }
 
-func readyConditionTrue(conds []metav1.Condition) bool {
-	for _, c := range conds {
-		if c.Type == "Ready" {
-			return c.Status == metav1.ConditionTrue
-		}
-	}
-	return false
+// markClusterReady patches a stand-in cluster to Ready and waits until the
+// API shows it.
+func markClusterReady(ctx context.Context, key types.NamespacedName) {
+	c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	Expect(k8sClient.Get(ctx, key, c)).To(Succeed())
+	Expect(isStandInCluster(c)).To(BeTrue(),
+		"create %s with standInLabels(), or the cluster controller will take it out of Ready", key)
+	patch := client.MergeFrom(c.DeepCopy())
+	c.Status.Phase = neo4jv1beta1.PhaseReady
+	c.Status.Conditions = []metav1.Condition{{
+		Type:               "Ready",
+		Status:             metav1.ConditionTrue,
+		Reason:             "TestReady",
+		LastTransitionTime: metav1.Now(),
+	}}
+	Expect(k8sClient.Status().Patch(ctx, c, patch)).To(Succeed())
+	Eventually(func() string {
+		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+		_ = k8sClient.Get(ctx, key, latest)
+		return latest.Status.Phase
+	}, 30*time.Second, 200*time.Millisecond).Should(Equal(neo4jv1beta1.PhaseReady))
 }

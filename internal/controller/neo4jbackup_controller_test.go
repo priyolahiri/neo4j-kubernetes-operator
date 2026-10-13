@@ -88,6 +88,7 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterName,
 				Namespace: namespaceName,
+				Labels:    standInLabels(),
 			},
 			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 				AcceptLicenseAgreement: "eval",

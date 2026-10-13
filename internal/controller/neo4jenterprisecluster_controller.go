@@ -101,6 +101,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// UpgradeGates replaces the network in rolling-upgrade tests (#488); nil
 	// in production.
 	UpgradeGates *upgradeGates
+	// Ignore, when set, makes Reconcile leave alone every cluster it returns
+	// true for. The envtest suite uses it for clusters that stand in for a
+	// Ready cluster in backup and restore specs: envtest runs no pods, so this
+	// controller would rightly take them out of Ready. nil in production.
+	Ignore func(*neo4jv1beta1.Neo4jEnterpriseCluster) bool
 	// fleetFailures dedupes the AuraFleetManagementFailed event so a
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
@@ -279,6 +284,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 		logger.Error(err, "Failed to get Neo4jEnterpriseCluster")
 		return ctrl.Result{}, err
+	}
+	if r.Ignore != nil && r.Ignore(cluster) {
+		return ctrl.Result{}, nil
 	}
 
 	// Handle deletion — before the reconcile metrics are set up: the pass

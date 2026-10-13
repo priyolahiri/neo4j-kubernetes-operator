@@ -21,9 +21,13 @@ import (
 	"testing"
 	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -199,5 +203,30 @@ func TestClusterControllerOptions(t *testing.T) {
 	}).controllerOptions()
 	if opts.MaxConcurrentReconciles != 4 || opts.ReconciliationTimeout != 10*time.Minute {
 		t.Errorf("defaults: got %d workers, timeout %s; want 4 and 10m", opts.MaxConcurrentReconciles, opts.ReconciliationTimeout)
+	}
+}
+
+// A cluster the Ignore seam selects is left alone: no finalizer, no
+// StatefulSet. The envtest suite uses it for stand-in clusters.
+func TestReconcileLeavesIgnoredClustersAlone(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = neo4jv1beta1.AddToScheme(scheme)
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "ns"}}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
+	r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: scheme,
+		Ignore: func(*neo4jv1beta1.Neo4jEnterpriseCluster) bool { return true }}
+
+	res, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: types.NamespacedName{Name: "c", Namespace: "ns"}})
+	if err != nil || res != (ctrl.Result{}) {
+		t.Fatalf("got %v, %v; want an empty result and no error", res, err)
+	}
+	latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	_ = c.Get(context.Background(), types.NamespacedName{Name: "c", Namespace: "ns"}, latest)
+	if len(latest.Finalizers) != 0 || latest.Status.Phase != "" {
+		t.Errorf("an ignored cluster was touched: finalizers %v, phase %q", latest.Finalizers, latest.Status.Phase)
+	}
+	if err := c.Get(context.Background(), types.NamespacedName{Name: "c-server", Namespace: "ns"}, &appsv1.StatefulSet{}); err == nil {
+		t.Error("an ignored cluster got a StatefulSet")
 	}
 }

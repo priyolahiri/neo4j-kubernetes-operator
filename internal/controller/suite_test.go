@@ -155,6 +155,7 @@ var _ = BeforeSuite(func() {
 		Recorder:                mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
 		ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()),
 		MaxConcurrentReconciles: controller.DefaultClusterMaxConcurrentReconciles,
+		Ignore:                  isStandInCluster,
 	}).SetupWithManager(mgr); err != nil {
 		Expect(err).NotTo(HaveOccurred())
 	}
