@@ -511,6 +511,13 @@ behaviour changes below take effect on the first reconcile.
   copy. Upgrades of clusters with many databases take somewhat longer — about
   15 seconds per server with 30 databases on a laptop — and stay within
   `upgradeTimeout`.
+- **Clusters get `dbms.cluster.network.connect_timeout=5s`** (Neo4j's default
+  is 30s). Upgrading the operator applies it to the running servers without a
+  restart (a `ConfigAppliedLive` event); Neo4j's Raft connections take it up at
+  each server's next restart. It removes pauses of about 10 seconds on a
+  database whose leadership moved to a server that had just restarted. To keep
+  30s, set it in `spec.config`. See
+  [Writes while a restarted server rejoins](clustering.md#writes-while-a-restarted-server-rejoins).
 
 ## Upgrading between future releases
 

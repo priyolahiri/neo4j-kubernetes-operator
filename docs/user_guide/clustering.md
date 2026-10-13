@@ -429,6 +429,16 @@ The operator turns it on for 5.26 clusters:
 !!! note "`SHOW SETTINGS` reports it as `false`"
     On 5.26.31, `SHOW SETTINGS` shows this setting as `false`, and not explicitly set, even on a server that runs with it on. 5.26.29 made an existing internal setting public, and `SHOW SETTINGS` does not reflect it. The value Neo4j actually starts with is in the configuration dump at the top of `debug.log`, and the operator's `RestartPending` condition does not rely on `SHOW SETTINGS`.
 
+## Writes while a restarted server rejoins
+
+A server that restarts comes back in a new pod with a new IP address. For up to 30 seconds afterwards, the other servers can still resolve its name to the old address, which nothing answers, and each attempt to connect waits out `dbms.cluster.network.connect_timeout`. Neo4j's default is 30 seconds. If Neo4j moves a database's leadership to the restarted server in that time, which it does to balance leaderships, the transfer travels over that connection, and writes to the database stop until the transfer times out. On Kind, under write load, that held writes for about 10 seconds on both 5.26 and CalVer.
+
+The operator sets `dbms.cluster.network.connect_timeout=5s` on every cluster, and the stalls went away: no write paused longer than about 4 seconds. Servers in one Kubernetes cluster connect in milliseconds, so 5 seconds still leaves a wide margin.
+
+- **New clusters:** have it from the first start.
+- **Existing clusters:** upgrading the operator applies it to the running servers without a restart (a `ConfigAppliedLive` event). Neo4j's Raft connections take it up when each server next restarts, so a cluster's first rolling upgrade afterwards can still see the longer pauses.
+- **Overriding it:** set `dbms.cluster.network.connect_timeout` in `spec.config`, for example back to `30s`.
+
 ## Troubleshooting
 
 ### Common Issues

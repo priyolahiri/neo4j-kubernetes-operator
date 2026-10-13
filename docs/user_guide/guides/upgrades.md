@@ -20,7 +20,9 @@ The operator performs a safe, ordered rolling upgrade:
 4. **Rolls pod 0 last** — the operator attempts to detect which pod holds the primary role for the `system` database (via `SHOW DATABASES`) and logs a warning if it is not ordinal 0. Ordinal 0 is always the last pod rolled regardless, so the system-database primary is preserved as long as possible.
 5. **Waits for cluster stabilisation** — after all pods are updated the operator waits for the cluster health and consensus state to be consistently stable before marking the upgrade complete.
 
-Writes stay available throughout, with one expected pause: when a server that leads a database restarts, that database elects a new leader, and its writes pause until the election finishes and the drivers' routing catches up — typically 2–5 seconds, measured up to 12 seconds on a busy laptop cluster with 30 databases. Neo4j has no procedure to hand leadership over ahead of a restart, so applications should use the drivers' retrying transaction functions (`executeWrite` and equivalents), which ride over it.
+Writes stay available throughout. As a server shuts down, Neo4j hands the leadership of each database it leads to another server, so a restart does not leave a database waiting for an election. Clients still see brief, retryable interruptions around each restart, a few failed writes and pauses of a few seconds, so use the drivers' retrying transaction functions (`executeWrite` and equivalents), which ride over them. Longer pauses, of about 10 seconds, came from Neo4j's 30-second cluster connect timeout meeting a restarted server's new IP address; the operator lowers that timeout to 5 seconds (see [Writes while a restarted server rejoins](../clustering.md#writes-while-a-restarted-server-rejoins)).
+
+If you have made databases read-only on individual servers with `dbms.setConfigValue('server.databases.read_only', …)`, upgrade with those settings removed. Neo4j can hand a leadership to a server that is read-only for that database, and that handover is lost: the database then has no leader for about 20 seconds (`dbms.cluster.raft.leader_failure_detection_window`).
 
 Watch progress with:
 
