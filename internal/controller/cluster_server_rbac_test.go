@@ -53,7 +53,7 @@ var _ = Describe("Neo4jEnterpriseCluster server ServiceAccount", func() {
 		cluster = nil
 	})
 
-	It("creates the ServiceAccount and no discovery Role or RoleBinding", func() {
+	It("creates the ServiceAccount and no discovery Role, RoleBinding or Service", func() {
 		ctx := context.Background()
 		secret := &corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "neo4j-admin-secret", Namespace: "default"},
@@ -85,5 +85,6 @@ var _ = Describe("Neo4jEnterpriseCluster server ServiceAccount", func() {
 		}, 60*time.Second, 250*time.Millisecond).Should(Succeed())
 		Expect(errors.IsNotFound(k8sClient.Get(ctx, key, &rbacv1.Role{}))).To(BeTrue(), "no discovery Role")
 		Expect(errors.IsNotFound(k8sClient.Get(ctx, key, &rbacv1.RoleBinding{}))).To(BeTrue(), "no discovery RoleBinding")
+		Expect(errors.IsNotFound(k8sClient.Get(ctx, key, &corev1.Service{}))).To(BeTrue(), "no port-5000 discovery Service")
 	})
 })

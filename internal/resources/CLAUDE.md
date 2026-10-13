@@ -25,11 +25,11 @@ apply the results.
   `buildStatefulSetForEnterprise(cluster, "server", Spec.Topology.Servers)`). `BuildServerStatefulSetsForEnterprise` (plural) is **Deprecated**; don't use it.
 - `buildVersionSpecificDiscoveryConfig(cluster)` — version-gated discovery conf string; branches on `isCalverImage(tag)`.
 - `BuildConfigMapForEnterprise`, `BuildPodSpecForEnterprise` — startup script + pod spec.
-- `BuildHeadlessServiceForEnterprise`, `BuildClientServiceForEnterprise`, `BuildDiscoveryServiceForEnterprise`, `BuildInternalsServiceForEnterprise`, `BuildMetricsServiceForEnterprise`.
+- `BuildHeadlessServiceForEnterprise`, `BuildClientServiceForEnterprise`, `BuildInternalsServiceForEnterprise`, `BuildMetricsServiceForEnterprise`.
 - `BuildBackupFromAddresses` (cluster) / `BuildStandaloneBackupFromAddress` — `pod-fqdn:6362` lists for `neo4j-admin database backup --from`.
 - `ServerPodSelector` / `StandalonePodSelector` / `PVCSelectorByInstance` — label selectors.
 - Conf helpers: `DedupeNeo4jConf`, `UpsertNeo4jConfSettings`, `Neo4jConfSettings`, `MergeConfListValues`, `IsAdditiveConfKey`, `Neo4jSettingEnvVarName`.
-- Port constants: `DiscoveryPort=6000`, `RaftPort=7000`, `BackupPort=6362`, `BoltPort=7687`. `LegacyClusterPort=5000` is V1 discovery — **never used at runtime** (invariant 4).
+- Port constants: `DiscoveryPort=6000`, `RaftPort=7000`, `BackupPort=6362`, `BoltPort=7687`. Port 5000 (V1 discovery) is never used (invariant 4); the `{cluster}-discovery` Service that exposed it is gone (`LegacyDiscoveryName`, operations.md id 130).
 
 ## Conventions & gotchas
 

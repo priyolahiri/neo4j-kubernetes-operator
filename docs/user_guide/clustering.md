@@ -11,7 +11,7 @@ The Neo4j Kubernetes Operator supports Neo4j 5.26 LTS (the final SemVer release)
 A Neo4j Enterprise cluster consists of:
 
 - **Servers**: Neo4j server instances that self-organize into primary and secondary roles automatically
-- **Discovery service**: Enables cluster members to find each other
+- **Discovery**: each server finds the others by their pod names on the `-headless` service (LIST discovery)
 - **Routing service**: Routes client connections to appropriate cluster members
 
 **Server Self-Organization**: In the server-based architecture, you deploy a number of servers and Neo4j automatically assigns primary and secondary roles based on database requirements and cluster state.
@@ -36,7 +36,6 @@ The operator uses the **LIST resolver** with pre-computed pod FQDNs from the Sta
 The operator automatically creates:
 
 - `{cluster-name}-headless` — StatefulSet headless service (pod FQDNs)
-- `{cluster-name}-discovery` — legacy ClusterIP service (port 5000); not used by LIST discovery
 - `{cluster-name}-internals` — cluster-internal routing
 - `{cluster-name}-client` — external Bolt/HTTP access
 - `{cluster-name}-metrics` — Prometheus metrics (port 2004), when `spec.monitoring` is set and enabled
@@ -448,7 +447,7 @@ The operator sets `dbms.cluster.network.connect_timeout=5s` on every cluster, an
    - Verify all pods can resolve DNS: `kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-headless`
 
 2. **Discovery (LIST resolver via headless service)**
-   - The operator uses LIST discovery against the StatefulSet's `-headless` service (the legacy `-discovery` ClusterIP service exists for backward compatibility but is NOT used by the V2 discovery path).
+   - The operator uses LIST discovery against the StatefulSet's `-headless` service.
    - Verify the headless service exists: `kubectl get service {cluster-name}-headless`
    - Check endpoints include all pods: `kubectl describe endpoints {cluster-name}-headless`
    - Check that pod FQDNs resolve: `kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-server-0.{cluster-name}-headless.{ns}.svc.cluster.local`

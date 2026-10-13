@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -228,5 +229,19 @@ func TestReconcileLeavesIgnoredClustersAlone(t *testing.T) {
 	}
 	if err := c.Get(context.Background(), types.NamespacedName{Name: "c-server", Namespace: "ns"}, &appsv1.StatefulSet{}); err == nil {
 		t.Error("an ignored cluster got a StatefulSet")
+	}
+}
+
+// When many clusters fail at once (an API-server blip), each one's first
+// retry comes from its own backoff (5s), not from a bucket shared by every
+// cluster: the old one-every-6-seconds bucket (bursts of 10) held the 20th
+// for a minute and the 30th for two.
+func TestClusterRetriesAreNotThrottledAcrossClusters(t *testing.T) {
+	limiter := (&Neo4jEnterpriseClusterReconciler{}).controllerOptions().RateLimiter
+	for i := 0; i < 50; i++ {
+		req := ctrl.Request{NamespacedName: types.NamespacedName{Namespace: "ns", Name: fmt.Sprintf("c%d", i)}}
+		if d := limiter.When(req); d > 5*time.Second {
+			t.Fatalf("cluster %d's first retry waits %s; want at most its own 5s backoff", i, d)
+		}
 	}
 }
