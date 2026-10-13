@@ -112,6 +112,8 @@ spec:
     postUpgradeHealthCheck: true  # validate cluster health after upgrade (default true)
 ```
 
+Servers always restart one at a time, as Neo4j's rolling upgrade requires. `maxUnavailableDuringUpgrade` is accepted for compatibility but has no effect; a value other than `1` raises a `ValidationWarning` event.
+
 When `preUpgradeHealthCheck` is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and `autoPauseOnFailure` is `true`, the upgrade is blocked until you intervene rather than proceeding against an unhealthy deployment.
 
 For the full field reference see the [API Reference](../../api_reference/neo4jenterprisecluster.md).

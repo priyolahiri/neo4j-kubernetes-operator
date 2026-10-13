@@ -27,6 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -144,6 +145,14 @@ func TestClusterValidator_NoEffectWarnings(t *testing.T) {
 			path:    "spec.topology.placement.requiredDuringScheduling",
 			instead: "antiAffinity.type: required",
 		},
+		{
+			name: "upgradeStrategy.maxUnavailableDuringUpgrade other than 1",
+			mutate: func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
+				c.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{MaxUnavailableDuringUpgrade: ptr.To(int32(2))}
+			},
+			path:    "spec.upgradeStrategy.maxUnavailableDuringUpgrade",
+			instead: "one server at a time",
+		},
 	}
 
 	for _, tc := range cases {
@@ -164,6 +173,16 @@ func TestClusterValidator_NoEffectWarnings(t *testing.T) {
 			assert.Zero(t, noEffectCount(create.Warnings), "no-effect warnings belong in NoEffectWarnings")
 		})
 	}
+
+	// The CRD defaults it to 1 wherever upgradeStrategy is set.
+	t.Run("maxUnavailableDuringUpgrade of 1, or unset, does not warn", func(t *testing.T) {
+		for _, v := range []*int32{nil, ptr.To(int32(1))} {
+			cluster := validClusterForWarnings()
+			cluster.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{MaxUnavailableDuringUpgrade: v}
+			res := validator.ValidateCreateWithWarnings(ctx, cluster)
+			assert.Empty(t, res.NoEffectWarnings)
+		}
+	})
 
 	t.Run("placement fields that ARE read do not warn", func(t *testing.T) {
 		cluster := validClusterForWarnings()
@@ -196,6 +215,16 @@ func TestStandaloneValidator_NoEffectWarnings(t *testing.T) {
 				"test-standalone-tls-secret")
 		})
 	}
+
+	t.Run("upgradeStrategy.maxUnavailableDuringUpgrade other than 1", func(t *testing.T) {
+		sa := validStandalone()
+		sa.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{MaxUnavailableDuringUpgrade: ptr.To(int32(0))}
+		assert.Empty(t, v.ValidateCreate(sa), "the standalone must still be accepted")
+		requireNoEffectWarning(t, v.NoEffectWarnings(sa), "spec.upgradeStrategy.maxUnavailableDuringUpgrade", "one server")
+
+		sa.Spec.UpgradeStrategy.MaxUnavailableDuringUpgrade = ptr.To(int32(1))
+		assert.Empty(t, v.NoEffectWarnings(sa), "the CRD default does not warn")
+	})
 }
 
 // spec.tls.strictPeerValidation is read only by Neo4jEnterpriseCluster (it picks
