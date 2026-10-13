@@ -80,6 +80,14 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// have not changed goes between full split-brain checks; zero checks on
 	// every pass. Set from --split-brain-check-interval.
 	SplitBrainCheckInterval time.Duration
+	// MaxConcurrentReconciles is how many clusters are reconciled at once; a
+	// cluster is never reconciled twice at once. Zero means one. Set from
+	// --cluster-max-concurrent-reconciles.
+	MaxConcurrentReconciles int
+	// ReconcileTimeout bounds one reconcile of one cluster, so a pass stuck on
+	// a server that stopped answering mid-query cannot hold a worker; zero
+	// means no bound. Set from --cluster-reconcile-timeout.
+	ReconcileTimeout time.Duration
 	// splitBrainChecks records, per cluster (key ns/name), the last full
 	// split-brain check that found the cluster whole (splitBrainCheck).
 	splitBrainChecks sync.Map
@@ -93,6 +101,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// UpgradeGates replaces the network in rolling-upgrade tests (#488); nil
 	// in production.
 	UpgradeGates *upgradeGates
+	// Ignore, when set, makes Reconcile leave alone every cluster it returns
+	// true for. The envtest suite uses it for clusters that stand in for a
+	// Ready cluster in backup and restore specs: envtest runs no pods, so this
+	// controller would rightly take them out of Ready. nil in production.
+	Ignore func(*neo4jv1beta1.Neo4jEnterpriseCluster) bool
 	// fleetFailures dedupes the AuraFleetManagementFailed event so a
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
@@ -271,6 +284,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 		logger.Error(err, "Failed to get Neo4jEnterpriseCluster")
 		return ctrl.Result{}, err
+	}
+	if r.Ignore != nil && r.Ignore(cluster) {
+		return ctrl.Result{}, nil
 	}
 
 	// Handle deletion — before the reconcile metrics are set up: the pass
@@ -1988,8 +2004,8 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 
 // handleRollingUpgrade dispatches one state-machine step per reconcile (#174).
 // Each step is non-blocking (single observation + at most one mutation +
-// RequeueAfter), so an upgrading cluster never starves reconciliation of other
-// clusters (the controller runs MaxConcurrentReconciles=1). The phases and
+// RequeueAfter), so an upgrading cluster never holds a worker other clusters
+// are waiting for. The phases and
 // step implementations live in rolling_upgrade_statemachine.go.
 func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade-handler")
@@ -3275,6 +3291,33 @@ func (r *Neo4jEnterpriseClusterReconciler) newFleetProvisioner() *fleetProvision
 }
 
 // SetupWithManager sets up the controller with the Manager.
+// controllerOptions are the cluster controller's work-queue settings.
+//
+// Clusters are reconciled MaxConcurrentReconciles at a time, so one cluster
+// whose servers are slow to answer does not delay the others; controller-runtime
+// never reconciles the same cluster twice at once, and the state the reconciler
+// keeps across clusters is held in sync.Maps or behind mutexes (operations.md
+// id 129). ReconcileTimeout puts a deadline on each pass's context, which the
+// Kubernetes client and the Neo4j driver both honour.
+func (r *Neo4jEnterpriseClusterReconciler) controllerOptions() controller.Options {
+	workers := r.MaxConcurrentReconciles
+	if workers < 1 {
+		workers = 1
+	}
+	return controller.Options{
+		MaxConcurrentReconciles: workers,
+		ReconciliationTimeout:   r.ReconcileTimeout,
+		RateLimiter: workqueue.NewTypedMaxOfRateLimiter(
+			// Exponential backoff starting at 5 seconds
+			workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Second, 30*time.Second),
+			// Overall rate limiting (max 10 reconciliations per minute)
+			&workqueue.TypedBucketRateLimiter[reconcile.Request]{
+				Limiter: rate.NewLimiter(rate.Every(6*time.Second), 10),
+			},
+		),
+	}
+}
+
 func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jEnterpriseCluster{}).
@@ -3287,17 +3330,7 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 		// cert-manager, not the cluster, owns {name}-tls-secret: watch it by
 		// name so a renewal is reloaded on the running servers (#469).
 		Watches(&corev1.Secret{}, handler.EnqueueRequestsFromMapFunc(tlsSecretOwnerRequest)).
-		WithOptions(controller.Options{
-			MaxConcurrentReconciles: 1, // Limit concurrent reconciliations
-			RateLimiter: workqueue.NewTypedMaxOfRateLimiter(
-				// Exponential backoff starting at 5 seconds
-				workqueue.NewTypedItemExponentialFailureRateLimiter[reconcile.Request](5*time.Second, 30*time.Second),
-				// Overall rate limiting (max 10 reconciliations per minute)
-				&workqueue.TypedBucketRateLimiter[reconcile.Request]{
-					Limiter: rate.NewLimiter(rate.Every(6*time.Second), 10),
-				},
-			),
-		})
+		WithOptions(r.controllerOptions())
 
 	routeGVK := schema.GroupVersionKind{Group: "route.openshift.io", Version: "v1", Kind: "Route"}
 	if _, err := mgr.GetRESTMapper().RESTMapping(routeGVK.GroupKind(), routeGVK.Version); err == nil {

@@ -34,6 +34,17 @@ import (
 // by --split-brain-check-interval; zero checks on every pass.
 const DefaultSplitBrainCheckInterval = 5 * time.Minute
 
+// DefaultClusterMaxConcurrentReconciles is how many clusters are reconciled at
+// once. Overridden by --cluster-max-concurrent-reconciles.
+const DefaultClusterMaxConcurrentReconciles = 4
+
+// DefaultClusterReconcileTimeout bounds one reconcile of one cluster.
+// Overridden by --cluster-reconcile-timeout; zero means no bound. A pass makes
+// at most a few dozen Bolt calls, each bounded by the driver's own timeouts, so
+// a healthy or merely unreachable cluster finishes far sooner; the bound is for
+// a server that accepted a query and then stopped answering.
+const DefaultClusterReconcileTimeout = 10 * time.Minute
+
 // readyPollInterval is how long a Ready deployment waits for its next pass
 // when nothing in Kubernetes changes: configured (--ready-poll-interval) when
 // set, otherwise the reconciler's RequeueAfter. Every other path — forming,

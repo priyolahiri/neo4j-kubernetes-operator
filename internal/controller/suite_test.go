@@ -147,11 +147,15 @@ var _ = BeforeSuite(func() {
 	By("setting up controllers")
 
 	// Set up Neo4jEnterpriseCluster controller
+	// The production default of workers, so every spec here runs the cluster
+	// reconcile for different clusters in parallel — under -race in CI.
 	if err := (&controller.Neo4jEnterpriseClusterReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		Recorder:         mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
-		ConfigMapManager: controller.NewConfigMapManager(mgr.GetClient()),
+		Client:                  mgr.GetClient(),
+		Scheme:                  mgr.GetScheme(),
+		Recorder:                mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller"),
+		ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()),
+		MaxConcurrentReconciles: controller.DefaultClusterMaxConcurrentReconciles,
+		Ignore:                  isStandInCluster,
 	}).SetupWithManager(mgr); err != nil {
 		Expect(err).NotTo(HaveOccurred())
 	}

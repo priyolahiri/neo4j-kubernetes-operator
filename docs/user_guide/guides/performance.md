@@ -7,7 +7,7 @@ This guide explains how to tune the performance of your Neo4j Enterprise cluster
 The Neo4j Enterprise Operator includes several performance optimizations for production environments:
 
 ### Reconciliation Efficiency
-- **Optimized Rate Limiting**: The cluster controller caps reconciliations at roughly 10 per minute (a token-bucket limiter of one token every 6 seconds with a burst of 10), backed by exponential backoff from 5 seconds up to 30 seconds, to prevent excessive API calls
+- **Retry pacing**: A cluster reconcile that fails is retried with exponential backoff from 5 seconds up to 30 seconds, and retries across all clusters share a token bucket of one every 6 seconds with a burst of 10. Scheduled passes (such as `--ready-poll-interval`) and changes in Kubernetes are not paced by it
 - **Status Update Optimization**: Status updates only occur when cluster state actually changes, reducing unnecessary API server load
 - **ConfigMap Debouncing**: A short debounce interval coalesces rapid successive configuration changes, preventing restart loops
 
@@ -23,6 +23,10 @@ Split-brain detection is the expensive part of a cluster's pass: it opens a Bolt
 - the operator has restarted, so it has no clean check on record.
 
 `--split-brain-check-interval=0s` restores a full check on every pass. With Helm, set `readyPollInterval` and `splitBrainCheckInterval`.
+
+Clusters are reconciled **four at a time** (`--cluster-max-concurrent-reconciles`), so a cluster whose servers are slow to answer, or a pass that is busy upgrading one, does not hold up the others. A single cluster is never reconciled twice at once. Raise it if one operator runs many clusters; every worker can hold Bolt connections to one cluster's servers and makes its own requests to the Kubernetes API.
+
+Each pass of one cluster is cut off after `--cluster-reconcile-timeout` (default `10m`, `0s` for no limit) and retried, so a pass stuck on a server that accepted a query and stopped answering gives its worker back. A normal pass takes seconds, and one against unreachable servers far less than the limit, because every Neo4j connection and query has its own timeout. With Helm, set `clusterMaxConcurrentReconciles` and `clusterReconcileTimeout`.
 
 ### Resource Management
 - **Memory Validation**: Automatic validation ensures Neo4j memory settings don't exceed available resources

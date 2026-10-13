@@ -20,9 +20,8 @@ package controller
 //
 // The previous implementation (RollingUpgradeOrchestrator.ExecuteRollingUpgrade)
 // ran the whole partition walk synchronously inside one Reconcile — blocking up
-// to ~30 minutes per pod. With MaxConcurrentReconciles=1 on the cluster
-// controller, one upgrading cluster starved reconciliation of every other
-// cluster. This file replaces the blocking loop with one non-blocking step per
+// to ~30 minutes per pod. With one worker on the cluster controller (as it had
+// then), one upgrading cluster starved reconciliation of every other cluster. This file replaces the blocking loop with one non-blocking step per
 // reconcile:
 //
 //	Staging     — apply the FULL target-version pod template (image AND the

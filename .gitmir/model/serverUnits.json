@@ -3,7 +3,7 @@
     "id": "su-neo4jenterprisecluster",
     "name": "Neo4jEnterpriseCluster Reconciler",
     "kind": "controller",
-    "description": "Reconciles Neo4jEnterpriseCluster CRs into a single {cluster}-server StatefulSet plus Services/ConfigMap/RBAC/TLS, drives rolling upgrades, scale-down drains, and diagnostics, and reports the cluster phase (Initializing to Forming to Ready, and Degraded when a formed cluster stays short of a server past the grace period) via status, conditions and events.",
+    "description": "Reconciles Neo4jEnterpriseCluster CRs into a single {cluster}-server StatefulSet plus Services/ConfigMap/RBAC/TLS, drives rolling upgrades, scale-down drains, and diagnostics, and reports the cluster phase (Initializing to Forming to Ready, and Degraded when a formed cluster stays short of a server past the grace period) via status, conditions and events. It reconciles up to --cluster-max-concurrent-reconciles clusters at once (default 4; never the same cluster twice at once), each pass bounded by --cluster-reconcile-timeout (default 10m), so a slow or stuck cluster does not delay the others.",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],

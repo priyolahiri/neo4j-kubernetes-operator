@@ -83,6 +83,7 @@ var _ = Describe("Neo4jRestore Controller", func() {
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      clusterName,
 				Namespace: namespaceName,
+				Labels:    standInLabels(),
 			},
 			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
 				AcceptLicenseAgreement: "eval",
@@ -116,15 +117,8 @@ var _ = Describe("Neo4jRestore Controller", func() {
 		}
 		Expect(k8sClient.Create(ctx, secret)).Should(Succeed())
 
-		// Patch cluster status to Ready so restore controller proceeds
-		patch := client.MergeFrom(cluster.DeepCopy())
-		cluster.Status.Conditions = []metav1.Condition{{
-			Type:               "Ready",
-			Status:             metav1.ConditionTrue,
-			Reason:             "TestReady",
-			LastTransitionTime: metav1.Now(),
-		}}
-		Expect(k8sClient.Status().Patch(ctx, cluster, patch)).To(Succeed())
+		// Make the cluster Ready so the restore controller proceeds.
+		markClusterReady(ctx, types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace})
 
 		// Create backup for successful restore test
 		backup = &neo4jv1beta1.Neo4jBackup{

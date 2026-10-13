@@ -128,6 +128,12 @@ var (
 	// splitBrainCheckInterval is --split-brain-check-interval, handed to the
 	// cluster reconciler in both modes.
 	splitBrainCheckInterval = controller.DefaultSplitBrainCheckInterval
+
+	// clusterMaxConcurrentReconciles and clusterReconcileTimeout are
+	// --cluster-max-concurrent-reconciles and --cluster-reconcile-timeout,
+	// handed to the cluster reconciler in both modes.
+	clusterMaxConcurrentReconciles = controller.DefaultClusterMaxConcurrentReconciles
+	clusterReconcileTimeout        = controller.DefaultClusterReconcileTimeout
 )
 
 // Build metadata, stamped by the Dockerfile:
@@ -224,6 +230,17 @@ func main() {
 		splitBrainCheckIntervalFlag = flag.Duration("split-brain-check-interval", controller.DefaultSplitBrainCheckInterval,
 			"How long a Ready Neo4jEnterpriseCluster whose server pods have not changed goes between full split-brain checks (0 checks on every reconcile)")
 
+		// How many clusters are reconciled at once, so a cluster whose servers
+		// are slow to answer does not hold up the others. A cluster is never
+		// reconciled twice at once.
+		clusterMaxConcurrentReconcilesFlag = flag.Int("cluster-max-concurrent-reconciles", controller.DefaultClusterMaxConcurrentReconciles,
+			"How many Neo4jEnterpriseClusters are reconciled at once")
+
+		// Bounds one reconcile of one cluster, so a pass stuck on a server that
+		// accepted a query and stopped answering gives its worker back.
+		clusterReconcileTimeoutFlag = flag.Duration("cluster-reconcile-timeout", controller.DefaultClusterReconcileTimeout,
+			"The longest one reconcile of one Neo4jEnterpriseCluster may take before it is cancelled and retried (0 for no limit)")
+
 		// Development mode specific flags
 		// Must stay in sync with the dev controller registry in
 		// setupDevelopmentControllers — a key that is registered but missing here
@@ -265,6 +282,16 @@ func main() {
 		os.Exit(1)
 	}
 	splitBrainCheckInterval = *splitBrainCheckIntervalFlag
+	if *clusterMaxConcurrentReconcilesFlag < 1 {
+		fmt.Fprintf(os.Stderr, "--cluster-max-concurrent-reconciles must be at least 1, got %d\n", *clusterMaxConcurrentReconcilesFlag)
+		os.Exit(1)
+	}
+	clusterMaxConcurrentReconciles = *clusterMaxConcurrentReconcilesFlag
+	if *clusterReconcileTimeoutFlag < 0 {
+		fmt.Fprintf(os.Stderr, "--cluster-reconcile-timeout must not be negative, got %s\n", *clusterReconcileTimeoutFlag)
+		os.Exit(1)
+	}
+	clusterReconcileTimeout = *clusterReconcileTimeoutFlag
 
 	// Validate and normalize mode
 	operatorMode := OperatorMode(strings.ToLower(*mode))
@@ -444,6 +471,8 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				ServerUnavailableGrace:  serverUnavailableGrace,
 				ReadyPollInterval:       readyPollInterval,
 				SplitBrainCheckInterval: splitBrainCheckInterval,
+				MaxConcurrentReconciles: clusterMaxConcurrentReconciles,
+				ReconcileTimeout:        clusterReconcileTimeout,
 			},
 		},
 		{
@@ -742,6 +771,8 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				ServerUnavailableGrace:  serverUnavailableGrace,
 				ReadyPollInterval:       readyPollInterval,
 				SplitBrainCheckInterval: splitBrainCheckInterval,
+				MaxConcurrentReconciles: clusterMaxConcurrentReconciles,
+				ReconcileTimeout:        clusterReconcileTimeout,
 			}, "Neo4jEnterpriseCluster"
 		},
 		"standalone": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {

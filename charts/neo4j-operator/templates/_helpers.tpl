@@ -218,5 +218,11 @@ Get container args based on configuration
 {{- with .Values.splitBrainCheckInterval }}
 - --split-brain-check-interval={{ . }}
 {{- end }}
+{{- with .Values.clusterMaxConcurrentReconciles }}
+- --cluster-max-concurrent-reconciles={{ . }}
+{{- end }}
+{{- with .Values.clusterReconcileTimeout }}
+- --cluster-reconcile-timeout={{ . }}
+{{- end }}
 
 {{- end }}
