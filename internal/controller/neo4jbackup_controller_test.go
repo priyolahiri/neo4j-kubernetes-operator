@@ -117,16 +117,8 @@ var _ = Describe("Neo4jBackup Controller", func() {
 			}, cluster)
 		}, timeout, interval).Should(Succeed())
 
-		// Patch cluster status to Ready so backup controller proceeds
-		patch := client.MergeFrom(cluster.DeepCopy())
-		cluster.Status.Phase = "Ready"
-		cluster.Status.Conditions = []metav1.Condition{{
-			Type:               "Ready",
-			Status:             metav1.ConditionTrue,
-			Reason:             "TestReady",
-			LastTransitionTime: metav1.Now(),
-		}}
-		Expect(k8sClient.Status().Patch(ctx, cluster, patch)).To(Succeed())
+		// Make the cluster Ready so the backup controller proceeds.
+		markClusterReady(ctx, types.NamespacedName{Name: clusterName, Namespace: namespaceName})
 
 		// Create basic backup spec
 		backup = &neo4jv1beta1.Neo4jBackup{
