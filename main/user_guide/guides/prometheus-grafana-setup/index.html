@@ -5343,7 +5343,7 @@
 <h3 id="metrics-show-stale-data">Metrics show stale data<a class="headerlink" href="#metrics-show-stale-data" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li>The operator records metrics on every reconcile: every 30s by default on a quiet <code>Ready</code> deployment, set by <code>--ready-poll-interval</code></li>
-<li>Until the cluster has formed, diagnostics metrics like <code>server_health</code> are not updated (once formed, they keep updating while a server is down)</li>
+<li>Until the cluster has formed, diagnostics metrics like <code>server_health</code> are not updated (once formed, they keep updating while a server is down and during a rolling upgrade)</li>
 <li>Check reconcile logs: <code>kubectl logs -n neo4j-operator-system -l control-plane=controller-manager --tail=-1 | grep -i reconcile</code></li>
 </ul>
 <hr />
