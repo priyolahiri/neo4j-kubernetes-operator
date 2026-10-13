@@ -100,7 +100,7 @@ Ginkgo/Gomega, Kind only, **300-second timeouts** for all integration tests.
 
 **Pre-release verification journey** (manual + LLM, complements the automated suites): `docs/developer_guide/release_verification.md` is the canonical matrix — what we verify, on standalone vs. cluster(3) vs. sharding(2026.06), at what size, and why. Run it from `main` before cutting a release via the `verify-journey` skill (`.claude/skills/verify-journey/`). Two durable rules: **one Enterprise deployment in the cluster at a time** (sequential phases, teardown between — concurrent JVMs wedge Bolt on a laptop) and **restore is walked on BOTH standalone and cluster** — both restore online (in-place Cypher), but the standalone has its own target plumbing and the only offline `neo4j-admin` path (PITR on 5.26 or over an existing database, `source.type: storage`; rules 108, 112), so walk that path too, and online PITR on a CalVer cluster — and walk a PVC differential, which the seed proxy merges first (rule 109). When you add/change a capability, add its scenario to that doc in the same PR.
 
-**Troubleshooting**: timeout → image-pull delays. OOMKilled → Enterprise needs ≥ 1.5Gi. DB-create hangs → use `TOPOLOGY` not `OPTIONS`. Cluster won't form → check discovery RBAC.
+**Troubleshooting**: timeout → image-pull delays. OOMKilled → Enterprise needs ≥ 1.5Gi. DB-create hangs → use `TOPOLOGY` not `OPTIONS`. Cluster won't form → check the pod FQDNs resolve through the `-headless` service (LIST discovery uses DNS, not the Kubernetes API).
 
 **MANDATORY AfterEach cleanup** (always remove finalizers before deletion; never rely on suite cleanup):
 ```go

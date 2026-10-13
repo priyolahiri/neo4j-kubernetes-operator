@@ -515,6 +515,12 @@ behaviour changes below take effect on the first reconcile.
   than `1` raises a `ValidationWarning`.** It never had an effect: servers
   restart one at a time, as Neo4j's rolling upgrade requires. Remove it, or
   leave it at `1`.
+- **The `<cluster>-discovery` Role and RoleBinding are deleted.** They let the
+  server pods list Services and Endpoints, which nothing used: discovery reads
+  pod addresses from DNS. Upgrading the operator deletes the ones it created and
+  restarts nothing; the `<cluster>-discovery` ServiceAccount stays, with any
+  `spec.podServiceAccountAnnotations`. A Role or RoleBinding of that name that
+  the operator did not create is left alone.
 - **Clusters get `dbms.cluster.network.connect_timeout=5s`** (Neo4j's default
   is 30s). Upgrading the operator applies it to the running servers without a
   restart (a `ConfigAppliedLive` event); Neo4j's Raft connections take it up at

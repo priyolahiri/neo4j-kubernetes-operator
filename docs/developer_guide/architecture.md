@@ -463,13 +463,13 @@ These are free `Build*ForEnterprise` / `Build*ForStandalone` functions, not stat
 - **ClusterRole Design**: Cross-namespace operations support
 - **Service Account Security**: Dedicated accounts with specific roles
 
-#### Discovery RBAC (Critical):
-Each cluster gets automatic RBAC creation:
-
-- **ServiceAccount**: `{cluster-name}-discovery`
-- **Role**: Services and endpoints permissions
-- **RoleBinding**: Links account to role
-- **Endpoints Permission**: **CRITICAL** for cluster formation
+#### Server pod identity:
+Each cluster's server pods run under the ServiceAccount `{cluster-name}-discovery`
+(the name is historical). It carries `spec.podServiceAccountAnnotations` for cloud
+workload identity and is bound to **no Role**: LIST discovery resolves pod FQDNs
+through DNS and never calls the Kubernetes API. Releases up to v1.20 also created a
+`{cluster-name}-discovery` Role (get/list/watch on services and endpoints) and
+RoleBinding; the cluster controller deletes the ones it owns (operations.md id 130).
 
 ### TLS/SSL Support
 

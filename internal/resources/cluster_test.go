@@ -367,67 +367,6 @@ func TestBuildDiscoveryServiceAccountForEnterprise_PodSAAnnotations(t *testing.T
 	assert.Equal(t, "arn:aws:iam::111122223333:role/neo4j-seed", sa.Annotations["eks.amazonaws.com/role-arn"])
 }
 
-func TestBuildDiscoveryRoleForEnterprise(t *testing.T) {
-	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-cluster",
-			Namespace: "default",
-		},
-		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
-			AcceptLicenseAgreement: "eval",
-			Topology: neo4jv1beta1.TopologyConfiguration{
-				Servers: 3,
-			},
-		},
-	}
-
-	role := resources.BuildDiscoveryRoleForEnterprise(cluster)
-
-	// Test Role metadata
-	assert.Equal(t, "test-cluster-discovery", role.Name)
-	assert.Equal(t, "default", role.Namespace)
-
-	// Test permissions
-	require.Len(t, role.Rules, 1, "should have one policy rule")
-	rule := role.Rules[0]
-	assert.Equal(t, []string{""}, rule.APIGroups)
-	assert.Equal(t, []string{"services", "endpoints"}, rule.Resources)
-	assert.Equal(t, []string{"get", "list", "watch"}, rule.Verbs)
-}
-
-func TestBuildDiscoveryRoleBindingForEnterprise(t *testing.T) {
-	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "test-cluster",
-			Namespace: "default",
-		},
-		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
-			AcceptLicenseAgreement: "eval",
-			Topology: neo4jv1beta1.TopologyConfiguration{
-				Servers: 3,
-			},
-		},
-	}
-
-	roleBinding := resources.BuildDiscoveryRoleBindingForEnterprise(cluster)
-
-	// Test RoleBinding metadata
-	assert.Equal(t, "test-cluster-discovery", roleBinding.Name)
-	assert.Equal(t, "default", roleBinding.Namespace)
-
-	// Test subject
-	require.Len(t, roleBinding.Subjects, 1, "should have one subject")
-	subject := roleBinding.Subjects[0]
-	assert.Equal(t, "ServiceAccount", subject.Kind)
-	assert.Equal(t, "test-cluster-discovery", subject.Name)
-	assert.Equal(t, "default", subject.Namespace)
-
-	// Test role reference
-	assert.Equal(t, "rbac.authorization.k8s.io", roleBinding.RoleRef.APIGroup)
-	assert.Equal(t, "Role", roleBinding.RoleRef.Kind)
-	assert.Equal(t, "test-cluster-discovery", roleBinding.RoleRef.Name)
-}
-
 func TestBuildStatefulSetForEnterprise_ParallelManagement(t *testing.T) {
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{
