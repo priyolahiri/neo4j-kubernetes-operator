@@ -4227,10 +4227,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#discovery-rbac-critical" class="md-nav__link">
+  <a href="#server-pod-identity" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Discovery RBAC (Critical):
+        Server pod identity:
       
     </span>
   </a>
@@ -5593,10 +5593,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#discovery-rbac-critical" class="md-nav__link">
+  <a href="#server-pod-identity" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Discovery RBAC (Critical):
+        Server pod identity:
       
     </span>
   </a>
@@ -6443,14 +6443,13 @@ CalVer detection: <code>ParseVersion()</code> → <code>IsCalver</code> (<code>m
 <li><strong>ClusterRole Design</strong>: Cross-namespace operations support</li>
 <li><strong>Service Account Security</strong>: Dedicated accounts with specific roles</li>
 </ul>
-<h4 id="discovery-rbac-critical">Discovery RBAC (Critical):<a class="headerlink" href="#discovery-rbac-critical" title="Anchor link to this section">&para;</a></h4>
-<p>Each cluster gets automatic RBAC creation:</p>
-<ul>
-<li><strong>ServiceAccount</strong>: <code>{cluster-name}-discovery</code></li>
-<li><strong>Role</strong>: Services and endpoints permissions</li>
-<li><strong>RoleBinding</strong>: Links account to role</li>
-<li><strong>Endpoints Permission</strong>: <strong>CRITICAL</strong> for cluster formation</li>
-</ul>
+<h4 id="server-pod-identity">Server pod identity:<a class="headerlink" href="#server-pod-identity" title="Anchor link to this section">&para;</a></h4>
+<p>Each cluster's server pods run under the ServiceAccount <code>{cluster-name}-discovery</code>
+(the name is historical). It carries <code>spec.podServiceAccountAnnotations</code> for cloud
+workload identity and is bound to <strong>no Role</strong>: LIST discovery resolves pod FQDNs
+through DNS and never calls the Kubernetes API. Releases up to v1.20 also created a
+<code>{cluster-name}-discovery</code> Role (get/list/watch on services and endpoints) and
+RoleBinding; the cluster controller deletes the ones it owns (operations.md id 130).</p>
 <h3 id="tlsssl-support">TLS/SSL Support<a class="headerlink" href="#tlsssl-support" title="Anchor link to this section">&para;</a></h3>
 <p>The operator integrates with <a href="https://cert-manager.io/">cert-manager</a> for the
 full certificate lifecycle. The flow is the same for clusters and standalones,
