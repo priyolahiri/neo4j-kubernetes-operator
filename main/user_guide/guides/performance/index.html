@@ -4165,7 +4165,7 @@
 <p>The Neo4j Enterprise Operator includes several performance optimizations for production environments:</p>
 <h3 id="reconciliation-efficiency">Reconciliation Efficiency<a class="headerlink" href="#reconciliation-efficiency" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><strong>Retry pacing</strong>: A cluster reconcile that fails is retried with exponential backoff from 5 seconds up to 30 seconds, and retries across all clusters share a token bucket of one every 6 seconds with a burst of 10. Scheduled passes (such as <code>--ready-poll-interval</code>) and changes in Kubernetes are not paced by it</li>
+<li><strong>Retry pacing</strong>: A cluster reconcile that fails is retried with exponential backoff from 5 seconds up to 30 seconds, per cluster. A shared limit of 10 retries a second (bursts of 100) only guards against a retry storm across every cluster. Scheduled passes (such as <code>--ready-poll-interval</code>) and changes in Kubernetes are not paced by either</li>
 <li><strong>Status Update Optimization</strong>: Status updates only occur when cluster state actually changes, reducing unnecessary API server load</li>
 <li><strong>ConfigMap Debouncing</strong>: A short debounce interval coalesces rapid successive configuration changes, preventing restart loops</li>
 </ul>

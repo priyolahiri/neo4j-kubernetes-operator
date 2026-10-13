@@ -4885,7 +4885,7 @@
 <p>A Neo4j Enterprise cluster consists of:</p>
 <ul>
 <li><strong>Servers</strong>: Neo4j server instances that self-organize into primary and secondary roles automatically</li>
-<li><strong>Discovery service</strong>: Enables cluster members to find each other</li>
+<li><strong>Discovery</strong>: each server finds the others by their pod names on the <code>-headless</code> service (LIST discovery)</li>
 <li><strong>Routing service</strong>: Routes client connections to appropriate cluster members</li>
 </ul>
 <p><strong>Server Self-Organization</strong>: In the server-based architecture, you deploy a number of servers and Neo4j automatically assigns primary and secondary roles based on database requirements and cluster state.</p>
@@ -4905,7 +4905,6 @@
 <p>The operator automatically creates:</p>
 <ul>
 <li><code>{cluster-name}-headless</code> — StatefulSet headless service (pod FQDNs)</li>
-<li><code>{cluster-name}-discovery</code> — legacy ClusterIP service (port 5000); not used by LIST discovery</li>
 <li><code>{cluster-name}-internals</code> — cluster-internal routing</li>
 <li><code>{cluster-name}-client</code> — external Bolt/HTTP access</li>
 <li><code>{cluster-name}-metrics</code> — Prometheus metrics (port 2004), when <code>spec.monitoring</code> is set and enabled</li>
@@ -5289,7 +5288,7 @@
 <li>
 <p><strong>Discovery (LIST resolver via headless service)</strong></p>
 </li>
-<li>The operator uses LIST discovery against the StatefulSet's <code>-headless</code> service (the legacy <code>-discovery</code> ClusterIP service exists for backward compatibility but is NOT used by the V2 discovery path).</li>
+<li>The operator uses LIST discovery against the StatefulSet's <code>-headless</code> service.</li>
 <li>Verify the headless service exists: <code>kubectl get service {cluster-name}-headless</code></li>
 <li>Check endpoints include all pods: <code>kubectl describe endpoints {cluster-name}-headless</code></li>
 <li>Check that pod FQDNs resolve: <code>kubectl exec {cluster-name}-server-0 -- nslookup {cluster-name}-server-0.{cluster-name}-headless.{ns}.svc.cluster.local</code></li>

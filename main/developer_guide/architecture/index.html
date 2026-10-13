@@ -6415,7 +6415,7 @@ CalVer detection: <code>ParseVersion()</code> → <code>IsCalver</code> (<code>m
 <ul>
 <li><strong>StatefulSet Naming</strong>: <code>{cluster-name}-server</code> for clusters, <code>{standalone-name}</code> for standalone</li>
 <li><strong>Pod Naming</strong>: <code>{cluster-name}-server-0</code>, <code>{cluster-name}-server-1</code>, etc.</li>
-<li><strong>Service Names</strong>: <code>{cluster-name}-client</code>, <code>{cluster-name}-discovery</code></li>
+<li><strong>Service Names</strong>: <code>{cluster-name}-headless</code>, <code>{cluster-name}-internals</code>, <code>{cluster-name}-client</code>, <code>{cluster-name}-metrics</code> (when monitoring is on)</li>
 <li><strong>Backup Resources</strong>: per-CR Kubernetes Jobs spawned by the <code>Neo4jBackup</code> controller (one-shot: <code>&lt;cr-name&gt;-backup</code>; CronJob children: <code>&lt;cr-name&gt;-&lt;unix-seconds&gt;</code>). No persistent backup pod or sidecars.</li>
 <li><strong>Truststore mount</strong>: <code>/truststore/truststore.jks</code> (read-only, populated by the <code>truststore-init</code> init container; password is the JVM default <code>changeit</code>)</li>
 <li><strong>User-supplied volumes</strong>: <code>spec.extraVolumes</code> are appended to the pod spec verbatim; <code>spec.extraVolumeMounts</code> are appended to the Neo4j container's mounts after operator-managed mounts. Operator-managed paths (<code>/data</code>, <code>/logs</code>, <code>/conf</code>, <code>/ssl</code>, <code>/plugins</code>, <code>/truststore</code>, <code>/truststore-ca</code>, <code>/var/lib/neo4j/...</code>) are off-limits and rejected by the validator.</li>
