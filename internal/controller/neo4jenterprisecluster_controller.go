@@ -21,6 +21,7 @@ import (
 	goerrors "errors"
 	"fmt"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -947,6 +948,14 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResource(ctx context.Co
 	conflictMetrics := metrics.NewConflictMetrics()
 	startTime := time.Now()
 
+	// Every attempt starts from the desired object. CreateOrUpdate reads the
+	// live object into obj, so after a conflict obj holds what the previous
+	// attempt read: a retry that took it as "desired" applied a stale
+	// StatefulSet template and recorded every env var in it as cluster-owned —
+	// NEO4J_PLUGINS included, when the conflict was the plugin controller's
+	// patch — and the next pass then removed the plugin's variable.
+	desired := obj.DeepCopyObject()
+
 	// Use retry logic to handle resource version conflicts
 	retryCount := 0
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -957,6 +966,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResource(ctx context.Co
 				"retryCount", retryCount)
 			// Record conflict metric
 			conflictMetrics.RecordConflict(fmt.Sprintf("%T", obj), obj.GetNamespace())
+			reflect.ValueOf(obj).Elem().Set(reflect.ValueOf(desired.DeepCopyObject()).Elem())
 		}
 		retryCount++
 		return r.createOrUpdateResourceInternal(ctx, obj, owner)
