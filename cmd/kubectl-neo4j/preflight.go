@@ -274,8 +274,9 @@ func preflightReplica(ctx context.Context, c client.Client, ns string, replica *
 		}
 	}
 
-	target, env, boundToCloudRole := resolveReplicaTargetEnv(ctx, c, ns, replica.Spec.ClusterRef)
-	if boundToCloudRole {
+	resolved := resolveReplicaTargetEnv(ctx, c, ns, replica.Spec.ClusterRef)
+	target, env := resolved.target, resolved.names
+	if resolved.cloudRole {
 		// The operator skips its own credentials check here for the same
 		// reason: the platform injects into the pod at admission, after
 		// anything either of us can read. Say so rather than going silent —
@@ -298,21 +299,35 @@ func preflightReplica(ctx context.Context, c client.Client, ns string, replica *
 		})
 		return symptoms
 	}
-	if !env["AWS_REGION"] && !env["AWS_DEFAULT_REGION"] {
-		symptoms = append(symptoms, symptom{
-			mark: markProblem, subject: target,
-			what: "has no AWS_REGION, so its servers cannot read " + src.PullURI,
-			action: "The seed and every pull run ON THE SERVER, so the object-store settings must " +
-				"be in its environment. Set source.credentialsSecretRef and the operator " +
-				"projects them, or add AWS_REGION (plus AWS_ACCESS_KEY_ID and " +
-				"AWS_SECRET_ACCESS_KEY unless the credentials come from elsewhere, and " +
-				"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the deployment's spec.env, " +
-				"or bind its pods to a cloud role with spec.podServiceAccountAnnotations. " +
-				"Either of the first two restarts its servers, so do it before the failover, " +
-				"not during one.",
+	if env["AWS_REGION"] || env["AWS_DEFAULT_REGION"] {
+		return symptoms
+	}
+	// The operator defers to the server when it cannot read an envFrom source,
+	// so preflight must not call the region missing — but it cannot call it
+	// present either. Running as the user, without read access to Secrets, is
+	// the common way to land here.
+	if len(resolved.unreadable) > 0 {
+		return append(symptoms, symptom{
+			mark: markWarning, subject: target,
+			what: "has no AWS_REGION in its env, and " + strings.Join(resolved.unreadable, ", ") +
+				" could not be read to check theirs",
+			action: "Confirm one of them carries AWS_REGION (or AWS_DEFAULT_REGION): the seed and " +
+				"every pull of " + src.PullURI + " run ON THE SERVER. The operator does not block " +
+				"on a source it cannot read either.",
 		})
 	}
-	return symptoms
+	return append(symptoms, symptom{
+		mark: markProblem, subject: target,
+		what: "has no AWS_REGION, so its servers cannot read " + src.PullURI,
+		action: "The seed and every pull run ON THE SERVER, so the object-store settings must " +
+			"be in its environment. Set source.credentialsSecretRef and the operator " +
+			"projects them, or add AWS_REGION (plus AWS_ACCESS_KEY_ID and " +
+			"AWS_SECRET_ACCESS_KEY unless the credentials come from elsewhere, and " +
+			"AWS_ENDPOINT_URL_S3 for S3-compatible stores) to the deployment's spec.env or to " +
+			"a Secret in its spec.extraEnvFrom, or bind its pods to a cloud role with " +
+			"spec.podServiceAccountAnnotations. Either of the first two restarts its servers, " +
+			"so do it before the failover, not during one.",
+	})
 }
 
 // workloadIdentitySAAnnotations mirrors the operator's own list: the
@@ -325,56 +340,122 @@ var workloadIdentitySAAnnotations = []string{
 	"azure.workload.identity/client-id",
 }
 
-// resolveReplicaTargetEnv returns a display name for the replica's target, the
-// set of environment variable names its servers will actually carry, and
-// whether those servers are bound to a cloud role.
+// replicaTargetEnv is what preflight could learn of a replica target's server
+// environment.
+type replicaTargetEnv struct {
+	// target is the display name; empty when no such deployment exists.
+	target string
+	// names are the environment variable names its servers will carry.
+	names map[string]bool
+	// unreadable lists the envFrom sources that could not be read, so their
+	// variables are unknown.
+	unreadable []string
+	// cloudRole reports whether the servers are bound to a cloud role.
+	cloudRole bool
+}
+
+// resolveReplicaTargetEnv reads the replica's target and the environment its
+// servers will carry: spec.env, the live StatefulSet's rendered container env,
+// and every variable an envFrom source supplies — spec.extraEnvFrom and the
+// live container's envFrom, each with its prefix.
 //
-// The env set is spec.env PLUS the live StatefulSet's rendered container env.
 // Reading spec.env alone misses the operator's own credential projection —
-// which writes to the StatefulSet — so preflight would report a missing region
-// on a cluster where the operator had already put one.
-func resolveReplicaTargetEnv(ctx context.Context, c client.Client, ns, name string) (string, map[string]bool, bool) {
-	names := map[string]bool{}
-	addLive := func(stsName string) {
+// which writes to the StatefulSet — and spec.extraEnvFrom, which is documented
+// for exactly this kind of credential bundle; preflight would report a missing
+// region on a cluster that had one. The operator reads the same sources.
+func resolveReplicaTargetEnv(ctx context.Context, c client.Client, ns, name string) replicaTargetEnv {
+	res := replicaTargetEnv{names: map[string]bool{}}
+	add := func(env []corev1.EnvVar, extraEnvFrom []corev1.EnvFromSource, stsName string) {
+		for _, e := range env {
+			res.names[e.Name] = true
+		}
+		sources := append([]corev1.EnvFromSource(nil), extraEnvFrom...)
 		var sts appsv1.StatefulSet
-		if err := c.Get(ctx, client.ObjectKey{Name: stsName, Namespace: ns}, &sts); err != nil {
-			return
+		if err := c.Get(ctx, client.ObjectKey{Name: stsName, Namespace: ns}, &sts); err == nil &&
+			len(sts.Spec.Template.Spec.Containers) > 0 {
+			for _, e := range sts.Spec.Template.Spec.Containers[0].Env {
+				res.names[e.Name] = true
+			}
+			sources = append(sources, sts.Spec.Template.Spec.Containers[0].EnvFrom...)
 		}
-		if len(sts.Spec.Template.Spec.Containers) == 0 {
-			return
+		res.unreadable = addEnvFromNames(ctx, c, ns, sources, res.names)
+	}
+	boundToCloudRole := func(annotations map[string]string) bool {
+		for _, key := range workloadIdentitySAAnnotations {
+			if _, ok := annotations[key]; ok {
+				return true
+			}
 		}
-		for _, e := range sts.Spec.Template.Spec.Containers[0].Env {
-			names[e.Name] = true
-		}
+		return false
 	}
 
 	var cluster neo4jv1beta1.Neo4jEnterpriseCluster
 	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &cluster); err == nil {
-		for _, e := range cluster.Spec.Env {
-			names[e.Name] = true
-		}
-		addLive(name + "-server")
-		for _, key := range workloadIdentitySAAnnotations {
-			if _, ok := cluster.Spec.PodServiceAccountAnnotations[key]; ok {
-				return "cluster " + name, names, true
-			}
-		}
-		return "cluster " + name, names, false
+		res.target = "cluster " + name
+		add(cluster.Spec.Env, cluster.Spec.ExtraEnvFrom, name+"-server")
+		res.cloudRole = boundToCloudRole(cluster.Spec.PodServiceAccountAnnotations)
+		return res
 	}
 	var standalone neo4jv1beta1.Neo4jEnterpriseStandalone
 	if err := c.Get(ctx, client.ObjectKey{Name: name, Namespace: ns}, &standalone); err == nil {
-		for _, e := range standalone.Spec.Env {
-			names[e.Name] = true
+		res.target = "standalone " + name
+		add(standalone.Spec.Env, standalone.Spec.ExtraEnvFrom, name)
+		res.cloudRole = boundToCloudRole(standalone.Spec.PodServiceAccountAnnotations)
+		return res
+	}
+	return res
+}
+
+// addEnvFromNames adds the variables each envFrom source supplies, with its
+// prefix, and returns the sources it could not read. A source that does not
+// exist supplies nothing, as on the pod.
+func addEnvFromNames(ctx context.Context, c client.Client, ns string, sources []corev1.EnvFromSource,
+	names map[string]bool) []string {
+	var unreadable []string
+	seen := map[string]bool{}
+	for _, src := range sources {
+		var id string
+		var keys []string
+		var err error
+		switch {
+		case src.SecretRef != nil:
+			id = "secret " + src.SecretRef.Name
+			if seen[id+"/"+src.Prefix] {
+				continue
+			}
+			var secret corev1.Secret
+			err = c.Get(ctx, client.ObjectKey{Name: src.SecretRef.Name, Namespace: ns}, &secret)
+			for k := range secret.Data {
+				keys = append(keys, k)
+			}
+		case src.ConfigMapRef != nil:
+			id = "configmap " + src.ConfigMapRef.Name
+			if seen[id+"/"+src.Prefix] {
+				continue
+			}
+			var cm corev1.ConfigMap
+			err = c.Get(ctx, client.ObjectKey{Name: src.ConfigMapRef.Name, Namespace: ns}, &cm)
+			for k := range cm.Data {
+				keys = append(keys, k)
+			}
+			for k := range cm.BinaryData {
+				keys = append(keys, k)
+			}
+		default:
+			continue
 		}
-		addLive(name)
-		for _, key := range workloadIdentitySAAnnotations {
-			if _, ok := standalone.Spec.PodServiceAccountAnnotations[key]; ok {
-				return "standalone " + name, names, true
+		seen[id+"/"+src.Prefix] = true
+		switch {
+		case apierrors.IsNotFound(err):
+		case err != nil:
+			unreadable = append(unreadable, id)
+		default:
+			for _, k := range keys {
+				names[src.Prefix+k] = true
 			}
 		}
-		return "standalone " + name, names, false
 	}
-	return "", names, false
+	return unreadable
 }
 
 // preflightInstance covers the two kinds that run Neo4j pods. Both carry the
