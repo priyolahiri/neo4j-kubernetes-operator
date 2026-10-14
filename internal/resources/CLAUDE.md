@@ -9,7 +9,7 @@ apply the results.
 
 | File | What it does |
 |---|---|
-| `cluster.go` | The bulk: StatefulSet, Services, ConfigMap (startup script + version-gated discovery), TLS Certificate, discovery RBAC, Ingress, auth/audit/monitoring conf, conf merge helpers |
+| `cluster.go` | The bulk: StatefulSet, Services, ConfigMap (startup script + version-gated discovery), TLS Certificate, the server ServiceAccount (bound to no Role), Ingress, auth/audit/monitoring conf, conf merge helpers |
 | `memory_config.go` | Heap/pagecache sizing (`CalculateOptimalMemorySettings`, `…ForNeo4j526Plus`, `GetMemoryConfigForCluster`) |
 | `plugin_init_container.go` | Verified-download init container for `Neo4jPlugin` (`BuildPluginVerifiedDownloadInitContainer`, plugin auth/CA volumes) |
 | `networkpolicy.go` | `BuildNetworkPolicyForEnterprise` / `…ForStandalone` |
