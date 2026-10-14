@@ -497,6 +497,20 @@ behaviour changes below take effect on the first reconcile.
   cluster server records its `system` role in
   `/data/.neo4j-operator/system-database-mode`.
 
+## Upgrading from v1.21.0
+
+No CRD changes; upgrading the operator restarts no server.
+
+### Fixes
+
+- **A backup-mode `Neo4jReplicaDatabase` finds `AWS_REGION` in
+  `spec.extraEnvFrom`.** The region check before seeding from `s3://` read only
+  `spec.env` and the server container's `env`, so a downstream cluster whose
+  region came from a Secret or ConfigMap in `spec.extraEnvFrom` — the field is
+  documented for exactly that — had its replica `Failed` with "AWS_REGION is not
+  set". A replica in that state is retried once the upgraded operator runs.
+  `kubectl neo4j preflight` reads the same sources.
+
 ## Upgrading from v1.20.x
 
 ### Behaviour changes

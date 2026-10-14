@@ -361,8 +361,11 @@ exactly the same regardless of mode or topology.
         credentialsSecretRef: s3-creds
     ```
 
-    **3. `spec.env` on the downstream cluster**, if you would rather manage it
-    there:
+    `spec.source` cannot be changed once the replica exists, so adding this to
+    an existing replica means deleting and recreating it; route 3 does not.
+
+    **3. `spec.env` or `spec.extraEnvFrom` on the downstream cluster**, if you
+    would rather manage it there:
 
     ```yaml
     apiVersion: neo4j.neo4j.com/v1beta1
@@ -383,9 +386,18 @@ exactly the same regardless of mode or topology.
           value: http://minio.minio.svc:9000
     ```
 
+    or, to project every key of the Secret at once:
+
+    ```yaml
+    spec:
+      extraEnvFrom:
+        - secretRef: {name: s3-creds}   # AWS_REGION, the key pair, and AWS_ENDPOINT_URL_S3 if needed
+    ```
+
     With routes 2 and 3 the operator checks before asking Neo4j: a backup-mode
-    replica whose servers have no `AWS_REGION` (or `AWS_DEFAULT_REGION`) fails
-    immediately naming what is missing, rather than stalling in `Seeding` while
+    replica whose servers have no `AWS_REGION` (or `AWS_DEFAULT_REGION`) —
+    whether from `spec.env` or a Secret or ConfigMap in `spec.extraEnvFrom` —
+    fails immediately naming what is missing, rather than stalling in `Seeding` while
     the server refuses deep inside the AWS SDK. Two replicas naming different
     Secrets for one cluster are refused rather than fought over.
 
@@ -786,7 +798,7 @@ balancer. The exposure is the bucket instead.
 
 The seed and every pull are performed by the **Neo4j server process**, not by a
 Job, so the server needs the object-store credentials in its own environment.
-Whether you set them through `source.credentialsSecretRef` or `spec.env`, the
+Whether you set them through `source.credentialsSecretRef`, `spec.env` or `spec.extraEnvFrom`, the
 result is the same: they live in the database container's environment, and
 anyone who can `kubectl exec` into that container — or run an unrestricted
 procedure that reads `/proc/self/environ` — can read them. The operator passes
@@ -842,7 +854,7 @@ alert on it the same way as the proxy condition above.
 | Symptom | Cause |
 |---|---|
 | `Failed`, "requires Neo4j 2026.08 or later" | downstream cluster predates replica support |
-| **Backup mode `Failed`, "the downstream servers cannot read s3://…: AWS_REGION is not set on …"** | the downstream SERVERS have no bucket credentials. The operator checks for `AWS_REGION` (or `AWS_DEFAULT_REGION`) before asking Neo4j and names what is missing; under workload identity it skips that check, and a misconfigured role shows as `Failed`, "create replica database failed: …" with the server's own error in `status.message`. Set `source.credentialsSecretRef` on the replica, or `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (and `AWS_ENDPOINT_URL_S3` for S3-compatible stores) in the downstream cluster's `spec.env` — see the warning in step 2. Either restarts the downstream servers |
+| **Backup mode `Failed`, "the downstream servers cannot read s3://…: AWS_REGION is not set on …"** | the downstream SERVERS have no bucket credentials. The operator checks for `AWS_REGION` (or `AWS_DEFAULT_REGION`) before asking Neo4j and names what is missing; under workload identity it skips that check, and a misconfigured role shows as `Failed`, "create replica database failed: …" with the server's own error in `status.message`. Set `AWS_REGION` / `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (and `AWS_ENDPOINT_URL_S3` for S3-compatible stores) in the downstream cluster's `spec.env`, or in a Secret listed in its `spec.extraEnvFrom`, and the replica retries on its own within two minutes; `source.credentialsSecretRef` works too, but `spec.source` cannot be changed, so it means recreating the replica — see the warning in step 2. Each restarts the downstream servers |
 | `Failed`, "network replication requires at least one upstream cluster endpoint" | `source.addresses` is empty — paste an entry from the upstream's `status.crossClusterReplication.addresses`, or use `source.upstreamClusterRef` if same-cluster |
 | `Failed`, "must be of the form host:port" | an entry in `source.addresses` is missing its port |
 | Warning: "source.pullURI is ignored in network mode" (or `seedURI`/`credentialsSecretRef`) | those fields are backup-mode only; harmless but likely a copy-paste leftover — remove them |

@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -564,5 +565,52 @@ func TestPreflightReplica(t *testing.T) {
 		require.Len(t, got, 1)
 		assert.Equal(t, markWarning, got[0].mark)
 		assert.Contains(t, got[0].what, "cloud role")
+	})
+
+	// spec.extraEnvFrom is documented for a credential bundle with the region
+	// in it. Reading only env names reported a missing region on a cluster
+	// that had one — and so did the operator, which refused the replica.
+	withEnvFrom := func(prefix string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+		cluster := clusterWith()
+		cluster.Spec.ExtraEnvFrom = []corev1.EnvFromSource{{Prefix: prefix,
+			SecretRef: &corev1.SecretEnvSource{LocalObjectReference: corev1.LocalObjectReference{Name: "dr-s3"}}}}
+		return cluster
+	}
+	s3 := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "dr-s3", Namespace: "dr"},
+		Data: map[string][]byte{"AWS_REGION": []byte("us-east-1")}}
+
+	t.Run("the region from a Secret in spec.extraEnvFrom is clean", func(t *testing.T) {
+		c := testClient(t, withEnvFrom(""), s3)
+		assert.Empty(t, preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", "")))
+	})
+
+	t.Run("a prefixed source does not supply AWS_REGION", func(t *testing.T) {
+		c := testClient(t, withEnvFrom("S3_"), s3)
+		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", ""))
+		require.Len(t, got, 1)
+		assert.Equal(t, markProblem, got[0].mark)
+		assert.Contains(t, got[0].action, "spec.extraEnvFrom")
+	})
+
+	// Running as a user who cannot read Secrets is common. The operator does
+	// not block on a source it cannot read, so neither may preflight — but
+	// it says what it could not check.
+	t.Run("an unreadable source is a warning, not a missing region", func(t *testing.T) {
+		scheme := runtime.NewScheme()
+		require.NoError(t, clientgoscheme.AddToScheme(scheme))
+		require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
+		c := clientfake.NewClientBuilder().WithScheme(scheme).WithObjects(withEnvFrom(""), s3).
+			WithInterceptorFuncs(interceptor.Funcs{
+				Get: func(ctx context.Context, cl client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+					if _, ok := obj.(*corev1.Secret); ok {
+						return apierrors.NewForbidden(corev1.Resource("secrets"), key.Name, errors.New("denied"))
+					}
+					return cl.Get(ctx, key, obj, opts...)
+				},
+			}).Build()
+		got := preflightReplica(context.Background(), c, "dr", replica("backup", "s3://b/chain/", ""))
+		require.Len(t, got, 1)
+		assert.Equal(t, markWarning, got[0].mark)
+		assert.Contains(t, got[0].what, "secret dr-s3")
 	})
 }

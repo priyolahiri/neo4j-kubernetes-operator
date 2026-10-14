@@ -828,6 +828,13 @@
 - **pinned-by:** `TestDriverCache`, `TestDriverCacheConcurrent`, `TestNewClientForEnterpriseSharesTheDriver` (`internal/neo4j/driver_cache_test.go`) — dropping the password or the TLS digest from the key, or retiring nothing on a key change, fails them; the TLS case is a renewed CA with the URI unchanged.
 - **enforcement:** unit test (race detector).
 
+### id 133 — A backup-mode replica's region check reads every source of the server's environment
+- **scope:** `missingObjectStoreEnv`, `readServerEnvironment`, `envFromNames`, `serverEnvironment` (`internal/controller/neo4jreplicadatabase_controller.go`); `resolveReplicaTargetEnv`, `addEnvFromNames` (`cmd/kubectl-neo4j/preflight.go`).
+- **rule:** Before a backup-mode replica asks Neo4j to seed from `s3://`, the operator — and `kubectl neo4j preflight` — look for `AWS_REGION` or `AWS_DEFAULT_REGION` in `spec.env`, the live server container's `env`, **and every variable an `envFrom` source supplies** (`spec.extraEnvFrom` and the live container's `envFrom`), with the source's prefix applied. A source that does not exist supplies nothing; one that cannot be read means the check cannot know, so the operator lets Neo4j try (as under workload identity) and preflight warns instead of reporting a problem. The two read the same sources: preflight must never report a problem the operator would not act on, nor stay silent on one it would.
+- **why:** both read only env names, while `spec.extraEnvFrom` is documented for exactly this — a credential bundle with `AWS_REGION` in it. A cluster whose Secret carried the region had its replica `Failed` with "AWS_REGION is not set" (v1.21.0 journey), and the message's first suggestion, `source.credentialsSecretRef`, meant recreating the replica because `spec.source` is immutable. The message now lists the fixes that leave the replica alone first.
+- **pinned-by:** `TestMissingObjectStoreEnv`, `TestReadServerEnvironment` (`internal/controller/neo4jreplicadatabase_controller_test.go`); `TestPreflightReplica` (`cmd/kubectl-neo4j/preflight_test.go`) — reading only env names, ignoring the prefix, or failing on an unreadable source fails them.
+- **enforcement:** unit test.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.
