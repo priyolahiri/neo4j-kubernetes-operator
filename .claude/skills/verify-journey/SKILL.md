@@ -120,6 +120,10 @@ make ccdr-e2e-trust   # exchange CAs once both are Ready
 make ccdr-e2e-down    # tear both down
 ```
 
+The upstream defaults to the dev cluster. To keep the dev cluster beside the
+rig, pass the same `CCDR_UPSTREAM_CLUSTER=<name>` to every target — `down`
+without it deletes `neo4j-operator-dev`.
+
 Put `--context` on every `kubectl` you run yourself: `kind create cluster`
 switches the current context, and commands aimed at the wrong cluster produced
 a false blocker on the first walk. This part is a **standing gate** for any
