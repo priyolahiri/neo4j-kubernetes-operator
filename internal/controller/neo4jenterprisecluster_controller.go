@@ -131,6 +131,10 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// seen the new phase yet does not announce it twice (#444). Cleared when
 	// every server is available again.
 	availabilityAnnounced sync.Map
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // connectivityFailureStreak records when a cluster's Bolt connectivity first
@@ -267,14 +271,11 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyTLSSecretHasCA(ctx context.Cont
 // recordValidationWarnings turns the validator's advisory output into Warning
 // events. Topology warnings keep their TopologyWarning reason; warnings about
 // spec fields the schema accepts but nothing reads are ValidationWarning, the
-// reason every other kind uses for the same thing. Neither blocks the reconcile.
+// reason every other kind uses for the same thing. Neither blocks the reconcile,
+// and each is announced when it starts to apply, not on every pass.
 func (r *Neo4jEnterpriseClusterReconciler) recordValidationWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, result validation.ClusterValidationResult) {
-	for _, warning := range result.Warnings {
-		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyWarning, warning)
-	}
-	for _, warning := range result.NoEffectWarnings {
-		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
-	}
+	r.advisoryWarnings.record(r.Recorder, cluster, EventReasonTopologyWarning, result.Warnings)
+	r.advisoryWarnings.record(r.Recorder, cluster, EventReasonValidationWarning, result.NoEffectWarnings)
 }
 
 func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

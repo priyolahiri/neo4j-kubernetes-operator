@@ -113,6 +113,10 @@ type Neo4jRestoreReconciler struct {
 	APIReader               client.Reader
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // Pod hardening for restore Jobs delegates to the single source of truth
@@ -253,9 +257,7 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
-	for _, warning := range validation.RestoreNoEffectWarnings(restore) {
-		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
-	}
+	r.advisoryWarnings.record(r.Recorder, restore, EventReasonValidationWarning, validation.RestoreNoEffectWarnings(restore))
 
 	// Get target cluster. Not-found is TRANSIENT (#218): `kubectl apply -f
 	// dir/` commonly creates the Neo4jRestore before its target CR, and a

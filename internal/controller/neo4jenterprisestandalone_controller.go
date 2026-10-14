@@ -86,6 +86,10 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
 	fleetFailures fleetFailureTracker
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 func podSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
@@ -184,9 +188,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// from the reconciler is the project's convention anyway (invariant 1).
 	validationErrs := r.Validator.ValidateCreate(standalone)
 	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
-	for _, warning := range r.Validator.NoEffectWarnings(standalone) {
-		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
-	}
+	r.advisoryWarnings.record(r.Recorder, standalone, EventReasonValidationWarning, r.Validator.NoEffectWarnings(standalone))
 	validationErrs = append(validationErrs, validation.ValidateAdminSecretPassword(
 		ctx, r.Client, standalone.Namespace, standaloneAdminSecretName(standalone),
 		field.NewPath("spec", "auth", "adminSecret"))...)

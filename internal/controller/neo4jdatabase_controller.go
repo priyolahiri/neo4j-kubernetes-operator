@@ -49,6 +49,10 @@ type Neo4jDatabaseReconciler struct {
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
 	DatabaseValidator       *validation.DatabaseValidator
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 const (
@@ -110,8 +114,8 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		// Log and record warnings
 		for _, warning := range validationResult.Warnings {
 			logger.Info("Database validation warning", "warning", warning)
-			r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
 		}
+		r.advisoryWarnings.record(r.Recorder, database, EventReasonValidationWarning, validationResult.Warnings)
 
 		// Handle validation errors
 		if len(validationResult.Errors) > 0 {

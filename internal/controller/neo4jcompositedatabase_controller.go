@@ -50,6 +50,10 @@ type Neo4jCompositeDatabaseReconciler struct {
 	Recorder     record.EventRecorder
 	Validator    *validation.CompositeDatabaseValidator
 	RequeueAfter time.Duration
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jcompositedatabases,verbs=get;list;watch;create;update;patch;delete
@@ -95,9 +99,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 
 	if r.Validator != nil {
 		res := r.Validator.Validate(ctx, cd)
-		for _, w := range res.Warnings {
-			r.Recorder.Eventf(cd, corev1.EventTypeWarning, EventReasonValidationWarning, "%s", w)
-		}
+		r.advisoryWarnings.record(r.Recorder, cd, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
 			r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,

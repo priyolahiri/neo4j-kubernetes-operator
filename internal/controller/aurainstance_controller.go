@@ -69,6 +69,10 @@ type AuraInstanceReconciler struct {
 	// by the multi-database paths (creating one, and probing whether an existing
 	// instance is one). nil uses the real shared cached client.
 	InstanceV2ClientFactory auraInstanceV2ClientFactory
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 func (r *AuraInstanceReconciler) requeueAfter() time.Duration {
@@ -121,9 +125,7 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Spec fields the schema accepts but nothing reads: advisory, never
 	// blocking. AuraInstance has no validator, so the warning is raised here.
-	for _, warning := range validation.AuraInstanceNoEffectWarnings(inst) {
-		r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
-	}
+	r.advisoryWarnings.record(r.Recorder, inst, EventReasonValidationWarning, validation.AuraInstanceNoEffectWarnings(inst))
 
 	if projectID == "" {
 		return r.fail(ctx, req, inst, "ProjectIDMissing",

@@ -20,7 +20,7 @@
   {
     "id": "ev-topology-warning",
     "name": "TopologyWarning",
-    "description": "Fires for each non-fatal warning returned by the spec validator's ValidateCreateWithWarnings/ValidateUpdateWithWarnings during Reconcile.",
+    "description": "Fires for each non-fatal warning returned by the spec validator's ValidateCreateWithWarnings/ValidateUpdateWithWarnings during Reconcile. Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
     "moduleId": "mod-cluster"
   },
   {
@@ -188,7 +188,7 @@
   {
     "id": "ev-validation-warning",
     "name": "ValidationWarning",
-    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set (Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore, AuraInstance).",
+    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set (Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore, AuraInstance). Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
     "moduleId": "mod-database"
   },
   {
