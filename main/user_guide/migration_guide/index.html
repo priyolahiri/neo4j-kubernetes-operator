@@ -839,6 +839,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v1210" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.21.0
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.21.0">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-from-v120x" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4316,6 +4344,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v1210" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.21.0
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.21.0">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#fixes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-from-v120x" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4887,6 +4943,18 @@ behaviour changes below take effect on the first reconcile.</p>
   <code>neo4j.com/config-semantic-hash</code> on the standalone's StatefulSet. Each
   cluster server records its <code>system</code> role in
   <code>/data/.neo4j-operator/system-database-mode</code>.</li>
+</ul>
+<h2 id="upgrading-from-v1210">Upgrading from v1.21.0<a class="headerlink" href="#upgrading-from-v1210" title="Anchor link to this section">&para;</a></h2>
+<p>No CRD changes; upgrading the operator restarts no server.</p>
+<h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>A backup-mode <code>Neo4jReplicaDatabase</code> finds <code>AWS_REGION</code> in
+  <code>spec.extraEnvFrom</code>.</strong> The region check before seeding from <code>s3://</code> read only
+  <code>spec.env</code> and the server container's <code>env</code>, so a downstream cluster whose
+  region came from a Secret or ConfigMap in <code>spec.extraEnvFrom</code> — the field is
+  documented for exactly that — had its replica <code>Failed</code> with "AWS_REGION is not
+  set". A replica in that state is retried once the upgraded operator runs.
+  <code>kubectl neo4j preflight</code> reads the same sources.</li>
 </ul>
 <h2 id="upgrading-from-v120x">Upgrading from v1.20.x<a class="headerlink" href="#upgrading-from-v120x" title="Anchor link to this section">&para;</a></h2>
 <h3 id="behaviour-changes_3">Behaviour changes<a class="headerlink" href="#behaviour-changes_3" title="Anchor link to this section">&para;</a></h3>
