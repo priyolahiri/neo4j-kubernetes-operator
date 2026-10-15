@@ -4948,23 +4948,27 @@ behaviour changes below take effect on the first reconcile.</p>
 <p>No CRD changes; upgrading the operator restarts no server.</p>
 <h3 id="fixes">Fixes<a class="headerlink" href="#fixes" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li>
-<p><strong>A backup-mode <code>Neo4jReplicaDatabase</code> finds <code>AWS_REGION</code> in
+<li><strong>A backup-mode <code>Neo4jReplicaDatabase</code> finds <code>AWS_REGION</code> in
   <code>spec.extraEnvFrom</code>.</strong> The region check before seeding from <code>s3://</code> read only
   <code>spec.env</code> and the server container's <code>env</code>, so a downstream cluster whose
   region came from a Secret or ConfigMap in <code>spec.extraEnvFrom</code> — the field is
   documented for exactly that — had its replica <code>Failed</code> with "AWS_REGION is not
   set". A replica in that state is retried once the upgraded operator runs.
-  <code>kubectl neo4j preflight</code> reads the same sources.</p>
-</li>
-<li>
-<p><strong>Advisory warnings are announced once, not on every reconcile.</strong>
+  <code>kubectl neo4j preflight</code> reads the same sources.</li>
+<li><strong>A plugin's <code>NEO4J_PLUGINS</code> could vanish from a cluster's StatefulSet.</strong>
+  When the cluster controller's StatefulSet update conflicted with the plugin
+  controller's patch, the retry applied the template it had just read and
+  recorded the plugin's variables as its own; the next pass removed them. The
+  <code>Neo4jPlugin</code> stayed <code>Ready</code> with the plugin missing from the servers. The
+  upgraded operator reconciles every <code>Neo4jPlugin</code> when it starts, which puts a
+  missing <code>NEO4J_PLUGINS</code> back — rolling that cluster's servers once, as the
+  original install did.</li>
+<li><strong>Advisory warnings are announced once, not on every reconcile.</strong>
   <code>ValidationWarning</code> events — and a cluster's <code>TopologyWarning</code> — were
   emitted again on every pass, dozens a minute for one object, which also used
   up that object's event budget so other events could be dropped. Each warning
   is now announced when it starts to apply and again every 30 minutes while it
-  still does, so it stays visible in <code>kubectl describe</code> without the flood.</p>
-</li>
+  still does, so it stays visible in <code>kubectl describe</code> without the flood.</li>
 </ul>
 <h2 id="upgrading-from-v120x">Upgrading from v1.20.x<a class="headerlink" href="#upgrading-from-v120x" title="Anchor link to this section">&para;</a></h2>
 <h3 id="behaviour-changes_3">Behaviour changes<a class="headerlink" href="#behaviour-changes_3" title="Anchor link to this section">&para;</a></h3>
