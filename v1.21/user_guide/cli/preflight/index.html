@@ -4004,7 +4004,7 @@
 </thead>
 <tbody>
 <tr>
-<td>The downstream cluster or standalone has <code>AWS_REGION</code> (or <code>AWS_DEFAULT_REGION</code>) in its <code>spec.env</code> or in the environment the operator has already rendered onto its StatefulSet — checked for <code>s3://</code> URIs only</td>
+<td>The downstream cluster or standalone has <code>AWS_REGION</code> (or <code>AWS_DEFAULT_REGION</code>) in its <code>spec.env</code>, in a Secret or ConfigMap of its <code>spec.extraEnvFrom</code> (with the source's prefix applied), or in the environment the operator has already rendered onto its StatefulSet — checked for <code>s3://</code> URIs only. A source it cannot read (you may not be allowed to read Secrets) gives a warning, not a problem: the operator does not block on it either</td>
 <td>The seed and every pull run <strong>on the Neo4j server</strong>, through the AWS SDK's default credential chain — so the object-store settings must be in the server's environment, not on the replica CR. Without it the replica fails inside the SDK with <em>"Unable to load region from any of the providers"</em>, which mentions neither replicas nor buckets. A downstream bound to a cloud role through <code>spec.podServiceAccountAnnotations</code> gets a warning instead, because its credentials are injected by the platform and cannot be read here</td>
 </tr>
 <tr>
