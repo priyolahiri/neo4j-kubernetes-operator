@@ -835,6 +835,13 @@
 - **pinned-by:** `TestMissingObjectStoreEnv`, `TestReadServerEnvironment` (`internal/controller/neo4jreplicadatabase_controller_test.go`); `TestPreflightReplica` (`cmd/kubectl-neo4j/preflight_test.go`) — reading only env names, ignoring the prefix, or failing on an unreadable source fails them.
 - **enforcement:** unit test.
 
+### id 134 — A conflict retry re-applies the desired object, never what the last attempt read
+- **scope:** `createOrUpdateResource` / `createOrUpdateResourceInternal` (`internal/controller/neo4jenterprisecluster_controller.go`).
+- **rule:** `createOrUpdateResource` keeps a deep copy of the desired object and resets `obj` to it before every retry. `controllerutil.CreateOrUpdate` reads the live object into `obj`, so after a conflict `obj` is the previous attempt's live state; any code that derives "desired" from `obj` (the StatefulSet path captures `desiredSpec` from it) must see the real desired object on every attempt.
+- **why:** the cluster controller writes the server StatefulSet on most passes (fields the API server defaults differ from the desired object), and the Neo4jPlugin controller patches the same StatefulSet. When the plugin's patch landed in between, the retry took the live template it had just read — the plugin's `NEO4J_PLUGINS` in it — as desired, applied it, and recorded every name in it as cluster-owned; the next pass then removed `NEO4J_PLUGINS` as "owned but no longer desired". The plugin stayed `Ready` with APOC gone, and nothing re-added it (CI, 2026-10-14: "Should install APOC plugin on Neo4jEnterpriseCluster" waited 40 minutes). Present since the conflict retry was added.
+- **pinned-by:** `TestCreateOrUpdateResource_ConflictRetryKeepsTheDesiredSpec` (`internal/controller/sts_conflict_retry_test.go`) — it emulates the API server's defaulting and the plugin's mid-update patch; without the reset the owned set gains `NEO4J_PLUGINS` and the next pass deletes it.
+- **enforcement:** unit test.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

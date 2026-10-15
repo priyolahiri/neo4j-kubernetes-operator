@@ -510,7 +510,14 @@ No CRD changes; upgrading the operator restarts no server.
   documented for exactly that — had its replica `Failed` with "AWS_REGION is not
   set". A replica in that state is retried once the upgraded operator runs.
   `kubectl neo4j preflight` reads the same sources.
-
+- **A plugin's `NEO4J_PLUGINS` could vanish from a cluster's StatefulSet.**
+  When the cluster controller's StatefulSet update conflicted with the plugin
+  controller's patch, the retry applied the template it had just read and
+  recorded the plugin's variables as its own; the next pass removed them. The
+  `Neo4jPlugin` stayed `Ready` with the plugin missing from the servers. The
+  upgraded operator reconciles every `Neo4jPlugin` when it starts, which puts a
+  missing `NEO4J_PLUGINS` back — rolling that cluster's servers once, as the
+  original install did.
 - **Advisory warnings are announced once, not on every reconcile.**
   `ValidationWarning` events — and a cluster's `TopologyWarning` — were
   emitted again on every pass, dozens a minute for one object, which also used
