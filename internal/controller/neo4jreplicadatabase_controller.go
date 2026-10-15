@@ -68,6 +68,10 @@ type Neo4jReplicaDatabaseReconciler struct {
 	// newNeo4jClient builds the Neo4j client for a resolved target. nil selects
 	// the real one; tests substitute a scripted server.
 	newNeo4jClient func(target ResolvedTarget, c client.Client) (replicaNeo4jClient, error)
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // neo4jClientFor returns the Neo4j client for a resolved target.
@@ -148,9 +152,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 
 	if r.Validator != nil {
 		res := r.Validator.Validate(ctx, replica)
-		for _, w := range res.Warnings {
-			r.Recorder.Eventf(replica, corev1.EventTypeWarning, EventReasonValidationWarning, "%s", w)
-		}
+		r.advisoryWarnings.record(r.Recorder, replica, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
 			withdrawReplicaLag(replica)

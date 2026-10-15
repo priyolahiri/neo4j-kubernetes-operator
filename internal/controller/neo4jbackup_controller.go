@@ -66,6 +66,10 @@ type Neo4jBackupReconciler struct {
 	// tests using a fake client.Client leave it nil and the pod-log paths
 	// no-op.
 	Clientset kubernetes.Interface
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 const (
@@ -150,9 +154,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	errs := backupValidator.Validate(backup)
 
 	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
-	for _, warning := range backupValidator.NoEffectWarnings(backup) {
-		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonValidationWarning, warning)
-	}
+	r.advisoryWarnings.record(r.Recorder, backup, EventReasonValidationWarning, backupValidator.NoEffectWarnings(backup))
 
 	// mode=replication-source carries extra constraints (design §4.4): the
 	// differential chain feeding a cross-cluster replica must stay unbroken

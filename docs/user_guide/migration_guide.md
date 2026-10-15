@@ -511,6 +511,13 @@ No CRD changes; upgrading the operator restarts no server.
   set". A replica in that state is retried once the upgraded operator runs.
   `kubectl neo4j preflight` reads the same sources.
 
+- **Advisory warnings are announced once, not on every reconcile.**
+  `ValidationWarning` events — and a cluster's `TopologyWarning` — were
+  emitted again on every pass, dozens a minute for one object, which also used
+  up that object's event budget so other events could be dropped. Each warning
+  is now announced when it starts to apply and again every 30 minutes while it
+  still does, so it stays visible in `kubectl describe` without the flood.
+
 ## Upgrading from v1.20.x
 
 ### Behaviour changes

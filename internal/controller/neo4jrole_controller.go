@@ -66,6 +66,10 @@ type Neo4jRoleReconciler struct {
 	// neo4jrole_normalise.go. Created on first use.
 	rendering          *privilegeRenderingCache
 	renderingCacheOnce sync.Once
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jroles,verbs=get;list;watch;create;update;patch;delete
@@ -110,9 +114,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Validate
 	if r.Validator != nil {
 		res := r.Validator.Validate(ctx, role)
-		for _, w := range res.Warnings {
-			r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonValidationWarning, "%s", w)
-		}
+		r.advisoryWarnings.record(r.Recorder, role, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
 			r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, nil, false)

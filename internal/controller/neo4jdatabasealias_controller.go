@@ -50,6 +50,10 @@ type Neo4jDatabaseAliasReconciler struct {
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
 	Validator               *validation.AliasValidator
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jdatabasealiases,verbs=get;list;watch;create;update;patch;delete
@@ -90,9 +94,7 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	if r.Validator != nil {
 		res := r.Validator.Validate(ctx, alias)
-		for _, w := range res.Warnings {
-			r.Recorder.Eventf(alias, corev1.EventTypeWarning, EventReasonValidationWarning, "%s", w)
-		}
+		r.advisoryWarnings.record(r.Recorder, alias, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
 			r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, "")

@@ -72,6 +72,10 @@ type Neo4jAuthRuleReconciler struct {
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
 	Validator               *validation.AuthRuleValidator
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jauthrules,verbs=get;list;watch;create;update;patch;delete
@@ -108,9 +112,7 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Validate
 	if r.Validator != nil {
 		res := r.Validator.Validate(ctx, rule)
-		for _, w := range res.Warnings {
-			r.Recorder.Eventf(rule, corev1.EventTypeWarning, EventReasonValidationWarning, "%s", w)
-		}
+		r.advisoryWarnings.record(r.Recorder, rule, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
 			r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, nil, nil)

@@ -135,6 +135,10 @@ type Neo4jPluginReconciler struct {
 	// from .Values.pluginInitContainer.image. Empty = use the default
 	// hardcoded in the resource builder.
 	PluginInitImage string
+
+	// advisoryWarnings announces each advisory warning when it starts to apply
+	// and every advisoryWarningRefresh after, not on every pass.
+	advisoryWarnings advisoryWarnings
 }
 
 // PluginFinalizer is the finalizer for Neo4j plugin resources
@@ -245,9 +249,7 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// across Neo4j versions), so those never block install.
 	if r.Validator != nil {
 		result := r.Validator.Validate(plugin)
-		for _, w := range result.Warnings {
-			r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonValidationWarning, w)
-		}
+		r.advisoryWarnings.record(r.Recorder, plugin, EventReasonValidationWarning, result.Warnings)
 		if len(result.Errors) > 0 {
 			msg := fmt.Sprintf("Neo4jPlugin spec is invalid: %s", result.Errors.ToAggregate().Error())
 			r.updatePluginStatus(ctx, plugin, "Invalid", msg)
