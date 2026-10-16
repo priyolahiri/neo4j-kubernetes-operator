@@ -175,11 +175,11 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 | `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found / not ready), `Failed` (connection, creation or data-import failure), `ValidationFailed`, or `Unknown` (any other blocked state, e.g. `SeedCredsMissing`) |
 | `message` | `string` | Human-readable status message |
 | `observedGeneration` | `int64` | Generation observed by the controller |
-| `dataImported` | `*bool` | Whether initial data has been imported |
-| `creationTime` | `*metav1.Time` | When the database was created |
-| `size` | `string` | Database size |
-| `state` | `string` | Current database state: `"online"`, `"offline"`, `"started"`, `"stopped"` |
-| `servers` | `[]string` | Servers hosting the database |
+| `dataImported` | `*bool` | `true` once `spec.initialData.cypherStatements` have run, or, for a `seedURI` database, once it was created from the seed. Set once; the statements are not run again |
+| `creationTime` | `*metav1.Time` | When the operator first reported the database `Ready`. Kept from then on; for a database that already existed it is when this CR first found it ready, not when Neo4j created it |
+| `size` | `string` | Not populated: the operator does not read store sizes (`SHOW DATABASES` does not report them) |
+| `state` | `string` | The database's `currentStatus` in `SHOW DATABASES`: `online` when every copy is online, otherwise the status of a copy that is not (`offline`, `starting`, `store copying`, `quarantined`, …; the first by name when they differ). Read on each reconcile that reaches the database and written when it changes; a reconcile that does not get that far (host not ready or unreachable, invalid spec) leaves the last value |
+| `servers` | `[]string` | Addresses of the servers hosting a copy of the database, sorted, from the same `SHOW DATABASES` read as `state`. Written when it changes, kept like `state` otherwise |
 
 ## Examples
 

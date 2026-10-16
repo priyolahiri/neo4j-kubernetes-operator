@@ -117,8 +117,11 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		r.advisoryWarnings.record(r.Recorder, role, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
-			r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, nil, false)
-			r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			// Announced when the failure starts or its message changes, not on
+			// every pass while the spec stays invalid (knowledge rule 136).
+			if r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, nil, false) {
+				r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 	}
@@ -731,6 +734,10 @@ func (r *Neo4jRoleReconciler) fail(ctx context.Context, role *neo4jv1beta1.Neo4j
 	return ctrl.Result{}, err
 }
 
+// setStatus writes the phase, message and Ready condition. It reports whether
+// the write changed the phase, the message or the Ready condition's status or
+// reason — a state transition — from the attempt whose write succeeded, so a
+// caller can emit the matching event once, on the transition.
 func (r *Neo4jRoleReconciler) setStatus(
 	ctx context.Context,
 	role *neo4jv1beta1.Neo4jRole,
@@ -739,13 +746,18 @@ func (r *Neo4jRoleReconciler) setStatus(
 	readyReason, message string,
 	appliedPrivileges []string,
 	drift bool,
-) {
+) bool {
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jRole{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(role), latest); err != nil {
 			return err
 		}
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message)
+		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message) {
+			changed = true
+		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
@@ -753,11 +765,17 @@ func (r *Neo4jRoleReconciler) setStatus(
 			latest.Status.AppliedPrivileges = appliedPrivileges
 		}
 		latest.Status.PrivilegeDrift = drift
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jRole status")
+		return false
 	}
+	return transitioned
 }
 
 // setNamedCondition writes one named condition, reporting whether it actually

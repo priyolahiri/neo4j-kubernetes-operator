@@ -102,9 +102,12 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		r.advisoryWarnings.record(r.Recorder, cd, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
-			r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
-				EventReasonValidationFailed, msg, nil)
-			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			// Announced when the failure starts or its message changes, not on
+			// every pass while the spec stays invalid (knowledge rule 136).
+			if r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
+				EventReasonValidationFailed, msg, nil) {
+				r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 	}
@@ -517,27 +520,42 @@ func (r *Neo4jCompositeDatabaseReconciler) fail(
 	return ctrl.Result{}, err
 }
 
+// setStatus writes the phase, message and Ready condition. It reports whether
+// the write changed the phase, the message or the Ready condition's status or
+// reason — a state transition — from the attempt whose write succeeded, so a
+// caller can emit the matching event once, on the transition.
 func (r *Neo4jCompositeDatabaseReconciler) setStatus(
 	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase,
 	phase string, readyStatus metav1.ConditionStatus, reason, message string, constituents []string,
-) {
+) bool {
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jCompositeDatabase{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cd), latest); err != nil {
 			return err
 		}
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, reason, message)
+		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, reason, message) {
+			changed = true
+		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
 		if constituents != nil {
 			latest.Status.ObservedConstituents = constituents
 		}
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jCompositeDatabase status")
+		return false
 	}
+	return transitioned
 }
 
 func (r *Neo4jCompositeDatabaseReconciler) setNamedCondition(

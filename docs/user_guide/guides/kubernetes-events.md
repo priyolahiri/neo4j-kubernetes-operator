@@ -30,7 +30,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `ClusterFormationStarted` | Normal | Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it) |
 | `ClusterFormationFailed` | Warning | Cluster formation verification failed |
 | `ClusterReady` | Normal | Cluster has reached Ready phase |
-| `ValidationFailed` | Warning | Cluster spec validation failed |
+| `ValidationFailed` | Warning | The spec failed validation; the message names what to fix and is also in `status.message`. Emitted when the failure starts or its message changes, not on every retry while the spec stays invalid (a cluster or replica also announces it again after an edit that leaves the spec invalid). Also emitted by `Neo4jEnterpriseStandalone`, `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase`, `Neo4jPlugin`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `TopologyWarning` | Warning | Topology validation produced warnings |
 | `ValidationWarning` | Warning | A spec field the schema accepts but nothing reads is set (`spec.<path> is accepted but has no effect today: <what to do instead>`). Advisory: the resource is still reconciled. Also emitted by `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jDatabase` and `AuraInstance` |
 | `TopologyPlacementCalculated` | Normal | Topology placement constraints calculated successfully |

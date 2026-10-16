@@ -725,27 +725,29 @@
         "id": "f-neo4jdatabase-status-creation-time",
         "name": "status.creationTime",
         "type": "timestamp",
-        "isNullable": true
+        "isNullable": true,
+        "note": "When the operator first reported the database Ready; kept from then on (for a pre-existing database, when this CR first found it ready)."
       },
       {
         "id": "f-neo4jdatabase-status-size",
         "name": "status.size",
         "type": "string",
-        "isNullable": true
+        "isNullable": true,
+        "note": "Not populated: the operator does not read store sizes (SHOW DATABASES does not report them)."
       },
       {
         "id": "f-neo4jdatabase-status-state",
         "name": "status.state",
         "type": "string",
         "isNullable": true,
-        "note": "online, offline, started, stopped."
+        "note": "The database's SHOW DATABASES currentStatus folded over every copy: online when every copy is online, otherwise the first other status by name (offline, starting, store copying, quarantined, ...). Read each reconcile that reaches the database, applied inside the re-fetched status write and written only when it changes (knowledge operations.md id 143)."
       },
       {
         "id": "f-neo4jdatabase-status-servers",
         "name": "status.servers",
         "type": "json",
         "isNullable": true,
-        "note": "Cluster servers currently hosting this database."
+        "note": "Sorted addresses of the servers holding a copy of the database, from the same SHOW DATABASES read as status.state; written only when it changes (knowledge operations.md id 143)."
       }
     ],
     "paths": [

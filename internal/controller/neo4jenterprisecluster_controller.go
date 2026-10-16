@@ -365,8 +365,12 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 						event, status = "Cluster validation failed", "Validation failed"
 					}
 					logger.Error(err, event)
-					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "%s: %v", event, err)
-					_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err))
+					// Announced when the failure starts or its message
+					// changes, not on every RequeueAfter while the spec stays
+					// invalid (knowledge rule 136).
+					if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err)) {
+						r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "%s: %v", event, err)
+					}
 					// A spec the user must fix is not a reconcile error: it is
 					// already logged, evented and in status, and returning it
 					// would make controller-runtime ignore RequeueAfter and
@@ -388,8 +392,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			if len(result.Errors) > 0 {
 				err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
 				logger.Error(err, "Cluster validation failed")
-				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster validation failed: %v", err)
-				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Validation failed: %v", err))
+				if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Validation failed: %v", err)) {
+					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster validation failed: %v", err)
+				}
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
 		}

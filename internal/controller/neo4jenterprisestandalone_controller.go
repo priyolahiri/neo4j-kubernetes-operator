@@ -194,11 +194,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 		field.NewPath("spec", "auth", "adminSecret"))...)
 	if len(validationErrs) > 0 {
 		logger.Error(fmt.Errorf("validation failed: %v", validationErrs), "Validation failed")
-		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationFailed,
-			fmt.Sprintf("Validation failed: %v", validationErrs))
+		msg := fmt.Sprintf("Validation failed: %v", validationErrs)
 
-		// Update status to reflect validation failure
-		r.setFailedStatus(ctx, standalone, fmt.Sprintf("Validation failed: %v", validationErrs))
+		// Update status to reflect validation failure. Announced when the
+		// failure starts or its message changes, not on every RequeueAfter
+		// while the spec stays invalid (knowledge rule 136).
+		if r.setFailedStatus(ctx, standalone, msg) {
+			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -2105,29 +2108,44 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(ctx context.Cont
 // new generation deserves. Stamping the older generation leaves
 // observedGeneration < generation, the correct "status is stale, reconcile
 // pending" signal — and the refetch is purely to win the resourceVersion race.
-func (r *Neo4jEnterpriseStandaloneReconciler) setFailedStatus(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, message string) {
+//
+// It reports whether the write changed the phase, the message or the Ready
+// condition's status or reason — a state transition — from the attempt whose
+// write succeeded, so a caller can emit the matching event once.
+func (r *Neo4jEnterpriseStandaloneReconciler) setFailedStatus(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, message string) bool {
 	logger := log.FromContext(ctx)
 	reconciledGen := standalone.Generation
+	transitioned := false
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if getErr := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, latest); getErr != nil {
 			return getErr
 		}
+		changed := latest.Status.Phase != "Failed" || latest.Status.Message != message
 		latest.Status.Phase = "Failed"
 		latest.Status.Message = message
 		latest.Status.Ready = false
 		latest.Status.ObservedGeneration = reconciledGen
 		condStatus, condReason := PhaseToConditionStatus("Failed")
-		SetReadyCondition(&latest.Status.Conditions, reconciledGen, condStatus, condReason, message)
+		if SetReadyCondition(&latest.Status.Conditions, reconciledGen, condStatus, condReason, message) {
+			changed = true
+		}
 		// Mirror onto the in-memory object for the rest of the reconcile.
 		standalone.Status.Phase = "Failed"
 		standalone.Status.Message = message
 		standalone.Status.Ready = false
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	})
 	if err != nil {
 		logger.Error(err, "Failed to update standalone status to Failed")
+		return false
 	}
+	return transitioned
 }
 
 // updateStatus updates the status of the standalone deployment
