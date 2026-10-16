@@ -5247,7 +5247,7 @@
 <li><strong>Plugin Collection</strong>: Gathers main plugin and all dependencies into a unified list</li>
 <li><strong>Environment Variable Setup</strong>: Merges plugin names into the existing <code>NEO4J_PLUGINS</code> JSON array (additive — does not overwrite entries added by other controllers such as the Aura Fleet Management reconciler)</li>
 <li><strong>Configuration Application</strong>: Adds plugin-specific settings as <code>NEO4J_*</code> environment variables</li>
-<li><strong>StatefulSet Update</strong>: Patches the target StatefulSet with new configuration</li>
+<li><strong>StatefulSet Update</strong>: Patches the target StatefulSet with new configuration — in one update (with a <code>VerifiedDownload</code> plugin's init container and volumes), and only when something changes. Because the update restarts every server, it waits (phase <code>Waiting</code>, a <code>PluginInstallDeferred</code> event) until the target is <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code>), nor while it is forming, rolling its servers or upgrading</li>
 <li><strong>Rolling Restart</strong>: Triggers controlled pod restarts to apply changes</li>
 <li><strong>Verification</strong>: Confirms plugin installation and updates status</li>
 </ol>
@@ -5721,6 +5721,17 @@ can't race the verified JAR.</p>
 the pod stays Pending, and <code>kubectl describe pod</code> shows the failure on
 the init container's <code>state.terminated.message</code>. Fix the URL or checksum
 and reconcile — the next pod spawn re-runs the init container.</p>
+<p><strong>Coexistence with the cluster controller</strong>: the init container is named
+<code>plugin-init-&lt;name&gt;</code>, its volumes <code>plugin-auth-&lt;name&gt;</code> and <code>plugin-ca</code>
+(shared by every VerifiedDownload plugin of the target). The cluster
+controller keeps init containers and volumes it did not render across its
+own template changes (an image upgrade, a config change); it records the
+ones it renders in the StatefulSet annotations
+<code>neo4j.com/cluster-controller-init-containers</code> and
+<code>neo4j.com/cluster-controller-volumes</code>. A <code>Ready</code> plugin whose init
+container or volumes were removed anyway puts them back (<code>PluginMissing</code>
+event). Uninstalling the last VerifiedDownload plugin also removes
+<code>plugin-ca</code>.</p>
 <p><strong>Authenticated mirrors</strong> are supported via <code>spec.source.authSecret</code>.
 The named Secret should carry either a <code>token</code> key (used as
 <code>Authorization: Bearer &lt;token&gt;</code>) or a <code>header</code> key (used verbatim as the
@@ -6119,9 +6130,9 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <h2 id="plugin-status-phases">Plugin Status Phases<a class="headerlink" href="#plugin-status-phases" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>Pending</strong>: Plugin resource created, waiting for processing</li>
-<li><strong>Waiting</strong>: Waiting for the deployment to be ready — on a cluster, also while any server is unavailable (<code>Degraded</code>), since installing restarts every server</li>
+<li><strong>Waiting</strong>: Waiting for the deployment to be functional, or — when the plugin has something to write to its StatefulSet, which restarts every server — for it to be <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), nor while it is forming, rolling its servers or upgrading. A <code>PluginInstallDeferred</code> event (or, for a <code>Ready</code> plugin that lost something, a <code>PluginMissing</code> one) marks the start of the wait; the plugin checks again every 30 seconds</li>
 <li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, and while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event)</li>
-<li><strong>Ready</strong>: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set, the plugin goes back to <code>Installing</code> and restores it; if nothing is missing, the check writes nothing and the phase stays <code>Ready</code></li>
+<li><strong>Ready</strong>: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets, a <code>VerifiedDownload</code> init container or volume), the plugin goes back to <code>Installing</code> and restores it — or <code>Waiting</code>, while the target is not <code>Ready</code> with every server available; if nothing is missing, the check writes nothing and the phase stays <code>Ready</code>, whatever state the target is in</li>
 <li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
 <li><strong>Invalid</strong>: The spec failed validation (for example an unsupported <code>securityPolicy</code>, a missing <code>source.url</code>/<code>checksum</code>, or a non-https URL); the controller does not requeue until the CR is edited</li>
 </ul>

@@ -4640,7 +4640,12 @@ and alerting systems.</p>
 <tr>
 <td><code>PluginMissing</code></td>
 <td>Warning</td>
-<td>A <code>Ready</code> plugin's target StatefulSet no longer carries what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets); the plugin goes back to <code>Installing</code> and restores it, which restarts the servers</td>
+<td>A <code>Ready</code> plugin's target StatefulSet no longer carries what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets, a <code>VerifiedDownload</code> init container or its volumes); the plugin goes back to <code>Installing</code> and restores it, which restarts the servers — or, while the target is not <code>Ready</code> with every server available, says so and is <code>Waiting</code> until it is</td>
+</tr>
+<tr>
+<td><code>PluginInstallDeferred</code></td>
+<td>Normal</td>
+<td>Installing the plugin would restart the servers of a target that is not <code>Ready</code> with every server available (a cluster <code>Degraded</code>, or forming, rolling or upgrading); the plugin is <code>Waiting</code> and installs once the target is. Once per wait</td>
 </tr>
 <tr>
 <td><code>PluginDuplicate</code></td>
