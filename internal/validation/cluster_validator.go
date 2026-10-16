@@ -95,12 +95,13 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1be
 		cluster.Spec.TLS.Mode = "disabled"
 	}
 
-	// Default TLS issuer reference
-	if cluster.Spec.TLS != nil && cluster.Spec.TLS.Mode == "cert-manager" && cluster.Spec.TLS.IssuerRef == nil {
-		cluster.Spec.TLS.IssuerRef = &neo4jv1beta1.IssuerRef{
-			Kind: "ClusterIssuer",
-		}
-	}
+	// No default for a missing spec.tls.issuerRef. One used to be made here,
+	// {kind: ClusterIssuer} with no name, which the TLS rule then refused as
+	// "spec.tls.issuerRef.name: Required value": a field the user never wrote,
+	// reported by the operator and, once it applied these defaults too, by
+	// `kubectl neo4j validate`. Without it the rule says what is missing:
+	// spec.tls.issuerRef. No cluster ran on the default: a nameless issuerRef
+	// is refused.
 
 	// Default auth configuration
 	if cluster.Spec.Auth == nil {

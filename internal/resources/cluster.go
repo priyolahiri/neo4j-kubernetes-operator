@@ -300,20 +300,18 @@ func buildStatefulSetForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 		adminSecret = cluster.Spec.Auth.AdminSecret
 	}
 
-	// Configure rolling update strategy
+	// Configure rolling update strategy. Always RollingUpdate, whatever
+	// spec.upgradeStrategy.strategy says: Recreate used to select OnDelete,
+	// under which a template change (image, config, plugin, TLS) reached a
+	// server only when its pod was deleted, and the operator deletes server
+	// pods only to repair a split-brain. A cluster upgrades one server at a
+	// time (operations.md id 144).
 	updateStrategy := appsv1.StatefulSetUpdateStrategy{
 		Type: appsv1.RollingUpdateStatefulSetStrategyType,
 		RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
 			// Start with maxUnavailable = 0 to prevent concurrent updates
 			Partition: nil, // Will be set during rolling upgrade orchestration
 		},
-	}
-
-	// Configure upgrade strategy based on cluster spec
-	if cluster.Spec.UpgradeStrategy != nil {
-		if cluster.Spec.UpgradeStrategy.Strategy == "Recreate" {
-			updateStrategy.Type = appsv1.OnDeleteStatefulSetStrategyType
-		}
 	}
 
 	// Get labels but remove clustering label from StatefulSet

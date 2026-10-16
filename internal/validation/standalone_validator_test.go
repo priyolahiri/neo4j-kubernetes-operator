@@ -17,6 +17,7 @@ limitations under the License.
 package validation
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,7 +25,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -215,44 +218,71 @@ func TestStandaloneValidator_ValidateCreate(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// TestStandaloneValidator_ValidateUpdate
-// ---------------------------------------------------------------------------
+// A standalone's update-only rules (ValidateUpdate) were never called: the
+// controller ran ValidateCreate alone, and without a webhook there is no
+// previous spec to hand it. Its image rule allowed everything; its storage
+// class rule had nothing to compare with. Validate is the one entry point, and
+// the rule that needs the previous state reads it from status.version, the
+// version the standalone runs (operations.md id 144).
+func TestStandaloneValidator_Validate_ChecksTheTagAgainstStatusVersion(t *testing.T) {
+	v := NewStandaloneValidator()
+	cases := []struct {
+		name, running, tag string
+		wantErr            string // substring; "" = no error
+	}{
+		{"nothing recorded yet", "", "5.26.0-enterprise", ""},
+		{"the version it runs", "2026.08.1-enterprise", "2026.08.1-enterprise", ""},
+		{"a later CalVer", "2026.08.1-enterprise", "2026.09.0-enterprise", ""},
+		{"5.26 to CalVer", "5.26.12-enterprise", "2026.08.1-enterprise", ""},
+		{"a floating tag of the same minor", "5.26.12-enterprise", "5.26-enterprise", ""},
+		{"a downgrade", "2026.08.1-enterprise", "2025.10.0-enterprise",
+			"downgrades are not supported: the standalone runs 2026.08.1-enterprise (status.version)"},
+		{"CalVer back to 5.26", "2025.10.0-enterprise", "5.26.12-enterprise", "downgrades are not supported"},
+		{"an earlier patch", "5.26.12-enterprise", "5.26.10-enterprise", "downgrades are not supported"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sa := validStandalone()
+			sa.Spec.Image.Tag = tc.tag
+			sa.Status.Version = tc.running
+			errs := v.Validate(context.Background(), nil, sa)
+			if tc.wantErr == "" {
+				assert.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1, "%v", errs)
+			assert.Equal(t, "spec.image.tag", errs[0].Field)
+			assert.Contains(t, errs[0].Error(), tc.wantErr)
+		})
+	}
+}
 
-func TestStandaloneValidator_ValidateUpdate(t *testing.T) {
+// Validate is a superset of ValidateCreate: the spec rules still run, with the
+// tag rule after them, and the admin password's shape is checked when a client
+// can read its Secret.
+func TestStandaloneValidator_Validate_RunsTheSpecRulesAndTheAdminPassword(t *testing.T) {
 	v := NewStandaloneValidator()
 
-	t.Run("storage class change is rejected", func(t *testing.T) {
-		old := validStandalone()
-		updated := validStandalone()
-		updated.Spec.Storage.ClassName = "premium"
+	sa := validStandalone()
+	sa.Spec.Storage.Size = "fifty"
+	sa.Spec.Image.Tag = "2025.10.0-enterprise"
+	sa.Status.Version = "2026.08.1-enterprise"
+	var fields []string
+	for _, e := range v.Validate(context.Background(), nil, sa) {
+		fields = append(fields, e.Field)
+	}
+	assert.ElementsMatch(t, []string{"spec.storage.size", "spec.image.tag"}, fields)
 
-		errs := v.ValidateUpdate(old, updated)
-		if len(errs) == 0 {
-			t.Error("expected error when storage class changes, got none")
-		}
-		found := false
-		for _, err := range errs {
-			if err.Field == "spec.storage.className" {
-				found = true
-				break
-			}
-		}
-		if !found {
-			t.Errorf("expected error on spec.storage.className, got: %v", errs)
-		}
-	})
-
-	t.Run("image tag change is accepted", func(t *testing.T) {
-		old := validStandalone()
-		updated := validStandalone()
-		updated.Spec.Image.Tag = "2025.01.0-enterprise"
-
-		errs := v.ValidateUpdate(old, updated)
-		if len(errs) != 0 {
-			t.Errorf("expected no errors for image tag change, got: %v", errs)
-		}
-	})
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "neo4j-admin-secret", Namespace: "default"},
+		Data:       map[string][]byte{"username": []byte("neo4j"), "password": []byte("-starts-with-a-dash")},
+	}
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(secret).Build()
+	errs := v.Validate(context.Background(), c, validStandalone())
+	require.Len(t, errs, 1, "%v", errs)
+	assert.Equal(t, "spec.auth.adminSecret", errs[0].Field)
 }
 
 // The two Kinds must agree about Neo4j's own rules. Each validator used to

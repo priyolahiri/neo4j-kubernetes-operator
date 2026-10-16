@@ -206,6 +206,33 @@ func TestClusterValidator_ApplyDefaults(t *testing.T) {
 	}
 }
 
+// ApplyDefaults used to give a cert-manager cluster without spec.tls.issuerRef
+// a nameless {kind: ClusterIssuer}, which the TLS rule then refused as
+// "spec.tls.issuerRef.name: Required value" — an error on a field the user
+// never wrote. Defaults add nothing an error can then be reported on; the
+// refusal names what is missing (operations.md id 144).
+func TestClusterValidator_ApplyDefaults_LeavesAMissingIssuerRefMissing(t *testing.T) {
+	validator := NewClusterValidator(nil)
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			AcceptLicenseAgreement: "eval",
+			Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "2026.08.1-enterprise"},
+			Storage:                neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+			Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 3},
+			TLS:                    &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
+		},
+	}
+	validator.ApplyDefaults(context.Background(), cluster)
+	if cluster.Spec.TLS.IssuerRef != nil {
+		t.Fatalf("issuerRef defaulted to %+v", *cluster.Spec.TLS.IssuerRef)
+	}
+	res := validator.ValidateWithWarnings(context.Background(), cluster)
+	if len(res.Errors) != 1 || res.Errors[0].Field != "spec.tls.issuerRef" {
+		t.Errorf("want one error on spec.tls.issuerRef, got %v", res.Errors)
+	}
+}
+
 func TestClusterValidator_NameLength(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)

@@ -86,15 +86,20 @@ server available — a version change must never sneak in as an ungated restart
 while quorum is still forming, and rolling the other servers while one is down
 could cost the cluster its majority.
 
-One deliberate exception: if **no server pod has ever become ready** — the
-typical case being a first deploy stuck in `ImagePullBackOff` on a mistyped
-tag — there is no formed quorum to protect, so a corrected `spec.image`
-applies immediately. Fix the tag and the pods re-pull; you do not need to
-delete and recreate the cluster.
+One deliberate exception: if **no server pod is ready** — the typical case
+being a first deploy stuck in `ImagePullBackOff` on a mistyped tag, but also a
+cluster that has lost every server — there is no formed quorum to protect, so
+a corrected `spec.image` applies immediately, without the upgrade state
+machine. Fix the tag and the pods re-pull; you do not need to delete and
+recreate the cluster. The tag is still checked against `status.version` first
+(see [Version checks](#version-checks)), and once every server is ready on the
+new image the operator records it as `status.version`.
 
 ### Version checks
 
-Every reconcile checks `spec.image.tag` against `status.version`, the version the operator verified every server runs. It is recorded when the cluster first becomes `Ready` and after each verified upgrade, and it does not move while an upgrade is in flight or after one fails — so setting the tag back to it, or on to a later target, is always allowed.
+Every reconcile checks `spec.image.tag` against `status.version`, the version every server runs. It is recorded when the cluster first becomes `Ready`, after each verified upgrade, and when the cluster becomes `Ready` with every server on an image that reached them without the upgrade state machine (the no-ready-server exception above). It does not move while an upgrade is in flight or after one fails — so setting the tag back to it, or on to a later target, is always allowed.
+
+A `Neo4jEnterpriseStandalone` is held to the same rule. Its `status.version` is recorded once its pod is ready on the current image, so it does not move while the pod is being replaced, nor for an image that never starts: setting the tag back to the version the server runs is always allowed. A downgrade is refused the same way (the standalone turns `Failed` with a `ValidationFailed` event saying `the standalone runs …`), and the server keeps the version it runs.
 
 A tag the cluster cannot move to (see [Supported Upgrade Paths](#supported-upgrade-paths)) is refused before anything changes: the cluster turns `Failed`, with a `ValidationFailed` event and a message that names the field and what the servers run:
 
@@ -118,7 +123,9 @@ Configure the upgrade strategy with `spec.upgradeStrategy`:
 | Strategy | Description |
 |---|---|
 | `RollingUpgrade` (default) | Restarts one pod at a time; cluster stays available throughout |
-| `Recreate` | Deletes and recreates all pods; faster but causes downtime |
+| `Recreate` | On a cluster, does what `RollingUpgrade` does, and raises a `ValidationWarning` (see below). On a standalone, its one pod is deleted and created again on the new image, as with `RollingUpgrade` |
+
+Neo4j documents only rolling upgrades for a cluster — one server at a time, or by adding new servers — on 5.x and on the 2025–2026 series ([Upgrade and Migration Guide](https://neo4j.com/docs/upgrade-migration-guide/current/)). Stopping every server at once and starting them on a new version is not a path it describes, so the operator does not take it: a cluster is always upgraded by the rolling-upgrade state machine above. `Recreate` used to stop the operator from starting that machine, so a `Ready` cluster kept its old image and no other change to its spec was applied while the tag differed; it also stopped every other change to the server pod template (configuration, plugins, TLS) from reaching a running server.
 
 ```yaml
 spec:
@@ -132,7 +139,7 @@ spec:
     postUpgradeHealthCheck: true  # validate cluster health after upgrade (default true)
 ```
 
-The three timeouts are Go durations: `30m`, `1h30m`, `90s`. A value that does not parse, such as `"5 minutes"`, is refused (the cluster turns `Failed` with a `ValidationFailed` event), and `kubectl neo4j validate` reports it before you apply.
+The three timeouts are Go durations above zero: `30m`, `1h30m`, `90s`. A value that does not parse, such as `"5 minutes"`, or one of zero or less, such as `"0s"` or `"-5m"`, is refused (the cluster turns `Failed` with a `ValidationFailed` event), and `kubectl neo4j validate` reports it before you apply. A step fails once its timeout has passed since it started, so at zero or less a step failed at its first check unless it was already done; an `upgradeTimeout` of zero or less failed every upgrade while staging.
 
 Servers always restart one at a time, as Neo4j's rolling upgrade requires. `maxUnavailableDuringUpgrade` is accepted for compatibility but has no effect; a value other than `1` raises a `ValidationWarning` event.
 

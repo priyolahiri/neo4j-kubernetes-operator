@@ -769,20 +769,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 	// Update status to "Ready" only if cluster formation is verified
 	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
-	//
-	// status.version backfill (#262): the upgrade machine stamps the version
-	// after verified upgrades, but a cluster that never upgraded (or whose
-	// version change happened before the machine existed) has it empty —
-	// which silently grants the NEXT upgrade the first-upgrade
-	// compatibility-check skip. At this point the StatefulSet is fully
-	// rolled to the template and the template matches spec (drift is held
-	// above), so spec.image.tag IS the running version.
-	var statusChanged bool
-	if cluster.Status.Version == "" {
-		statusChanged = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", cluster.Spec.Image.Tag, formedConditions...)
-	} else {
-		statusChanged = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", "", formedConditions...)
-	}
+	statusChanged := r.recordClusterReady(ctx, cluster, formedConditions...)
 
 	// Scale-down draining (server cordon→deallocate→drop) is driven earlier in
 	// the reconcile by reconcileScaleDownDrain, which owns the
@@ -2153,16 +2140,14 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade-handler")
 
-	// The Recreate strategy opts out of orchestrated upgrades — but only as a
-	// gate on STARTING one. A machine already mid-flight finishes its roll
-	// even if the user flips the strategy: abandoning it here would leave the
-	// StatefulSet partition frozen (and the active-phase preservation in
-	// createOrUpdateResource would keep it frozen) with no driver to finish.
-	if !upgradeStateMachineActive(cluster) &&
-		cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.Strategy == "Recreate" {
-		logger.Info("Using recreate strategy, falling back to regular reconciliation")
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-	}
+	// Every cluster upgrades through this machine, whatever
+	// spec.upgradeStrategy.strategy says. Recreate used to return here without
+	// starting it: the "regular reconciliation" it claimed to fall back to never
+	// ran (Reconcile returns what this returns), so a Ready cluster kept its old
+	// image and no other spec change was applied while the tag differed. Neo4j
+	// documents only rolling upgrades for a cluster, so Recreate is accepted
+	// with a ValidationWarning and does what RollingUpgrade does
+	// (operations.md id 144).
 
 	phase := ""
 	if cluster.Status.UpgradeStatus != nil {
@@ -3519,7 +3504,11 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	// blocking formation (an unpullable tag on a first deploy left the
 	// cluster wedged Forming forever: never Ready, so the user's corrected
 	// tag was deferred indefinitely). Let the spec image flow straight to
-	// the StatefulSet; pods that never came up are safe to re-roll.
+	// the StatefulSet; pods that never came up are safe to re-roll. This
+	// also lets a new image through to a cluster that was Ready once and has
+	// lost every server: the version rule has already checked the tag
+	// against status.version, and the Ready pass records the new version once
+	// every server runs it (clusterVersionToRecord, operations.md id 144).
 	if serverSts.Status.ReadyReplicas == 0 {
 		log.FromContext(ctx).Info("Applying image change without the Ready gate: no ready replicas exist to protect (formation blocked, possibly by the current image)",
 			"current", currentImage, "desired", desiredImage)
@@ -3542,6 +3531,39 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	}
 	cluster.Spec.Image.Repo = currentImage[:idx]
 	cluster.Spec.Image.Tag = currentImage[idx+1:]
+}
+
+// recordClusterReady writes the Ready status of a cluster whose formation and
+// rollout are both verified, and reports whether the phase, message or Ready
+// condition moved (updateClusterStatusWithVersion).
+//
+// status.version is the version every server runs, read from the rolled server
+// StatefulSet. The upgrade machine records it after a verified upgrade; this
+// pass records it at the first Ready (#262: a cluster that never upgraded had
+// it empty, which skipped the next upgrade's version check) and after an image
+// reached the servers outside the machine, through the zero-ready escape hatch
+// in holdImageDriftUntilReady (clusterVersionToRecord, operations.md id 144).
+func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, conditions ...metav1.Condition) bool {
+	version := clusterVersionToRecord(&cluster.Status, r.runningServerImageTag(ctx, cluster))
+	if version != "" && cluster.Status.Version != "" {
+		log.FromContext(ctx).Info("Recording the version the servers now run",
+			"previous", cluster.Status.Version, "running", version)
+	}
+	return r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", version, conditions...)
+}
+
+// runningServerImageTag returns the image tag every server runs, read from the
+// server StatefulSet (rolledImageTag); "" when the StatefulSet cannot be read
+// or is not fully rolled.
+func (r *Neo4jEnterpriseClusterReconciler) runningServerImageTag(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{
+		Name:      fmt.Sprintf("%s-server", cluster.Name),
+		Namespace: cluster.Namespace,
+	}, sts); err != nil {
+		return ""
+	}
+	return rolledImageTag(sts)
 }
 
 // serverStatefulSetFullyRolled reports whether the server StatefulSet has no

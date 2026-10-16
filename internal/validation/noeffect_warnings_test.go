@@ -153,6 +153,16 @@ func TestClusterValidator_NoEffectWarnings(t *testing.T) {
 			path:    "spec.upgradeStrategy.maxUnavailableDuringUpgrade",
 			instead: "one server at a time",
 		},
+		{
+			// Neo4j documents only rolling upgrades for a cluster; Recreate used
+			// to stop the operator from upgrading at all (operations.md id 144).
+			name: "upgradeStrategy.strategy Recreate",
+			mutate: func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
+				c.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{Strategy: "Recreate"}
+			},
+			path:    "spec.upgradeStrategy.strategy",
+			instead: "set it to RollingUpgrade",
+		},
 	}
 
 	for _, tc := range cases {
@@ -176,6 +186,15 @@ func TestClusterValidator_NoEffectWarnings(t *testing.T) {
 			assert.Zero(t, noEffectCount(create.Warnings), "no-effect warnings belong in NoEffectWarnings")
 		})
 	}
+
+	t.Run("strategy RollingUpgrade, or unset, does not warn", func(t *testing.T) {
+		for _, s := range []string{"", "RollingUpgrade"} {
+			cluster := validClusterForWarnings()
+			cluster.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{Strategy: s}
+			res := validator.ValidateCreateWithWarnings(ctx, cluster)
+			assert.Empty(t, res.NoEffectWarnings)
+		}
+	})
 
 	// The CRD defaults it to 1 wherever upgradeStrategy is set.
 	t.Run("maxUnavailableDuringUpgrade of 1, or unset, does not warn", func(t *testing.T) {
@@ -227,6 +246,13 @@ func TestStandaloneValidator_NoEffectWarnings(t *testing.T) {
 
 		sa.Spec.UpgradeStrategy.MaxUnavailableDuringUpgrade = ptr.To(int32(1))
 		assert.Empty(t, v.NoEffectWarnings(sa), "the CRD default does not warn")
+	})
+
+	// On a standalone, Recreate does what it says: the one pod is replaced.
+	t.Run("upgradeStrategy.strategy Recreate does not warn", func(t *testing.T) {
+		sa := validStandalone()
+		sa.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{Strategy: "Recreate"}
+		assert.Empty(t, v.NoEffectWarnings(sa))
 	})
 }
 

@@ -426,6 +426,35 @@ func TestBuildDiscoveryServiceAccountForEnterprise_PodSAAnnotations(t *testing.T
 	assert.Equal(t, "arn:aws:iam::111122223333:role/neo4j-seed", sa.Annotations["eks.amazonaws.com/role-arn"])
 }
 
+// spec.upgradeStrategy.strategy: Recreate used to give the server StatefulSet
+// the OnDelete strategy, under which no template change (image, config, plugin,
+// TLS) reached a running server: the operator deletes server pods only to
+// repair a split-brain. Every strategy rolls (operations.md id 144).
+func TestBuildServerStatefulSetForEnterprise_AlwaysRollingUpdate(t *testing.T) {
+	for _, strategy := range []*neo4jv1beta1.UpgradeStrategySpec{
+		nil,
+		{Strategy: "RollingUpgrade"},
+		{Strategy: "Recreate"},
+	} {
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+			ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "default"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				AcceptLicenseAgreement: "eval",
+				Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "2026.08.1-enterprise"},
+				Topology:               neo4jv1beta1.TopologyConfiguration{Servers: 3},
+				Storage:                neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "10Gi"},
+				UpgradeStrategy:        strategy,
+			},
+		}
+		sts := resources.BuildServerStatefulSetForEnterprise(cluster)
+		assert.Equal(t, appsv1.RollingUpdateStatefulSetStrategyType, sts.Spec.UpdateStrategy.Type,
+			"upgradeStrategy %+v", strategy)
+		require.NotNil(t, sts.Spec.UpdateStrategy.RollingUpdate)
+		assert.Nil(t, sts.Spec.UpdateStrategy.RollingUpdate.Partition,
+			"the partition belongs to the upgrade state machine")
+	}
+}
+
 func TestBuildStatefulSetForEnterprise_ParallelManagement(t *testing.T) {
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
 		ObjectMeta: metav1.ObjectMeta{

@@ -87,6 +87,17 @@ func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpris
 			"a majority of its primaries. Remove it, or set it to 1"); w != "" {
 		warnings = append(warnings, w)
 	}
+	if s := cluster.Spec.UpgradeStrategy; s != nil && s.Strategy == "Recreate" {
+		// Neo4j's upgrade guide documents only rolling upgrades for a cluster
+		// (in-place, one server at a time, or by adding new servers), on 5.x and
+		// on the 2025-2026 series. Stopping every server at once to move them
+		// to a new version is not a path it describes, so the operator does not
+		// take it (operations.md id 144).
+		warnings = append(warnings, NoEffectWarning(field.NewPath("spec", "upgradeStrategy", "strategy"),
+			"Recreate on a cluster does what RollingUpgrade does. Neo4j documents only rolling upgrades for a "+
+				"cluster, so the operator restarts one server at a time and waits for its databases to catch "+
+				"up before the next, and the cluster stays available. Remove it, or set it to RollingUpgrade"))
+	}
 	return append(warnings, AuthProviderWarnings(cluster.Spec.Auth, field.NewPath("spec", "auth"))...)
 }
 

@@ -17,10 +17,12 @@ limitations under the License.
 package validation
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -33,6 +35,7 @@ type StandaloneValidator struct {
 	storageValidator *StorageValidator
 	tlsValidator     *TLSValidator
 	authValidator    *AuthValidator
+	upgradeValidator *UpgradeValidator
 }
 
 // NewStandaloneValidator creates a new standalone validator
@@ -43,7 +46,43 @@ func NewStandaloneValidator() *StandaloneValidator {
 		storageValidator: NewStorageValidator(),
 		tlsValidator:     NewTLSValidator(),
 		authValidator:    NewAuthValidator(),
+		upgradeValidator: NewUpgradeValidator(),
 	}
+}
+
+// Validate is what the reconciler runs on every pass, and what `kubectl neo4j
+// validate` runs: the spec rules (ValidateCreate), the admin password's shape
+// (read from its Secret, so skipped when c is nil, as offline), and the rule
+// that compares the spec with what the standalone runs.
+//
+// There is no admission webhook, so there is no previous spec to compare with:
+// the reconciler only ever sees the object as it is now. What the standalone
+// runs is read from the status the operator writes, so a standalone with no
+// status (a manifest not yet applied) is held to the spec rules alone
+// (operations.md ids 139 and 144).
+func (v *StandaloneValidator) Validate(ctx context.Context, c client.Client, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
+	allErrs := v.ValidateCreate(standalone)
+	// The admin password's shape: a leading "-" makes the entrypoint's
+	// set-initial-password call fail to parse and crash-loops the pod.
+	allErrs = append(allErrs, ValidateAdminSecretPassword(
+		ctx, c, standalone.Namespace, resolveAdminSecretName(standalone.Spec.Auth),
+		field.NewPath("spec", "auth", "adminSecret"))...)
+	return append(allErrs, v.validateAgainstRunning(standalone)...)
+}
+
+// validateAgainstRunning checks spec.image.tag against status.version, the
+// version the standalone runs: the operator records it when the pod is ready
+// on the current template, so it does not move until a new image has reached
+// the server, and setting the tag back to it is always allowed. It refuses
+// what Neo4j does not support, as for a cluster (ValidateVersionUpgrade): a
+// downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26, and 4.x. An
+// empty status.version (nothing recorded yet) and a tag the image rule already
+// refuses are not checked.
+func (v *StandaloneValidator) validateAgainstRunning(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
+	if standalone.Status.Version == "" || v.upgradeValidator.parseVersion(standalone.Spec.Image.Tag) == nil {
+		return nil
+	}
+	return v.upgradeValidator.validateVersionMove(standalone.Status.Version, standalone.Spec.Image.Tag, "the standalone runs")
 }
 
 // maxStandaloneNameLength is the max name length for standalone deployments (DNS label limit).
@@ -115,28 +154,6 @@ func (v *StandaloneValidator) ValidateCreate(standalone *neo4jv1beta1.Neo4jEnter
 	allErrs = append(allErrs, ValidateTrustedCASecrets(standalone.Spec.TrustedCASecrets, field.NewPath("spec", "trustedCASecrets"))...)
 	allErrs = append(allErrs, ValidateExtraVolumes(standalone.Spec.ExtraVolumes, field.NewPath("spec", "extraVolumes"))...)
 	allErrs = append(allErrs, ValidateExtraVolumeMounts(standalone.Spec.ExtraVolumeMounts, field.NewPath("spec", "extraVolumeMounts"))...)
-
-	return allErrs
-}
-
-// ValidateUpdate validates an update to a standalone deployment
-func (v *StandaloneValidator) ValidateUpdate(oldStandalone, newStandalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
-	var allErrs field.ErrorList
-
-	// Validate the new standalone configuration
-	if errs := v.ValidateCreate(newStandalone); len(errs) > 0 {
-		allErrs = append(allErrs, errs...)
-	}
-
-	// Validate image upgrade path
-	if errs := v.validateImageUpgrade(oldStandalone, newStandalone); len(errs) > 0 {
-		allErrs = append(allErrs, errs...)
-	}
-
-	// Validate storage changes (should be immutable)
-	if errs := v.validateStorageChanges(oldStandalone, newStandalone); len(errs) > 0 {
-		allErrs = append(allErrs, errs...)
-	}
 
 	return allErrs
 }
@@ -319,35 +336,6 @@ func (v *StandaloneValidator) validateConfig(standalone *neo4jv1beta1.Neo4jEnter
 			))
 		}
 	}
-
-	return allErrs
-}
-
-// validateImageUpgrade validates image upgrade path
-func (v *StandaloneValidator) validateImageUpgrade(oldStandalone, newStandalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
-	var allErrs field.ErrorList
-
-	// For now, allow all upgrades - more sophisticated validation can be added later
-	return allErrs
-}
-
-// validateStorageChanges validates storage changes (should be immutable)
-func (v *StandaloneValidator) validateStorageChanges(oldStandalone, newStandalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
-	var allErrs field.ErrorList
-	storagePath := field.NewPath("spec", "storage")
-
-	// Storage class should not change
-	if oldStandalone.Spec.Storage.ClassName != newStandalone.Spec.Storage.ClassName {
-		allErrs = append(allErrs, field.Invalid(
-			storagePath.Child("className"),
-			newStandalone.Spec.Storage.ClassName,
-			"storage class name cannot be changed after creation",
-		))
-	}
-
-	// Storage size changes are allowed here; PVC expansion (and the no-shrink
-	// guard) is enforced by the storage-expansion reconcile path, not this
-	// validator. No quantity comparison gate at admission time.
 
 	return allErrs
 }
