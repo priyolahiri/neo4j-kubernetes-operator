@@ -39,17 +39,17 @@ import (
 func TestClusterDeferredSettings(t *testing.T) {
 	lts := minimalCluster("c", "default")
 	lts.Spec.Image.Tag = "5.26-enterprise"
-	if got := clusterDeferredSettings(lts, ""); len(got) != 1 || got[0].Name != resources.AsyncRaftChannelsSetting || got[0].Want != "true" {
+	if got := clusterDeferredSettings(lts); len(got) != 1 || got[0].Name != resources.AsyncRaftChannelsSetting || got[0].Want != "true" {
 		t.Errorf("5.26 must defer the async Raft channels setting, got %v", got)
 	}
 	calver := minimalCluster("c", "default")
 	calver.Spec.Image.Tag = "2026.08.1-enterprise"
-	if got := clusterDeferredSettings(calver, ""); len(got) != 0 {
+	if got := clusterDeferredSettings(calver); len(got) != 0 {
 		t.Errorf("CalVer has it on by default; nothing to defer, got %v", got)
 	}
 	own := lts.DeepCopy()
 	own.Spec.Config = map[string]string{resources.AsyncRaftChannelsSetting: "false"}
-	if got := clusterDeferredSettings(own, ""); len(got) != 0 {
+	if got := clusterDeferredSettings(own); len(got) != 0 {
 		t.Errorf("a value set in spec.config is the user's, got %v", got)
 	}
 }
@@ -92,7 +92,7 @@ func TestPendingRestartServers(t *testing.T) {
 		c := minimalCluster("c", "default")
 		c.Spec.Image.Tag = "5.26-enterprise"
 		return c
-	}(), "")
+	}())
 	pending := pendingRestartServers(map[string]serverState{
 		"c-server-0": {Version: "5.26.31", Started: since.Add(-time.Hour)},  // waiting
 		"c-server-1": {Version: "5.26.31", Started: since.Add(time.Minute)}, // started with it
@@ -177,57 +177,96 @@ func TestReconcileRestartPending(t *testing.T) {
 	}
 }
 
-// TestClusterDeferredSettings_ConnectTimeout: the cluster connect timeout is
-// applied live but taken up by Raft only at a restart, so the value the
-// rendered neo4j.conf gives it is deferred on both lines — the operator's 5s,
-// or the user's spec.config value — and needs no server version.
-func TestClusterDeferredSettings_ConnectTimeout(t *testing.T) {
-	find := func(deferred []deferredSetting) *deferredSetting {
-		for i := range deferred {
-			if deferred[i].Name == resources.ClusterConnectTimeoutSetting {
-				return &deferred[i]
-			}
+// TestStampRestartEffectiveSettings pins rule 137's record: only a change of
+// the value on running servers is recorded, it keeps its since until the next
+// change, and it never touches the startup-script record.
+func TestStampRestartEffectiveSettings(t *testing.T) {
+	t0 := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Hour)
+	conf := func(value string) *corev1.ConfigMap {
+		data := "db.transaction.timeout=30s\n"
+		if value != "" {
+			data += resources.ClusterConnectTimeoutSetting + "=" + value + "\n"
 		}
-		return nil
+		return &corev1.ConfigMap{Data: map[string]string{"neo4j.conf": data}}
 	}
-	for _, tag := range []string{"5.26.31-enterprise", "2026.08.1-enterprise"} {
-		c := minimalCluster("c", "default")
-		c.Spec.Image.Tag = tag
-		conf := resources.BuildConfigMapForEnterprise(c).Data["neo4j.conf"]
-		d := find(clusterDeferredSettings(c, conf))
-		if d == nil || d.Want != "5s" || d.Supported != nil || !d.supports("") {
-			t.Errorf("%s: the operator's 5s must be deferred for every version, got %+v", tag, d)
-		}
+	record := func(cm *corev1.ConfigMap) (string, string) {
+		return cm.Annotations[restartEffectiveSettingsAnnotation], cm.Annotations[restartEffectiveSettingsSinceAnnotation]
+	}
 
-		c.Spec.Config = map[string]string{resources.ClusterConnectTimeoutSetting: "10s"}
-		conf = resources.BuildConfigMapForEnterprise(c).Data["neo4j.conf"]
-		if d := find(clusterDeferredSettings(c, conf)); d == nil || d.Want != "10s" {
-			t.Errorf("%s: a spec.config value is applied live too, so it is deferred, got %+v", tag, d)
-		}
+	if desired := conf("5s"); stampRestartEffectiveSettings(desired, nil, t0) || len(desired.Annotations) != 0 {
+		t.Errorf("a new ConfigMap records nothing: its servers start with it, got %v", desired.Annotations)
 	}
-	calver := minimalCluster("c", "default")
-	calver.Spec.Image.Tag = "2026.08.1-enterprise"
-	if got := clusterDeferredSettings(calver, "db.transaction.timeout=30s\n"); len(got) != 0 {
-		t.Errorf("a conf without the setting defers nothing, got %v", got)
+	if desired := conf("5s"); stampRestartEffectiveSettings(desired, conf("5s"), t0) || len(desired.Annotations) != 0 {
+		t.Errorf("an unchanged value (the v1.21.x upgrade) records nothing, got %v", desired.Annotations)
+	}
+
+	added := conf("5s")
+	if !stampRestartEffectiveSettings(added, conf(""), t0) {
+		t.Fatal("an added line (the v1.20.x upgrade) must be recorded and written")
+	}
+	if names, since := record(added); names != resources.ClusterConnectTimeoutSetting+"=5s" || since != "2026-10-01T12:00:00Z" {
+		t.Fatalf("got record %q since %q", names, since)
+	}
+	if got := restartEffectiveRecord(added.Annotations); len(got) != 1 || got[0].Name != resources.ClusterConnectTimeoutSetting || got[0].Supported != nil {
+		t.Errorf("the record names the setting for every version, got %+v", got)
+	}
+
+	kept := conf("5s")
+	if stampRestartEffectiveSettings(kept, added, t1) {
+		t.Error("an unchanged value keeps the record and needs no write")
+	}
+	if _, since := record(kept); since != "2026-10-01T12:00:00Z" {
+		t.Errorf("the record keeps its since, got %q", since)
+	}
+
+	edited := conf("10s")
+	if !stampRestartEffectiveSettings(edited, kept, t1) {
+		t.Fatal("a spec.config edit must be recorded")
+	}
+	if names, since := record(edited); names != resources.ClusterConnectTimeoutSetting+"=10s" || since != "2026-10-01T13:00:00Z" {
+		t.Errorf("a later change moves the since, got record %q since %q", names, since)
+	}
+
+	removed := conf("")
+	stampRestartEffectiveSettings(removed, edited, t1.Add(time.Hour))
+	if names, _ := record(removed); names != resources.ClusterConnectTimeoutSetting+"=" {
+		t.Errorf("a removed line resets Neo4j's default live: recorded with an empty value, got %q", names)
+	}
+
+	withStartup := func(value string) *corev1.ConfigMap {
+		cm := conf(value)
+		cm.Annotations = map[string]string{deferredSettingsAnnotation: "x=true", deferredSettingsSinceAnnotation: "2026-01-01T00:00:00Z"}
+		return cm
+	}
+	desired := withStartup("10s")
+	stampRestartEffectiveSettings(desired, withStartup("5s"), t1)
+	if desired.Annotations[deferredSettingsAnnotation] != "x=true" || desired.Annotations[deferredSettingsSinceAnnotation] != "2026-01-01T00:00:00Z" {
+		t.Errorf("the startup-script record is not this stamp's to change, got %v", desired.Annotations)
 	}
 }
 
-// restartPendingFixture is a CalVer cluster with two server pods in a fake
-// client, run through the real ConfigMap reconcile and the RestartPending
-// pass. CalVer without TLS defers nothing else, so the connect timeout alone
-// decides the condition.
+const (
+	ltsTag    = "5.26.31-enterprise"
+	calverTag = "2026.08.1-enterprise"
+)
+
+// restartPendingFixture is a cluster with two server pods in a fake client,
+// run through the real ConfigMap reconcile and the RestartPending pass.
 type restartPendingFixture struct {
 	t       *testing.T
 	ctx     context.Context
 	fc      client.Client
 	name    string
+	tag     string
 	applier *fakeClusterApplier
+	dials   int
 }
 
-func newRestartPendingFixture(t *testing.T, name string, existing *corev1.ConfigMap, started time.Time) *restartPendingFixture {
+func newRestartPendingFixture(t *testing.T, name, tag string, existing *corev1.ConfigMap, started time.Time) *restartPendingFixture {
 	t.Helper()
 	cluster := minimalCluster(name, "default")
-	cluster.Spec.Image.Tag = "2026.08.1-enterprise"
+	cluster.Spec.Image.Tag = tag
 	cluster.Status.Phase = neo4jv1beta1.PhaseReady
 	objs := []client.Object{cluster, serverSTS(name, "default")}
 	if existing != nil {
@@ -240,9 +279,35 @@ func newRestartPendingFixture(t *testing.T, name string, existing *corev1.Config
 		})
 	}
 	return &restartPendingFixture{
-		t: t, ctx: context.Background(), name: name, applier: &fakeClusterApplier{applied: true},
+		t: t, ctx: context.Background(), name: name, tag: tag, applier: &fakeClusterApplier{applied: true},
 		fc: fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(objs...).WithStatusSubresource(cluster).Build(),
 	}
+}
+
+// configMapAsWrittenBy is the cluster's ConfigMap as an earlier release left
+// it: rendered for the tag, with or without the connect-timeout line, and the
+// startup-script record (async Raft channels on 5.26) stamped at since.
+func configMapAsWrittenBy(t *testing.T, name, tag string, withConnectTimeout bool, since time.Time) *corev1.ConfigMap {
+	t.Helper()
+	c := minimalCluster(name, "default")
+	c.Spec.Image.Tag = tag
+	cm := resources.BuildConfigMapForEnterprise(c)
+	if !withConnectTimeout {
+		var kept []string
+		for _, line := range strings.Split(cm.Data["neo4j.conf"], "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), resources.ClusterConnectTimeoutSetting+"=") {
+				kept = append(kept, line)
+			}
+		}
+		cm.Data["neo4j.conf"] = strings.Join(kept, "\n")
+	}
+	if tag == ltsTag {
+		cm.Annotations = map[string]string{
+			deferredSettingsAnnotation:      resources.AsyncRaftChannelsSetting + "=true",
+			deferredSettingsSinceAnnotation: since.UTC().Format(time.RFC3339),
+		}
+	}
+	return cm
 }
 
 func neo4jRunningSince(started time.Time) corev1.ContainerStatus {
@@ -258,6 +323,15 @@ func (f *restartPendingFixture) cluster() *neo4jv1beta1.Neo4jEnterpriseCluster {
 	return c
 }
 
+func (f *restartPendingFixture) configMap() *corev1.ConfigMap {
+	f.t.Helper()
+	cm := &corev1.ConfigMap{}
+	if err := f.fc.Get(f.ctx, types.NamespacedName{Name: f.name + "-config", Namespace: "default"}, cm); err != nil {
+		f.t.Fatal(err)
+	}
+	return cm
+}
+
 // reconcileConfigMap runs the cluster's ConfigMap reconcile.
 func (f *restartPendingFixture) reconcileConfigMap() {
 	f.t.Helper()
@@ -268,14 +342,14 @@ func (f *restartPendingFixture) reconcileConfigMap() {
 	}
 }
 
-// restartPending runs the RestartPending pass and returns the condition. A
-// setting no version gates needs no connection to any server.
+// restartPending runs the RestartPending pass and returns the condition.
 func (f *restartPendingFixture) restartPending() *metav1.Condition {
 	f.t.Helper()
 	r := &Neo4jEnterpriseClusterReconciler{Client: f.fc, Scheme: newTestScheme()}
+	version := strings.TrimSuffix(f.tag, "-enterprise")
 	r.RestartPendingChecker = &restartPendingChecker{dial: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (versionReader, error) {
-		f.t.Error("no server's version is needed for the connect timeout; nothing may connect")
-		return &fakeVersionReader{version: "2026.08.1"}, nil
+		f.dials++
+		return &fakeVersionReader{version: version}, nil
 	}}
 	r.reconcileRestartPending(f.ctx, f.cluster())
 	return meta.FindStatusCondition(f.cluster().Status.Conditions, ConditionTypeRestartPending)
@@ -303,73 +377,141 @@ func (f *restartPendingFixture) serverTemplate() map[string]string {
 	return sts.Spec.Template.Annotations
 }
 
-// A cluster created with the setting already in its conf: its servers start
-// after the ConfigMap carried it, so nothing awaits a restart.
+// Upgrading from v1.21.x, whose ConfigMap already has the 5s line: the value
+// does not change, so nothing is recorded and nobody is named — the servers
+// of a cluster created on v1.21.x started with 5s. A 5.26 cluster's record of
+// the async Raft setting keeps its since.
+func TestRestartPending_ConnectTimeout_UnchangedValueNamesNobody(t *testing.T) {
+	recorded := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
+	for _, tag := range []string{calverTag, ltsTag} {
+		t.Run(tag, func(t *testing.T) {
+			f := newRestartPendingFixture(t, "rpsame", tag, configMapAsWrittenBy(t, "rpsame", tag, true, recorded), time.Now().Add(-time.Hour))
+			f.reconcileConfigMap()
+			if v, ok := f.serverTemplate()["neo4j.neo4j.com/config-restart"]; ok || f.applier.calls != 0 {
+				t.Fatalf("nothing changed: nothing may restart or be applied; config-restart=%q, applies=%d", v, f.applier.calls)
+			}
+			cm := f.configMap()
+			if _, ok := cm.Annotations[restartEffectiveSettingsAnnotation]; ok {
+				t.Errorf("an unchanged value records nothing, got %v", cm.Annotations)
+			}
+			if tag == ltsTag && cm.Annotations[deferredSettingsSinceAnnotation] != recorded.Format(time.RFC3339) {
+				t.Errorf("the async Raft record must keep its since, got %v", cm.Annotations)
+			}
+			c := f.restartPending()
+			switch tag {
+			case calverTag:
+				if c != nil {
+					t.Errorf("nothing is deferred on this CalVer cluster: no condition, as before, got %+v", c)
+				}
+				if f.dials != 0 {
+					t.Errorf("no setting here is version-gated; nothing may connect, got %d dials", f.dials)
+				}
+			case ltsTag:
+				if c == nil || c.Status != metav1.ConditionFalse {
+					t.Errorf("both servers started after the async Raft record and with 5s: nobody waits, got %+v", c)
+				}
+			}
+		})
+	}
+}
+
+// A new cluster records nothing for the connect timeout: its servers start
+// with it. On CalVer without TLS nothing is deferred, so there is no
+// condition, as before.
 func TestRestartPending_ConnectTimeout_FreshCluster(t *testing.T) {
-	f := newRestartPendingFixture(t, "rpfresh", nil, time.Now().Add(time.Minute))
+	f := newRestartPendingFixture(t, "rpfresh", calverTag, nil, time.Now().Add(time.Minute))
 	f.reconcileConfigMap()
-	c := f.restartPending()
-	if c == nil || c.Status != metav1.ConditionFalse || c.Reason != ConditionReasonNoSettingsAwaitRestart {
-		t.Fatalf("a fresh cluster must read RestartPending=False, got %+v", c)
+	if _, ok := f.configMap().Annotations[restartEffectiveSettingsAnnotation]; ok {
+		t.Errorf("a new ConfigMap records nothing, got %v", f.configMap().Annotations)
+	}
+	if c := f.restartPending(); c != nil {
+		t.Errorf("nothing awaits a restart on a new cluster, got %+v", c)
 	}
 }
 
-// A cluster whose conf already has the setting (v1.21.x) gets the record
-// without a restart; RestartPending then names every server that started
-// before it, and each drops out as it restarts.
-func TestRestartPending_ConnectTimeout_UpgradeNamesTheServersUntilTheyRestart(t *testing.T) {
-	before := minimalCluster("rpup", "default")
-	before.Spec.Image.Tag = "2026.08.1-enterprise"
-	existing := resources.BuildConfigMapForEnterprise(before) // as v1.21.x wrote it: no record
-	f := newRestartPendingFixture(t, "rpup", existing, time.Now().Add(-time.Hour))
+// Upgrading from v1.20.x, whose ConfigMap has no connect-timeout line: the
+// line is applied live, recorded, and every server that started before it is
+// named until it restarts. On 5.26, the async Raft record keeps its since and
+// a server that started after it is named for the connect timeout only.
+func TestRestartPending_ConnectTimeout_ChangedValueNamesTheServersUntilTheyRestart(t *testing.T) {
+	recorded := time.Now().Add(-2 * time.Hour).UTC().Truncate(time.Second)
+	for _, tag := range []string{calverTag, ltsTag} {
+		t.Run(tag, func(t *testing.T) {
+			f := newRestartPendingFixture(t, "rpadd", tag, configMapAsWrittenBy(t, "rpadd", tag, false, recorded), time.Now().Add(-time.Hour))
+			f.reconcileConfigMap()
+			if f.applier.got[resources.ClusterConnectTimeoutSetting] != "5s" {
+				t.Fatalf("the added line is applied live, as before; applier got %v", f.applier.got)
+			}
+			if v, ok := f.serverTemplate()["neo4j.neo4j.com/config-restart"]; ok {
+				t.Fatalf("a change applied live must not restart the servers; config-restart=%q", v)
+			}
+			cm := f.configMap()
+			if cm.Annotations[restartEffectiveSettingsAnnotation] != resources.ClusterConnectTimeoutSetting+"=5s" {
+				t.Fatalf("the change must be recorded, got %v", cm.Annotations)
+			}
+			if tag == ltsTag && cm.Annotations[deferredSettingsSinceAnnotation] != recorded.Format(time.RFC3339) {
+				t.Errorf("the async Raft record must keep its since, got %v", cm.Annotations)
+			}
 
-	f.reconcileConfigMap()
-	if v, ok := f.serverTemplate()["neo4j.neo4j.com/config-restart"]; ok || f.applier.calls != 0 {
-		t.Fatalf("recording the setting must neither restart nor re-apply anything; config-restart=%q, applies=%d", v, f.applier.calls)
-	}
-	c := f.restartPending()
-	if c == nil || c.Status != metav1.ConditionTrue || c.Reason != ConditionReasonSettingsAwaitRestart ||
-		!strings.Contains(c.Message, "rpup-server-0, rpup-server-1 will apply "+resources.ClusterConnectTimeoutSetting) {
-		t.Fatalf("both servers started with the old timeout and must be named, got %+v", c)
-	}
-
-	f.restartServer(1, time.Now().Add(time.Minute))
-	if c := f.restartPending(); c == nil || c.Status != metav1.ConditionTrue ||
-		!strings.Contains(c.Message, "rpup-server-0 will apply") || strings.Contains(c.Message, "rpup-server-1") {
-		t.Fatalf("server-1 restarted and must drop out, got %+v", c)
-	}
-	f.restartServer(0, time.Now().Add(time.Minute))
-	if c := f.restartPending(); c == nil || c.Status != metav1.ConditionFalse {
-		t.Fatalf("every server restarted: RestartPending must be False, got %+v", c)
+			c := f.restartPending()
+			if c == nil || c.Status != metav1.ConditionTrue ||
+				c.Message != "rpadd-server-0, rpadd-server-1 will apply "+resources.ClusterConnectTimeoutSetting+" at their next restart; the operator does not restart them for it" {
+				t.Fatalf("both servers' Raft connections still use 30s; only the connect timeout is named, got %+v", c)
+			}
+			f.restartServer(1, time.Now().Add(time.Minute))
+			if c := f.restartPending(); c == nil || c.Status != metav1.ConditionTrue ||
+				!strings.Contains(c.Message, "rpadd-server-0 will apply") || strings.Contains(c.Message, "rpadd-server-1") {
+				t.Fatalf("server-1 restarted and must drop out, got %+v", c)
+			}
+			f.restartServer(0, time.Now().Add(time.Minute))
+			if c := f.restartPending(); c == nil || c.Status != metav1.ConditionFalse {
+				t.Fatalf("every server restarted: RestartPending must be False, got %+v", c)
+			}
+		})
 	}
 }
 
-// A spec.config change of the setting is applied live, as before, and names
-// the servers again: their Raft connections still use the value they started
-// with.
-func TestRestartPending_ConnectTimeout_SpecConfigChangeAppliedLive(t *testing.T) {
-	before := minimalCluster("rpcfg", "default")
-	before.Spec.Image.Tag = "2026.08.1-enterprise"
-	existing := resources.BuildConfigMapForEnterprise(before)
-	stampDeferredSettings(existing, nil, before, time.Now().Add(-2*time.Hour))
-	f := newRestartPendingFixture(t, "rpcfg", existing, time.Now().Add(-time.Hour))
-	if c := f.restartPending(); c == nil || c.Status != metav1.ConditionFalse {
-		t.Fatalf("servers started after the record are not waiting, got %+v", c)
+// A spec.config edit of the setting is applied live, as before, and recorded:
+// each edit moves the since, so servers that restarted after the previous
+// edit are named again, and only until they restart.
+func TestRestartPending_ConnectTimeout_SpecConfigChange(t *testing.T) {
+	f := newRestartPendingFixture(t, "rpcfg", calverTag, configMapAsWrittenBy(t, "rpcfg", calverTag, true, time.Time{}), time.Now().Add(-time.Hour))
+	setTimeout := func(value string) {
+		t.Helper()
+		cluster := f.cluster()
+		cluster.Spec.Config = map[string]string{resources.ClusterConnectTimeoutSetting: value}
+		if err := f.fc.Update(f.ctx, cluster); err != nil {
+			t.Fatal(err)
+		}
+		f.reconcileConfigMap()
+		if f.applier.got[resources.ClusterConnectTimeoutSetting] != value {
+			t.Fatalf("the change must still be applied live, applier got %v", f.applier.got)
+		}
+		if v, ok := f.serverTemplate()["neo4j.neo4j.com/config-restart"]; ok {
+			t.Fatalf("a change applied live must not restart the servers; config-restart=%q", v)
+		}
 	}
 
-	cluster := f.cluster()
-	cluster.Spec.Config = map[string]string{resources.ClusterConnectTimeoutSetting: "10s"}
-	if err := f.fc.Update(f.ctx, cluster); err != nil {
-		t.Fatal(err)
-	}
-	f.reconcileConfigMap()
-	if f.applier.got[resources.ClusterConnectTimeoutSetting] != "10s" {
-		t.Fatalf("the change must still be applied live, applier got %v", f.applier.got)
-	}
-	if v, ok := f.serverTemplate()["neo4j.neo4j.com/config-restart"]; ok {
-		t.Fatalf("a change applied live must not restart the servers; config-restart=%q", v)
-	}
+	setTimeout("10s")
 	if c := f.restartPending(); c == nil || c.Status != metav1.ConditionTrue || !strings.Contains(c.Message, "rpcfg-server-0, rpcfg-server-1") {
 		t.Fatalf("both servers' Raft connections still use 5s and must be named, got %+v", c)
+	}
+
+	// Let the record age, as if the edit were an hour old, and restart both
+	// servers since: nobody waits.
+	cm := f.configMap()
+	cm.Annotations[restartEffectiveSettingsSinceAnnotation] = time.Now().Add(-time.Hour).UTC().Format(time.RFC3339)
+	if err := f.fc.Update(f.ctx, cm); err != nil {
+		t.Fatal(err)
+	}
+	f.restartServer(0, time.Now().Add(-30*time.Minute))
+	f.restartServer(1, time.Now().Add(-30*time.Minute))
+	if c := f.restartPending(); c == nil || c.Status != metav1.ConditionFalse {
+		t.Fatalf("both servers restarted after the edit, got %+v", c)
+	}
+
+	setTimeout("20s")
+	if c := f.restartPending(); c == nil || c.Status != metav1.ConditionTrue || !strings.Contains(c.Message, "rpcfg-server-0, rpcfg-server-1") {
+		t.Fatalf("a later edit moves the since and names them again, got %+v", c)
 	}
 }

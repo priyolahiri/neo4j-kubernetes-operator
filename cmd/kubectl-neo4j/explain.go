@@ -95,9 +95,9 @@ var conditionGuidance = map[string]guidance{
 		problemWhenTrue: true,
 		meaning: "one or more servers have not restarted since the operator added or changed a setting that takes " +
 			"full effect only at each server's next restart, and did not restart them for it: async Raft channels " +
-			"on 5.26.29+, TLS reload on CalVer 2025.03+ with cert-manager TLS, and the cluster connect timeout, " +
-			"which is applied live but reaches the Raft connections only at a restart. The message names the " +
-			"servers and the settings.",
+			"on 5.26.29+, TLS reload on CalVer 2025.03+ with cert-manager TLS, and a change of the cluster connect " +
+			"timeout, which is applied live but reaches the Raft connections only at a restart. The message names " +
+			"the servers and the settings.",
 		action: "Nothing is broken; the cluster runs as before until those servers restart. Each server picks the " +
 			"setting up at its next restart and drops out of the message. To apply it now, delete the named server " +
 			"pods one at a time, waiting for each to rejoin.",

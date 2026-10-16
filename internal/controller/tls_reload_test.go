@@ -295,12 +295,12 @@ func TestClusterDeferredSettings_TLSReload(t *testing.T) {
 	c := minimalCluster("c", "default")
 	c.Spec.Image.Tag = "2026.08.1-enterprise"
 	c.Spec.TLS = &neo4jv1beta1.TLSSpec{Mode: resources.CertManagerMode}
-	got := clusterDeferredSettings(c, "")
+	got := clusterDeferredSettings(c)
 	if len(got) != 1 || got[0].Name != resources.TLSReloadSetting || !got[0].Supported("2026.08.1") || got[0].Supported("2025.01.0") {
 		t.Errorf("CalVer with cert-manager TLS defers the TLS reload setting, got %v", got)
 	}
 	c.Spec.TLS = nil
-	if got := clusterDeferredSettings(c, ""); len(got) != 0 {
+	if got := clusterDeferredSettings(c); len(got) != 0 {
 		t.Errorf("no TLS, nothing deferred: %v", got)
 	}
 }

@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -63,6 +64,15 @@ const (
 	// the ConfigMap first carried exactly those.
 	deferredSettingsAnnotation      = "neo4j.com/deferred-settings"
 	deferredSettingsSinceAnnotation = "neo4j.com/deferred-settings-since"
+
+	// restartEffectiveSettingsAnnotation names, on the cluster ConfigMap, the
+	// restart-effective settings whose value the operator changed on running
+	// servers, each with the value it set ("name=value;…"; an empty value is
+	// Neo4j's default); restartEffectiveSettingsSinceAnnotation is when it last
+	// changed one. A record of its own, so a change here never moves the
+	// startup-script record's since, nor the reverse.
+	restartEffectiveSettingsAnnotation      = "neo4j.com/restart-effective-settings"
+	restartEffectiveSettingsSinceAnnotation = "neo4j.com/restart-effective-settings-since"
 )
 
 // deferredSetting is a setting a server gets when it next starts.
@@ -93,24 +103,75 @@ func (d deferredSetting) supports(version string) bool {
 // (configuration/dynamic-settings) and does not say which parts of the server
 // take up a value changed at runtime.
 //
-// So the value the rendered neo4j.conf gives one of these, whether it is the
-// operator's default or the user's spec.config, is recorded with the deferred
-// settings: a change to it, applied live, names the servers that started
-// before it until each restarts. The change itself is applied as before.
+// So what is recorded is a CHANGE: when the operator writes a neo4j.conf whose
+// value for one of these differs from the running ConfigMap's (the line is
+// added by an operator upgrade, or spec.config edits it), the setting and the
+// moment are recorded, and the servers whose container started before it are
+// named until each restarts. The change itself is applied as before. A value
+// that does not change records nothing: a new cluster's servers start with it,
+// and a cluster whose ConfigMap already had it (one created on v1.21.x) needs
+// no restart. The cost is a gap — a cluster that got the line live from
+// v1.21.0 or v1.21.1 and has not restarted since is not named — because the
+// operator kept no record of that change.
 var restartEffectiveSettings = []string{resources.ClusterConnectTimeoutSetting}
 
-// restartEffectiveDeferred returns the restart-effective settings the rendered
-// neo4j.conf sets, each with its value. Every Neo4j the operator runs (5.26
-// and CalVer) has them, so none is gated on a version.
-func restartEffectiveDeferred(conf string) []deferredSetting {
-	values := confValues(conf)
+// restartEffectiveRecord parses the ConfigMap's record of restart-effective
+// changes into the settings it names, keeping only settings still on the list.
+// Every Neo4j the operator runs (5.26 and CalVer) has them, so none is gated
+// on a version.
+func restartEffectiveRecord(annotations map[string]string) []deferredSetting {
+	values := map[string]string{}
+	for _, entry := range strings.Split(annotations[restartEffectiveSettingsAnnotation], ";") {
+		if name, value, ok := strings.Cut(entry, "="); ok {
+			values[name] = value
+		}
+	}
 	var out []deferredSetting
 	for _, name := range restartEffectiveSettings {
-		if v, ok := values[name]; ok {
-			out = append(out, deferredSetting{Name: name, Want: strings.Join(v, ",")})
+		if value, ok := values[name]; ok {
+			out = append(out, deferredSetting{Name: name, Want: value})
 		}
 	}
 	return out
+}
+
+// stampRestartEffectiveSettings carries the record of restart-effective
+// changes onto the desired ConfigMap, adding every setting whose value differs
+// from the existing ConfigMap's neo4j.conf (an added or removed line counts)
+// and moving the since to now when one does. A new ConfigMap records nothing:
+// its servers start with what it carries. It reports whether the record
+// differs from the existing ConfigMap's, so the caller writes it.
+func stampRestartEffectiveSettings(desired, existing *corev1.ConfigMap, now time.Time) bool {
+	if existing == nil {
+		return false
+	}
+	record := restartEffectiveRecord(existing.Annotations)
+	since := existing.Annotations[restartEffectiveSettingsSinceAnnotation]
+	oldValues, newValues := confValues(existing.Data["neo4j.conf"]), confValues(desired.Data["neo4j.conf"])
+	for _, name := range restartEffectiveSettings {
+		ov, had := oldValues[name]
+		nv, has := newValues[name]
+		if had == has && slices.Equal(ov, nv) {
+			continue
+		}
+		record = slices.DeleteFunc(record, func(d deferredSetting) bool { return d.Name == name })
+		record = append(record, deferredSetting{Name: name, Want: strings.Join(nv, ",")})
+		since = now.UTC().Format(time.RFC3339)
+	}
+	if len(record) > 0 {
+		entries := make([]string, 0, len(record))
+		for _, d := range record {
+			entries = append(entries, d.Name+"="+d.Want)
+		}
+		sort.Strings(entries)
+		if desired.Annotations == nil {
+			desired.Annotations = map[string]string{}
+		}
+		desired.Annotations[restartEffectiveSettingsAnnotation] = strings.Join(entries, ";")
+		desired.Annotations[restartEffectiveSettingsSinceAnnotation] = since
+	}
+	return existing.Annotations[restartEffectiveSettingsAnnotation] != desired.Annotations[restartEffectiveSettingsAnnotation] ||
+		existing.Annotations[restartEffectiveSettingsSinceAnnotation] != desired.Annotations[restartEffectiveSettingsSinceAnnotation]
 }
 
 // supportsAsyncRaftChannels reports whether a Neo4j version is 5.26.29 or a
@@ -123,13 +184,13 @@ func supportsAsyncRaftChannels(version string) bool {
 	return v.Major == 5 && v.Minor == 26 && v.Patch >= resources.AsyncRaftChannelsMinPatch
 }
 
-// clusterDeferredSettings returns the settings applied at the next restart for
-// this cluster, whose rendered neo4j.conf is conf. A startup-script setting the
-// user sets in spec.config is theirs: it is in neo4j.conf, so a change to it
-// restarts as any static setting does. A restart-effective setting is read
-// from conf, whoever set it.
-func clusterDeferredSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, conf string) []deferredSetting {
-	out := restartEffectiveDeferred(conf)
+// clusterDeferredSettings returns the startup-script settings applied at the
+// next restart for this cluster. A setting the user sets in spec.config is
+// theirs: it is in neo4j.conf, so a change to it restarts as any static
+// setting does. Restart-effective settings are recorded separately
+// (stampRestartEffectiveSettings).
+func clusterDeferredSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []deferredSetting {
+	var out []deferredSetting
 	if !resources.IsCalverImage(cluster.Spec.Image.Tag) {
 		if _, own := cluster.Spec.Config[resources.AsyncRaftChannelsSetting]; !own {
 			out = append(out, deferredSetting{Name: resources.AsyncRaftChannelsSetting, Want: "true", Supported: supportsAsyncRaftChannels})
@@ -164,7 +225,7 @@ func deferredSettingsSignature(deferred []deferredSetting) string {
 // keeping the existing "since" while they are unchanged. It reports whether the
 // stamp differs from the existing ConfigMap's, so the caller writes it.
 func stampDeferredSettings(desired, existing *corev1.ConfigMap, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, now time.Time) bool {
-	signature := deferredSettingsSignature(clusterDeferredSettings(cluster, desired.Data["neo4j.conf"]))
+	signature := deferredSettingsSignature(clusterDeferredSettings(cluster))
 	var oldSignature, oldSince string
 	if existing != nil {
 		oldSignature = existing.Annotations[deferredSettingsAnnotation]
@@ -285,8 +346,9 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.C
 	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name + "-config", Namespace: cluster.Namespace}, cm); err != nil {
 		return
 	}
-	deferred := clusterDeferredSettings(cluster, cm.Data["neo4j.conf"])
-	if len(deferred) == 0 {
+	startup := clusterDeferredSettings(cluster)
+	changedLive := restartEffectiveRecord(cm.Annotations)
+	if len(startup) == 0 && len(changedLive) == 0 {
 		if meta.FindStatusCondition(cluster.Status.Conditions, ConditionTypeRestartPending) != nil {
 			r.writeRestartPending(ctx, cluster, nil)
 		}
@@ -296,12 +358,29 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.C
 		return
 	}
 
-	if cm.Annotations[deferredSettingsAnnotation] != deferredSettingsSignature(deferred) {
-		return // the ConfigMap does not carry them yet
+	// Each record has its own since: a server is waiting for a setting when it
+	// started before the record of that setting.
+	type deferredGroup struct {
+		settings []deferredSetting
+		since    time.Time
 	}
-	since, err := time.Parse(time.RFC3339, cm.Annotations[deferredSettingsSinceAnnotation])
-	if err != nil {
-		return
+	var groups []deferredGroup
+	if len(startup) > 0 {
+		if cm.Annotations[deferredSettingsAnnotation] != deferredSettingsSignature(startup) {
+			return // the ConfigMap does not carry them yet
+		}
+		since, err := time.Parse(time.RFC3339, cm.Annotations[deferredSettingsSinceAnnotation])
+		if err != nil {
+			return
+		}
+		groups = append(groups, deferredGroup{startup, since})
+	}
+	if len(changedLive) > 0 {
+		since, err := time.Parse(time.RFC3339, cm.Annotations[restartEffectiveSettingsSinceAnnotation])
+		if err != nil {
+			return
+		}
+		groups = append(groups, deferredGroup{changedLive, since})
 	}
 
 	pods := &corev1.PodList{}
@@ -318,7 +397,8 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.C
 	}
 	sort.Strings(parts)
 	key := cluster.Namespace + "/" + cluster.Name
-	signature := strings.Join(parts, ",") + "|" + cm.Annotations[deferredSettingsAnnotation] + "@" + cm.Annotations[deferredSettingsSinceAnnotation]
+	signature := strings.Join(parts, ",") + "|" + cm.Annotations[deferredSettingsAnnotation] + "@" + cm.Annotations[deferredSettingsSinceAnnotation] +
+		"|" + cm.Annotations[restartEffectiveSettingsAnnotation] + "@" + cm.Annotations[restartEffectiveSettingsSinceAnnotation]
 	checker := r.restartPending()
 	if checker.unchanged(key, signature) && meta.FindStatusCondition(cluster.Status.Conditions, ConditionTypeRestartPending) != nil {
 		return
@@ -327,8 +407,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.C
 	// Only a version-gated setting needs each server's version; the others
 	// are decided from the pods alone, without a connection.
 	needVersions := false
-	for _, d := range deferred {
-		needVersions = needVersions || d.Supported != nil
+	for _, g := range groups {
+		for _, d := range g.settings {
+			needVersions = needVersions || d.Supported != nil
+		}
 	}
 	servers := map[string]serverState{}
 	for i := range pods.Items {
@@ -350,7 +432,13 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.C
 		}
 		servers[p.Name] = serverState{Version: components[0].Version, Started: *neo4jContainerStarted(p)}
 	}
-	if r.writeRestartPending(ctx, cluster, pendingRestartServers(servers, deferred, since)) {
+	pending := map[string][]string{}
+	for _, g := range groups {
+		for pod, names := range pendingRestartServers(servers, g.settings, g.since) {
+			pending[pod] = append(pending[pod], names...)
+		}
+	}
+	if r.writeRestartPending(ctx, cluster, pending) {
 		checker.remember(key, signature)
 	}
 }
