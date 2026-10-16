@@ -4444,8 +4444,12 @@ delete.</p>
 <td>a <code>Neo4jBackup</code> whose <code>credentialsSecretRef</code> is absent, then one that exists but is missing a key the Job mounts → reported distinctly. This replaces the <code>kubectl run backup-auth-check --image=amazon/aws-cli …</code> ritual, which today is only reached <em>after</em> a backup has failed</td>
 </tr>
 <tr>
+<td>Mistyped value refused before apply</td>
+<td><code>db.tx_log.buffer.size: "1MiB"</code> in a standalone's <code>spec.config</code> (Neo4j reads that setting as a long) → <code>validate</code> exits <code>1</code> with <code>spec.config[db.tx_log.buffer.size]</code>, the expected format and an example (<code>1048576</code>); applied anyway, the CR goes <code>Failed</code> with the same message and <strong>no pod is created</strong>. A byte size with a Kubernetes suffix (<code>server.memory.pagecache.size: "512Mi"</code>) is refused the same way. Knowledge <code>operations.md</code> id 140</td>
+</tr>
+<tr>
 <td>Crash-loop is recognised</td>
-<td>a setting Neo4j's strict config check refuses at startup — e.g. <code>db.tx_log.rotation.size: "not-a-size"</code> in <code>spec.config</code>, which <code>validate</code> passes — makes the server exit 1 on every start. (The old recipe, a 1Gi limit under a 2G heap, no longer reaches Neo4j: since v1.15.0 the operator's own heap-vs-limit check rejects it on standalones too.) <code>diagnose</code> must name the crash-loop with its restart count and point at <code>kubectl logs --previous</code> — the reason is in the log of the run that died. True <code>OOMKilled</code> / exit 137 needs a JVM that starts and then grows past the limit; record it as <strong>not run</strong> rather than faking it</td>
+<td>a value Neo4j refuses at startup that the operator does not type-check — e.g. <code>db.tx_log.rotation.retention_policy: "forever"</code> in <code>spec.config</code> (a string Neo4j matches against a pattern), which <code>validate</code> passes — makes the server exit 1 on every start. (Older recipes no longer reach Neo4j: a 1Gi limit under a 2G heap is refused by the heap-vs-limit check since v1.15.0, and <code>db.tx_log.rotation.size: "not-a-size"</code> by the typed-value check, id 140.) <code>diagnose</code> must name the crash-loop with its restart count and point at <code>kubectl logs --previous</code> — the reason is in the log of the run that died. True <code>OOMKilled</code> / exit 137 needs a JVM that starts and then grows past the limit; record it as <strong>not run</strong> rather than faking it</td>
 </tr>
 <tr>
 <td>Version skew warning</td>
@@ -4503,7 +4507,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Live config change (standalone)</td>
-<td>Change a dynamic setting in <code>spec.config</code> (e.g. <code>db.transaction.timeout</code>): a <code>ConfigAppliedLive</code> event names it, the pod keeps its UID and restart count, <code>SHOW SETTINGS YIELD name, value WHERE name = 'db.transaction.timeout'</code> reads the new value, and it survives a pod delete. Change a static one (<code>db.tx_log.buffer.size</code>): a <code>ConfigNeedsRestart</code> event names it and the pod restarts</td>
+<td>Change a dynamic setting in <code>spec.config</code> (e.g. <code>db.transaction.timeout</code>): a <code>ConfigAppliedLive</code> event names it, the pod keeps its UID and restart count, <code>SHOW SETTINGS YIELD name, value WHERE name = 'db.transaction.timeout'</code> reads the new value, and it survives a pod delete. Change a static one (<code>db.tx_log.buffer.size</code>, a whole number of bytes such as <code>2097152</code> — <code>"2MiB"</code> is refused, id 140): a <code>ConfigNeedsRestart</code> event names it and the pod restarts</td>
 </tr>
 <tr>
 <td>Logs on standard output (5.26)</td>

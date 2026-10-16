@@ -4204,6 +4204,7 @@
 <ul>
 <li>cross-field topology rules, <code>serverRoles</code> index bounds and duplicate detection</li>
 <li><code>spec.config</code> keys the operator rejects: deprecated 4.x settings, and keys the operator manages itself at runtime (advertised addresses, discovery, topology)</li>
+<li><code>spec.config</code> values Neo4j would refuse at startup, for the settings whose type the operator knows — <code>db.tx_log.buffer.size: "1MiB"</code> (a long), <code>server.memory.heap.max_size: "2Gi"</code> (a Kubernetes suffix, not a Neo4j unit), <code>db.transaction.timeout: "30 sec"</code>; see <a href="../../configuration/#value-types-checked-before-apply">Value types</a></li>
 <li>TLS strictness and issuer-capability rules</li>
 <li>storage, image, and licence-acceptance requirements</li>
 <li>advisory topology warnings — even server counts, two-server clusters with

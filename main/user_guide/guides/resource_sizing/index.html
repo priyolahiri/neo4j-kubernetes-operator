@@ -4975,7 +4975,7 @@
 </ul>
 <h3 id="how-the-operator-uses-resources">How the Operator Uses Resources<a class="headerlink" href="#how-the-operator-uses-resources" title="Anchor link to this section">&para;</a></h3>
 <ol>
-<li><strong>Validation</strong>: Ensures minimum 1Gi memory for Neo4j Enterprise (clusters over 3 servers require at least 2Gi/server). When you set heap, page cache or transaction memory in <code>spec.config</code>, <code>heap + page cache + max(25% of the memory limit, 512Mi)</code> must fit inside the memory limit — the last term is the reserve the operator keeps for the OS and native memory, so in practice heap + page cache can use at most 75% of the limit (for limits of 2Gi and up)</li>
+<li><strong>Validation</strong>: Ensures minimum 1Gi memory for Neo4j Enterprise (clusters over 3 servers require at least 2Gi/server). When you set heap, page cache or transaction memory in <code>spec.config</code>, <code>heap + page cache + max(25% of the memory limit, 512Mi)</code> must fit inside the memory limit — the last term is the reserve the operator keeps for the OS and native memory, so in practice heap + page cache can use at most 75% of the limit (for limits of 2Gi and up). Sizes are read as Neo4j reads them: <code>4G</code>, <code>4GiB</code> and <code>4096m</code> are the same size, while a Kubernetes suffix such as <code>4Gi</code> is not a Neo4j unit and is refused (see <a href="../../configuration/#value-types-checked-before-apply">Value types</a>)</li>
 <li><strong>Auto-calculation</strong>: Divides memory between heap, page cache, and OS</li>
 <li><strong>Recommendations</strong>: Suggests optimal settings based on cluster size</li>
 <li><strong>Prevention</strong>: Blocks configurations that would cause OOM errors</li>
