@@ -433,9 +433,12 @@ A server that restarts comes back in a new pod with a new IP address. For up to 
 
 The operator sets `dbms.cluster.network.connect_timeout=5s` on every cluster, and the stalls went away: no write paused longer than about 4 seconds. Servers in one Kubernetes cluster connect in milliseconds, so 5 seconds still leaves a wide margin.
 
-- **New clusters:** have it from the first start.
-- **Existing clusters:** upgrading the operator applies it to the running servers without a restart (a `ConfigAppliedLive` event). Neo4j's Raft connections take it up when each server next restarts, so a cluster's first rolling upgrade afterwards can still see the longer pauses.
-- **Overriding it:** set `dbms.cluster.network.connect_timeout` in `spec.config`, for example back to `30s`.
+- **New clusters:** have it from the first start. `RestartPending` is `False`.
+- **Existing clusters:** upgrading the operator applies it to the running servers without a restart (a `ConfigAppliedLive` event). Neo4j's Raft connections take it up only when each server next restarts, so a cluster's first rolling upgrade afterwards can still see the longer pauses. Until then, the `RestartPending` condition names the servers whose Raft connections still use the old value, and each drops out when it restarts. `SHOW SETTINGS` already shows `5s` on them, so it cannot tell you which servers are waiting. To take it up sooner, delete those pods one at a time.
+- **Overriding it:** set `dbms.cluster.network.connect_timeout` in `spec.config`, for example back to `30s`. The change is applied live too, so `RestartPending` names every server again until it restarts.
+
+!!! note "After upgrading from v1.21.x"
+    The operator cannot tell which servers restarted after v1.21.0 added the setting, so the first pass after the upgrade names every server, including one that already runs with it. A restart clears it.
 
 ## Troubleshooting
 

@@ -69,8 +69,48 @@ const (
 type deferredSetting struct {
 	Name, Want string
 	// Supported reports whether a server running that Neo4j version has the
-	// setting at all; one that does not is never waiting for it.
+	// setting at all; one that does not is never waiting for it. Nil means
+	// every version the operator runs has it, so no version is read.
 	Supported func(version string) bool
+}
+
+// supports reports whether a server on that Neo4j version has the setting.
+func (d deferredSetting) supports(version string) bool {
+	return d.Supported == nil || d.Supported(version)
+}
+
+// Settings applied live that also wait for a restart.
+//
+// A few dynamic settings change at once with dbms.setConfigValue, and SHOW
+// SETTINGS reports the new value, yet part of the server keeps the value it
+// started with. The cluster connect timeout is one: the operator applies it
+// to the running servers (knowledge rule 118), but Neo4j's Raft connections
+// take it up only when the server restarts. In the first rolling restart after
+// the operator lowered it to 5s live, every step whose surviving servers had
+// started with 30s still stalled writes for 10s (4 of 4, Kind, 2026.08.1), and
+// the v1.21.0 journey saw the same stall on an upgraded 5.26 cluster. The
+// Operations Manual lists the setting as dynamic on both lines
+// (configuration/dynamic-settings) and does not say which parts of the server
+// take up a value changed at runtime.
+//
+// So the value the rendered neo4j.conf gives one of these, whether it is the
+// operator's default or the user's spec.config, is recorded with the deferred
+// settings: a change to it, applied live, names the servers that started
+// before it until each restarts. The change itself is applied as before.
+var restartEffectiveSettings = []string{resources.ClusterConnectTimeoutSetting}
+
+// restartEffectiveDeferred returns the restart-effective settings the rendered
+// neo4j.conf sets, each with its value. Every Neo4j the operator runs (5.26
+// and CalVer) has them, so none is gated on a version.
+func restartEffectiveDeferred(conf string) []deferredSetting {
+	values := confValues(conf)
+	var out []deferredSetting
+	for _, name := range restartEffectiveSettings {
+		if v, ok := values[name]; ok {
+			out = append(out, deferredSetting{Name: name, Want: strings.Join(v, ",")})
+		}
+	}
+	return out
 }
 
 // supportsAsyncRaftChannels reports whether a Neo4j version is 5.26.29 or a
@@ -84,10 +124,12 @@ func supportsAsyncRaftChannels(version string) bool {
 }
 
 // clusterDeferredSettings returns the settings applied at the next restart for
-// this cluster. A setting the user sets in spec.config is theirs: it is in
-// neo4j.conf, so a change to it restarts as any static setting does.
-func clusterDeferredSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []deferredSetting {
-	var out []deferredSetting
+// this cluster, whose rendered neo4j.conf is conf. A startup-script setting the
+// user sets in spec.config is theirs: it is in neo4j.conf, so a change to it
+// restarts as any static setting does. A restart-effective setting is read
+// from conf, whoever set it.
+func clusterDeferredSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, conf string) []deferredSetting {
+	out := restartEffectiveDeferred(conf)
 	if !resources.IsCalverImage(cluster.Spec.Image.Tag) {
 		if _, own := cluster.Spec.Config[resources.AsyncRaftChannelsSetting]; !own {
 			out = append(out, deferredSetting{Name: resources.AsyncRaftChannelsSetting, Want: "true", Supported: supportsAsyncRaftChannels})
@@ -122,7 +164,7 @@ func deferredSettingsSignature(deferred []deferredSetting) string {
 // keeping the existing "since" while they are unchanged. It reports whether the
 // stamp differs from the existing ConfigMap's, so the caller writes it.
 func stampDeferredSettings(desired, existing *corev1.ConfigMap, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, now time.Time) bool {
-	signature := deferredSettingsSignature(clusterDeferredSettings(cluster))
+	signature := deferredSettingsSignature(clusterDeferredSettings(cluster, desired.Data["neo4j.conf"]))
 	var oldSignature, oldSince string
 	if existing != nil {
 		oldSignature = existing.Annotations[deferredSettingsAnnotation]
@@ -177,7 +219,7 @@ func pendingRestartServers(servers map[string]serverState, deferred []deferredSe
 			continue
 		}
 		for _, d := range deferred {
-			if d.Supported(s.Version) {
+			if d.supports(s.Version) {
 				pending[pod] = append(pending[pod], d.Name)
 			}
 		}
@@ -239,7 +281,11 @@ func (c *restartPendingChecker) remember(key, signature string) {
 // the next pass.
 func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
 	logger := log.FromContext(ctx)
-	deferred := clusterDeferredSettings(cluster)
+	cm := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name + "-config", Namespace: cluster.Namespace}, cm); err != nil {
+		return
+	}
+	deferred := clusterDeferredSettings(cluster, cm.Data["neo4j.conf"])
 	if len(deferred) == 0 {
 		if meta.FindStatusCondition(cluster.Status.Conditions, ConditionTypeRestartPending) != nil {
 			r.writeRestartPending(ctx, cluster, nil)
@@ -250,10 +296,6 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.C
 		return
 	}
 
-	cm := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: cluster.Name + "-config", Namespace: cluster.Namespace}, cm); err != nil {
-		return
-	}
 	if cm.Annotations[deferredSettingsAnnotation] != deferredSettingsSignature(deferred) {
 		return // the ConfigMap does not carry them yet
 	}
@@ -282,9 +324,19 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRestartPending(ctx context.C
 		return
 	}
 
+	// Only a version-gated setting needs each server's version; the others
+	// are decided from the pods alone, without a connection.
+	needVersions := false
+	for _, d := range deferred {
+		needVersions = needVersions || d.Supported != nil
+	}
 	servers := map[string]serverState{}
 	for i := range pods.Items {
 		p := &pods.Items[i]
+		if !needVersions {
+			servers[p.Name] = serverState{Started: *neo4jContainerStarted(p)}
+			continue
+		}
 		reader, err := checker.dial(ctx, cluster, p.Name)
 		if err != nil {
 			logger.V(1).Info("RestartPending: could not connect", "pod", p.Name, "error", err.Error())
