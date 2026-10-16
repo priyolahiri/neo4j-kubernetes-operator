@@ -205,6 +205,11 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 		if stampDeferredSettings(desiredConfigMap, existingConfigMap, cluster, time.Now()) {
 			configChanged = true
 		}
+		// And the restart-effective settings whose value this write changes on
+		// the running servers (knowledge rule 137).
+		if stampRestartEffectiveSettings(desiredConfigMap, existingConfigMap, time.Now()) {
+			configChanged = true
+		}
 
 		if restartRelevant {
 			// Perform detailed analysis to understand what changed

@@ -2606,6 +2606,10 @@ echo "System database mode: ${OPERATOR_SYSTEM_DB_MODE:-PRIMARY (server predates 
 // cluster member is stopped (#468).
 const AsyncRaftChannelsSetting = "dbms.cluster.raft.async_channel_acquisition_enabled"
 
+// ClusterConnectTimeoutSetting is how long a server waits for a connection to
+// another; the base conf lowers Neo4j's 30s to 5s (knowledge rule 128).
+const ClusterConnectTimeoutSetting = "dbms.cluster.network.connect_timeout"
+
 // AsyncRaftChannelsMinPatch is the first 5.26 patch that has the setting.
 const AsyncRaftChannelsMinPatch = 29
 
