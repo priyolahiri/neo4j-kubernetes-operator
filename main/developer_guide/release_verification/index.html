@@ -4425,7 +4425,7 @@ delete.</p>
 </tr>
 <tr>
 <td>Image will not pull</td>
-<td>the same manifest with a typo'd tag → <code>ImagePullBackOff</code> named as the cause, rather than the CR's <code>Pending</code> restated</td>
+<td>the same manifest with a typo'd tag → <code>ImagePullBackOff</code> named as the cause, rather than the CR's <code>Pending</code> restated. The action reads the registry's answer (<em>not found</em> means the tag does not exist) and says the official Enterprise images are public — it must not tell you to add an imagePullSecret</td>
 </tr>
 <tr>
 <td>StorageClass missing</td>
@@ -4437,7 +4437,7 @@ delete.</p>
 </tr>
 <tr>
 <td><code>preflight</code> never overclaims</td>
-<td>every run, clean or not, ends with the shape-only line (<em>no bucket, registry or endpoint was contacted</em>)</td>
+<td>every run, clean or not, ends with the shape-only line (<em>no bucket, registry or endpoint was contacted</em>). A resource with nothing to report reads <code>✓ every cluster-side precondition passed</code> — a pass mark, not <code>⚠</code></td>
 </tr>
 <tr>
 <td>Backup credential shape</td>
@@ -5227,7 +5227,7 @@ the first walk. The scripted steps already do.</p>
 </tr>
 <tr>
 <td>The cluster says what guards the exposed port</td>
-<td><code>status.conditions[CrossClusterProxySecure]</code> is <code>True</code>/<code>MutualTLSRequired</code> with TLS on. Enabling the proxy without <code>spec.tls</code> is refused: the cluster goes <code>Failed</code>, naming <code>spec.tls.mode=cert-manager</code>, and no StatefulSet or Service is created — nothing would authenticate the tx-shipping port, and the proxy authenticates nothing itself</td>
+<td><code>status.conditions[CrossClusterProxySecure]</code> is <code>True</code>/<code>MutualTLSRequired</code> with TLS on. Enabling the proxy without <code>spec.tls</code> is refused: the cluster goes <code>Failed</code>, naming <code>spec.tls.mode=cert-manager</code>, and no StatefulSet or Service is created — nothing would authenticate the tx-shipping port, and the proxy authenticates nothing itself. Applied that way from the start, <code>status.message</code> begins <code>Validation failed:</code>, not <code>Update validation failed:</code> — nothing was ever updated</td>
 </tr>
 </tbody>
 </table>
