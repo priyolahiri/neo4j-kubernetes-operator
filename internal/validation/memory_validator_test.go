@@ -204,10 +204,29 @@ func TestMemoryValidator_parseMemoryToBytes(t *testing.T) {
 			wantError: false,
 		},
 		{
+			// Neo4j's own unit spellings, which the previous parser refused.
+			name:  "binary unit name",
+			input: "1GiB",
+			want:  1024 * 1024 * 1024,
+		},
+		{
+			name:  "unit with B",
+			input: "512MB",
+			want:  512 * 1024 * 1024,
+		},
+		{
+			name:  "decimal",
+			input: "1.5G",
+			want:  1536 * 1024 * 1024,
+		},
+		{
+			// A Kubernetes suffix is not a Neo4j unit: the server refuses it,
+			// so the sizing rules must not read it either (the value check
+			// reports it).
 			name:      "kubernetes format",
 			input:     "2Gi",
-			want:      2 * 1024 * 1024 * 1024,
-			wantError: false,
+			want:      0,
+			wantError: true,
 		},
 		{
 			name:      "invalid format",

@@ -230,6 +230,10 @@ func (v *ConfigValidator) ValidateConfigMap(config map[string]string) field.Erro
 		}
 	}
 
+	// Values Neo4j would refuse to start with, for the settings whose type the
+	// operator knows (setting_values.go, operations.md id 140).
+	allErrs = append(allErrs, ValidateSettingValues(configPath, config)...)
+
 	return allErrs
 }
 

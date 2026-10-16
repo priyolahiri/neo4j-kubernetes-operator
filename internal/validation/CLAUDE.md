@@ -15,7 +15,8 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 | `image_validator.go` | Rejects `-community` tags (`isCommunityTag`) + Neo4j version support check. |
 | `edition_validator.go` | Intentional no-op (edition field removed; enterprise-only). |
 | `topology_validator.go` | Server count, `serverModeConstraint`/`serverRoles` index/dup/all-SECONDARY checks. |
-| `config_validator.go` | Rejects deprecated / operator-managed / per-pod runtime `spec.config` keys. |
+| `config_validator.go` | Rejects deprecated / operator-managed / per-pod runtime `spec.config` keys; calls `ValidateSettingValues`. |
+| `setting_values.go` | `typedSettings` (setting → Neo4j value type + documented minimum) and `ValidateSettingValues`: refuses a typed value Neo4j would refuse at startup, with readers that mirror Neo4j's own parsers. Narrow on purpose — see `docs/knowledge/operations.md` id 140 before adding a setting. |
 | `memory_validator.go`, `resource_validator.go`, `storage_validator.go` | Memory floors, scaling resource checks, PVC/storage checks. |
 | `tls_validator.go`, `truststore_validator.go` | TLS mode/issuer/strict-peer rules, trusted CA secrets. |
 | `auth_validator.go`, `user_validator.go`, `role_validator.go`, `rolebinding_validator.go`, `authrule_validator.go` | Auth providers and the user/role/binding/authrule CRDs. |
@@ -57,6 +58,11 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
   rejected on a standalone and accepted on a cluster, while heap-vs-limit was rejected on a
   cluster and accepted on a standalone (the v1.15.0 journey then watched that standalone
   crash-loop). `TestStandaloneAndClusterAgreeOnNeo4jRules` pins the parity.
+- **A typed `spec.config` value is judged as Neo4j parses it, never stricter** (`setting_values.go`,
+  id 140). A false refusal blocks a deployment that would run, so a setting joins `typedSettings` only
+  when the `5.x` and `dev` settings docs agree on its type AND Neo4j's source declares it identically on
+  both lines; a spelling the readers do not model is `valueUnknown` and passes. The memory rules read
+  sizes with the same `readNeo4jByteSize` (their old parser refused `1GiB` and read `2Gi`).
 - **Every published manifest is validated in CI** by `TestPublishedManifestsPassOurOwnValidators`,
   which walks `examples/` and `config/samples/`. Three shipped examples were unappliable before
   it existed, and `kubectl apply --dry-run=server` accepted all of them — the CRD schema cannot

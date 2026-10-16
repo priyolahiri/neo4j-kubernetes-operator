@@ -12,6 +12,7 @@
       "status.phase"
     ],
     "callsFunctionIds": [
+      "sf-validate-spec-config",
       "sf-reconcile-cluster-configmap",
       "sf-reconcile-restart-pending",
       "sf-hold-image-drift-until-ready",
@@ -103,6 +104,7 @@
       "status.phase"
     ],
     "callsFunctionIds": [
+      "sf-validate-spec-config",
       "sf-expand-standalone-storage",
       "sf-collect-standalone-diagnostics",
       "sf-reload-renewed-tls"
@@ -1468,6 +1470,19 @@
     "moduleId": "mod-platform"
   },
   {
+    "id": "sf-validate-spec-config",
+    "name": "Validate spec.config",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "ConfigValidator.ValidateConfigMap, shared by the cluster and the standalone validator (and so by kubectl neo4j validate): refuses removed 4.x keys and families, the keys the operator manages itself (discovery, advertised addresses, topology, SSL policy, db.format), line breaks in values, and, for the settings in typedSettings whose type is identical on the 5.26 LTS and CalVer (memory, transaction log, checkpoints, timeouts, query logging, Bolt thread pool, routing, authentication), a value Neo4j would refuse at startup or one below a documented minimum, reported on spec.config[<key>] with the expected format and an example (ValidateSettingValues, internal/validation/setting_values.go; operations.md id 140). A cluster with property sharding enabled also has spec.propertySharding.config checked. The readers mirror Neo4j's own parsers (ByteUnit.parse, TimeUtil.parseTimeMillis, Integer/Long.parseLong, equalsIgnoreCase) and never refuse a spelling they do not model; unlisted settings, $(command) values and backslash escapes pass. The memory rules (heap plus page cache within the memory limit) read sizes with the same byte-size reader.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
     "id": "sf-reconcile-aura-instance",
     "name": "Reconcile AuraInstance",
     "serverUnitId": "su-aurainstance",
@@ -1910,7 +1925,9 @@
     "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names.",
     "readsFieldIds": [],
     "writesFieldIds": [],
-    "callsFunctionIds": [],
+    "callsFunctionIds": [
+      "sf-validate-spec-config"
+    ],
     "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-cli"

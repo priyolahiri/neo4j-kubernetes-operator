@@ -293,6 +293,59 @@ func TestStandaloneAndClusterAgreeOnNeo4jRules(t *testing.T) {
 		errs := NewStandaloneValidator().ValidateCreate(standalone)
 		require.NotEmpty(t, errs, "the causal_clustering.* family was removed in Neo4j 5.x")
 	})
+
+	// A value Neo4j cannot parse stops either Kind's server at startup, so
+	// both refuse the same values with the same message — and accept the same
+	// valid spellings (the memory rules once disagreed with Neo4j's units).
+	t.Run("typed values are judged alike", func(t *testing.T) {
+		bad := map[string]string{
+			"db.tx_log.buffer.size":        "1MiB",
+			"server.memory.heap.max_size":  "2Gi",
+			"server.memory.pagecache.size": "512Mi",
+			"db.transaction.timeout":       "30 sec",
+			"db.logs.query.enabled":        "true",
+			"dbms.security.auth_enabled":   "yes",
+		}
+		standaloneErrs := map[string]string{}
+		standalone := validStandalone()
+		standalone.Spec.Config = bad
+		standalone.Spec.Resources = resources
+		for _, e := range NewStandaloneValidator().ValidateCreate(standalone) {
+			standaloneErrs[e.Field] = e.Error()
+		}
+		clusterErrs := map[string]string{}
+		cluster := validClusterForWarnings()
+		cluster.Spec.Config = bad
+		cluster.Spec.Resources = resources
+		for _, e := range NewClusterValidator(nil).ValidateCreateWithWarnings(t.Context(), cluster).Errors {
+			clusterErrs[e.Field] = e.Error()
+		}
+		for key := range bad {
+			path := "spec.config[" + key + "]"
+			require.Contains(t, standaloneErrs, path, "standalone must refuse %s", key)
+			assert.Equal(t, standaloneErrs[path], clusterErrs[path], "both Kinds must say the same about %s", key)
+		}
+
+		// Neo4j's own unit names, which the memory rules used to call an
+		// "invalid memory format" — and still weighed against the limit.
+		good := map[string]string{
+			"server.memory.heap.max_size":  "1GiB",
+			"server.memory.pagecache.size": "512MB",
+			"db.tx_log.buffer.size":        "1048576",
+		}
+		roomy := &corev1.ResourceRequirements{Limits: corev1.ResourceList{
+			corev1.ResourceMemory: resource.MustParse("4Gi"),
+			corev1.ResourceCPU:    resource.MustParse("2"),
+		}}
+		standalone.Spec.Config, standalone.Spec.Resources = good, roomy
+		assert.Empty(t, NewStandaloneValidator().ValidateCreate(standalone))
+		cluster.Spec.Config, cluster.Spec.Resources = good, roomy
+		assert.Empty(t, NewClusterValidator(nil).ValidateCreateWithWarnings(t.Context(), cluster).Errors)
+
+		standalone.Spec.Config = map[string]string{"server.memory.heap.max_size": "8GiB"}
+		require.NotEmpty(t, NewStandaloneValidator().ValidateCreate(standalone),
+			"a heap written with Neo4j's units is still weighed against the limit")
+	})
 }
 
 // An absent memory limit is not a limit of zero: reporting `Invalid value:

@@ -397,6 +397,49 @@ func TestConfigValidator_ValidDiscoveryVersion(t *testing.T) {
 	}
 }
 
+// The v1.21.0 verification walk: a 5.26.31 standalone with
+// db.tx_log.buffer.size: "1MiB" validated clean, then Neo4j refused to start —
+// the setting is a long, and as a static setting it is read only at startup —
+// and the pod crash-looped. Both Kinds must refuse it before apply, saying what
+// Neo4j expects. Only pre-existing entry points are used here, so this test
+// also runs against the code from before the check existed (where it fails).
+func TestConfigValidator_RefusesAByteSizeForALongSetting(t *testing.T) {
+	const want = `spec.config[db.tx_log.buffer.size]: Invalid value: "1MiB": must be a whole number of bytes, ` +
+		`at least 131072 (Neo4j reads it as a long, so a unit such as MiB is refused), for example 1048576`
+
+	find := func(t *testing.T, errs field.ErrorList) *field.Error {
+		t.Helper()
+		for _, e := range errs {
+			if e.Field == "spec.config[db.tx_log.buffer.size]" {
+				return e
+			}
+		}
+		return nil
+	}
+
+	t.Run("standalone", func(t *testing.T) {
+		standalone := validStandalone()
+		standalone.Spec.Config = map[string]string{"db.tx_log.buffer.size": "1MiB"}
+		e := find(t, NewStandaloneValidator().ValidateCreate(standalone))
+		require.NotNil(t, e, "a value Neo4j cannot parse must not reach the pod")
+		assert.Equal(t, want, e.Error())
+	})
+
+	t.Run("cluster", func(t *testing.T) {
+		cluster := validClusterForWarnings()
+		cluster.Spec.Config = map[string]string{"db.tx_log.buffer.size": "1MiB"}
+		e := find(t, NewClusterValidator(nil).ValidateCreateWithWarnings(t.Context(), cluster).Errors)
+		require.NotNil(t, e, "a value Neo4j cannot parse must not reach the pods")
+		assert.Equal(t, want, e.Error())
+	})
+
+	t.Run("the same size as a number of bytes is accepted", func(t *testing.T) {
+		standalone := validStandalone()
+		standalone.Spec.Config = map[string]string{"db.tx_log.buffer.size": "1048576"}
+		assert.Empty(t, NewStandaloneValidator().ValidateCreate(standalone))
+	})
+}
+
 func TestConfigValueHasControlChars(t *testing.T) {
 	for _, s := range []string{"OFF\ndbms.security.auth_enabled=false", "x\r\ny", "line\nbreak"} {
 		if !ConfigValueHasControlChars(s) {

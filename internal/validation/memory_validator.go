@@ -18,11 +18,8 @@ package validation
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -147,27 +144,21 @@ func (v *MemoryValidator) validateNeo4jMemorySettings(config map[string]string, 
 	var heapBytes, pageCacheBytes, transactionBytes int64
 	var err error
 
+	// A size this validator cannot read is not weighed, and not reported here
+	// either. When Neo4j would refuse it, ValidateSettingValues — which
+	// ConfigValidator runs on the same map for both Kinds — reports it with the
+	// format Neo4j expects; when the operator cannot tell (a $(command), number
+	// grouping), Neo4j decides. This parser used to be its own: it refused
+	// 1GiB and 512MB, which Neo4j reads, and read 2Gi, which Neo4j refuses.
 	if neo4jHeap != "" {
-		heapBytes, err = v.parseMemoryToBytes(neo4jHeap)
-		if err != nil {
-			allErrs = append(allErrs, field.Invalid(
-				field.NewPath("spec", "config", "server.memory.heap.max_size"),
-				neo4jHeap,
-				fmt.Sprintf("invalid memory format: %v", err),
-			))
+		if heapBytes, err = v.parseMemoryToBytes(neo4jHeap); err != nil {
 			return allErrs
 		}
 		totalNeo4jMemory += heapBytes
 	}
 
 	if neo4jPageCache != "" {
-		pageCacheBytes, err = v.parseMemoryToBytes(neo4jPageCache)
-		if err != nil {
-			allErrs = append(allErrs, field.Invalid(
-				field.NewPath("spec", "config", "server.memory.pagecache.size"),
-				neo4jPageCache,
-				fmt.Sprintf("invalid memory format: %v", err),
-			))
+		if pageCacheBytes, err = v.parseMemoryToBytes(neo4jPageCache); err != nil {
 			return allErrs
 		}
 		totalNeo4jMemory += pageCacheBytes
@@ -175,13 +166,7 @@ func (v *MemoryValidator) validateNeo4jMemorySettings(config map[string]string, 
 
 	// Validate transaction memory if specified
 	if transactionMem != "" {
-		transactionBytes, err = v.parseMemoryToBytes(transactionMem)
-		if err != nil {
-			allErrs = append(allErrs, field.Invalid(
-				field.NewPath("spec", "config", "dbms.memory.transaction.total.max"),
-				transactionMem,
-				fmt.Sprintf("invalid memory format: %v", err),
-			))
+		if transactionBytes, err = v.parseMemoryToBytes(transactionMem); err != nil {
 			return allErrs
 		}
 
@@ -277,51 +262,20 @@ func (v *MemoryValidator) GetOptimizationTips(cluster *neo4jv1beta1.Neo4jEnterpr
 	return recommendation.OptimizationTips
 }
 
-// parseMemoryToBytes converts memory string to bytes
+// parseMemoryToBytes reads a memory setting the way Neo4j does
+// (readNeo4jByteSize, which mirrors ByteUnit.parse): "512m", "4G", "1GiB" and
+// "512MB" are byte sizes, a Kubernetes suffix such as "2Gi" is not. An empty
+// string is 0. It errs for anything it cannot read exactly, including
+// spellings Neo4j may accept that the operator does not model.
 func (v *MemoryValidator) parseMemoryToBytes(memoryStr string) (int64, error) {
 	if memoryStr == "" {
 		return 0, nil
 	}
-
-	// Handle Neo4j format (e.g., "1g", "512m")
-	memoryStr = strings.ToLower(strings.TrimSpace(memoryStr))
-
-	var multiplier int64
-	var numStr string
-
-	if strings.HasSuffix(memoryStr, "g") {
-		multiplier = 1024 * 1024 * 1024
-		numStr = strings.TrimSuffix(memoryStr, "g")
-	} else if strings.HasSuffix(memoryStr, "m") {
-		multiplier = 1024 * 1024
-		numStr = strings.TrimSuffix(memoryStr, "m")
-	} else if strings.HasSuffix(memoryStr, "k") {
-		multiplier = 1024
-		numStr = strings.TrimSuffix(memoryStr, "k")
-	} else if strings.HasSuffix(memoryStr, "gi") {
-		multiplier = 1024 * 1024 * 1024
-		numStr = strings.TrimSuffix(memoryStr, "gi")
-	} else if strings.HasSuffix(memoryStr, "mi") {
-		multiplier = 1024 * 1024
-		numStr = strings.TrimSuffix(memoryStr, "mi")
-	} else if strings.HasSuffix(memoryStr, "ki") {
-		multiplier = 1024
-		numStr = strings.TrimSuffix(memoryStr, "ki")
-	} else {
-		// Try parsing as Kubernetes resource quantity
-		quantity, err := resource.ParseQuantity(memoryStr)
-		if err != nil {
-			return 0, fmt.Errorf("invalid memory format: %s", memoryStr)
-		}
-		return quantity.Value(), nil
+	r := readNeo4jByteSize(javaTrim(memoryStr))
+	if r.verdict != valueAccepted || !r.exact {
+		return 0, fmt.Errorf("%q is not a byte size the operator can read", memoryStr)
 	}
-
-	num, err := strconv.ParseFloat(numStr, 64)
-	if err != nil {
-		return 0, fmt.Errorf("invalid memory format: %s", memoryStr)
-	}
-
-	return int64(num * float64(multiplier)), nil
+	return r.n, nil
 }
 
 // formatMemorySize formats bytes to human-readable string

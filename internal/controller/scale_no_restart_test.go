@@ -112,7 +112,8 @@ func TestScale_RestartDecision(t *testing.T) {
 func TestScale_OtherChangeStillRestarts(t *testing.T) {
 	before := scaledCluster("s467b", "2026.08.1-enterprise", 3)
 	after := scaledCluster("s467b", "2026.08.1-enterprise", 4)
-	after.Spec.Config = map[string]string{"db.tx_log.buffer.size": "2MiB"}
+	// A whole number of bytes: Neo4j reads this setting as a long (id 140).
+	after.Spec.Config = map[string]string{"db.tx_log.buffer.size": "2097152"}
 	if restarted, _, _ := reconcileScale(t, before, after, nil); !restarted {
 		t.Error("a scale-up with another change must restart")
 	}
