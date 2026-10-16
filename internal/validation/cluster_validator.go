@@ -194,10 +194,17 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	allErrs = append(allErrs, v.authValidator.Validate(cluster)...)
 
 	// spec.config validation — rejects deprecated keys, operator-managed
-	// discovery/SSL keys, and per-pod runtime-managed keys (advertised
+	// discovery/SSL keys, per-pod runtime-managed keys (advertised
 	// addresses, topology) that would collide with the operator's own
-	// startup-appended values. Previously this validator was never wired in.
+	// startup-appended values, and values of known type that Neo4j cannot
+	// parse. Previously this validator was never wired in.
 	allErrs = append(allErrs, v.configValidator.Validate(cluster)...)
+	// propertySharding.config is written into neo4j.conf too, once sharding is
+	// enabled, so its typed values are held to the same rules.
+	if ps := cluster.Spec.PropertySharding; ps != nil && ps.Enabled {
+		allErrs = append(allErrs, ValidateSettingValues(
+			field.NewPath("spec", "propertySharding", "config"), ps.Config)...)
+	}
 	legacyLanguage := []ConfigAt{{Path: field.NewPath("spec", "config"), Config: cluster.Spec.Config}}
 	if cluster.Spec.PropertySharding != nil {
 		legacyLanguage = append(legacyLanguage, ConfigAt{

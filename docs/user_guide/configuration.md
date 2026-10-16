@@ -331,6 +331,54 @@ The operator emits version-specific discovery config at pod startup (LIST resolv
 
 See the [Clustering guide](clustering.md) for what the operator writes for each Neo4j version.
 
+### Value types — checked before apply
+
+Neo4j parses every `neo4j.conf` value when the server starts, and a value it
+cannot parse stops the server: the pod crash-loops, and for a static setting
+nothing notices sooner. For the settings below, whose type is the same on the
+5.26 LTS and on CalVer, the operator checks the value the way Neo4j reads it
+and refuses the CR before anything is applied — on a `Neo4jEnterpriseCluster`
+and a `Neo4jEnterpriseStandalone` alike, in `spec.config` and (with sharding
+enabled) in `spec.propertySharding.config`, and in `kubectl neo4j validate`.
+The error names the setting, your value, the expected format and an example:
+
+```
+spec.config[db.tx_log.buffer.size]: Invalid value: "1MiB": must be a whole number of bytes, at least 131072 (Neo4j reads it as a long, so a unit such as MiB is refused), for example 1048576
+```
+
+| Type | Accepted | Refused (examples) |
+|---|---|---|
+| Byte size | A number with an optional unit: `B`, `K`/`KB`/`KiB`/`kB`/`kb`/`k`, `M`/`MB`/`MiB`/`mB`/`mb`/`m`, `G`/`GB`/`GiB`/`gB`/`gb`/`g`, `TB`/`TiB`, `PB`/`PiB`, `EB`/`EiB` — every unit a power of 1024; decimals (`1.5G`) and a space before the unit are fine | `2Gi`, `512Mi` (Kubernetes suffixes are not Neo4j units), `1GIB`, `-1G` |
+| Duration | Whole numbers each followed by `ns`, `us`/`μs`, `ms`, `s`, `m`, `h` or `d` (any case), combinable as `1h30m`; a bare number is seconds | `1.5s`, `30 s`, `30sec`, `5min`, `PT30S` |
+| Long / integer | A whole number, optional sign | `1MiB`, `1e5`, `100k`, `400.0` |
+| Boolean | `true` or `false`, any case | `yes`, `1`, `on` |
+| Enumeration | One of Neo4j's constants, any case | `db.logs.query.enabled: "true"` (it is `OFF`, `INFO` or `VERBOSE`) |
+
+Checked settings: memory (`server.memory.heap.initial_size`, `server.memory.heap.max_size`,
+`server.memory.pagecache.size`, `dbms.memory.transaction.total.max`, `db.memory.transaction.total.max`,
+`db.memory.transaction.max`); transaction log (`db.tx_log.buffer.size` — a long, not a byte size —
+`db.tx_log.rotation.size`, `db.tx_log.preallocate`); checkpoints (`db.checkpoint`,
+`db.checkpoint.interval.time`, `.tx`, `.volume`, `db.checkpoint.iops.limit`); transactions and locks
+(`db.transaction.timeout`, `db.transaction.concurrent.maximum`, `db.transaction.bookmark_ready_timeout`,
+`db.lock.acquisition.timeout`, `db.shutdown_transaction_end_timeout`); query logging
+(`db.logs.query.enabled`, `.threshold`, `.transaction.enabled`, `.transaction.threshold`,
+`.parameter_logging_enabled`, `.obfuscate_literals`, `.plan_description_enabled`,
+`.early_raw_logging_enabled`, `.max_parameter_length`); Bolt (`server.bolt.thread_pool_min_size`,
+`server.bolt.thread_pool_max_size`, `server.bolt.thread_pool_keep_alive`,
+`server.bolt.connection_keep_alive`); routing (`dbms.routing.enabled`, `dbms.routing.default_router`,
+`dbms.routing_ttl`); authentication (`dbms.security.auth_enabled`,
+`dbms.security.auth_minimum_password_length`, `dbms.security.auth_max_failed_attempts`,
+`dbms.security.auth_lock_time`, `dbms.security.allow_csv_import_from_file_urls`); and
+`db.store.files.preallocate`, `db.memory.pagecache.warmup.enable`, `dbms.usage_report.enabled`,
+`server.logs.debug.enabled`, `server.threads.worker_count`,
+`server.memory.query_cache.per_db_cache_num_entries`. Documented minimums are checked too
+(`db.tx_log.buffer.size` at least `131072`, `db.memory.transaction.max` at least `1MiB` or `0`, …).
+
+Any other setting is passed through unchecked, and Neo4j reports a bad value at
+startup. A value written as a command (`$(…)`, with `--expand-commands`) or
+containing a backslash escape is not checked either: Neo4j does not parse it as
+written.
+
 ### Deprecated / removed keys to avoid
 
 | Key | Status | Use instead |

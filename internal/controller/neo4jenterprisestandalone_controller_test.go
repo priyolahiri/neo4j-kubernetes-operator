@@ -208,10 +208,12 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 	Context("When creating a standalone with custom configuration", func() {
 		It("Should merge custom config with single mode", func() {
 			By("Adding custom configuration")
+			// db.logs.query.enabled is OFF, INFO or VERBOSE: "true" is
+			// refused by validation, as Neo4j would refuse it (id 140).
 			standalone.Spec.Config = map[string]string{
 				"server.memory.heap.initial_size": "1G",
 				"server.memory.heap.max_size":     "2G",
-				"db.logs.query.enabled":           "true",
+				"db.logs.query.enabled":           "INFO",
 			}
 
 			By("Creating the standalone resource")
@@ -236,7 +238,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 				// Verify custom config is present
 				return containsString(neo4jConf, "server.memory.heap.initial_size=1G") &&
 					containsString(neo4jConf, "server.memory.heap.max_size=2G") &&
-					containsString(neo4jConf, "db.logs.query.enabled=true")
+					containsString(neo4jConf, "db.logs.query.enabled=INFO")
 			}, timeout, interval).Should(BeTrue())
 		})
 	})

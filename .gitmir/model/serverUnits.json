@@ -392,7 +392,10 @@
       "internal/validation/rolebinding_validator.go",
       "internal/validation/authrule_validator.go",
       "internal/validation/auth_validator.go",
-      "internal/validation/noeffect_warnings.go"
+      "internal/validation/noeffect_warnings.go",
+      "internal/validation/config_validator.go",
+      "internal/validation/setting_values.go",
+      "internal/validation/memory_validator.go"
     ]
   },
   {

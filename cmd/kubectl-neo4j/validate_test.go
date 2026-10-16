@@ -273,6 +273,53 @@ spec:
 	assert.Contains(t, joined, "server.cluster.advertised_address")
 }
 
+// A value Neo4j cannot parse crash-loops the server at startup; the CLI runs
+// the same validators as the operator, so it catches it before apply, for
+// both Kinds (operations.md id 140).
+func TestValidate_CatchesValuesNeo4jCannotParse(t *testing.T) {
+	path := writeManifest(t, `
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseStandalone
+metadata:
+  name: tx-log
+spec:
+  acceptLicenseAgreement: "yes"
+  image: {repo: neo4j, tag: "5.26.31-enterprise"}
+  storage: {size: 10Gi}
+  config:
+    db.tx_log.buffer.size: "1MiB"
+---
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jEnterpriseCluster
+metadata:
+  name: heap
+spec:
+  acceptLicenseAgreement: "yes"
+  image: {repo: neo4j, tag: "2026.08.1-enterprise"}
+  storage: {size: 10Gi}
+  topology: {servers: 3}
+  config:
+    server.memory.pagecache.size: "2Gi"
+`)
+	results, err := validateSource(path, nil, "")
+	require.NoError(t, err)
+	require.Len(t, results, 2)
+
+	for i, want := range []string{
+		"spec.config[db.tx_log.buffer.size]",
+		"spec.config[server.memory.pagecache.size]",
+	} {
+		var found bool
+		for _, f := range results[i].findings {
+			if f.path == want {
+				found = true
+				assert.Contains(t, f.detail, "for example")
+			}
+		}
+		assert.True(t, found, "document %d: expected a finding on %s, got %+v", i+1, want, results[i].findings)
+	}
+}
+
 func TestValidate_MultiDocumentAndSkips(t *testing.T) {
 	path := writeManifest(t, validCluster+`---
 apiVersion: neo4j.neo4j.com/v1beta1

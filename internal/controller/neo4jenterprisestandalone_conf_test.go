@@ -5,9 +5,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
 // TestStandaloneCreateConfigMap_DedupesQueryLogKeys guards NEO3-16: the
@@ -136,5 +139,37 @@ func TestStandaloneCreateConfigMap_NoDuplicateKeys(t *testing.T) {
 			assert.Empty(t, duplicateConfKeys(conf),
 				"rendered neo4j.conf must not declare any key twice (CalVer Neo4j fails to start otherwise)")
 		})
+	}
+}
+
+// The values the operator itself writes into a standalone's neo4j.conf
+// (monitoring, audit, TLS, defaults) must pass the typed-value check the
+// validators apply to spec.config (operations.md id 140). If one did not, the
+// check — not the operator — would be wrong about what Neo4j accepts.
+func TestStandaloneCreateConfigMap_OperatorValuesPassTheValueCheck(t *testing.T) {
+	r := &Neo4jEnterpriseStandaloneReconciler{}
+	for _, tag := range []string{"5.26.31-enterprise", "2026.08.1-enterprise"} {
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+			ObjectMeta: metav1.ObjectMeta{Name: "s", Namespace: "default"},
+			Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
+				AcceptLicenseAgreement: "eval",
+				Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: tag},
+				Monitoring:             &neo4jv1beta1.MonitoringSpec{Enabled: true, SlowQueryThreshold: "5s", QueryLogLevel: "VERBOSE"},
+				Audit:                  &neo4jv1beta1.AuditSpec{Enabled: true, ObfuscateQueryLiterals: boolPtr(false), ParameterLogging: boolPtr(true)},
+				TLS:                    &neo4jv1beta1.TLSSpec{Mode: "cert-manager"},
+			},
+		}
+		rendered := map[string]string{}
+		for _, line := range strings.Split(r.createConfigMap(standalone).Data["neo4j.conf"], "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			if k, v, ok := strings.Cut(line, "="); ok {
+				rendered[strings.TrimSpace(k)] = v
+			}
+		}
+		require.Contains(t, rendered, "db.logs.query.threshold", tag)
+		assert.Empty(t, validation.ValidateSettingValues(field.NewPath("neo4j.conf"), rendered), tag)
 	}
 }

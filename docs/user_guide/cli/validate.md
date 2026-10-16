@@ -84,6 +84,7 @@ What it adds is everything that lives in the operator's validators *beyond* the 
 
 - cross-field topology rules, `serverRoles` index bounds and duplicate detection
 - `spec.config` keys the operator rejects: deprecated 4.x settings, and keys the operator manages itself at runtime (advertised addresses, discovery, topology)
+- `spec.config` values Neo4j would refuse at startup, for the settings whose type the operator knows — `db.tx_log.buffer.size: "1MiB"` (a long), `server.memory.heap.max_size: "2Gi"` (a Kubernetes suffix, not a Neo4j unit), `db.transaction.timeout: "30 sec"`; see [Value types](../configuration.md#value-types-checked-before-apply)
 - TLS strictness and issuer-capability rules
 - storage, image, and licence-acceptance requirements
 - advisory topology warnings — even server counts, two-server clusters with
