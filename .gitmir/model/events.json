@@ -1010,7 +1010,7 @@
   {
     "id": "ev-plugin-install-deferred",
     "name": "PluginInstallDeferred",
-    "description": "Normal event, once per wait, on a Neo4jPlugin whose install would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held.",
+    "description": "Normal event, once per wait, on a Neo4jPlugin whose install — or, for a VerifiedDownload plugin, whose update of its plugin-ca volume after the target's spec.trustedCASecrets changed — would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held.",
     "moduleId": "mod-plugins"
   },
   {

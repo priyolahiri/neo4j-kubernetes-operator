@@ -140,6 +140,9 @@ func apiServerDefaults(obj client.Object) {
 		if s := pod.Volumes[i].Secret; s != nil && s.DefaultMode == nil {
 			s.DefaultMode = ptr.To[int32](corev1.SecretVolumeSourceDefaultMode)
 		}
+		if p := pod.Volumes[i].Projected; p != nil && p.DefaultMode == nil {
+			p.DefaultMode = ptr.To[int32](corev1.ProjectedVolumeSourceDefaultMode)
+		}
 	}
 }
 
@@ -251,9 +254,10 @@ func TestCreateOrUpdateResource_KeepsAPluginsInitContainerAndVolumes(t *testing.
 	require.NoError(t, r.createOrUpdateResource(ctx, ownershipDesired("neo4j:2026.09.0-enterprise", false), cluster))
 	assert.True(t, equality.Semantic.DeepEqual(cleared.Spec.Template, liveServerSTS(t, c).Spec.Template),
 		"the cluster's next pass changes nothing")
-	missing, err := plugins.missingFromTarget(ctx, plugin, target)
+	missing, outdated, err := plugins.missingFromTarget(ctx, plugin, target)
 	require.NoError(t, err)
 	assert.Empty(t, missing, "the plugin finds nothing missing")
+	assert.Empty(t, outdated, "nor anything to update")
 	before := *writes
 	require.NoError(t, plugins.installPluginViaEnvironment(ctx, plugin, target))
 	assert.Equal(t, before, *writes, "and its install pass writes nothing, defaulted init container and all")
@@ -316,9 +320,10 @@ func TestClusterAndPluginLeaveEachOthersItemsAlone_APIServer(t *testing.T) {
 	changes, err := plugins.installChangesTarget(ctx, plugin, target)
 	require.NoError(t, err)
 	assert.False(t, changes, "the API server's defaults are not a change to the plugin's init container")
-	missing, err := plugins.missingFromTarget(ctx, plugin, target)
+	missing, outdated, err := plugins.missingFromTarget(ctx, plugin, target)
 	require.NoError(t, err)
 	assert.Empty(t, missing)
+	assert.Empty(t, outdated)
 }
 
 // A StatefulSet an earlier operator wrote has no record of the init

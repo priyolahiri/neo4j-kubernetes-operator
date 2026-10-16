@@ -101,5 +101,35 @@
         "description": "Emits one PluginInstallDeferred Normal event when the wait starts (or one PluginMissing Warning that says it waits, for a Ready plugin whose target lost what it set)."
       }
     ]
+  },
+  {
+    "id": "rx-plugin-ca-follows-trusted-cas",
+    "name": "Plugin CA Volume Follows The Target's Trusted CAs",
+    "description": "When spec.trustedCASecrets of a Neo4jPlugin's target (cluster or standalone) changes, the target's own controller re-renders its JVM truststore, which changes the server pod template and re-queues every Ready plugin targeting it. A VerifiedDownload plugin then brings the shared plugin-ca volume (an optional projection of each listed Secret, mounted at /etc/plugin-ca by every VerifiedDownload init container of the target) in line with the list: added when the list stops being empty, replaced when it projects other Secrets, keys or paths, removed with the init container's mount when the list is cleared and nothing else mounts it. The plugin controller is the volume's only writer; the cluster and standalone controllers keep it as a volume they did not render. A list that is only reordered, or a volume that differs only in what the API server defaulted or in an earlier operator's required projections, is not written. The write restarts the servers, so it waits like an install until the target is Ready with every server available.",
+    "moduleId": "mod-plugins",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "spec.trustedCASecrets (a standalone's spec.trustedCASecrets likewise)",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet.spec.template (plugin-ca volume; VerifiedDownload init containers' mount of it)",
+        "description": "Writes the plugin-ca volume for the new list, and the init container's mount of it when the list stops or starts being empty, in one StatefulSet update."
+      },
+      {
+        "kind": "recalculate",
+        "entityId": "ent-neo4jplugin",
+        "fieldName": "status.phase",
+        "description": "Installing (\"Updating the plugin's trusted CAs: spec.trustedCASecrets of … changed (…)\") until the restarted servers are ready, then Ready; Waiting first while the target is not Ready with every server available."
+      },
+      {
+        "kind": "notify",
+        "entityId": "ent-neo4jplugin",
+        "description": "No PluginMissing Warning — the user changed the list. One PluginInstallDeferred Normal event if the update has to wait for the target."
+      }
+    ]
   }
 ]

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	stderrors "errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -365,13 +366,23 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// NEO4J_PLUGINS (operations.md id 134), its template apply dropped a
 		// VerifiedDownload init container (id 141) — it is not Ready any more:
 		// say so, and restore it below, once the target can take the restart.
-		missing, err := r.missingFromTarget(ctx, plugin, deployment)
+		// What follows the target's spec.trustedCASecrets — a VerifiedDownload
+		// plugin's CA volume, and its init container's mount of it — is brought
+		// in line with the list when the user changes it (id 147): a change
+		// someone asked for, not a loss, so no Warning; it waits like an install.
+		missing, outdated, err := r.missingFromTarget(ctx, plugin, deployment)
 		switch {
 		case err != nil:
 			// The install below reads the same StatefulSet and reports it.
 			logger.Error(err, "Cannot tell whether the target still carries the plugin")
-		case missing == "":
+		case missing == "" && outdated == "":
 			return ctrl.Result{}, nil
+		case missing == "":
+			// Not Ready: the gate below holds the write like an install's.
+			logger.Info("The target's trusted CAs changed; updating the plugin's", "change", outdated)
+			if deployment.IsReady {
+				r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Updating the plugin's trusted CAs: "+outdated)
+			}
 		case !deployment.IsReady:
 			// Restoring it restarts every server, like an install, and waits
 			// for the same reason (below).
@@ -508,9 +519,17 @@ func (r *Neo4jPluginReconciler) deferInstall(ctx context.Context, plugin *neo4jv
 // targetAvailable names the state deferInstall waits for.
 func targetAvailable(deployment *DeploymentInfo) string {
 	if deployment.Type == "standalone" {
-		return fmt.Sprintf("Neo4jEnterpriseStandalone %s is Ready", deployment.Name)
+		return targetName(deployment) + " is Ready"
 	}
-	return fmt.Sprintf("Neo4jEnterpriseCluster %s is Ready with every server available", deployment.Name)
+	return targetName(deployment) + " is Ready with every server available"
+}
+
+// targetName names the plugin's target with its kind.
+func targetName(deployment *DeploymentInfo) string {
+	if deployment.Type == "standalone" {
+		return "Neo4jEnterpriseStandalone " + deployment.Name
+	}
+	return "Neo4jEnterpriseCluster " + deployment.Name
 }
 
 // installChangesTarget reports whether installing the plugin would change its
@@ -1169,58 +1188,88 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 	return nil
 }
 
-// missingFromTarget reports what of the plugin its target's StatefulSet no
-// longer carries, or "" when it carries all of it: the plugin's edits are made
+// missingFromTarget reports what a settled plugin puts right on its target's
+// StatefulSet, "" for each when there is nothing: the plugin's edits are made
 // on a copy of the live pod template, and pluginEnvDrift and pluginPodDrift
-// decide which of them a settled plugin puts right.
-func (r *Neo4jPluginReconciler) missingFromTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (string, error) {
+// decide which of them count.
+//   - missing: what the StatefulSet no longer carries — something removed it.
+//   - outdated: what the plugin wrote that no longer follows the target's
+//     spec.trustedCASecrets — the user changed the list (operations.md id 147).
+func (r *Neo4jPluginReconciler) missingFromTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (missing, outdated string, err error) {
 	stsName := r.getStatefulSetName(deployment)
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: deployment.Namespace}, sts); err != nil {
 		if errors.IsNotFound(err) {
-			return fmt.Sprintf("StatefulSet %s does not exist", stsName), nil
+			return fmt.Sprintf("StatefulSet %s does not exist", stsName), "", nil
 		}
-		return "", fmt.Errorf("failed to get StatefulSet %s: %w", stsName, err)
+		return "", "", fmt.Errorf("failed to get StatefulSet %s: %w", stsName, err)
 	}
 	if neo4jContainer(&sts.Spec.Template.Spec) == nil {
-		return "", fmt.Errorf("neo4j container not found in StatefulSet %s", stsName)
+		return "", "", fmt.Errorf("neo4j container not found in StatefulSet %s", stsName)
 	}
 	desired := sts.Spec.Template.DeepCopy()
 	if err := r.applyPluginToTemplate(desired, plugin, deployment); err != nil {
-		return "", err
+		return "", "", err
 	}
 	drift := pluginEnvDrift(neo4jContainerEnv(sts.Spec.Template.Spec), neo4jContainerEnv(desired.Spec), deployment.Type == "standalone")
-	drift = append(drift, pluginPodDrift(sts.Spec.Template.Spec, desired.Spec)...)
-	if len(drift) == 0 {
-		return "", nil
+	podMissing, podOutdated := pluginPodDrift(sts.Spec.Template.Spec, desired.Spec)
+	drift = append(drift, podMissing...)
+	if len(drift) > 0 {
+		missing = fmt.Sprintf("StatefulSet %s does not hold what the plugin sets in %s", stsName, strings.Join(drift, ", "))
 	}
-	return fmt.Sprintf("StatefulSet %s does not hold what the plugin sets in %s", stsName, strings.Join(drift, ", ")), nil
+	if len(podOutdated) > 0 {
+		outdated = fmt.Sprintf("spec.trustedCASecrets of %s changed (%s of StatefulSet %s)",
+			targetName(deployment), strings.Join(podOutdated, ", "), stsName)
+	}
+	return missing, outdated, nil
 }
 
-// pluginPodDrift returns the init containers and volumes a VerifiedDownload
-// plugin adds that live, the target's pod spec, does not have (desired is live
-// after the plugin's edits): what something removed — a StatefulSet recreated
-// from the cluster's own template (storage expansion does that), or an earlier
-// operator's cluster controller, which dropped them on every apply. Only
-// absence is put right, as with env vars: the live init container carries the
-// API server's defaults, and nothing else writes the plugin's own names.
-func pluginPodDrift(live, desired corev1.PodSpec) []string {
-	var drift []string
-	initContainers := make(map[string]struct{}, len(live.InitContainers))
+// pluginPodDrift compares live, the target's pod spec, with desired, the same
+// after the plugin's edits, for what a VerifiedDownload plugin adds:
+//   - missing: an init container or volume of the plugin's that live does not
+//     have — what something removed: a StatefulSet recreated from the
+//     cluster's own template (storage expansion does that), or an earlier
+//     operator's cluster controller, which dropped them on every apply.
+//   - outdated: what follows the target's spec.trustedCASecrets — the shared
+//     plugin-ca volume (projecting other CAs than the list, added because the
+//     list is no longer empty, or going because it is), and an init container
+//     whose mount of that volume comes or goes with it.
+//
+// Nothing else counts, as with env vars: the live init container carries the
+// API server's defaults, and a field someone else changed (its image, say) is
+// left alone. A plugin-ca volume absent while the plugin's init container is
+// there was never written (the list was empty); absent with it, it was removed.
+func pluginPodDrift(live, desired corev1.PodSpec) (missing, outdated []string) {
+	initContainers := make(map[string]corev1.Container, len(live.InitContainers))
 	for _, c := range live.InitContainers {
-		initContainers[c.Name] = struct{}{}
+		initContainers[c.Name] = c
 	}
 	for _, c := range desired.InitContainers {
-		if _, ok := initContainers[c.Name]; !ok {
-			drift = append(drift, "init container "+c.Name)
+		have, ok := initContainers[c.Name]
+		switch {
+		case !ok:
+			missing = append(missing, "init container "+c.Name)
+		case containerMountsVolume(have, resources.PluginCAVolumeName) != containerMountsVolume(c, resources.PluginCAVolumeName):
+			outdated = append(outdated, "init container "+c.Name)
 		}
 	}
+	initContainerMissing := len(missing) > 0
 	for _, v := range desired.Volumes {
-		if !podSpecHasVolume(&live, v.Name) {
-			drift = append(drift, "volume "+v.Name)
+		i := volumeIndex(&live, v.Name)
+		switch {
+		case v.Name != resources.PluginCAVolumeName && i < 0:
+			missing = append(missing, "volume "+v.Name)
+		case v.Name != resources.PluginCAVolumeName:
+		case i < 0 && initContainerMissing:
+			missing = append(missing, "volume "+v.Name)
+		case i < 0 || !sameTrustedCAs(live.Volumes[i], v):
+			outdated = append(outdated, "volume "+v.Name)
 		}
 	}
-	return drift
+	if podSpecHasVolume(&live, resources.PluginCAVolumeName) && !podSpecHasVolume(&desired, resources.PluginCAVolumeName) {
+		outdated = append(outdated, "volume "+resources.PluginCAVolumeName)
+	}
+	return missing, outdated
 }
 
 // pluginEnvDrift returns, sorted, the variables a settled plugin puts right on
@@ -1512,15 +1561,13 @@ func (r *Neo4jPluginReconciler) applyVerifiedDownload(template *corev1.PodTempla
 		podSpec.InitContainers = append(podSpec.InitContainers, desired)
 	}
 
-	// Add volumes if not already present (multiple VerifiedDownload
-	// plugins on the same cluster share the CA volume; each plugin
-	// has its own auth volume).
+	// Add the plugin's own auth volume if not already present; the CA
+	// volume, which every VerifiedDownload plugin of the target shares,
+	// follows the target's spec.trustedCASecrets.
 	if authVol != nil && !podSpecHasVolume(podSpec, authVol.Name) {
 		podSpec.Volumes = append(podSpec.Volumes, *authVol)
 	}
-	if caVol != nil && !podSpecHasVolume(podSpec, caVol.Name) {
-		podSpec.Volumes = append(podSpec.Volumes, *caVol)
-	}
+	setPluginCAVolume(podSpec, caVol)
 
 	// Record ownership in the annotation so the uninstall path can
 	// remove only our init containers. The annotation lives on the
@@ -1552,6 +1599,68 @@ func deploymentTrustedCASecrets(deployment *DeploymentInfo) []neo4jv1beta1.Trust
 		}
 	}
 	return nil
+}
+
+// setPluginCAVolume brings the plugin-ca volume of podSpec in line with
+// desired, the one BuildPluginCAVolume makes from the target's
+// spec.trustedCASecrets (nil when it lists none). The plugin controller is
+// the volume's only writer — the cluster and standalone controllers keep it as
+// a volume they did not render — and every VerifiedDownload plugin of the
+// target builds the same one, so whichever plugin passes first updates it and
+// the rest find nothing to change.
+//
+//   - Missing and wanted: added.
+//   - Present, projecting other Secrets, keys or paths than desired: replaced.
+//     Nothing else counts (sameTrustedCAs), so a volume the API server
+//     defaulted, or one an earlier operator wrote without optional
+//     projections, is left alone while the list stays the same: rewriting it
+//     would restart the servers for nothing.
+//   - Present and no longer wanted: removed once no container mounts it (the
+//     caller has rebuilt this plugin's init container without the mount by
+//     then). Another plugin's init container that still mounts it keeps it
+//     until that plugin's pass rebuilds its own.
+func setPluginCAVolume(podSpec *corev1.PodSpec, desired *corev1.Volume) {
+	i := volumeIndex(podSpec, resources.PluginCAVolumeName)
+	switch {
+	case desired == nil:
+		if i >= 0 && !podSpecMountsVolume(podSpec, resources.PluginCAVolumeName) {
+			podSpec.Volumes = append(podSpec.Volumes[:i:i], podSpec.Volumes[i+1:]...)
+		}
+	case i < 0:
+		podSpec.Volumes = append(podSpec.Volumes, *desired)
+	case !sameTrustedCAs(podSpec.Volumes[i], *desired):
+		podSpec.Volumes[i] = *desired
+	}
+}
+
+// sameTrustedCAs reports whether two plugin-ca volumes project the same CA
+// files: the same Secret, key and path for each, in any order.
+func sameTrustedCAs(a, b corev1.Volume) bool {
+	return slices.Equal(trustedCAProjections(a), trustedCAProjections(b))
+}
+
+// trustedCAProjections lists, sorted, what a plugin-ca volume projects as
+// "secret/key/path". A source other than a Secret — which the plugin never
+// writes — is listed as "", so a volume holding one is never the plugin's.
+func trustedCAProjections(v corev1.Volume) []string {
+	if v.Projected == nil {
+		return []string{""}
+	}
+	var out []string
+	for _, source := range v.Projected.Sources {
+		if source.Secret == nil {
+			out = append(out, "")
+			continue
+		}
+		if len(source.Secret.Items) == 0 {
+			out = append(out, source.Secret.Name+"/")
+		}
+		for _, item := range source.Secret.Items {
+			out = append(out, source.Secret.Name+"/"+item.Key+"/"+item.Path)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // removeVerifiedDownloadInitContainer is the inverse of
@@ -1640,12 +1749,17 @@ func (r *Neo4jPluginReconciler) removeVerifiedDownloadInitContainer(
 // entries when multiple VerifiedDownload plugins land on the same
 // StatefulSet over successive reconciles.
 func podSpecHasVolume(podSpec *corev1.PodSpec, name string) bool {
-	for _, v := range podSpec.Volumes {
-		if v.Name == name {
-			return true
+	return volumeIndex(podSpec, name) >= 0
+}
+
+// volumeIndex returns the index of the named volume in the pod, or -1.
+func volumeIndex(podSpec *corev1.PodSpec, name string) int {
+	for i := range podSpec.Volumes {
+		if podSpec.Volumes[i].Name == name {
+			return i
 		}
 	}
-	return false
+	return -1
 }
 
 // podSpecMountsVolume reports whether any container or init container of the
@@ -1653,11 +1767,19 @@ func podSpecHasVolume(podSpec *corev1.PodSpec, name string) bool {
 func podSpecMountsVolume(podSpec *corev1.PodSpec, name string) bool {
 	for _, list := range [][]corev1.Container{podSpec.InitContainers, podSpec.Containers} {
 		for _, c := range list {
-			for _, m := range c.VolumeMounts {
-				if m.Name == name {
-					return true
-				}
+			if containerMountsVolume(c, name) {
+				return true
 			}
+		}
+	}
+	return false
+}
+
+// containerMountsVolume reports whether the container mounts the named volume.
+func containerMountsVolume(c corev1.Container, name string) bool {
+	for _, m := range c.VolumeMounts {
+		if m.Name == name {
+			return true
 		}
 	}
 	return false

@@ -306,17 +306,23 @@ func TestPluginPodDrift(t *testing.T) {
 	desired := selfHealSTS().Spec.Template
 	r.applyVerifiedDownload(&desired, plugin, target)
 
-	assert.Empty(t, pluginPodDrift(desired.Spec, desired.Spec), "intact")
+	missing, outdated := pluginPodDrift(desired.Spec, desired.Spec)
+	assert.Empty(t, missing, "intact")
+	assert.Empty(t, outdated, "intact")
 
 	defaulted := &appsv1.StatefulSet{Spec: appsv1.StatefulSetSpec{Template: *desired.DeepCopy()}}
 	apiServerDefaults(defaulted)
 	defaulted.Spec.Template.Spec.InitContainers[0].Image = "mirror.example.com/curl:8.5.0"
-	assert.Empty(t, pluginPodDrift(defaulted.Spec.Template.Spec, desired.Spec), "defaulted, or changed by someone else")
+	missing, outdated = pluginPodDrift(defaulted.Spec.Template.Spec, desired.Spec)
+	assert.Empty(t, missing, "defaulted, or changed by someone else")
+	assert.Empty(t, outdated, "defaulted, or changed by someone else")
 
 	gone := desired.DeepCopy()
 	gone.Spec.InitContainers = nil
 	gone.Spec.Volumes = gone.Spec.Volumes[:1]
-	assert.Equal(t, []string{"init container plugin-init-custom", "volume plugin-ca"}, pluginPodDrift(gone.Spec, desired.Spec))
+	missing, outdated = pluginPodDrift(gone.Spec, desired.Spec)
+	assert.Equal(t, []string{"init container plugin-init-custom", "volume plugin-ca"}, missing)
+	assert.Empty(t, outdated, "removed with its init container: missing, not a change of the CAs")
 }
 
 // The cluster controller keeps volumes it did not render, so the CA volume
