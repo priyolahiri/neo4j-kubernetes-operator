@@ -56,11 +56,23 @@ type advisoryWarnings struct {
 type advisoryWarningsKey struct {
 	object string // type, namespace, name and UID: a recreated object starts afresh
 	reason string
+	scope  string // see recordScoped
 }
 
 // record emits each of warnings as a Warning event with reason on obj, unless
 // it was already announced for this object within advisoryWarningRefresh.
+//
+// warnings is everything that applies for reason right now: a warning left out
+// is forgotten. Where independent checks share one reason, use recordScoped.
 func (a *advisoryWarnings) record(rec record.EventRecorder, obj client.Object, reason string, warnings []string) {
+	a.recordScoped(rec, obj, reason, "", warnings)
+}
+
+// recordScoped is record for one of several independent checks that share a
+// reason (the cluster's Route and its MCP Route both report RouteAPINotFound):
+// each scope keeps its own set, so a pass of one check does not make another's
+// warning look new.
+func (a *advisoryWarnings) recordScoped(rec record.EventRecorder, obj client.Object, reason, scope string, warnings []string) {
 	if rec == nil {
 		return
 	}
@@ -79,6 +91,7 @@ func (a *advisoryWarnings) record(rec record.EventRecorder, obj client.Object, r
 	key := advisoryWarningsKey{
 		object: fmt.Sprintf("%T/%s/%s/%s", obj, obj.GetNamespace(), obj.GetName(), obj.GetUID()),
 		reason: reason,
+		scope:  scope,
 	}
 	previous := a.announced[key]
 	current := make(map[string]time.Time, len(warnings))

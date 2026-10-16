@@ -4024,15 +4024,20 @@ func (r *Neo4jRestoreReconciler) warnIfChainParent(ctx context.Context, restore 
 			}
 		}
 	}
-	if len(children) == 0 {
-		return
+	// Called on every pass until the restore is issued, including the passes
+	// that wait (seed credentials, rollout, seed proxy): an advisory warning,
+	// announced when it starts to apply, not on every one of them (knowledge
+	// rules 102 and 145).
+	var warnings []string
+	if len(children) > 0 {
+		sort.Strings(children)
+		warnings = append(warnings, fmt.Sprintf(
+			"source.backupRef %q is a FULL+DIFF chain parent; differential backups exist on [%s]. "+
+				"This restore seeds from %q's latest full snapshot, NOT the latest chain state. "+
+				"To restore the latest state, set source.backupRef to the differential CR instead.",
+			backupRef, strings.Join(children, ", "), backupRef))
 	}
-	sort.Strings(children)
-	r.Recorder.Eventf(restore, corev1.EventTypeWarning, EventReasonRestoreFromChainParent,
-		"source.backupRef %q is a FULL+DIFF chain parent; differential backups exist on [%s]. "+
-			"This restore seeds from %q's latest full snapshot, NOT the latest chain state. "+
-			"To restore the latest state, set source.backupRef to the differential CR instead.",
-		backupRef, strings.Join(children, ", "), backupRef)
+	r.advisoryWarnings.record(r.Recorder, restore, EventReasonRestoreFromChainParent, warnings)
 }
 
 func ternaryString(cond bool, ifTrue, ifFalse string) string {

@@ -170,8 +170,9 @@ func TestWarnShardedPVCDifferential(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := record.NewFakeRecorder(4)
-			r := &Neo4jBackupReconciler{Recorder: rec}
-			r.warnShardedPVCDifferential(tc.backup, &tc.run)
+			var warnings runWarnings
+			warnings.add(&tc.run, EventReasonBackupShardedDifferential, shardedPVCDifferentialWarning(tc.backup, &tc.run))
+			warnings.emit(rec, tc.backup, nil)
 			if tc.want == "" {
 				assert.Empty(t, rec.Events)
 				return
@@ -198,14 +199,14 @@ func TestEnsureClusterSeedConfig(t *testing.T) {
 		assert.False(t, wait)
 	})
 
-	t.Run("without the opt-in: Failed, naming the credentials and the endpoint", func(t *testing.T) {
+	t.Run("without the opt-in: Pending, naming the credentials and the endpoint", func(t *testing.T) {
 		sdb := seedTestShardedDB()
 		r := shardedSeedReconciler(t, sdb, seedTestCluster())
 		_, wait := r.ensureClusterSeedConfig(context.Background(), sdb, seedTestCluster(), minio)
 		require.True(t, wait)
 		got := &neo4jv1beta1.Neo4jShardedDatabase{}
 		require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "sdb2", Namespace: "default"}, got))
-		assert.Equal(t, "Failed", got.Status.Phase)
+		assert.Equal(t, "Pending", got.Status.Phase, "a precondition the user can fix is a wait, not a failure (rule 145)")
 		assert.Contains(t, got.Status.Message, `missing credentials Secret "minio-creds"`)
 		assert.Contains(t, got.Status.Message, "AWS_ENDPOINT_URL_S3=http://minio:9000")
 	})

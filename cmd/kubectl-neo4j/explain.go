@@ -221,7 +221,7 @@ var phaseGuidance = map[string]guidance{
 	},
 	neo4jv1beta1.PhasePending: {
 		meaning: "the resource is waiting on something that does not exist yet — a Secret, a referenced cluster, a database.",
-		action:  "This is 'not yet', not 'wrong'. status.message names what it is waiting for; create that and it proceeds on its own. On a Neo4jReplicaDatabase it also means the replica has not been created in Neo4j yet: check the downstream is Ready and at least 2026.08, which CCDR replicas require.",
+		action:  "This is 'not yet', not 'wrong'. status.message names what it is waiting for; create that and it proceeds on its own. On a Neo4jReplicaDatabase it also means the replica has not been created in Neo4j yet: check the downstream is Ready and, for an s3:// source, that its servers have AWS_REGION (reason ReplicaObjectStoreEnvMissing). A Neo4jDatabase or Neo4jShardedDatabase waiting for seed credentials on its cluster says so with reason SeedCredsMissing.",
 	},
 	neo4jv1beta1.PhaseValidating: {
 		meaning: "the operator is checking the spec before acting on it.",

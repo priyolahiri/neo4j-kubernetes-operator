@@ -709,7 +709,8 @@
       {
         "id": "f-neo4jdatabase-status-phase",
         "name": "status.phase",
-        "type": "string"
+        "type": "string",
+        "note": "Ready; Pending (host not found or not ready, or waiting for the seed credentials Secret on the host: SeedCredsMissing, SeedCredsAutoInherited); Failed (connection, creation or data-import failure); ValidationFailed; Unknown."
       },
       {
         "id": "f-neo4jdatabase-status-message",
@@ -955,7 +956,8 @@
         "id": "f-neo4jshardeddatabase-status-phase",
         "name": "status.phase",
         "type": "string",
-        "isNullable": true
+        "isNullable": true,
+        "note": "Validating, Creating, Waiting (cluster not Ready), Pending (waiting for the cluster to exist, the seed backup, the seed proxy or the seed credentials), Ready, Failed."
       },
       {
         "id": "f-neo4jshardeddatabase-status-sharding-ready",
@@ -1114,7 +1116,7 @@
         "name": "status.phase",
         "type": "enum",
         "isNullable": true,
-        "note": "Pending, Seeding, Replicating, Promoted (terminal), Failed."
+        "note": "Pending, Seeding, Replicating, Promoted (terminal), Failed. Pending also while a backup-mode replica's downstream servers lack AWS_REGION (reason ReplicaObjectStoreEnvMissing; knowledge operations.md id 145)."
       },
       {
         "id": "f-neo4jreplicadatabase-status-database-type",

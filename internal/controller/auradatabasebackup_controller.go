@@ -219,19 +219,29 @@ func (r *AuraDatabaseBackupReconciler) setCondition(ctx context.Context, req ctr
 
 func (r *AuraDatabaseBackupReconciler) fail(ctx context.Context, req ctrl.Request, b *neo4jv1beta1.AuraDatabaseBackup, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraDatabaseBackup reconcile deferred", "reason", reason, "error", cause.Error())
-	r.Recorder.Event(b, corev1.EventTypeWarning, EventReasonAuraDatabaseBackupFailed, fmt.Sprintf("%s: %v", reason, cause))
+	announce := false
 	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		announce = false
 		latest := &neo4jv1beta1.AuraDatabaseBackup{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
-		})
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		changed := auraConditionChanged(latest.Status.Conditions, want) || latest.Status.Phase != "Error"
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.Phase = "Error"
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = changed
+		return nil
 	})
+	// Announced when the failure starts or its message changes, not on every
+	// requeue while it stays (knowledge rule 145).
+	if announce {
+		r.Recorder.Event(b, corev1.EventTypeWarning, EventReasonAuraDatabaseBackupFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 

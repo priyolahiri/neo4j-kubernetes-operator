@@ -78,27 +78,39 @@ func (r *AuraProviderConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = "CredentialsInvalid"
 		msg = "Aura API credentials invalid: " + err.Error()
 		logger.Info("AuraProviderConfig validation failed", "error", err.Error())
-		r.Recorder.Event(pc, corev1.EventTypeWarning, EventReasonAuraCredentialsInvalid, msg)
 	} else {
 		r.Recorder.Event(pc, corev1.EventTypeNormal, EventReasonAuraCredentialsValidated, msg)
 	}
 
+	changed := false
 	if updateErr := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraProviderConfig{}
 		if getErr := r.Get(ctx, req.NamespacedName, latest); getErr != nil {
 			return getErr
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+		want := metav1.Condition{
 			Type:               "Ready",
 			Status:             auraCondStatus(ready),
 			Reason:             reason,
 			Message:            msg,
 			ObservedGeneration: latest.Generation,
-		})
+		}
+		wouldChange := auraConditionChanged(latest.Status.Conditions, want)
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	}); updateErr != nil {
 		return ctrl.Result{}, updateErr
+	}
+	// Announced when the credentials start failing or the error changes, not on
+	// every validation pass while they stay invalid (knowledge rule 145).
+	if !ready && changed {
+		r.Recorder.Event(pc, corev1.EventTypeWarning, EventReasonAuraCredentialsInvalid, msg)
 	}
 
 	requeue := r.RequeueAfter

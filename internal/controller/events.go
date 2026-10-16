@@ -75,6 +75,10 @@ const (
 	// EventReasonBackupShardedDifferential — a run wrote differential shard
 	// backups to a PVC, which cannot seed a sharded database (rule 110).
 	EventReasonBackupShardedDifferential = "BackupShardedDifferential"
+	// EventReasonBackupValidateUnsupported — options.validate is set on a
+	// backup of a 5.26 (non-CalVer) deployment, where `neo4j-admin backup
+	// validate` does not exist; the run skips validation.
+	EventReasonBackupValidateUnsupported = "BackupValidateUnsupported"
 	// EventReasonServiceAccountAnnotationConflict — a backup/restore CR
 	// overwrote DIFFERENT workload-identity annotations on the shared
 	// namespace ServiceAccount; last writer wins and the others' cloud
@@ -122,6 +126,17 @@ const (
 	EventReasonDataSeeded          = "DataSeeded"
 	EventReasonValidationWarning   = "ValidationWarning"
 	EventReasonConnectionFailed    = "ConnectionFailed"
+	// EventReasonSeedCredsMissing — a Neo4jDatabase or Neo4jShardedDatabase
+	// seeds from cloud storage, and the hosting deployment's server pods lack
+	// the credentials Secret (or, sharded, the custom S3 endpoint) the
+	// server-side fetch needs, with the deployment not opted in to
+	// neo4j.com/auto-inherit-seed-creds. The database waits Pending and
+	// carries on once they are there. Emitted when the wait starts.
+	EventReasonSeedCredsMissing = "SeedCredsMissing"
+	// EventReasonSeedCredsAutoInherited — the operator projected the seed
+	// credentials (and endpoint) onto the opted-in hosting deployment and
+	// waits for its rolling restart.
+	EventReasonSeedCredsAutoInherited = "SeedCredsAutoInherited"
 )
 
 // Plugin events
@@ -193,6 +208,15 @@ const (
 	// for the PVC seed proxy. Emitted when the wait starts, not on every pass.
 	EventReasonSeedBackupPending = "SeedBackupPending"
 	EventReasonSeedProxyStarting = "SeedProxyStarting"
+	// EventReasonSeedBackupResolutionFailed — spec.seedBackupRef cannot be
+	// turned into a seed (the Neo4jBackup is missing, or its storage or run
+	// cannot seed a sharded database). Phase Failed; emitted when the failure
+	// starts or its message changes.
+	EventReasonSeedBackupResolutionFailed = "SeedBackupResolutionFailed"
+	// EventReasonShardedDatabaseDropped — the destructive replaceExisting +
+	// force path dropped the existing sharded database before recreating it
+	// from the seed.
+	EventReasonShardedDatabaseDropped = "ShardedDatabaseDropped"
 )
 
 // User and role management events
@@ -356,13 +380,20 @@ const (
 	EventReasonReplicaRetainedPromoted = "ReplicaRetainedAfterPromotion"
 	EventReasonReplicaPromotedDetected = "ReplicaPromotionDetected"
 	EventReasonReplicaVersionTooOld    = "ReplicaVersionTooOld"
-	EventReasonPromotionStarted        = "ReplicaPromotionStarted"
-	EventReasonPromotionCompleted      = "ReplicaPromotionCompleted"
-	EventReasonPromotionFailed         = "ReplicaPromotionFailed"
-	EventReasonUpstreamClusterNotFound = "UpstreamClusterNotFound"
-	EventReasonUpstreamClusterNotReady = "UpstreamClusterNotReady"
-	EventReasonUpstreamBackupNotFound  = "UpstreamBackupNotFound"
-	EventReasonUpstreamBackupNotReady  = "UpstreamBackupNotReady"
+	// EventReasonReplicaObjectStoreEnvMissing — a backup-mode replica's
+	// downstream servers have no AWS_REGION (or AWS_DEFAULT_REGION) in any
+	// source of their environment, so Neo4j could not read the s3:// seed or
+	// pulls (operations.md id 133). The replica waits Pending and retries on
+	// its own once the servers have it. Emitted when the wait starts. It was
+	// a ReplicaFailed with phase Failed before (id 145).
+	EventReasonReplicaObjectStoreEnvMissing = "ReplicaObjectStoreEnvMissing"
+	EventReasonPromotionStarted             = "ReplicaPromotionStarted"
+	EventReasonPromotionCompleted           = "ReplicaPromotionCompleted"
+	EventReasonPromotionFailed              = "ReplicaPromotionFailed"
+	EventReasonUpstreamClusterNotFound      = "UpstreamClusterNotFound"
+	EventReasonUpstreamClusterNotReady      = "UpstreamClusterNotReady"
+	EventReasonUpstreamBackupNotFound       = "UpstreamBackupNotFound"
+	EventReasonUpstreamBackupNotReady       = "UpstreamBackupNotReady"
 	// EventReasonCCDRProxyUnauthenticated — the CCDR proxy is exposing the
 	// tx-shipping port through a load balancer while spec.tls.strictPeerValidation
 	// is false. The proxy is a TCP passthrough that authenticates nothing, so the

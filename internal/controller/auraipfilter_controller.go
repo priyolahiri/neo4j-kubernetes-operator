@@ -450,19 +450,29 @@ func (r *AuraIPFilterReconciler) syncStatus(ctx context.Context, req ctrl.Reques
 
 func (r *AuraIPFilterReconciler) fail(ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraIPFilter reconcile deferred", "reason", reason, "error", cause.Error())
-	r.Recorder.Event(f, corev1.EventTypeWarning, EventReasonAuraIPFilterFailed, fmt.Sprintf("%s: %v", reason, cause))
+	announce := false
 	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		announce = false
 		latest := &neo4jv1beta1.AuraIPFilter{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
-		})
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		changed := auraConditionChanged(latest.Status.Conditions, want) || latest.Status.Phase != "Error"
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.Phase = "Error"
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = changed
+		return nil
 	})
+	// Announced when the failure starts or its message changes, not on every
+	// requeue while it stays (knowledge rule 145).
+	if announce {
+		r.Recorder.Event(f, corev1.EventTypeWarning, EventReasonAuraIPFilterFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 

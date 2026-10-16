@@ -59,8 +59,11 @@ func (r *Neo4jShardedDatabaseReconciler) ensurePVCSeedProxy(
 // — for MinIO and other S3-compatible stores — its endpoint, projected as a
 // Neo4jRestore does it (both in one update, so one rolling restart, under the
 // neo4j.com/auto-inherit-seed-creds annotation), and seeding only once the
-// pods carry them. wait=true means return res: the database is Pending or
-// Failed with the reason. PVC seeds need nothing here (in-cluster HTTP).
+// pods carry them. wait=true means return res: the database is Pending with
+// the reason. Missing seed configuration is a wait, not a failure: nothing has
+// touched a database yet, and the next pass carries on once the cluster has it
+// (knowledge rule 145, as for a Neo4jRestore, backup-restore.md Rule 138). PVC
+// seeds need nothing here (in-cluster HTTP).
 func (r *Neo4jShardedDatabaseReconciler) ensureClusterSeedConfig(
 	ctx context.Context,
 	shardedDB *neo4jv1beta1.Neo4jShardedDatabase,
@@ -73,10 +76,14 @@ func (r *Neo4jShardedDatabaseReconciler) ensureClusterSeedConfig(
 	}
 	logger := log.FromContext(ctx)
 	requeue := ctrl.Result{RequeueAfter: r.RequeueAfter}
-	setStatus := func(phase, msg string) {
-		if err := r.updateStatus(ctx, shardedDB, phase, msg, nil); err != nil {
-			logger.Error(err, "Failed to update status", "phase", phase)
+	// setStatus reports whether the wait is news: the write changed the
+	// persisted phase or message.
+	setStatus := func(msg string) bool {
+		changed, err := r.transitionStatus(ctx, shardedDB, "Pending", msg, nil)
+		if err != nil {
+			logger.Error(err, "Failed to update status", "phase", "Pending")
 		}
+		return changed
 	}
 	seed := r.seedConfig()
 	target := restoreTarget{cluster: cluster}
@@ -84,20 +91,21 @@ func (r *Neo4jShardedDatabaseReconciler) ensureClusterSeedConfig(
 	projected, missing, err := seed.projectSeedConfig(ctx, target, resolved.CredsSecretName, resolved.Cloud)
 	if err != nil {
 		if stderrors.Is(err, errSeedConfigNotAutoInherited) {
-			msg := fmt.Sprintf("cluster %q's server pods can't reach the seed source: missing %s. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation %s=\"true\" to let the operator inject them (triggers one rolling restart).",
+			msg := fmt.Sprintf("cluster %q's server pods can't reach the seed source: missing %s. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation %s=\"true\" to let the operator inject them (triggers one rolling restart). The sharded database is created once they are there.",
 				cluster.Name, strings.Join(missing, "; "), AutoInheritSeedCredsAnnotation)
-			r.Recorder.Event(shardedDB, corev1.EventTypeWarning, "SeedCredsMissing", msg)
-			setStatus("Failed", msg)
+			if setStatus(msg) {
+				r.Recorder.Event(shardedDB, corev1.EventTypeWarning, EventReasonSeedCredsMissing, msg)
+			}
 			return requeue, true
 		}
 		logger.Error(err, "Failed to project seed configuration onto the cluster")
-		setStatus("Pending", fmt.Sprintf("Retrying projection of seed configuration onto cluster %q: %v", cluster.Name, err))
+		setStatus(fmt.Sprintf("Retrying projection of seed configuration onto cluster %q: %v", cluster.Name, err))
 		return requeue, true
 	}
 	if projected {
-		r.Recorder.Event(shardedDB, corev1.EventTypeNormal, "SeedCredsAutoInherited",
+		r.Recorder.Event(shardedDB, corev1.EventTypeNormal, EventReasonSeedCredsAutoInherited,
 			fmt.Sprintf("Projected seed configuration (credentials/endpoint) onto cluster %q; waiting for the rolling restart", cluster.Name))
-		setStatus("Pending", fmt.Sprintf("Projected seed configuration onto cluster %q; waiting for the rolling restart", cluster.Name))
+		setStatus(fmt.Sprintf("Projected seed configuration onto cluster %q; waiting for the rolling restart", cluster.Name))
 		return requeue, true
 	}
 	rolledOut := true
@@ -112,7 +120,7 @@ func (r *Neo4jShardedDatabaseReconciler) ensureClusterSeedConfig(
 		}
 	}
 	if !rolledOut {
-		setStatus("Pending", fmt.Sprintf("Waiting for cluster %q pods to roll out the seed configuration", cluster.Name))
+		setStatus(fmt.Sprintf("Waiting for cluster %q pods to roll out the seed configuration", cluster.Name))
 		return requeue, true
 	}
 	return ctrl.Result{}, false

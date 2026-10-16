@@ -149,8 +149,11 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
-		r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, false)
-		r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		// Retried with backoff; the same failure is announced once (knowledge
+		// rule 145).
+		if r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, false) {
+			r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
 		return ctrl.Result{}, err
 	}
 	defer func() {
@@ -270,18 +273,24 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 // revokeUnwanted revokes each row in toRemove, skipping immutable ones and
 // any it cannot derive a REVOKE for (both reported as drift). It returns the
 // rows actually revoked; a non-nil result means the reconcile must return it.
+//
+// A kept row is kept on every pass until someone changes the role, so its
+// PrivilegesDriftKept Warning is an advisory warning that stays true (id 102):
+// every pass's full set goes to advisoryWarnings once, which announces a row
+// when it starts to drift and again every advisoryWarningRefresh, not on every
+// pass (knowledge rule 145). A pass that stops at a failed revoke has not seen
+// every row, so it records nothing rather than forget the rows it missed.
 func (r *Neo4jRoleReconciler) revokeUnwanted(
 	ctx context.Context, nc *neo4jclient.Client, role *neo4jv1beta1.Neo4jRole,
 	toRemove []string, immutableSet map[string]struct{}, currentByCanonical map[string]string,
 	requeue time.Duration,
 ) (bool, []string, *ctrl.Result, error) {
 	drift := false
-	var revoked []string
+	var revoked, kept []string
 	for _, canon := range toRemove {
 		if _, immutable := immutableSet[canon]; immutable {
 			drift = true
-			r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonPrivilegesDriftKept,
-				"cannot revoke immutable privilege %q", canon)
+			kept = append(kept, fmt.Sprintf("cannot revoke immutable privilege %q", canon))
 			continue
 		}
 		original := currentByCanonical[canon]
@@ -291,8 +300,7 @@ func (r *Neo4jRoleReconciler) revokeUnwanted(
 		revoke, err := neo4jclient.DerivePrivilegeRevoke(original)
 		if err != nil {
 			drift = true
-			r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonPrivilegesDriftKept,
-				"cannot derive REVOKE for %q: %v", original, err)
+			kept = append(kept, fmt.Sprintf("cannot derive REVOKE for %q: %v", original, err))
 			continue
 		}
 		if err := nc.ExecutePrivilegeStatement(ctx, revoke); err != nil {
@@ -301,6 +309,7 @@ func (r *Neo4jRoleReconciler) revokeUnwanted(
 		}
 		revoked = append(revoked, canon)
 	}
+	r.advisoryWarnings.record(r.Recorder, role, EventReasonPrivilegesDriftKept, kept)
 	return drift, revoked, nil, nil
 }
 
@@ -728,8 +737,11 @@ func (r *Neo4jRoleReconciler) fail(ctx context.Context, role *neo4jv1beta1.Neo4j
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
-	r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleSyncFailed, msg, nil, false)
-	r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonRoleSyncFailed, msg)
+	// Announced when the failure starts or its message changes, not on every
+	// retry of the same failure (knowledge rule 145).
+	if r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleSyncFailed, msg, nil, false) {
+		r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonRoleSyncFailed, msg)
+	}
 	// A rejection the server will repeat (Neo.ClientError.*: a malformed
 	// statement, a missing role or user, an argument it refuses) cannot
 	// resolve without someone changing something, and error backoff would

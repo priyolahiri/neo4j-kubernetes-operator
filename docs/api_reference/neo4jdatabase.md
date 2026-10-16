@@ -95,7 +95,7 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 |---|---|---|
 | `secretRef` | `string` | Name of Kubernetes secret containing credentials for seed URI access |
 
-**The Secret must be projected onto the server pods.** The Neo4j JVM reads the credentials from its environment, so the Secret has to appear in the target `Neo4jEnterpriseCluster`/`Neo4jEnterpriseStandalone` `spec.extraEnvFrom`. If it does not, the database stays blocked with reason `SeedCredsMissing` and a message showing what to add. If the target carries the annotation `neo4j.com/auto-inherit-seed-creds: "true"`, the operator appends the entry to `spec.extraEnvFrom` itself (reason `SeedCredsAutoInherited`) — **this triggers a rolling restart** of the target. Omit `seedCredentials` entirely when you rely on IAM roles / workload identity.
+**The Secret must be projected onto the server pods.** The Neo4j JVM reads the credentials from its environment, so the Secret has to appear in the target `Neo4jEnterpriseCluster`/`Neo4jEnterpriseStandalone` `spec.extraEnvFrom`. If it does not, the database waits in phase `Pending` with reason `SeedCredsMissing` and a message showing what to add, and is created by itself once the Secret is there. If the target carries the annotation `neo4j.com/auto-inherit-seed-creds: "true"`, the operator appends the entry to `spec.extraEnvFrom` itself (reason `SeedCredsAutoInherited`) — **this triggers a rolling restart** of the target. Omit `seedCredentials` entirely when you rely on IAM roles / workload identity.
 
 ### StorageLocation
 
@@ -172,7 +172,7 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 | Field | Type | Description |
 |---|---|---|
 | `conditions` | `[]metav1.Condition` | Current status conditions |
-| `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found / not ready), `Failed` (connection, creation or data-import failure), `ValidationFailed`, or `Unknown` (any other blocked state, e.g. `SeedCredsMissing`) |
+| `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found / not ready, or waiting for the seed credentials on the target — `SeedCredsMissing`, `SeedCredsAutoInherited`), `Failed` (connection, creation or data-import failure), `ValidationFailed`, or `Unknown` (any other blocked state) |
 | `message` | `string` | Human-readable status message |
 | `observedGeneration` | `int64` | Generation observed by the controller |
 | `dataImported` | `*bool` | `true` once `spec.initialData.cypherStatements` have run, or, for a `seedURI` database, once it was created from the seed. Set once; the statements are not run again |

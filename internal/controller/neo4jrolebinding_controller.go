@@ -141,8 +141,11 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
-		r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil)
-		r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		// Retried with backoff; the same failure is announced once (knowledge
+		// rule 145).
+		if r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil) {
+			r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
 		return ctrl.Result{}, err
 	}
 	defer func() { _ = nc.Close() }()
@@ -153,10 +156,7 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return r.fail(ctx, rb, "lookup failed", err, requeue)
 	}
 	if info == nil {
-		msg := fmt.Sprintf("user %q does not exist in Neo4j; bindings only manage grants for externally provisioned users", rb.Spec.Username)
-		r.setNamedCondition(ctx, rb, ConditionTypeUserNotFound, metav1.ConditionTrue, EventReasonUserNotFound, msg)
-		r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, EventReasonUserNotFound, msg, nil)
-		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonUserNotFound, "user %q does not exist", rb.Spec.Username)
+		r.reportUserNotFound(ctx, rb)
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	r.setNamedCondition(ctx, rb, ConditionTypeUserNotFound, metav1.ConditionFalse, "UserPresent", "")
@@ -208,14 +208,7 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 	sort.Strings(granted)
 
-	if len(missing) > 0 {
-		r.setNamedCondition(ctx, rb, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending,
-			fmt.Sprintf("waiting for roles to exist: %v", missing))
-		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonRolePending,
-			"waiting for roles to exist: %v", missing)
-	} else {
-		r.setNamedCondition(ctx, rb, ConditionTypePendingDependencies, metav1.ConditionFalse, "AllDependenciesPresent", "")
-	}
+	r.reportPendingRoles(ctx, rb, missing)
 
 	allDesiredGranted := stringSlicesEqualSorted(desiredRoles, granted)
 	if allDesiredGranted {
@@ -403,8 +396,11 @@ func (r *Neo4jRoleBindingReconciler) fail(ctx context.Context, rb *neo4jv1beta1.
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
-	r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonBindingFailed, msg, nil)
-	r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonBindingFailed, msg)
+	// Announced when the failure starts or its message changes, not on every
+	// retry of the same failure (knowledge rule 145).
+	if r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonBindingFailed, msg, nil) {
+		r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonBindingFailed, msg)
+	}
 	// A rejection the server will repeat (Neo.ClientError.*: a malformed
 	// statement, a missing role or user, an argument it refuses) cannot
 	// resolve without someone changing something, and error backoff would
@@ -462,19 +458,55 @@ func (r *Neo4jRoleBindingReconciler) setStatus(
 	return transitioned
 }
 
-func (r *Neo4jRoleBindingReconciler) setNamedCondition(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, condType string, status metav1.ConditionStatus, reason, message string) {
+// reportUserNotFound records that the bound user does not exist (yet) and
+// announces UserNotFound when the wait starts, not on every pass until the
+// user is provisioned (knowledge rule 145).
+func (r *Neo4jRoleBindingReconciler) reportUserNotFound(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding) {
+	msg := fmt.Sprintf("user %q does not exist in Neo4j; bindings only manage grants for externally provisioned users", rb.Spec.Username)
+	r.setNamedCondition(ctx, rb, ConditionTypeUserNotFound, metav1.ConditionTrue, EventReasonUserNotFound, msg)
+	if r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, EventReasonUserNotFound, msg, nil) {
+		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonUserNotFound, "user %q does not exist", rb.Spec.Username)
+	}
+}
+
+// reportPendingRoles writes the PendingDependencies condition and announces
+// RolePending when the wait starts or its set of missing roles changes — not
+// on every pass while the same roles stay missing (knowledge rule 145).
+func (r *Neo4jRoleBindingReconciler) reportPendingRoles(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, missing []string) {
+	if len(missing) == 0 {
+		r.setNamedCondition(ctx, rb, ConditionTypePendingDependencies, metav1.ConditionFalse, "AllDependenciesPresent", "")
+		return
+	}
+	msg := pendingRolesMessage(missing)
+	if r.setNamedCondition(ctx, rb, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending, msg) {
+		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonRolePending, "%s", msg)
+	}
+}
+
+// setNamedCondition writes one named condition. It reports whether the write
+// changed the condition's status, reason or message, from the attempt whose
+// write succeeded, so a caller can announce the change once.
+func (r *Neo4jRoleBindingReconciler) setNamedCondition(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, condType string, status metav1.ConditionStatus, reason, message string) bool {
+	changed := false
 	update := func() error {
+		changed = false
 		latest := &neo4jv1beta1.Neo4jRoleBinding{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(rb), latest); err != nil {
 			return err
 		}
-		SetNamedCondition(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
+		c := setNamedConditionChanged(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = c
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to set condition on Neo4jRoleBinding", "condition", condType)
+		return false
 	}
+	return changed
 }
 
 // SetupWithManager registers the controller and wires up watches:

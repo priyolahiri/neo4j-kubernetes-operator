@@ -23,6 +23,19 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 
 ## Event Reasons Reference
 
+**How often a Warning repeats.** The operator retries a resource on a timer, on
+error backoff and whenever something it watches changes, so a condition that lasts
+is met on many passes. It is announced once:
+
+- *Once per failure* (or *once per wait*): the Warning is emitted when the
+  condition starts or its message changes — read from what the operator recorded
+  in the resource's status — and not on the retries in between, nor after an
+  operator restart. The current state is always in `status.message` and the
+  `Ready` condition.
+- *Advisory*: a Warning that stays true while the resource otherwise works is
+  emitted when it starts to apply and again every 30 minutes while it still does
+  (inside the default one-hour event TTL), and forgotten when it stops applying.
+
 ### Cluster Lifecycle
 
 | Reason | Type | Description |
@@ -34,16 +47,16 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `TopologyWarning` | Warning | Topology validation produced warnings |
 | `ValidationWarning` | Warning | A spec field the schema accepts but nothing reads is set (`spec.<path> is accepted but has no effect today: <what to do instead>`). Advisory: the resource is still reconciled. Also emitted by `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jDatabase` and `AuraInstance` |
 | `TopologyPlacementCalculated` | Normal | Topology placement constraints calculated successfully |
-| `TopologyPlacementFailed` | Warning | Topology placement constraint calculation failed |
-| `TopologyZoneDiscoveryDegraded` | Warning | Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set `spec.topology.availabilityZones` to enumerate zones explicitly |
-| `PropertyShardingValidationFailed` | Warning | Property sharding configuration validation failed |
-| `ServerRoleValidationFailed` | Warning | Server role hint validation failed |
-| `RouteAPINotFound` | Warning | OpenShift Route API not available in cluster |
-| `MCPApocMissing` | Warning | MCP server requires APOC plugin which is not installed |
+| `TopologyPlacementFailed` | Warning | Topology placement constraint calculation failed; the cluster is `Failed` and retried with backoff. Once per failure |
+| `TopologyZoneDiscoveryDegraded` | Warning | Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set `spec.topology.availabilityZones` to enumerate zones explicitly. Advisory |
+| `PropertyShardingValidationFailed` | Warning | Property sharding configuration validation failed; the cluster is `Failed`. Once per failure |
+| `ServerRoleValidationFailed` | Warning | Server role hint validation failed, one event per invalid hint; the cluster is `Failed`. Once per failure |
+| `RouteAPINotFound` | Warning | OpenShift Route API not available in cluster, for the Route or the MCP Route. Advisory. Also emitted by `Neo4jEnterpriseStandalone` |
+| `MCPApocMissing` | Warning | MCP server requires APOC plugin which is not installed. Advisory. Also emitted by `Neo4jEnterpriseStandalone` |
 | `ClusterDegraded` | Warning | A formed cluster has been short of one or more servers for longer than the grace period (`--server-unavailable-grace`, default 5m) and its phase is now `Degraded`. It is still serving with a majority; dependents keep reconciling. Emitted once per transition |
 | `ClusterQuorumLost` | Warning | A formed cluster has half or fewer of its servers available. Its phase is `Forming` and dependents pause until a majority is back. Emitted once per transition (an operator restart during the outage may repeat it once) |
 | `ConnectivityDegraded` | Warning | The operator has failed to reach the cluster's Bolt endpoint for a sustained streak: at least 10 consecutive reconciles spanning at least 5 minutes, so a cluster that is still forming does not raise it. Emitted once per streak, with the last error and any pod issues |
-| `ReconcileFailed` | Warning | Reconciliation loop encountered an unrecoverable error |
+| `ReconcileFailed` | Warning | A reconcile pass of a `Neo4jEnterpriseStandalone` or `Neo4jShardedDatabase` failed; the resource is `Failed` and retried with backoff. Once per failure |
 | `ConfigAppliedLive` | Normal | A `spec.config` change touched only settings Neo4j can change at runtime, so the operator applied it to every running server (`dbms.setConfigValue`) and wrote it to `neo4j.conf`; nothing restarted. Names the settings. Also emitted by `Neo4jEnterpriseStandalone` |
 | `TLSCertificateReloaded` | Normal | cert-manager renewed the TLS certificate and the operator reloaded it on the named servers (`dbms.security.reloadTLS()`, CalVer 2025.03+); no restart. Also emitted by `Neo4jEnterpriseStandalone` |
 | `TLSCertificateNeedsRestart` | Warning | A renewed TLS certificate could not be reloaded on the named servers: TLS reload is not enabled on them yet (they get it at their next restart), or they still presented the old certificate ten minutes after the new one was issued. They serve the previous certificate until they restart. Also emitted by `Neo4jEnterpriseStandalone` |
@@ -64,7 +77,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `UpgradeStarted` | Normal | Rolling upgrade initiated |
 | `UpgradeCompleted` | Normal | Rolling upgrade finished successfully |
 | `UpgradePaused` | Normal | Upgrade paused (e.g., due to unhealthy pods) |
-| `UpgradeFailed` | Warning | Upgrade failed |
+| `UpgradeFailed` | Warning | Upgrade failed. On a `Neo4jEnterpriseStandalone` with `upgradeStrategy.preUpgradeHealthCheck` and `autoPauseOnFailure`, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked |
 | `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready`, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards |
 
 ### Backups and Restores
@@ -74,20 +87,20 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `BackupScheduled` | Normal | The backup's CronJob is armed: first created, back from another phase (`Suspended`, `Waiting`, …), or its schedule changed. The message names the CronJob and the schedule. Not repeated while the schedule stays as it is |
 | `BackupStarted` | Normal | Backup job has started |
 | `BackupCompleted` | Normal | Backup job completed successfully |
-| `BackupFailed` | Warning | Backup job failed |
+| `BackupFailed` | Warning | Backup job failed, or the spec is invalid (phase `Invalid`, once per refusal) |
 | `RestoreStarted` | Normal | Restore operation has started |
 | `RestoreCompleted` | Normal | Restore operation completed |
 | `RestoreFailed` | Warning | Restore operation failed |
-| `RestoreFromChainParent` | Warning | `source.backupRef` points at a FULL+DIFF chain parent; the restore seeds from its latest full snapshot, not the latest chain state |
+| `RestoreFromChainParent` | Warning | `source.backupRef` points at a FULL+DIFF chain parent; the restore seeds from its latest full snapshot, not the latest chain state. Advisory, so a restore that waits (for seed credentials, a rollout, the seed proxy) does not repeat it on every check |
 | `DatabaseCreateFailed` | Warning | Database creation failed during a restore operation |
 | `BackupRetentionCaveat` | Warning | Retention pruning is configured on a CR whose chain may contain differential artifacts; pruning can orphan DIFFs whose parent FULL ages out (prefer `backupType: FULL` with retention) |
-| `BackupShardedDatabasesExcluded` | Warning | An all-databases backup captured property-sharded database(s) as per-shard artifacts; an all-databases restore does not recreate them — restore each from the same backup via its `Neo4jShardedDatabase` CR with `spec.seedBackupRef` |
-| `BackupShardedDifferential` | Warning | A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run. Comes from an all-databases backup; a `spec.shardedDatabase` backup takes full backups on a PVC |
-| `BackupValidateUnsupported` | Warning | `options.validate` has no effect: `neo4j-admin backup validate` needs a CalVer (2025.x+) image |
-| `ServiceAccountAnnotationConflict` | Warning | A backup/restore CR overwrote different workload-identity annotations on the namespace's shared `neo4j-backup-sa` / `neo4j-restore-sa`; the last CR reconciled wins and the others' cloud access breaks |
+| `BackupShardedDatabasesExcluded` | Warning | An all-databases backup captured property-sharded database(s) as per-shard artifacts; an all-databases restore does not recreate them — restore each from the same backup via its `Neo4jShardedDatabase` CR with `spec.seedBackupRef`. Once per run, when the run is recorded in `status.history` |
+| `BackupShardedDifferential` | Warning | A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run. Comes from an all-databases backup; a `spec.shardedDatabase` backup takes full backups on a PVC. Once per run, when the run is recorded in `status.history` |
+| `BackupValidateUnsupported` | Warning | `options.validate` has no effect: `neo4j-admin backup validate` needs a CalVer (2025.x+) image. Advisory |
+| `ServiceAccountAnnotationConflict` | Warning | A backup/restore CR overwrote different workload-identity annotations on the namespace's shared `neo4j-backup-sa` / `neo4j-restore-sa`; the last CR reconciled wins and the others' cloud access breaks. On a `Neo4jBackup` it is advisory: two backups that disagree overwrite each other on every pass, and each says so once |
 | `SeedEndpointNotProjected` | Warning | An online restore's server pods (cluster or standalone) lack the cloud credentials or custom S3 endpoint (`AWS_ENDPOINT_URL_S3`) the seed fetch needs, and the target is not opted in to `neo4j.com/auto-inherit-seed-creds`. The restore waits in `Pending` with the missing items named, and carries on once the target has them or is opted in. Emitted when the restore starts waiting |
 | `RestoreSeedProgress` | Normal | One poll of an all-databases restore's per-database seed (emitted on every non-terminal poll; the apiserver aggregates repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck) |
-| `RestoreShardedDatabasesNotCovered` | Warning | An all-databases restore's source backup recorded property-sharded databases it does not recreate; restore each via its `Neo4jShardedDatabase` CR |
+| `RestoreShardedDatabasesNotCovered` | Warning | An all-databases restore's source backup recorded property-sharded databases it does not recreate; restore each via its `Neo4jShardedDatabase` CR. Advisory |
 
 ### Databases
 
@@ -96,18 +109,18 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `DatabaseReady` | Normal | Database became ready: created and online, or back from a failure. Not repeated while it stays ready |
 | `DatabaseDeleted` | Normal | Database was dropped |
 | `DatabaseCreatedFromSeed` | Normal | Database created from a seed URI |
-| `CreationFailed` | Warning | Database creation failed |
+| `CreationFailed` | Warning | Database creation failed; the database is `Failed` and retried with backoff. Once per failure |
 | `DeletionFailed` | Warning | Database deletion failed |
 | `DataImported` | Normal | Initial data imported successfully |
-| `DataImportFailed` | Warning | Initial data import failed |
+| `DataImportFailed` | Warning | Initial data import failed; retried with backoff. Once per failure |
 | `DataSeeded` | Normal | Database seeded from URI |
-| `SeedCredsMissing` | Warning | The seed credentials Secret (`spec.seedCredentials.secretRef`) is not projected onto the hosting cluster/standalone's `spec.extraEnvFrom`; the message carries a copy-pasteable fix (also emitted for `Neo4jShardedDatabase`) |
-| `SeedCredsAutoInherited` | Normal | The hosting cluster/standalone carries `neo4j.com/auto-inherit-seed-creds: "true"`, so the operator patched its `spec.extraEnvFrom` with the seed credentials Secret and is waiting for the rolling restart (also emitted for `Neo4jShardedDatabase`) |
+| `SeedCredsMissing` | Warning | The seed credentials Secret (`spec.seedCredentials.secretRef`) is not projected onto the hosting cluster/standalone's `spec.extraEnvFrom` (for a `Neo4jShardedDatabase`'s cloud `seedBackupRef`: the backup's credentials Secret or custom S3 endpoint on the cluster's server pods); the message carries a copy-pasteable fix. The database waits in phase `Pending` and is created by itself once the host has them — nothing is asked of Neo4j before. Once per wait. Also emitted for `Neo4jShardedDatabase` |
+| `SeedCredsAutoInherited` | Normal | The hosting cluster/standalone carries `neo4j.com/auto-inherit-seed-creds: "true"`, so the operator patched its `spec.extraEnvFrom` with the seed credentials Secret and is waiting (phase `Pending`) for the rolling restart (also emitted for `Neo4jShardedDatabase`) |
 | `ValidationWarning` | Warning | Database spec produced validation warnings, including a set field that nothing reads (`spec.initialData.configMapRef`, `secretRef`, `storage`, or a `source` other than `cypher`) |
-| `ClusterNotFound` | Warning | Referenced cluster or standalone not found |
-| `ClusterNotReady` | Warning | Referenced cluster is not yet Ready |
-| `ConnectionFailed` | Warning | Could not connect to Neo4j via Bolt |
-| `ClientCreationFailed` | Warning | Failed to create Neo4j Bolt client for the cluster |
+| `ClusterNotFound` | Warning | Referenced cluster or standalone not found; the database waits in phase `Pending` and carries on once it exists. Once per wait. Also emitted by `Neo4jShardedDatabase` (for a cluster) |
+| `ClusterNotReady` | Warning | On a `Neo4jShardedDatabase`: the referenced cluster cannot host it — property sharding needs Neo4j 2025.12+ and `spec.propertySharding.enabled` on the cluster; phase `Failed`. Once per failure. A cluster that is simply not Ready yet is phase `Waiting`, with no event |
+| `ConnectionFailed` | Warning | Could not connect to Neo4j via Bolt; retried with backoff. Once per failure. Emitted by `Neo4jReplicaDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jCompositeDatabase` and `Neo4jDatabaseAlias` |
+| `ClientCreationFailed` | Warning | Failed to create Neo4j Bolt client for the cluster (`Neo4jShardedDatabase`); retried with backoff. Once per failure |
 
 ### Plugins
 
@@ -117,7 +130,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `PluginInstallFailed` | Warning | Plugin installation failed (once per failure; retried every 30s without repeating it). A server that is restarting or briefly unreachable is not a failure: the plugin stays `Installing` |
 | `PluginMissing` | Warning | A `Ready` plugin's target StatefulSet no longer carries what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or its volumes); the plugin goes back to `Installing` and restores it, which restarts the servers — or, while the target is not `Ready` with every server available, says so and is `Waiting` until it is |
 | `PluginInstallDeferred` | Normal | Installing the plugin — or a `VerifiedDownload` plugin's update of its trusted CAs after the target's `spec.trustedCASecrets` changed — would restart the servers of a target that is not `Ready` with every server available (a cluster `Degraded`, or forming, rolling or upgrading); the plugin is `Waiting` and writes once the target is. Once per wait |
-| `PluginDuplicate` | Warning | Another `Neo4jPlugin` already targets this name (only the first owner reconciles; duplicates sit in `Failed` until the conflict is resolved) |
+| `PluginDuplicate` | Warning | Another `Neo4jPlugin` already targets this name (only the first owner reconciles; duplicates sit in `Failed` until the conflict is resolved). Once per conflict |
 
 ### Split-Brain Detection
 
@@ -146,8 +159,8 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 |---|---|---|
 | `StorageExpansionStarted` | Normal | PVC expansion has begun after detecting `spec.storage.size` increase |
 | `StorageExpansionCompleted` | Normal | All PVCs expanded and StatefulSet recreated successfully |
-| `StorageExpansionFailed` | Warning | Expansion failed (non-expandable StorageClass, shrink attempt, or patch error) |
-| `StorageClassNotFound` | Warning | `spec.storage.className` references a StorageClass that does not exist in the cluster |
+| `StorageExpansionFailed` | Warning | Expansion failed (non-expandable StorageClass, shrink attempt, or patch error); the deployment is `Failed` and retried with backoff. Once per failure — a retry of the same failed expansion does not announce `StorageExpansionStarted` again, and a cluster's phase no longer flips `Expanding`/`Failed` on every retry |
+| `StorageClassNotFound` | Warning | `spec.storage.className` references a StorageClass that does not exist in the cluster; the deployment is `Failed` until it exists. Once per failure |
 
 ### Sharded Databases
 
@@ -156,8 +169,11 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 | `ShardedDatabaseReady` | Normal | Sharded database became ready (created and all shards online), or was recreated by `spec.replaceExisting`. Not repeated while it stays ready |
 | `ShardedDatabaseDropped` | Normal | An existing sharded database was dropped before being recreated from a seed (`spec.replaceExisting` with `spec.force`) |
 | `SeedBackupPending` | Normal | `spec.seedBackupRef` names a `Neo4jBackup` with no Succeeded run yet; the sharded database stays `Pending` and requeues. Emitted when the wait starts, not on every retry |
-| `SeedBackupResolutionFailed` | Warning | `spec.seedBackupRef` could not be resolved into a concrete seed |
+| `SeedBackupResolutionFailed` | Warning | `spec.seedBackupRef` could not be resolved into a concrete seed (the `Neo4jBackup` is missing, or its storage or run cannot seed a sharded database); phase `Failed`. Once per failure |
 | `SeedProxyStarting` | Normal | Waiting for the PVC `backup-seed-proxy` Deployment to become Ready before seeding. Emitted when the wait starts, not on every retry |
+
+A `Neo4jShardedDatabase` also emits `ClusterNotFound` (the cluster does not exist yet: phase `Pending`), `ClusterNotReady`, `ClientCreationFailed`, `ReconcileFailed`, `SeedCredsMissing` (phase `Pending`) and `SeedCredsAutoInherited`, described above.
+
 ### Users, Roles and Role Bindings
 
 Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
@@ -169,48 +185,49 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | `UserReady` | Normal | User exists and its roles are in sync |
 | `UserDeleted` | Normal | User dropped |
 | `UserDeletionFailed` | Warning | `DROP USER` failed; retried, and the finalizer is released if it keeps failing so deletion is not wedged |
-| `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed |
+| `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed. Once per failure |
 | `PasswordRotated` | Normal | Password updated from the referenced Secret |
 | `RolesGranted` / `RolesRevoked` | Normal | Roles granted to / revoked from a user, role binding or auth rule |
 | `RolesResolved` | Normal | `Neo4jRole` CR names were resolved to Neo4j role names |
-| `RolePending` | Warning | Waiting for referenced roles to exist |
+| `RolePending` | Warning | Waiting for referenced roles to exist; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `RoleCreated` | Normal | Role created in Neo4j |
 | `RoleReady` | Normal | Role exists and its privileges are in sync |
 | `RoleDeleted` | Normal | Role dropped |
 | `RoleDeletionFailed` | Warning | `DROP ROLE` failed; retried, finalizer released if it keeps failing |
-| `RoleSyncFailed` | Warning | Reconciling the role against Neo4j failed |
+| `RoleSyncFailed` | Warning | Reconciling the role against Neo4j failed. Once per failure |
 | `PrivilegesApplied` | Normal | Privileges were added to and/or revoked from the role. Only grants that created a privilege row count: learn mode re-grants every statement after an alias change on the cluster or a new image, and grants that change nothing are not reported |
-| `PrivilegesDriftKept` | Warning | A drifting privilege was not revoked (it is immutable, or no `REVOKE` could be derived) |
+| `PrivilegesDriftKept` | Warning | A drifting privilege was not revoked (it is immutable, or no `REVOKE` could be derived). Advisory, one per kept privilege |
 | `PrivilegeNamesUnknownDatabase` | Warning | A privilege names a database that does not exist on the cluster and is not an alias for one (it is skipped), or grants graph privileges on a composite database (accepted by Neo4j but inert); see `PrivilegesResolve` on the role |
 | `PrivilegeTargetDropped` | Warning | A `Neo4jDatabase` was dropped while a `Neo4jRole` on the same cluster still grants on it; emitted on both objects |
 | `BindingCreated` / `BindingUpdated` / `BindingDeleted` | Normal | `Neo4jRoleBinding` granted its roles, changed the granted set, or revoked its roles on deletion |
-| `BindingFailed` | Warning | A role binding grant or revoke failed |
-| `UserNotFound` | Warning | The user a `Neo4jRoleBinding` names does not exist |
+| `BindingFailed` | Warning | A role binding grant or revoke failed. Once per failure |
+| `UserNotFound` | Warning | The user a `Neo4jRoleBinding` names does not exist; the binding waits in `Pending`. Once per wait |
 
 ### Auth Rules
 
 | Reason | Type | Description |
 |---|---|---|
 | `AuthRuleCreated` / `AuthRuleUpdated` / `AuthRuleDeleted` | Normal | `Neo4jAuthRule` created, its condition or enabled flag updated, or the rule dropped |
-| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed |
-| `AuthRuleVersionTooOld` | Warning | Auth rules need Neo4j 2026.03 or later on the referenced cluster |
-| `OIDCProviderNotConfigured` | Warning | The referenced cluster's `spec.config` lists no OIDC provider for attribute-based access control; the rule stays `Pending` |
+| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed. Once per failure |
+| `AuthRuleVersionTooOld` | Warning | Auth rules need Neo4j 2026.03 or later on the referenced cluster. Once per failure |
+| `OIDCProviderNotConfigured` | Warning | The referenced cluster's `spec.config` lists no OIDC provider for attribute-based access control; the rule stays `Pending`. Once per wait |
 
 ### Cross-Cluster Replication
 
 | Reason | Type | Description |
 |---|---|---|
-| `ReplicationSourceCaveat` | Normal / Warning | On a `Neo4jBackup` with `mode: replication-source`: Normal when the pull URI is published (with the reminder that bucket lifecycle rules can break the chain); Warning when the storage type (e.g. `pvc`) has no cross-cluster URI form |
+| `ReplicationSourceCaveat` | Normal / Warning | On a `Neo4jBackup` with `mode: replication-source`: Normal when the pull URI is published (with the reminder that bucket lifecycle rules can break the chain); Warning when the storage type (e.g. `pvc`) has no cross-cluster URI form (advisory) |
 | `ReplicaCreated` | Normal | Replica database created |
 | `ReplicaReady` | Normal | Replica database is online |
-| `ReplicaFailed` | Warning | Creating the replica (or dropping it on deletion) failed |
+| `ReplicaFailed` | Warning | Creating the replica (or dropping it on deletion) failed. Once per failure |
+| `ReplicaObjectStoreEnvMissing` | Warning | A backup-mode replica's downstream servers have no `AWS_REGION` (or `AWS_DEFAULT_REGION`) in any source of their environment, so Neo4j could not read the `s3://` seed or pulls. The replica waits in `Pending` — nothing is asked of Neo4j yet — and is created by itself, within two minutes, once the servers have it. Once per wait. (Before: `ReplicaFailed`, phase `Failed`) |
 | `ReplicaDropped` | Normal | Replica database dropped on CR deletion |
-| `ReplicaVersionTooOld` | Warning | The downstream cluster predates Neo4j 2026.08 |
+| `ReplicaVersionTooOld` | Warning | The downstream cluster predates Neo4j 2026.08; phase `Failed`. Once per failure |
 | `ReplicaPromotionDetected` | Warning | The database is no longer a replica (promoted, possibly out of band); the CR goes inert |
 | `ReplicaRetainedAfterPromotion` | Warning | The CR was deleted after promotion; the promoted database is retained, not dropped |
-| `ReplicaPromotionStarted` | Warning | A `Neo4jReplicaPromotion` started; irreversible, and any outstanding lag becomes permanent data loss |
+| `ReplicaPromotionStarted` | Warning | A `Neo4jReplicaPromotion` started; irreversible, and any outstanding lag becomes permanent data loss. Once per promotion, not on each retry of the `PROMOTE` call |
 | `ReplicaPromotionCompleted` | Normal | Promotion completed |
-| `ReplicaPromotionFailed` | Warning | Promotion failed |
+| `ReplicaPromotionFailed` | Warning | Promotion failed, or a `PROMOTE` call failed and is retried (the promotion stays `Promoting`, with the failure in `status.message`). Once per failure |
 | `CrossClusterProxyUnauthenticated` | Warning | The CCDR proxy was published while `spec.tls.strictPeerValidation` is disabled, so the exposed tx-shipping port is encrypted but not authenticated |
 
 The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBackupNotFound` and `UpstreamBackupNotReady` are not events: they are the reason on the replica's `Ready` condition (phase `Pending`) while `source.upstreamClusterRef` / `source.upstreamBackupRef` cannot be resolved yet — read them with `kubectl describe neo4jreplicadatabase`.
@@ -221,17 +238,17 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 |---|---|---|
 | `CompositeDatabaseCreated` | Normal | Composite database created |
 | `CompositeDatabaseReady` | Normal | Composite database is ready, with its observed constituent count |
-| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed |
+| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed. Once per failure |
 | `CompositeDatabaseDropped` | Normal | Composite dropped (constituent aliases removed; their target databases kept) |
 | `CompositeConstituentAdded` | Normal | A constituent alias now resolves to its target |
 | `CompositeConstituentRetargeted` | Normal | A constituent alias was re-pointed to a different target |
 | `CompositeConstituentRemoved` | Normal | A constituent not in `spec.constituents` was removed |
-| `CompositeDatabaseNameBlocked` | Warning | A dotted alias already occupies the composite's namespace, so the composite cannot be created until that alias is dropped (`kubectl neo4j explain CompositeDatabaseNameBlocked`) |
+| `CompositeDatabaseNameBlocked` | Warning | A dotted alias already occupies the composite's namespace, so the composite cannot be created until that alias is dropped (`kubectl neo4j explain CompositeDatabaseNameBlocked`). Once per blocking alias |
 | `AliasCreated` | Normal | Database alias created |
 | `AliasRetargeted` | Normal | Alias re-pointed to a different target database |
 | `AliasReady` | Normal | Alias resolves to its target |
 | `AliasDropped` | Normal | Alias dropped |
-| `AliasFailed` | Warning | Reconciling or dropping the alias failed |
+| `AliasFailed` | Warning | Reconciling or dropping the alias failed. Once per failure |
 
 ### Aura Orchestration
 
@@ -239,28 +256,28 @@ Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, 
 
 | Reason | Type | Description |
 |---|---|---|
-| `AuraCredentialsValidated` / `AuraCredentialsInvalid` | Normal / Warning | The provider config's Aura API credentials were accepted / rejected |
+| `AuraCredentialsValidated` / `AuraCredentialsInvalid` | Normal / Warning | The provider config's Aura API credentials were accepted / rejected (the Warning once per failure) |
 | `AuraInstanceCreated`, `AuraInstanceAdopted`, `AuraInstanceUpdated`, `AuraInstancePaused`, `AuraInstanceResumed`, `AuraInstanceUpgraded`, `AuraInstanceDeleted`, `AuraInstanceOrphaned` | Normal | Lifecycle of the Aura instance |
-| `AuraInstanceFailed` | Warning | Aura instance reconcile failed (also: deletion refused while `deletionProtection` is set) |
+| `AuraInstanceFailed` | Warning | Aura instance reconcile failed (also: deletion refused while `deletionProtection` is set, recorded on the `Synced` condition, reason `DeletionProtected`). Once per failure |
 | `AuraSnapshotCreated` | Normal | Aura snapshot requested |
 | `AuraRestoreStarted`, `AuraRestoreCompleted` | Normal | Instance restore from a snapshot started / completed |
 | `AuraRestoreFailed` | Warning | The instance entered a failed status during restore |
 | `AuraCustomerManagedKeyCreated`, `AuraCustomerManagedKeyAdopted`, `AuraCustomerManagedKeyReady`, `AuraCustomerManagedKeyDeleted`, `AuraCustomerManagedKeyOrphaned` | Normal | Lifecycle of the customer-managed key |
-| `AuraCustomerManagedKeyDeleteBlocked` | Warning | The key cannot be deleted: still in use by one or more instances |
-| `AuraCustomerManagedKeyFailed` | Warning | Customer-managed key reconcile failed |
+| `AuraCustomerManagedKeyDeleteBlocked` | Warning | The key cannot be deleted: still in use by one or more instances. Once per refusal |
+| `AuraCustomerManagedKeyFailed` | Warning | Customer-managed key reconcile failed. Once per failure |
 | `AuraIPFilterCreated`, `AuraIPFilterAdopted`, `AuraIPFilterUpdated`, `AuraIPFilterReady`, `AuraIPFilterDeleted`, `AuraIPFilterOrphaned` | Normal | Lifecycle of the IP filter |
-| `AuraIPFilterFailed` | Warning | IP filter reconcile failed |
+| `AuraIPFilterFailed` | Warning | IP filter reconcile failed. Once per failure |
 | `AuraDatabaseCreated`, `AuraDatabaseAdopted`, `AuraDatabaseReady`, `AuraDatabaseDeleted`, `AuraDatabaseOrphaned` | Normal | Lifecycle of the Aura database (`AuraDatabaseCreated` is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created) |
-| `AuraDatabaseFailed` | Warning | Aura database reconcile failed |
+| `AuraDatabaseFailed` | Warning | Aura database reconcile failed. Once per failure |
 | `AuraDatabaseBackupCreated` | Normal | Per-database backup created |
-| `AuraDatabaseBackupFailed` | Warning | Per-database backup failed |
+| `AuraDatabaseBackupFailed` | Warning | Per-database backup failed. Once per failure |
 | `AuraDatabaseRestoreStarted`, `AuraDatabaseRestoreCompleted` | Normal | Per-database restore started / submitted |
-| `AuraDatabaseRestoreFailed` | Warning | Per-database restore failed |
+| `AuraDatabaseRestoreFailed` | Warning | Per-database restore failed. Once per failure |
 | `AuraMemberRoleUpdated`, `AuraMemberReady`, `AuraMemberRemoved` | Normal | Organization/project member role set or member added/removed, reconciled, or removed on CR deletion |
-| `AuraMemberNotFound` | Warning | The person is not an organization member; invite them with an `AuraInvite` |
-| `AuraMemberFailed` | Warning | Member reconcile failed |
+| `AuraMemberNotFound` | Warning | The person is not an organization member; invite them with an `AuraInvite`. Once per wait |
+| `AuraMemberFailed` | Warning | Member reconcile failed. Once per failure |
 | `AuraInviteCreated`, `AuraInviteAdopted`, `AuraInviteReady`, `AuraInviteDeleted`, `AuraInviteOrphaned` | Normal | Lifecycle of the invite |
-| `AuraInviteFailed` | Warning | Invite reconcile failed |
+| `AuraInviteFailed` | Warning | Invite reconcile failed. Once per failure |
 
 ## Using Events in Alerting
 

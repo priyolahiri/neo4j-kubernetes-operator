@@ -159,16 +159,27 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}
 
-	// Get the referenced cluster
+	// Get the referenced cluster. A cluster that does not exist (yet) is a
+	// wait, as for a Neo4jDatabase: Pending, announced once, and the sharded
+	// database is created once the cluster is there. Any other read error is
+	// transient and retried with backoff (knowledge rule 145).
 	cluster, err := r.getReferencedCluster(ctx, &shardedDatabase)
 	if err != nil {
-		logger.Error(err, "Failed to get referenced cluster")
-		r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClusterNotFound, err.Error())
-
-		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Cluster not found: %v", err), nil); statusErr != nil {
-			logger.Error(statusErr, "Failed to update status after cluster lookup failure")
+		if !errors.IsNotFound(err) {
+			logger.Error(err, "Failed to get referenced cluster")
+			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, err
+		msg := fmt.Sprintf("Cluster not found: Neo4jEnterpriseCluster %q does not exist in namespace %q; waiting for it",
+			shardedDatabase.Spec.ClusterRef, shardedDatabase.Namespace)
+		logger.Info("Referenced cluster not found; waiting", "cluster", shardedDatabase.Spec.ClusterRef)
+		waiting, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Pending", msg, nil)
+		if statusErr != nil {
+			logger.Error(statusErr, "Failed to update status while waiting for the cluster")
+		}
+		if waiting {
+			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+		}
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
 	// Verify cluster supports property sharding. Capability (spec/version)
@@ -182,10 +193,14 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if cluster.Spec.PropertySharding == nil || !cluster.Spec.PropertySharding.Enabled {
 			err := fmt.Errorf("cluster %s does not support property sharding (requires Neo4j 2025.12+ and propertySharding.enabled=true)", cluster.Name)
 			logger.Error(err, "Cluster does not support property sharding")
-			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClusterNotReady, err.Error())
-
-			if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", err.Error(), nil); statusErr != nil {
+			failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", err.Error(), nil)
+			if statusErr != nil {
 				logger.Error(statusErr, "Failed to update status after cluster capability check")
+			}
+			// Announced when the failure starts, not on every RequeueAfter
+			// while the cluster stays without sharding (knowledge rule 145).
+			if failed {
+				r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClusterNotReady, err.Error())
 			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
@@ -201,10 +216,13 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err != nil {
 		logger.Error(err, "Failed to create Neo4j client")
-		r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClientCreationFailed, err.Error())
-
-		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Failed to create Neo4j client: %v", err), nil); statusErr != nil {
+		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Failed to create Neo4j client: %v", err), nil)
+		if statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after client creation failure")
+		}
+		// Retried with backoff; the same failure is announced once (rule 145).
+		if failed {
+			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonClientCreationFailed, err.Error())
 		}
 		return ctrl.Result{}, err
 	}
@@ -250,10 +268,15 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
 			logger.Error(seedErr, "Failed to resolve seedBackupRef", "seedBackupRef", shardedDatabase.Spec.SeedBackupRef)
-			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, "SeedBackupResolutionFailed", seedErr.Error())
-			if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed",
-				fmt.Sprintf("seedBackupRef resolution failed: %v", seedErr), nil); statusErr != nil {
+			failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed",
+				fmt.Sprintf("seedBackupRef resolution failed: %v", seedErr), nil)
+			if statusErr != nil {
 				logger.Error(statusErr, "Failed to update status to Failed")
+			}
+			// Announced when the failure starts or its message changes, not
+			// on every RequeueAfter (knowledge rule 145).
+			if failed {
+				r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonSeedBackupResolutionFailed, seedErr.Error())
 			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
@@ -308,10 +331,13 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	destructive, err := r.reconcileShardedDatabase(ctx, &shardedDatabase, neo4jClient)
 	if err != nil {
 		logger.Error(err, "Failed to reconcile sharded database")
-		r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonReconcileFailed, err.Error())
-
-		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Reconcile failed: %v", err), nil); statusErr != nil {
+		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Reconcile failed: %v", err), nil)
+		if statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after reconcile failure")
+		}
+		// Retried with backoff; the same failure is announced once (rule 145).
+		if failed {
+			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonReconcileFailed, err.Error())
 		}
 		return ctrl.Result{}, err
 	}
@@ -467,7 +493,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 			return false, fmt.Errorf("failed to DROP DATABASE %q for replaceExisting: %w", shardedDB.Spec.Name, dropErr)
 		}
 		logger.Info("Dropped existing sharded database for replaceExisting", "database", shardedDB.Spec.Name)
-		r.Recorder.Event(shardedDB, corev1.EventTypeNormal, "ShardedDatabaseDropped",
+		r.Recorder.Event(shardedDB, corev1.EventTypeNormal, EventReasonShardedDatabaseDropped,
 			fmt.Sprintf("Dropped existing sharded database %q before recreating from seed", shardedDB.Spec.Name))
 	}
 

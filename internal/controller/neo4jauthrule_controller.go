@@ -148,8 +148,12 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		msg := fmt.Sprintf("Neo4jAuthRule requires Neo4j 2026.03 or later; cluster %q runs %s. See https://neo4j.com/docs/operations-manual/current/authentication-authorization/attribute-based-access-control/.",
 			rule.Spec.ClusterRef, targetVersionString(target))
 		r.setNamedCondition(ctx, rule, ConditionTypeAuthRuleVersionTooOld, metav1.ConditionTrue, ConditionReasonAuthRuleVersionGate, msg)
-		r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleVersionTooOld, msg, nil, nil)
-		r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonAuthRuleVersionTooOld, msg)
+		// Announced when the refusal starts or its message changes, not on
+		// every pass while the cluster stays on the older version (knowledge
+		// rule 145).
+		if r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleVersionTooOld, msg, nil, nil) {
+			r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonAuthRuleVersionTooOld, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	r.setNamedCondition(ctx, rule, ConditionTypeAuthRuleVersionTooOld, metav1.ConditionFalse, "VersionSupported", "")
@@ -163,8 +167,11 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			rule.Spec.ClusterRef, abacAuthorizationProvidersKey,
 		)
 		r.setNamedCondition(ctx, rule, ConditionTypeOIDCProviderConfigured, metav1.ConditionFalse, ConditionReasonOIDCNotConfigured, msg)
-		r.setStatus(ctx, rule, "Pending", metav1.ConditionFalse, EventReasonOIDCProviderNotConfigured, msg, nil, nil)
-		r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonOIDCProviderNotConfigured, msg)
+		// Announced when the wait starts, not on every pass until the cluster
+		// lists a provider (knowledge rule 145).
+		if r.setStatus(ctx, rule, "Pending", metav1.ConditionFalse, EventReasonOIDCProviderNotConfigured, msg, nil, nil) {
+			r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonOIDCProviderNotConfigured, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	r.setNamedCondition(ctx, rule, ConditionTypeOIDCProviderConfigured, metav1.ConditionTrue, "OIDCConfigured", "")
@@ -173,8 +180,11 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
-		r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, nil)
-		r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		// Retried with backoff; the same failure is announced once (knowledge
+		// rule 145).
+		if r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, nil) {
+			r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
 		return ctrl.Result{}, err
 	}
 	defer func() { _ = nc.Close() }()
@@ -197,13 +207,7 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		return r.fail(ctx, rule, "role lookup failed", err, requeue)
 	}
-	if len(missingRoles) > 0 {
-		msg := fmt.Sprintf("waiting for roles to exist: %v", missingRoles)
-		r.setNamedCondition(ctx, rule, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending, msg)
-		r.Recorder.Eventf(rule, corev1.EventTypeWarning, EventReasonRolePending, "%s", msg)
-	} else {
-		r.setNamedCondition(ctx, rule, ConditionTypePendingDependencies, metav1.ConditionFalse, "AllDependenciesPresent", "")
-	}
+	r.reportPendingRoles(ctx, rule, missingRoles)
 
 	// Read live state.
 	live, err := nc.ShowAuthRule(ctx, ruleName)
@@ -431,8 +435,11 @@ func (r *Neo4jAuthRuleReconciler) fail(ctx context.Context, rule *neo4jv1beta1.N
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
-	r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleFailed, msg, nil, nil)
-	r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed, msg)
+	// Announced when the failure starts or its message changes, not on every
+	// retry of the same failure (knowledge rule 145).
+	if r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleFailed, msg, nil, nil) {
+		r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed, msg)
+	}
 	// A rejection the server will repeat (Neo.ClientError.*: a malformed
 	// statement, a missing role or user, an argument it refuses) cannot
 	// resolve without someone changing something, and error backoff would
@@ -495,19 +502,44 @@ func (r *Neo4jAuthRuleReconciler) setStatus(
 	return transitioned
 }
 
-func (r *Neo4jAuthRuleReconciler) setNamedCondition(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule, condType string, status metav1.ConditionStatus, reason, message string) {
+// reportPendingRoles writes the PendingDependencies condition and announces
+// RolePending when the wait starts or its set of missing roles changes — not
+// on every pass while the same roles stay missing (knowledge rule 145).
+func (r *Neo4jAuthRuleReconciler) reportPendingRoles(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule, missing []string) {
+	if len(missing) == 0 {
+		r.setNamedCondition(ctx, rule, ConditionTypePendingDependencies, metav1.ConditionFalse, "AllDependenciesPresent", "")
+		return
+	}
+	msg := pendingRolesMessage(missing)
+	if r.setNamedCondition(ctx, rule, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending, msg) {
+		r.Recorder.Eventf(rule, corev1.EventTypeWarning, EventReasonRolePending, "%s", msg)
+	}
+}
+
+// setNamedCondition writes one named condition. It reports whether the write
+// changed the condition's status, reason or message, from the attempt whose
+// write succeeded, so a caller can announce the change once.
+func (r *Neo4jAuthRuleReconciler) setNamedCondition(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule, condType string, status metav1.ConditionStatus, reason, message string) bool {
+	changed := false
 	update := func() error {
+		changed = false
 		latest := &neo4jv1beta1.Neo4jAuthRule{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(rule), latest); err != nil {
 			return err
 		}
-		SetNamedCondition(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
+		c := setNamedConditionChanged(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = c
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to set condition on Neo4jAuthRule", "condition", condType)
+		return false
 	}
+	return changed
 }
 
 // targetSupportsAuthRules parses the cluster's reported Neo4j version and

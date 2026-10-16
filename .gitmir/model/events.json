@@ -32,7 +32,7 @@
   {
     "id": "ev-topology-placement-failed",
     "name": "TopologyPlacementFailed",
-    "description": "Fires when CalculateTopologyPlacement errors, e.g. enforceDistribution requested with fewer discoverable availability zones than servers.",
+    "description": "Fires when CalculateTopologyPlacement errors, e.g. enforceDistribution requested with fewer discoverable availability zones than servers. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {
@@ -44,43 +44,43 @@
   {
     "id": "ev-topology-zone-discovery-degraded",
     "name": "TopologyZoneDiscoveryDegraded",
-    "description": "Fires when cluster-scoped Node listing for AZ auto-discovery fails (typically a namespace-scoped install lacking node RBAC) but zone-based spread/anti-affinity is still applied via the topology label key.",
+    "description": "Fires when cluster-scoped Node listing for AZ auto-discovery fails (typically a namespace-scoped install lacking node RBAC) but zone-based spread/anti-affinity is still applied via the topology label key. Advisory: emitted through advisoryWarnings when it starts to apply and again every 30 minutes while it still does, not on every pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-property-sharding-validation-failed",
     "name": "PropertyShardingValidationFailed",
-    "description": "Fires when spec.propertySharding is enabled but fails version, cluster-size, required-config-key, or resource-minimum validation.",
+    "description": "Fires when spec.propertySharding is enabled but fails version, cluster-size, required-config-key, or resource-minimum validation. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-server-role-validation-failed",
     "name": "ServerRoleValidationFailed",
-    "description": "Fires when ValidateServerRoleHints rejects spec.topology.serverRoles, e.g. an out-of-range serverIndex, a duplicate index, or every server set to SECONDARY.",
+    "description": "Fires when ValidateServerRoleHints rejects spec.topology.serverRoles, e.g. an out-of-range serverIndex, a duplicate index, or every server set to SECONDARY. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-storage-class-not-found",
     "name": "StorageClassNotFound",
-    "description": "Fires when spec.storage.className names a StorageClass that doesn't exist, before any StatefulSet is created — otherwise the pod would stay Pending indefinitely with no signal.",
+    "description": "Fires when spec.storage.className names a StorageClass that doesn't exist, before any StatefulSet is created — otherwise the pod would stay Pending indefinitely with no signal. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-route-api-not-found",
     "name": "RouteAPINotFound",
-    "description": "Fires when an OpenShift Route (or MCP Route) is configured but route.openshift.io/v1 isn't registered in the cluster, so Route reconciliation is skipped.",
+    "description": "Fires when an OpenShift Route (or MCP Route) is configured but route.openshift.io/v1 isn't registered in the cluster, so Route reconciliation is skipped. Advisory: emitted through advisoryWarnings when it starts to apply and again every 30 minutes while it still does, not on every pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-mcp-apoc-missing",
     "name": "MCPApocMissing",
-    "description": "Fires when spec.mcp.enabled is true but no enabled Neo4jPlugin named apoc/apoc-extended targets this cluster or standalone, since MCP stdio mode needs APOC procedures.",
+    "description": "Fires when spec.mcp.enabled is true but no enabled Neo4jPlugin named apoc/apoc-extended targets this cluster or standalone, since MCP stdio mode needs APOC procedures. Advisory: emitted through advisoryWarnings when it starts to apply and again every 30 minutes while it still does, not on every pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-reconcile-failed",
     "name": "ReconcileFailed",
-    "description": "Fires when a controller's inner reconcile helper chain (TLS/ConfigMap/Service/StatefulSet for standalone; create/drop/status-refresh for a Neo4jShardedDatabase) returns an error, before status is set to Failed.",
+    "description": "Fires when a controller's inner reconcile helper chain (TLS/ConfigMap/Service/StatefulSet for standalone; create/drop/status-refresh for a Neo4jShardedDatabase) returns an error, before status is set to Failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-platform"
   },
   {
@@ -104,7 +104,7 @@
   {
     "id": "ev-upgrade-failed",
     "name": "UpgradeFailed",
-    "description": "Fires when a rolling-upgrade step's deadline or gate is exceeded without autoPauseOnFailure set, or when the standalone's pre-upgrade health check fails with autoPauseOnFailure set.",
+    "description": "Fires when a rolling-upgrade step's deadline or gate is exceeded without autoPauseOnFailure set, or when the standalone's pre-upgrade health check fails with autoPauseOnFailure set. The standalone's pre-upgrade health check, which holds the upgrade back and is re-run every RequeueAfter, is advisory: announced when the block starts and every 30 minutes while it lasts (knowledge operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {
@@ -140,7 +140,7 @@
   {
     "id": "ev-storage-expansion-failed",
     "name": "StorageExpansionFailed",
-    "description": "Fires when a storage shrink is rejected, the StorageClass doesn't allow expansion, or patching a PVC / orphan-deleting the StatefulSet itself errors.",
+    "description": "Fires when a storage shrink is rejected, the StorageClass doesn't allow expansion, or patching a PVC / orphan-deleting the StatefulSet itself errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {
@@ -194,31 +194,31 @@
   {
     "id": "ev-cluster-not-found",
     "name": "ClusterNotFound",
-    "description": "The CR's clusterRef/instanceRef did not resolve to any Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone in the namespace.",
+    "description": "The CR's clusterRef did not resolve to a Neo4jEnterpriseCluster (or, for a Neo4jDatabase, a Neo4jEnterpriseStandalone) in the namespace. The Neo4jDatabase or Neo4jShardedDatabase waits in phase Pending and carries on once it exists (a Neo4jShardedDatabase was Failed before). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-cluster-not-ready",
     "name": "ClusterNotReady",
-    "description": "The referenced cluster was found but is not yet Ready (or, for sharded databases, not yet property-sharding-operational).",
+    "description": "On a Neo4jShardedDatabase: the referenced cluster cannot host it, because property sharding needs Neo4j 2025.12+ and spec.propertySharding.enabled on the cluster; phase Failed. A cluster that is not Ready yet is phase Waiting, with no event. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-connection-failed",
     "name": "ConnectionFailed",
-    "description": "The operator could not open a Bolt client connection to the resolved cluster/standalone target.",
+    "description": "The operator could not open a Bolt client connection to the resolved cluster/standalone target. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-creation-failed",
     "name": "CreationFailed",
-    "description": "The CREATE DATABASE Cypher call for a Neo4jDatabase failed.",
+    "description": "The CREATE DATABASE Cypher call for a Neo4jDatabase failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-data-import-failed",
     "name": "DataImportFailed",
-    "description": "One of spec.initialData.cypherStatements failed to execute against the newly created database.",
+    "description": "One of spec.initialData.cypherStatements failed to execute against the newly created database. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
@@ -284,13 +284,13 @@
   {
     "id": "ev-alias-failed",
     "name": "AliasFailed",
-    "description": "An alias lookup, CREATE, ALTER, or DROP Cypher call failed.",
+    "description": "An alias lookup, CREATE, ALTER, or DROP Cypher call failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-client-creation-failed",
     "name": "ClientCreationFailed",
-    "description": "The operator could not construct a Neo4j Bolt client for a Neo4jShardedDatabase's referenced cluster.",
+    "description": "The operator could not construct a Neo4j Bolt client for a Neo4jShardedDatabase's referenced cluster. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
@@ -314,7 +314,7 @@
   {
     "id": "ev-seed-backup-resolution-failed",
     "name": "SeedBackupResolutionFailed",
-    "description": "Resolving seedBackupRef into concrete seed URIs failed permanently (missing Neo4jBackup CR, unsupported storage type, or missing per-shard filenames).",
+    "description": "Resolving seedBackupRef into concrete seed URIs failed permanently (missing Neo4jBackup CR, unsupported storage type, or missing per-shard filenames). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
@@ -326,13 +326,13 @@
   {
     "id": "ev-seed-creds-missing",
     "name": "SeedCredsMissing",
-    "description": "The target cluster/standalone lacks the cloud credentials Secret a seedURI/seedBackupRef needs, and auto-inherit is not enabled.",
+    "description": "The target cluster/standalone lacks the cloud credentials Secret a seedURI/seedBackupRef needs (or, for a Neo4jShardedDatabase, the custom S3 endpoint on its server pods), and auto-inherit is not enabled. Nothing has been asked of Neo4j yet: the Neo4jDatabase or Neo4jShardedDatabase waits in phase Pending (it was Unknown, resp. Failed) and is created by itself once the target has them. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per wait, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-seed-creds-auto-inherited",
     "name": "SeedCredsAutoInherited",
-    "description": "The operator patched the target's spec.extraEnvFrom with the seed credentials Secret (and spec.env with a custom S3 endpoint, for a Neo4jRestore or a Neo4jShardedDatabase seed) and is waiting for the resulting rolling restart.",
+    "description": "The operator patched the target's spec.extraEnvFrom with the seed credentials Secret (and spec.env with a custom S3 endpoint, for a Neo4jRestore or a Neo4jShardedDatabase seed) and is waiting for the resulting rolling restart. The database is phase Pending meanwhile.",
     "moduleId": "mod-database"
   },
   {
@@ -350,7 +350,7 @@
   {
     "id": "ev-replica-failed",
     "name": "ReplicaFailed",
-    "description": "A replica database lookup, create, or drop Cypher call failed.",
+    "description": "A replica database lookup, create, or drop Cypher call failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
@@ -374,13 +374,19 @@
   {
     "id": "ev-replica-version-too-old",
     "name": "ReplicaVersionTooOld",
-    "description": "The target cluster's Neo4j version is below the minimum required to host a cross-cluster replica (MinCCDRReplicaVersion).",
+    "description": "The target cluster's Neo4j version is below the minimum required to host a cross-cluster replica (MinCCDRReplicaVersion). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-replica-object-store-env-missing",
+    "name": "ReplicaObjectStoreEnvMissing",
+    "description": "A backup-mode Neo4jReplicaDatabase's downstream servers have no AWS_REGION (or AWS_DEFAULT_REGION) in any source of their environment, so Neo4j could not read the s3:// seed or pulls. Nothing has been asked of Neo4j: the replica waits in phase Pending and is created by itself once the servers have it (checked every two minutes). It was ReplicaFailed with phase Failed before. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per wait, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-replica-promotion-started",
     "name": "ReplicaPromotionStarted",
-    "description": "The irreversible replica-promote call is about to be issued; the in-flight replication lag at this instant becomes permanent data loss.",
+    "description": "The irreversible replica-promote call is about to be issued; the in-flight replication lag at this instant becomes permanent data loss. Emitted when the promotion enters Promoting, not on a retry of the PROMOTE call nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
@@ -392,7 +398,7 @@
   {
     "id": "ev-replica-promotion-failed",
     "name": "ReplicaPromotionFailed",
-    "description": "The promotion could not proceed or be confirmed (referenced Neo4jReplicaDatabase/database missing, unreachable cluster, or a failed promote call).",
+    "description": "The promotion could not proceed or be confirmed (referenced Neo4jReplicaDatabase/database missing, unreachable cluster, or a failed promote call). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-database"
   },
   {
@@ -416,7 +422,7 @@
   {
     "id": "ev-backup-failed",
     "name": "BackupFailed",
-    "description": "The Neo4jBackup spec was invalid, or the backup Job failed terminally (BackoffLimit exhausted or startup timeout).",
+    "description": "The Neo4jBackup spec was invalid, or the backup Job failed terminally (BackoffLimit exhausted or startup timeout). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -428,31 +434,31 @@
   {
     "id": "ev-backup-sharded-databases-excluded",
     "name": "BackupShardedDatabasesExcluded",
-    "description": "An all-databases backup captured property-sharded databases as per-shard artifacts (status.shardedFamilies) that its own all-databases restore path cannot recreate; each must restore via its Neo4jShardedDatabase CR.",
+    "description": "An all-databases backup captured property-sharded databases as per-shard artifacts (status.shardedFamilies) that its own all-databases restore path cannot recreate; each must restore via its Neo4jShardedDatabase CR. Emitted once per run, after the status write that records the run in status.history, and only for runs the write kept (not on a conflict retry, a pass that defers the run, or a run the ten-entry cap trims) (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-backup-sharded-differential",
     "name": "BackupShardedDifferential",
-    "description": "A backup run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run, since over HTTP Neo4j seeds one only from a full backup of every shard.",
+    "description": "A backup run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run, since over HTTP Neo4j seeds one only from a full backup of every shard. Emitted once per run, after the status write that records the run in status.history, and only for runs the write kept (not on a conflict retry, a pass that defers the run, or a run the ten-entry cap trims) (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-replication-source-caveat",
     "name": "ReplicationSourceCaveat",
-    "description": "Published the exact directory a downstream cross-cluster replica should pull from (spec.mode=replication-source), or warned that the storage type has no cross-cluster URI form.",
+    "description": "Published the exact directory a downstream cross-cluster replica should pull from (spec.mode=replication-source), or warned that the storage type has no cross-cluster URI form. The Warning is advisory: once, then every 30 minutes while the storage stays without that form, not on every scheduled pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-service-account-annotation-conflict",
     "name": "ServiceAccountAnnotationConflict",
-    "description": "Two backup/restore CRs in the same namespace declared different workload-identity annotations on the shared neo4j-backup-sa/neo4j-restore-sa ServiceAccount; the last-reconciled CR's annotations win.",
+    "description": "Two backup/restore CRs in the same namespace declared different workload-identity annotations on the shared neo4j-backup-sa/neo4j-restore-sa ServiceAccount; the last-reconciled CR's annotations win. On a Neo4jBackup it is advisory: two CRs that disagree overwrite each other on every pass, and each says so once every 30 minutes (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-backup-validate-unsupported",
     "name": "BackupValidateUnsupported",
-    "description": "options.validate was requested but `neo4j-admin backup validate` doesn't exist on this Neo4j image (it requires a CalVer 2025.x+ image).",
+    "description": "options.validate was requested but `neo4j-admin backup validate` doesn't exist on this Neo4j image (it requires a CalVer 2025.x+ image). Advisory: emitted through advisoryWarnings when it starts to apply and again every 30 minutes while it still does, not on every pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -476,7 +482,7 @@
   {
     "id": "ev-restore-from-chain-parent",
     "name": "RestoreFromChainParent",
-    "description": "The resolved backup run is a differential artifact that depends on a FULL backup from a chainFromBackup parent CR.",
+    "description": "The resolved backup run is a differential artifact that depends on a FULL backup from a chainFromBackup parent CR. Advisory: emitted through advisoryWarnings when it starts to apply and again every 30 minutes while it still does, not on every pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -500,7 +506,7 @@
   {
     "id": "ev-restore-sharded-databases-not-covered",
     "name": "RestoreShardedDatabasesNotCovered",
-    "description": "An all-databases restore does not recreate property-sharded databases in its per-database loop; each must be restored via its own Neo4jShardedDatabase CR (spec.seedBackupRef) pointed at the same backup.",
+    "description": "An all-databases restore does not recreate property-sharded databases in its per-database loop; each must be restored via its own Neo4jShardedDatabase CR (spec.seedBackupRef) pointed at the same backup. Advisory: emitted through advisoryWarnings when it starts to apply and again every 30 minutes while it still does, not on every pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -536,7 +542,7 @@
   {
     "id": "ev-user-sync-failed",
     "name": "UserSyncFailed",
-    "description": "Emitted on any lookup/create/alter/role-grant failure during Neo4jUser reconciliation, moving the CR to phase Failed (neo4juser_controller.go).",
+    "description": "Emitted on any lookup/create/alter/role-grant failure during Neo4jUser reconciliation, moving the CR to phase Failed (neo4juser_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -566,7 +572,7 @@
   {
     "id": "ev-role-pending",
     "name": "RolePending",
-    "description": "Emitted when a desired role name matches neither a built-in nor any Neo4jRole CR, deferring the grant until the role exists (neo4juser_controller.go, neo4jrolebinding_controller.go, neo4jauthrule_controller.go).",
+    "description": "Emitted when a desired role name matches neither a built-in nor any Neo4jRole CR, deferring the grant until the role exists (neo4juser_controller.go, neo4jrolebinding_controller.go, neo4jauthrule_controller.go). Emitted after the PendingDependencies condition write, which names the missing roles sorted, and only when that write changed it: once per wait, and again when the missing set changes (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -596,7 +602,7 @@
   {
     "id": "ev-role-sync-failed",
     "name": "RoleSyncFailed",
-    "description": "Emitted on any lookup/create/privilege-apply/revoke failure during Neo4jRole reconciliation, moving the CR to phase Failed (neo4jrole_controller.go).",
+    "description": "Emitted on any lookup/create/privilege-apply/revoke failure during Neo4jRole reconciliation, moving the CR to phase Failed (neo4jrole_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -608,7 +614,7 @@
   {
     "id": "ev-privileges-drift-kept",
     "name": "PrivilegesDriftKept",
-    "description": "Emitted when a currently-granted privilege cannot be reconciled away — either it is immutable or no REVOKE can be textually derived — leaving PrivilegesSynced false (neo4jrole_controller.go).",
+    "description": "Emitted when a currently-granted privilege cannot be reconciled away — either it is immutable or no REVOKE can be textually derived — leaving PrivilegesSynced false (neo4jrole_controller.go). Advisory: emitted through advisoryWarnings when it starts to apply and again every 30 minutes while it still does, not on every pass (knowledge operations.md ids 102, 145).",
     "moduleId": "mod-security"
   },
   {
@@ -632,13 +638,13 @@
   {
     "id": "ev-binding-failed",
     "name": "BindingFailed",
-    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go).",
+    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-user-not-found",
     "name": "UserNotFound",
-    "description": "Emitted when a Neo4jRoleBinding's target username does not exist in Neo4j; bindings never create the user, only manage grants for externally provisioned users (neo4jrolebinding_controller.go).",
+    "description": "Emitted when a Neo4jRoleBinding's target username does not exist in Neo4j; bindings never create the user, only manage grants for externally provisioned users (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -662,19 +668,19 @@
   {
     "id": "ev-authrule-failed",
     "name": "AuthRuleFailed",
-    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation (neo4jauthrule_controller.go).",
+    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-authrule-version-too-old",
     "name": "AuthRuleVersionTooOld",
-    "description": "Emitted when the target cluster's Neo4j version does not support AUTH RULE (older than 2026.03), gating the Neo4jAuthRule to phase Failed (neo4jauthrule_controller.go).",
+    "description": "Emitted when the target cluster's Neo4j version does not support AUTH RULE (older than 2026.03), gating the Neo4jAuthRule to phase Failed (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-oidc-provider-not-configured",
     "name": "OIDCProviderNotConfigured",
-    "description": "Emitted when the target cluster's spec.config does not set dbms.security.abac.authorization_providers, a prerequisite for ABAC auth rules (neo4jauthrule_controller.go).",
+    "description": "Emitted when the target cluster's spec.config does not set dbms.security.abac.authorization_providers, a prerequisite for ABAC auth rules (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -728,7 +734,7 @@
   {
     "id": "ev-aura-instance-failed",
     "name": "AuraInstanceFailed",
-    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete.",
+    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -788,7 +794,7 @@
   {
     "id": "ev-aura-database-failed",
     "name": "AuraDatabaseFailed",
-    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons.",
+    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -800,7 +806,7 @@
   {
     "id": "ev-aura-database-backup-failed",
     "name": "AuraDatabaseBackupFailed",
-    "description": "Emitted by fail() when resolving the database/target or taking the backup fails.",
+    "description": "Emitted by fail() when resolving the database/target or taking the backup fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -818,13 +824,13 @@
   {
     "id": "ev-aura-database-restore-failed",
     "name": "AuraDatabaseRestoreFailed",
-    "description": "Emitted by fail() when resolving the database/backup/target or the RestoreDatabase call itself fails.",
+    "description": "Emitted by fail() when resolving the database/backup/target or the RestoreDatabase call itself fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-database"
   },
   {
     "id": "ev-aura-member-not-found",
     "name": "AuraMemberNotFound",
-    "description": "Emitted (Warning) when the target email is not found as an org or project member and must be invited via AuraInvite first.",
+    "description": "Emitted (Warning) when the target email is not found as an org or project member and must be invited via AuraInvite first. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -848,7 +854,7 @@
   {
     "id": "ev-aura-member-failed",
     "name": "AuraMemberFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons.",
+    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -884,7 +890,7 @@
   {
     "id": "ev-aura-invite-failed",
     "name": "AuraInviteFailed",
-    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors.",
+    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -896,7 +902,7 @@
   {
     "id": "ev-aura-credentials-invalid",
     "name": "AuraCredentialsInvalid",
-    "description": "Emitted (Warning) when the credential exchange or the proving ListInstances call fails.",
+    "description": "Emitted (Warning) when the credential exchange or the proving ListInstances call fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -920,7 +926,7 @@
   {
     "id": "ev-aura-customer-managed-key-delete-blocked",
     "name": "AuraCustomerManagedKeyDeleteBlocked",
-    "description": "Emitted (Warning) when DeleteCustomerManagedKey is refused (400 encryption-key-is-active) because an instance still uses the key.",
+    "description": "Emitted (Warning) when DeleteCustomerManagedKey is refused (400 encryption-key-is-active) because an instance still uses the key. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -938,7 +944,7 @@
   {
     "id": "ev-aura-customer-managed-key-failed",
     "name": "AuraCustomerManagedKeyFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons.",
+    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -980,7 +986,7 @@
   {
     "id": "ev-aura-ip-filter-failed",
     "name": "AuraIPFilterFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons.",
+    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -998,7 +1004,7 @@
   {
     "id": "ev-plugin-duplicate",
     "name": "PluginDuplicate",
-    "description": "Emitted when another Neo4jPlugin CR in the same namespace already targets the same clusterRef with the same spec.name; the newer CR (by creationTimestamp) is marked Failed rather than racing on the shared NEO4J_PLUGINS value.",
+    "description": "Emitted when another Neo4jPlugin CR in the same namespace already targets the same clusterRef with the same spec.name; the newer CR (by creationTimestamp) is marked Failed rather than racing on the shared NEO4J_PLUGINS value. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-plugins"
   },
   {

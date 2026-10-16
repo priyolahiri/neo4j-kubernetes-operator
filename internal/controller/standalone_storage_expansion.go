@@ -61,26 +61,33 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneStorageExpansio
 
 	case pvcSizeShrink:
 		msg := fmt.Sprintf("spec.storage.size (%s) is smaller than existing PVC; PVC shrink is not supported by Kubernetes", standalone.Spec.Storage.Size)
-		if r.Recorder != nil {
+		shrinkErr := fmt.Errorf("storage shrink not supported: %s", msg)
+		// Reconcile records the error in status (standaloneReconcileFailedMessage)
+		// and retries it with backoff. Announced when the refusal starts, not
+		// on every retry (knowledge rule 145).
+		if r.Recorder != nil && !standaloneFailedWith(standalone, shrinkErr) {
 			r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonStorageExpansionFailed,
 				"Storage shrink rejected: %s", msg)
 		}
-		return false, fmt.Errorf("storage shrink not supported: %s", msg)
+		return false, shrinkErr
 
 	case pvcSizeExpand:
 		logger.Info("Storage expansion required for standalone", "desiredSize", desiredSize.String())
 
-		if r.Recorder != nil {
+		// A retry of this generation's failed expansion is not a new one to
+		// announce (as for a cluster, storageExpansionRetry).
+		if r.Recorder != nil && !standaloneStorageExpansionRetry(standalone) {
 			r.Recorder.Event(standalone, corev1.EventTypeNormal, EventReasonStorageExpansionStarted,
 				"Storage expansion started")
 		}
 
 		if err := r.expandStandaloneVolumes(ctx, standalone, stsName, "neo4j-data", desiredSize); err != nil {
-			if r.Recorder != nil {
+			expandErr := fmt.Errorf("%s%w", standaloneStorageExpansionFailedPrefix, err)
+			if r.Recorder != nil && !standaloneFailedWith(standalone, expandErr) {
 				r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonStorageExpansionFailed,
 					"Failed to expand storage: %v", err)
 			}
-			return false, err
+			return false, expandErr
 		}
 
 		if r.Recorder != nil {
@@ -92,6 +99,29 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneStorageExpansio
 	}
 
 	return false, nil
+}
+
+// standaloneStorageExpansionFailedPrefix starts the error a failed standalone
+// volume expansion returns, so its status message says what failed.
+const standaloneStorageExpansionFailedPrefix = "storage expansion failed: "
+
+// standaloneFailedWith reports whether the standalone's persisted status, as
+// read at the start of this pass, already records err as its reconcile failure
+// at the current generation — Reconcile writes it with
+// standaloneReconcileFailedMessage. Then this pass retries a failure that was
+// announced, and a Warning would repeat it on every backoff retry.
+func standaloneFailedWith(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, err error) bool {
+	return standalone.Status.Phase == "Failed" &&
+		standalone.Status.ObservedGeneration == standalone.Generation &&
+		standalone.Status.Message == standaloneReconcileFailedMessage(err)
+}
+
+// standaloneStorageExpansionRetry reports whether the persisted status is a
+// failed volume expansion of the current generation.
+func standaloneStorageExpansionRetry(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) bool {
+	return standalone.Status.Phase == "Failed" &&
+		standalone.Status.ObservedGeneration == standalone.Generation &&
+		strings.HasPrefix(standalone.Status.Message, standaloneReconcileFailedPrefix+standaloneStorageExpansionFailedPrefix)
 }
 
 // compareStandalonePVCSizes checks PVC sizes against the desired size for a standalone deployment.

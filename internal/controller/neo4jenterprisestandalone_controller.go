@@ -210,8 +210,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", standalone.Spec.Storage.ClassName)
 		logger.Error(fmt.Errorf("storage class not found"), msg)
-		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
-		r.setFailedStatus(ctx, standalone, msg)
+		// Announced when the failure starts or its message changes, not on
+		// every RequeueAfter while the class stays missing (knowledge rule
+		// 145).
+		if r.setFailedStatus(ctx, standalone, msg) {
+			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -219,15 +223,28 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	result, err := r.reconcileStandalone(ctx, standalone)
 	if err != nil {
 		logger.Error(err, "Failed to reconcile standalone deployment")
-		r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonReconcileFailed,
-			fmt.Sprintf("Failed to reconcile: %v", err))
 
-		// Update status to reflect failure
-		r.setFailedStatus(ctx, standalone, fmt.Sprintf("Reconciliation failed: %v", err))
+		// Update status to reflect failure. The error is retried with
+		// backoff; the same failure is announced once (rule 145).
+		if r.setFailedStatus(ctx, standalone, standaloneReconcileFailedMessage(err)) {
+			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonReconcileFailed,
+				fmt.Sprintf("Failed to reconcile: %v", err))
+		}
 		return ctrl.Result{}, err
 	}
 
 	return result, nil
+}
+
+// standaloneReconcileFailedPrefix starts the status message of a standalone
+// whose reconcile pass failed.
+const standaloneReconcileFailedPrefix = "Reconciliation failed: "
+
+// standaloneReconcileFailedMessage is the status message Reconcile writes for a
+// pass that failed with err. Code that announces a failure of its own reads it
+// back to tell a retry from a new failure (standaloneFailedWith).
+func standaloneReconcileFailedMessage(err error) string {
+	return standaloneReconcileFailedPrefix + err.Error()
 }
 
 // handleDeletion handles the deletion of a standalone deployment
@@ -1328,12 +1345,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context
 		route.Object["spec"] = desired.Object["spec"]
 		return nil
 	})
+	// An advisory warning, announced when it starts to apply, not on every
+	// pass (knowledge rules 102 and 145).
+	var noRouteAPI []string
+	if err != nil && meta.IsNoMatchError(err) {
+		noRouteAPI = append(noRouteAPI, "route.openshift.io/v1 not available; skipping Route reconciliation")
+	}
+	r.advisoryWarnings.recordScoped(r.Recorder, standalone, EventReasonRouteAPINotFound, "route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping Route reconciliation")
-			if r.Recorder != nil {
-				r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping Route reconciliation")
-			}
 			return nil
 		}
 		return fmt.Errorf("failed to create or update Route: %w", err)
@@ -1397,12 +1418,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Cont
 		})
 		return err
 	})
+	var noRouteAPI []string
+	if err != nil && meta.IsNoMatchError(err) {
+		noRouteAPI = append(noRouteAPI, "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
+	}
+	r.advisoryWarnings.recordScoped(r.Recorder, standalone, EventReasonRouteAPINotFound, "mcp-route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping MCP Route reconciliation")
-			if r.Recorder != nil {
-				r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
-			}
 			return nil
 		}
 		return fmt.Errorf("failed to create or update MCP Route: %w", err)
@@ -1436,17 +1459,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) warnIfMCPMissingAPOC(ctx context.C
 		return
 	}
 
-	for _, plugin := range plugins.Items {
-		if plugin.Spec.ClusterRef != standalone.Name || !plugin.Spec.Enabled {
-			continue
-		}
-		if isAPOCPluginName(plugin.Spec.Name) {
-			return
-		}
-	}
-
-	r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonMCPApocMissing,
-		"MCP is enabled but APOC is not configured via Neo4jPlugin; MCP may fail in stdio mode and some tools may be unavailable.")
+	// Advisory: announced when it starts to apply and refreshed every
+	// advisoryWarningRefresh, not on every pass (knowledge rules 102, 145).
+	r.advisoryWarnings.record(r.Recorder, standalone, EventReasonMCPApocMissing, mcpMissingAPOCWarnings(plugins.Items, standalone.Name))
 }
 
 // createConfigMap creates a ConfigMap for the standalone deployment
@@ -2368,30 +2383,34 @@ func (r *Neo4jEnterpriseStandaloneReconciler) preUpgradeHealthCheck(ctx context.
 		return false
 	}
 
+	var failure string
 	neo4jClient, err := neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
 	if err != nil {
 		logger.Error(err, "Pre-upgrade health check: cannot connect to Neo4j")
-		if standalone.Spec.UpgradeStrategy.AutoPauseOnFailure {
-			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonUpgradeFailed,
-				fmt.Sprintf("Pre-upgrade health check failed (cannot connect): %v", err))
-			return true
-		}
-		return false
-	}
-	defer neo4jClient.Close()
-
-	// Simple connectivity check
-	if err := neo4jClient.VerifyConnectivity(ctx); err != nil {
-		logger.Error(err, "Pre-upgrade health check failed")
-		if standalone.Spec.UpgradeStrategy.AutoPauseOnFailure {
-			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonUpgradeFailed,
-				fmt.Sprintf("Pre-upgrade health check failed: %v", err))
-			return true
+		failure = fmt.Sprintf("Pre-upgrade health check failed (cannot connect): %v", err)
+	} else {
+		defer neo4jClient.Close()
+		// Simple connectivity check
+		if err := neo4jClient.VerifyConnectivity(ctx); err != nil {
+			logger.Error(err, "Pre-upgrade health check failed")
+			failure = fmt.Sprintf("Pre-upgrade health check failed: %v", err)
 		}
 	}
 
-	logger.Info("Pre-upgrade health check passed")
-	return false
+	blocked := failure != "" && standalone.Spec.UpgradeStrategy.AutoPauseOnFailure
+	// A blocked upgrade is checked again every RequeueAfter, with nothing in
+	// status to say so, until the check passes: the warning is announced when
+	// the block starts (and refreshed every advisoryWarningRefresh), not on
+	// every check (knowledge rule 145).
+	var blockedBy []string
+	if blocked {
+		blockedBy = append(blockedBy, failure)
+	}
+	r.advisoryWarnings.recordScoped(r.Recorder, standalone, EventReasonUpgradeFailed, "pre-upgrade-health-check", blockedBy)
+	if failure == "" {
+		logger.Info("Pre-upgrade health check passed")
+	}
+	return blocked
 }
 
 // cleanupResources cleans up resources during deletion
