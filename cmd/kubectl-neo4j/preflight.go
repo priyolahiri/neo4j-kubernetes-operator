@@ -949,7 +949,10 @@ func renderPreflight(results []preflightResult, stdout *os.File, ns string) int 
 			continue
 		}
 		if len(r.checks) == 0 {
-			fmt.Fprintf(stdout, "  %s every cluster-side precondition passed\n", markWarning)
+			// A pass reads as one. What a pass here does not cover — buckets,
+			// registries, endpoints — is the shape-only line under the results,
+			// printed on every run; a ⚠ on the pass itself read as a finding.
+			fmt.Fprintf(stdout, "  %s every cluster-side precondition passed\n", markPass)
 			continue
 		}
 		for _, ch := range r.checks {

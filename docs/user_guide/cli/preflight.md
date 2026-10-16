@@ -102,7 +102,15 @@ This replaces the ritual the troubleshooting guide documents — `kubectl run ba
 
 **Shape, not reachability.** It reads Kubernetes objects: a StorageClass, a Secret's key names, a ServiceAccount's annotations, node allocatable capacity. It never contacts S3, GCS or Azure, never talks to a registry, and never runs a probe pod.
 
-So a bucket that exists but denies access still fails at run time, and credentials that are well-formed but wrong still fail at run time. The output says so on every run rather than letting a clean result imply more than it means.
+So a bucket that exists but denies access still fails at run time, and credentials that are well-formed but wrong still fail at run time. The output says so on every run rather than letting a clean result imply more than it means:
+
+```
+$ kubectl neo4j preflight -f standalone.yaml -n neo4j
+Neo4jEnterpriseStandalone/dev (standalone.yaml)
+  ✓ every cluster-side precondition passed
+
+Shape only: no bucket, registry or endpoint was contacted.
+```
 
 That boundary is deliberate: it keeps the command free of new images, new RBAC and anything that mutates your cluster.
 

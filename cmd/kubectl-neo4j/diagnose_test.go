@@ -143,11 +143,62 @@ func TestDiagnose_ImagePullAndCrashLoopAreDistinguished(t *testing.T) {
 	results, err := diagnoseNamespace(context.Background(), c, "neo4j", "")
 	require.NoError(t, err)
 
-	out := joinSymptoms(symptomsFor(t, results, "Neo4jEnterpriseCluster/prod"))
+	symptoms := symptomsFor(t, results, "Neo4jEnterpriseCluster/prod")
+	out := joinSymptoms(symptoms)
 	assert.Contains(t, out, "image cannot be pulled")
-	assert.Contains(t, out, "imagePullSecret")
+	assert.Contains(t, out, "spec.image.pullSecrets")
 	assert.Contains(t, out, "crash-looping after 7 restart(s)")
 	assert.Contains(t, out, "--previous", "the crash-loop action must point at the previous log")
+
+	for _, s := range symptoms {
+		if s.subject == "container neo4j in prod-server-0" {
+			assert.NotContains(t, s.action, "kubectl logs",
+				"no container ran in a pod that cannot pull its image, so there is no log to read")
+		}
+	}
+}
+
+// The pull guidance said Neo4j Enterprise images are not public and need an
+// imagePullSecret. The official neo4j:<version>-enterprise images on Docker Hub
+// are public — the usual cause is a tag that does not exist — so it must name
+// the registry's answers and what each means, not prescribe credentials.
+func TestDiagnose_ImagePullActionNamesTheCauses(t *testing.T) {
+	pod := serverPod("prod", "prod-server-0")
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: "neo4j",
+		State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{
+			Reason: "ErrImagePull",
+			Message: `failed to pull and unpack image "docker.io/library/neo4j:2099.01.0-enterprise": ` +
+				`failed to resolve reference "docker.io/library/neo4j:2099.01.0-enterprise": not found`,
+		}},
+	}}
+	got := diagnosePod(pod)
+	require.Len(t, got, 1)
+	action := got[0].action
+
+	assert.NotContains(t, action, "not public", "the official Enterprise images are public")
+	for _, want := range []string{
+		"\"not found\"",                       // the tag does not exist
+		"spec.image.tag",                      // ... so check it
+		"spec.image.pullSecrets",              // a private registry or mirror
+		"Docker Hub are public and need none", // the official images
+		"toomanyrequests",                     // anonymous rate limit
+		"cannot reach the registry",           // a timeout
+		"kubectl describe pod prod-server-0",  // where the answer is when the message is short
+	} {
+		assert.Contains(t, action, want)
+	}
+	assert.NotContains(t, action, "--previous", "no container ran, so there is no previous log")
+
+	// A reference that cannot be parsed is never sent to a registry, so
+	// registry answers and credentials are beside the point.
+	pod.Status.ContainerStatuses[0].State.Waiting = &corev1.ContainerStateWaiting{
+		Reason: "InvalidImageName", Message: `couldn't parse image reference "neo4j:5.26 enterprise"`,
+	}
+	got = diagnosePod(pod)
+	require.Len(t, got, 1)
+	assert.Contains(t, got[0].action, "cannot be parsed")
+	assert.NotContains(t, got[0].action, "pullSecrets")
 }
 
 func TestDiagnose_UnboundPVCNamesItsStorageClass(t *testing.T) {

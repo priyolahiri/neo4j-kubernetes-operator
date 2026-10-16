@@ -422,7 +422,10 @@ func TestRenderPreflight_ExitCodeAndBoundaryLine(t *testing.T) {
 
 	out, code := renderPreflightTo(t, []preflightResult{ok}, "neo4j")
 	assert.Equal(t, exitOK, code)
-	assert.Contains(t, out, "every cluster-side precondition passed")
+	// A pass carries the pass mark. It was ⚠ — the warning mark, on a
+	// resource with nothing to report — and read as a finding.
+	assert.Contains(t, out, "  "+markPass+" every cluster-side precondition passed\n")
+	assert.NotContains(t, out, markWarning, "nothing was found, so nothing is marked as worth a look")
 	assert.Contains(t, out, "Shape only: no bucket, registry or endpoint was contacted.")
 
 	out, code = renderPreflightTo(t, []preflightResult{ok, bad}, "neo4j")
