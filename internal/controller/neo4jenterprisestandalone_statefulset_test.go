@@ -260,7 +260,7 @@ func TestReconcileStatefulSet_PreservesForeignInitContainersAndVolumes(t *testin
 	}
 
 	// Simulate the plugin controller injecting a verified-download init container
-	// plus its volume, exactly as injectVerifiedDownloadInitContainer does.
+	// plus its volume, exactly as applyVerifiedDownload does.
 	sts := getSTS(t, r)
 	sts.Spec.Template.Spec.InitContainers = append(sts.Spec.Template.Spec.InitContainers,
 		corev1.Container{Name: "plugin-download-gds", Image: "plugin-init:latest"})

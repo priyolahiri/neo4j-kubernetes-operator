@@ -51,7 +51,7 @@
   {
     "id": "rx-plugin-target-self-heal",
     "name": "Plugin Restores What Its Target Lost",
-    "description": "When a Neo4jPlugin's target StatefulSet (a cluster's {name}-server, a standalone's {name}) is created or its pod template changes, the plugin controller re-checks every Ready plugin targeting it. If the template still carries what the plugin set, nothing is written and the plugin stays Ready; if something removed it (NEO4J_PLUGINS, a variable the plugin sets), the plugin turns Installing, emits PluginMissing and writes it back, which restarts the servers. Values someone else gave the plugin's variables are left alone, and variables the cluster renders from its own spec are never overwritten.",
+    "description": "When a Neo4jPlugin's target StatefulSet (a cluster's {name}-server, a standalone's {name}) is created or its pod template changes, the plugin controller re-checks every Ready plugin targeting it. If the template still carries what the plugin set, nothing is written and the plugin stays Ready; if something removed it (NEO4J_PLUGINS, a variable the plugin sets, a VerifiedDownload init container or volume), the plugin turns Installing, emits PluginMissing and writes it back, which restarts the servers — or, while the target is not Ready with every server available, turns Waiting and restores it once the target is. Values someone else gave the plugin's variables are left alone, and variables the cluster renders from its own spec are never overwritten.",
     "moduleId": "mod-plugins",
     "trigger": {
       "entityId": "ent-neo4jenterprisecluster",
@@ -63,18 +63,42 @@
         "kind": "recalculate",
         "entityId": "ent-neo4jplugin",
         "fieldName": "status.phase",
-        "description": "Ready stays Ready when nothing is missing; otherwise Installing until the restored servers are ready, then Ready again."
+        "description": "Ready stays Ready when nothing is missing; otherwise Installing until the restored servers are ready, then Ready again (Waiting first while the target is not Ready with every server available)."
       },
       {
         "kind": "update",
         "entityId": "ent-neo4jenterprisecluster",
-        "fieldName": "StatefulSet.spec.template.spec.containers[neo4j].env",
-        "description": "Writes back the missing NEO4J_PLUGINS entry or plugin variable (or, on a standalone, removes a leftover env copy of the plugin's neo4j.conf settings)."
+        "fieldName": "StatefulSet.spec.template (neo4j container env; initContainers and volumes)",
+        "description": "Writes back the missing NEO4J_PLUGINS entry, plugin variable, or VerifiedDownload init container and volumes (or, on a standalone, removes a leftover env copy of the plugin's neo4j.conf settings)."
       },
       {
         "kind": "notify",
         "entityId": "ent-neo4jplugin",
         "description": "Emits a PluginMissing Warning naming what the StatefulSet no longer holds."
+      }
+    ]
+  },
+  {
+    "id": "rx-plugin-install-waits-for-target",
+    "name": "Plugin Install Waits For A Fully Available Target",
+    "description": "While a Neo4jPlugin's target is not Ready with every server available — a cluster with a server down (Degraded condition True inside the grace period, or phase Degraded), or still forming, rolling or upgrading; a standalone not Ready — a plugin pass whose edits would change the target's StatefulSet does not write it, because the write restarts every server and a cluster short of one could lose its majority. The plugin is Waiting, looks again after RequeueAfter, and installs once the target is fully available. A pass with nothing to write, and a settled plugin with nothing missing, are not held.",
+    "moduleId": "mod-plugins",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "status.phase / status.conditions[Degraded]",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "recalculate",
+        "entityId": "ent-neo4jplugin",
+        "fieldName": "status.phase",
+        "description": "Waiting (\"Waiting until … is Ready with every server available …\") instead of Installing; Installing again once the target is."
+      },
+      {
+        "kind": "notify",
+        "entityId": "ent-neo4jplugin",
+        "description": "Emits one PluginInstallDeferred Normal event when the wait starts (or one PluginMissing Warning that says it waits, for a Ready plugin whose target lost what it set)."
       }
     ]
   }

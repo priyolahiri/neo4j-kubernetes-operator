@@ -1004,7 +1004,13 @@
   {
     "id": "ev-plugin-missing",
     "name": "PluginMissing",
-    "description": "Warning on a Ready Neo4jPlugin whose target StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS entry, a variable it sets, or, on a standalone, a leftover env copy of its neo4j.conf settings is still there). The plugin goes back to Installing and restores it, which restarts the servers.",
+    "description": "Warning on a Ready Neo4jPlugin whose target StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS entry, a variable it sets, a VerifiedDownload init container or one of its volumes, or, on a standalone, a leftover env copy of its neo4j.conf settings is still there). The plugin goes back to Installing and restores it, which restarts the servers; while the target is not Ready with every server available, the event says so and the plugin is Waiting until it is.",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-install-deferred",
+    "name": "PluginInstallDeferred",
+    "description": "Normal event, once per wait, on a Neo4jPlugin whose install would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held.",
     "moduleId": "mod-plugins"
   },
   {

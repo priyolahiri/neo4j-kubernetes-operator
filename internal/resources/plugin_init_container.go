@@ -286,6 +286,11 @@ const (
 	pluginCAVolumeName = "plugin-ca"
 )
 
+// PluginCAVolumeName is the CA volume every VerifiedDownload init container on
+// a StatefulSet shares (BuildPluginCAVolume). The plugin controller removes it
+// on uninstall once no container mounts it.
+const PluginCAVolumeName = pluginCAVolumeName
+
 func pluginAuthVolumeName(pluginName string) string {
 	// Volume names share the DNS-1123 namespace; the prefix keeps
 	// them obviously plugin-owned to the operator.

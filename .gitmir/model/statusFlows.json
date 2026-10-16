@@ -25,7 +25,7 @@
       {
         "key": "Ready",
         "name": "Ready",
-        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period."
+        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period. Plugin installs and anything else that rolls the servers wait while Degraded is True."
       },
       {
         "key": "Degraded",

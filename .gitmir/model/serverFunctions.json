@@ -26,6 +26,7 @@
       "sf-verify-cluster-formation",
       "sf-collect-diagnostics",
       "sf-merge-env-vars",
+      "sf-merge-template-items",
       "sf-reconcile-ccdr-proxy",
       "sf-reconcile-server-shortfall",
       "sf-reload-renewed-tls"
@@ -133,6 +134,19 @@
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
     "description": "Computes the StatefulSet container's next env-var list: applies the cluster controller's desired vars, drops names in the previously-owned annotation that are no longer desired, and preserves foreign vars added by plugin/fleet/Aura controllers.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-merge-template-items",
+    "name": "Merge Init Containers and Volumes",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "On a template apply of the server StatefulSet, merges the pod template's init containers and volumes by name (mergeOwnedByName): applies what the cluster renders, drops what it rendered on its last apply (recorded in the neo4j.com/cluster-controller-init-containers and neo4j.com/cluster-controller-volumes StatefulSet annotations, written from the desired template) and no longer renders, and keeps the rest — a VerifiedDownload Neo4jPlugin's init container and its plugin-auth/plugin-ca volumes. The comparisons that decide whether a stable cluster's template changed leave those kept items out, so they never trigger an apply. A StatefulSet without the record (an earlier operator's) counts every init container as the cluster's except those listed in the plugin controller's neo4j.com/plugin-init-containers pod-template annotation, and every volume except those only such an init container mounts.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1854,7 +1868,7 @@
     "name": "Reconcile Neo4jPlugin",
     "serverUnitId": "su-neo4jplugin",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers. On reaching Ready it records status.installedVersion (the spec.version it installed) and status.installationTime (set once per installed version, not touched by later reconciles or same-version Ready/Installing cycles); a plugin already Ready before those fields existed is backfilled on its next reconcile. On a standalone, the plugin's security and startup-only settings stay out of the env (the standalone controller merges them into neo4j.conf with the user's spec.config), and env copies an earlier operator wrote are removed. The controller also watches StatefulSets: a created one or a changed pod template re-queues the Ready plugins it is the target of. A settled (Ready, current generation) pass makes the plugin's env edits on a copy of the live neo4j container; with nothing to put right it returns without Bolt, StatefulSet or status writes; otherwise it emits PluginMissing, turns Installing and restores what is gone (a variable the plugin sets that is absent, NEO4J_PLUGINS not listing a name it needs, a standalone's leftover conf copy) — never a value someone else gave one of its variables. An install pass with nothing to change does not write the StatefulSet, and a change to a variable the cluster renders from its own spec (neo4j.com/cluster-controller-env-vars) is refused as Failed rather than fought over. A StatefulSet conflict or an unreachable server mid-install keeps the plugin Installing and requeues without a Warning; a real failure is Failed with one PluginInstallFailed Warning and retried every RequeueAfter. Installing is announced only where an install starts, not by a pass continuing one.",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, refuses to install when another CR in the namespace already targets the same clusterRef with the same plugin name (older CR by creationTimestamp wins), then merges the plugin into the target's env/init-containers. On reaching Ready it records status.installedVersion (the spec.version it installed) and status.installationTime (set once per installed version, not touched by later reconciles or same-version Ready/Installing cycles); a plugin already Ready before those fields existed is backfilled on its next reconcile. On a standalone, the plugin's security and startup-only settings stay out of the env (the standalone controller merges them into neo4j.conf with the user's spec.config), and env copies an earlier operator wrote are removed. The controller also watches StatefulSets: a created one or a changed pod template re-queues the Ready plugins it is the target of. A settled (Ready, current generation) pass makes the plugin's edits on a copy of the live pod template; with nothing to put right it returns without Bolt, StatefulSet or status writes, whatever state the target is in; otherwise it emits PluginMissing, turns Installing and restores what is gone (a variable the plugin sets that is absent, NEO4J_PLUGINS not listing a name it needs, a standalone's leftover conf copy, a VerifiedDownload init container or volume absent by name) — never a value someone else gave one of its variables. The env edits and a VerifiedDownload init container and volumes are written in one StatefulSet update, the live init container replaced only when a field the plugin sets differs (the API server defaults the rest). A write to the StatefulSet restarts every server, so while the target is not Ready with every server available (a cluster Degraded, or forming, rolling or upgrading; a standalone not Ready) a pass whose edits would change it is Waiting instead, requeued after RequeueAfter, announced once (PluginInstallDeferred, or PluginMissing for a Ready plugin that lost something); a pass with nothing to write is not held. An install pass with nothing to change does not write the StatefulSet, and a change to a variable the cluster renders from its own spec (neo4j.com/cluster-controller-env-vars) is refused as Failed rather than fought over. A StatefulSet conflict or an unreachable server mid-install keeps the plugin Installing and requeues without a Warning; a real failure is Failed with one PluginInstallFailed Warning and retried every RequeueAfter. Installing is announced only where an install starts, not by a pass continuing one.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1864,7 +1878,8 @@
       "ev-plugin-installed",
       "ev-plugin-install-failed",
       "ev-plugin-duplicate",
-      "ev-plugin-missing"
+      "ev-plugin-missing",
+      "ev-plugin-install-deferred"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-plugins"

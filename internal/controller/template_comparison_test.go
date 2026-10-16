@@ -677,6 +677,51 @@ func TestIsTemplateChangeSignificant_PluginAddedEnvVars(t *testing.T) {
 		"plugin-added env vars in current must not cause the cluster controller to overwrite the StatefulSet")
 }
 
+// A VerifiedDownload plugin's init container and volumes on a stable cluster's
+// template are not a change: counting every live init container and volume made
+// them one on every pass, and the apply that followed removed them
+// (operations.md id 141). An init container the cluster rendered before and no
+// longer does is still a change.
+func TestIsTemplateChangeSignificant_PluginAddedInitContainer(t *testing.T) {
+	ctx := context.Background()
+	reconciler := &Neo4jEnterpriseClusterReconciler{Scheme: runtime.NewScheme()}
+
+	desired := corev1.PodTemplateSpec{
+		Spec: corev1.PodSpec{
+			InitContainers: []corev1.Container{{Name: "truststore-init", Image: "neo4j:5.26.0-enterprise"}},
+			Containers:     []corev1.Container{{Name: "neo4j", Image: "neo4j:5.26.0-enterprise"}},
+			Volumes:        []corev1.Volume{{Name: "plugins"}, {Name: "truststore"}},
+		},
+	}
+	stable := func(ownedInit, ownedVolumes string) *appsv1.StatefulSet {
+		return &appsv1.StatefulSet{
+			ObjectMeta: metav1.ObjectMeta{Annotations: map[string]string{
+				clusterTemplateHashAnnotation: podTemplateSpecHash(desired),
+				ownedInitContainersAnnotation: ownedInit,
+				ownedVolumesAnnotation:        ownedVolumes,
+			}},
+			Spec:   appsv1.StatefulSetSpec{Replicas: int32Ptr(3)},
+			Status: appsv1.StatefulSetStatus{ReadyReplicas: 3},
+		}
+	}
+
+	withPlugin := desired.DeepCopy()
+	withPlugin.Spec.InitContainers = append(withPlugin.Spec.InitContainers, corev1.Container{Name: "plugin-init-custom", Image: "curlimages/curl:8.5.0"})
+	withPlugin.Spec.Volumes = append(withPlugin.Spec.Volumes, corev1.Volume{Name: "plugin-auth-custom"}, corev1.Volume{Name: "plugin-ca"})
+	assert.False(t, reconciler.isTemplateChangeSignificant(ctx, *withPlugin, desired, stable("truststore-init", "plugins,truststore")),
+		"a plugin's init container and volumes must not make the cluster controller rewrite the template")
+
+	stale := withPlugin.DeepCopy()
+	stale.Spec.InitContainers = append(stale.Spec.InitContainers, corev1.Container{Name: "retired-init", Image: "busybox"})
+	assert.True(t, reconciler.isTemplateChangeSignificant(ctx, *stale, desired, stable("retired-init,truststore-init", "plugins,truststore")),
+		"an init container the cluster no longer renders is removed")
+
+	staleVolume := withPlugin.DeepCopy()
+	staleVolume.Spec.Volumes = append(staleVolume.Spec.Volumes, corev1.Volume{Name: "retired"})
+	assert.True(t, reconciler.isTemplateChangeSignificant(ctx, *staleVolume, desired, stable("truststore-init", "plugins,retired,truststore")),
+		"so is a volume")
+}
+
 // Helper function
 func int32Ptr(i int32) *int32 {
 	return &i
