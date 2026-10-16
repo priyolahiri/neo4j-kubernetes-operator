@@ -6120,9 +6120,9 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <ul>
 <li><strong>Pending</strong>: Plugin resource created, waiting for processing</li>
 <li><strong>Waiting</strong>: Waiting for the deployment to be ready — on a cluster, also while any server is unavailable (<code>Degraded</code>), since installing restarts every server</li>
-<li><strong>Installing</strong>: Plugin installation in progress</li>
-<li><strong>Ready</strong>: Plugin successfully installed and active</li>
-<li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs)</li>
+<li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, and while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event)</li>
+<li><strong>Ready</strong>: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set, the plugin goes back to <code>Installing</code> and restores it; if nothing is missing, the check writes nothing and the phase stays <code>Ready</code></li>
+<li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
 <li><strong>Invalid</strong>: The spec failed validation (for example an unsupported <code>securityPolicy</code>, a missing <code>source.url</code>/<code>checksum</code>, or a non-https URL); the controller does not requeue until the CR is edited</li>
 </ul>
 <h2 id="supported-plugin-sources">Supported Plugin Sources<a class="headerlink" href="#supported-plugin-sources" title="Anchor link to this section">&para;</a></h2>

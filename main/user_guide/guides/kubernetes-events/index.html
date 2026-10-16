@@ -4635,7 +4635,12 @@ and alerting systems.</p>
 <tr>
 <td><code>PluginInstallFailed</code></td>
 <td>Warning</td>
-<td>Plugin installation failed</td>
+<td>Plugin installation failed (once per failure; retried every 30s without repeating it). A server that is restarting or briefly unreachable is not a failure: the plugin stays <code>Installing</code></td>
+</tr>
+<tr>
+<td><code>PluginMissing</code></td>
+<td>Warning</td>
+<td>A <code>Ready</code> plugin's target StatefulSet no longer carries what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets); the plugin goes back to <code>Installing</code> and restores it, which restarts the servers</td>
 </tr>
 <tr>
 <td><code>PluginDuplicate</code></td>

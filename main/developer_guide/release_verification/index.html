@@ -4519,7 +4519,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Plugin (APOC)</td>
-<td><code>Neo4jPlugin</code> Ready; an APOC function <strong>inside the plugin's <code>allowedProcedures</code></strong> answers — with <code>examples/plugins/apoc-plugin-example.yaml</code> that is e.g. <code>RETURN apoc.convert.toJson({a:1})</code>. <code>apoc.version()</code> is outside that example's allowlist, so it fails as <em>Unknown function</em> while APOC works; that is the allowlist doing its job, not a failed install (standalone <strong>ConfigMap</strong> path)</td>
+<td><code>Neo4jPlugin</code> Ready; an APOC function <strong>inside the plugin's <code>allowedProcedures</code></strong> answers — with <code>examples/plugins/apoc-plugin-example.yaml</code> that is e.g. <code>RETURN apoc.convert.toJson({a:1})</code>. <code>apoc.version()</code> is outside that example's allowlist, so it fails as <em>Unknown function</em> while APOC works; that is the allowlist doing its job, not a failed install (standalone <strong>ConfigMap</strong> path). The install restart draws <strong>no</strong> <code>PluginInstallFailed</code> event (the plugin may show <code>Installing</code> "Waiting for … to accept connections" instead). Then remove <code>NEO4J_PLUGINS</code> from the StatefulSet by hand (<code>kubectl edit sts</code>): within seconds the plugin is <code>Installing</code> with one <code>PluginMissing</code> Warning, the variable is back, and after the restart the plugin is <code>Ready</code> again. Annotating the plugin CR then (a pass with nothing missing) leaves the StatefulSet's <code>metadata.generation</code> and the plugin's <code>Ready</code> unchanged (rule 135)</td>
 </tr>
 <tr>
 <td>Backup → restore (online)</td>

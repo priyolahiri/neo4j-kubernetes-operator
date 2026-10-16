@@ -4606,7 +4606,12 @@ defaults.</p>
 <tr>
 <td><code>PluginInstallFailed</code></td>
 <td>Warning</td>
-<td>Installation failed — see the event message</td>
+<td>Installation failed — see the event message. Emitted once per failure; the controller retries every 30 seconds without repeating it. A server that is restarting or briefly unreachable is not a failure: the plugin stays <code>Installing</code></td>
+</tr>
+<tr>
+<td><code>PluginMissing</code></td>
+<td>Warning</td>
+<td>A <code>Ready</code> plugin's target StatefulSet no longer carries what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets); the plugin goes back to <code>Installing</code> and restores it, which restarts the servers</td>
 </tr>
 <tr>
 <td><code>PluginDuplicate</code></td>
@@ -4628,6 +4633,8 @@ defaults.</p>
 <h3 id="other-common-issues">Other common issues<a class="headerlink" href="#other-common-issues" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><strong><code>status.phase: Waiting</code></strong>: the target cluster/standalone isn't functional yet — the plugin controller requeues until it is. On a cluster it also waits while any server is unavailable (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), since installing a plugin restarts every server.</li>
+<li><strong>A <code>Ready</code> plugin goes back to <code>Installing</code> with a <code>PluginMissing</code> event</strong>: something removed what the plugin set from the target's StatefulSet — its <code>NEO4J_PLUGINS</code> entry, or a variable it sets. The controller re-checks a <code>Ready</code> plugin whenever that StatefulSet's pod template changes, and restores what is gone, which restarts the servers. It never overrides a value someone else gave one of its variables.</li>
+<li><strong><code>Failed</code> with "… comes from Neo4jEnterpriseCluster … itself"</strong>: the cluster's own spec sets a variable the plugin needs to change — typically <code>NEO4J_PLUGINS</code> in <code>spec.env</code> without this plugin in it. The cluster controller would put its value back, restarting the servers each time, so the plugin does not write it. Add the plugin to the cluster's value, or remove the variable from <code>spec.env</code>; the plugin retries every 30 seconds and installs once the conflict is gone.</li>
 <li><strong>VerifiedDownload pod stuck <code>Pending</code></strong>: checksum mismatch or unreachable URL — <code>kubectl describe pod</code> and read the init container's termination message.</li>
 <li><strong>Plugin loads but procedures fail</strong>: check <code>spec.security.allowedProcedures</code> and whether the plugin needs unrestricted procedures; for license-bound plugins (Bloom, GDS Enterprise, GenAI) verify the license file is mounted (<code>kubectl exec &lt;pod&gt; -c neo4j -- ls /licenses/</code>).</li>
 </ul>
