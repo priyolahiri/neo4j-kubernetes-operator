@@ -1790,10 +1790,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#first-upgrade-after-operator-deployment" class="md-nav__link">
+  <a href="#version-checks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        First upgrade after operator deployment
+        Version checks
       
     </span>
   </a>
@@ -3883,10 +3883,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#first-upgrade-after-operator-deployment" class="md-nav__link">
+  <a href="#version-checks" class="md-nav__link">
     <span class="md-ellipsis">
       
-        First upgrade after operator deployment
+        Version checks
       
     </span>
   </a>
@@ -4022,7 +4022,8 @@ off — already-rolled pods are not rolled again.</p>
 an upgrade is running, the state machine retargets to the new image: pods not
 yet rolled go straight to the new version, and pods already rolled to the
 intermediate version are rolled again. You don't need to wait for the first
-upgrade to finish.</p>
+upgrade to finish. A new target below the version the cluster ran before the
+upgrade (<code>status.version</code>) is refused instead (see <a href="#version-checks">Version checks</a>).</p>
 <p><strong>Version verification across SemVer/CalVer.</strong> The <code>Verifying</code> phase compares
 each server's <code>SHOW SERVERS</code> version against the image tag, normalizing
 Neo4j's kernel alias (the <code>2025.01.x</code> CalVer releases report kernel <code>5.27.x</code> —
@@ -4041,8 +4042,18 @@ typical case being a first deploy stuck in <code>ImagePullBackOff</code> on a mi
 tag — there is no formed quorum to protect, so a corrected <code>spec.image</code>
 applies immediately. Fix the tag and the pods re-pull; you do not need to
 delete and recreate the cluster.</p>
-<h3 id="first-upgrade-after-operator-deployment">First upgrade after operator deployment<a class="headerlink" href="#first-upgrade-after-operator-deployment" title="Anchor link to this section">&para;</a></h3>
-<p>If <code>status.version</code> is not yet set on the cluster resource (e.g. immediately after the operator is first deployed against an existing cluster), the version-compatibility check is skipped and the upgrade proceeds. Downgrade protection is applied on all subsequent upgrades.</p>
+<h3 id="version-checks">Version checks<a class="headerlink" href="#version-checks" title="Anchor link to this section">&para;</a></h3>
+<p>Every reconcile checks <code>spec.image.tag</code> against <code>status.version</code>, the version the operator verified every server runs. It is recorded when the cluster first becomes <code>Ready</code> and after each verified upgrade, and it does not move while an upgrade is in flight or after one fails — so setting the tag back to it, or on to a later target, is always allowed.</p>
+<p>A tag the cluster cannot move to (see <a href="#supported-upgrade-paths">Supported Upgrade Paths</a>) is refused before anything changes: the cluster turns <code>Failed</code>, with a <code>ValidationFailed</code> event and a message that names the field and what the servers run:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Update validation failed: validation failed: spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
+</span></code></pre></div>
+<p>The servers keep running the version they ran; nothing else in the spec is applied until the tag is fixed. Set it back and the next reconcile carries on. The check applies mid-upgrade too: a new target below the version the servers ran before the upgrade is refused rather than rolled, and the upgrade waits where it was until the tag is fixed.</p>
+<p><code>kubectl neo4j validate --connect</code> runs the same check against the running cluster before you apply (see <a href="../../cli/validate/#checking-cross-references-with-connect"><code>validate</code></a>). Offline it cannot: a manifest does not say what the cluster runs.</p>
+<p>Not checked:</p>
+<ul>
+<li><strong>No <code>status.version</code> yet</strong> — a cluster that has not been <code>Ready</code> since the operator was installed. There is nothing verified to compare with; the operator records the version at the next <code>Ready</code>, for a cluster created by an older release too.</li>
+<li><strong>A tag without a patch number.</strong> <code>5.26-enterprise</code> and <code>2026.08-enterprise</code> float to the newest patch, so moving between <code>5.26.12-enterprise</code> and <code>5.26-enterprise</code> is not treated as a downgrade.</li>
+</ul>
 <h2 id="upgrade-strategy">Upgrade Strategy<a class="headerlink" href="#upgrade-strategy" title="Anchor link to this section">&para;</a></h2>
 <p>Configure the upgrade strategy with <code>spec.upgradeStrategy</code>:</p>
 <table>
@@ -4063,20 +4074,22 @@ delete and recreate the cluster.</p>
 </tr>
 </tbody>
 </table>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">  </span><span class="nt">upgradeStrategy</span><span class="p">:</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RollingUpgrade</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="nt">preUpgradeHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># validate cluster health before upgrading (default true)</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="nt">autoPauseOnFailure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">      </span><span class="c1"># pause the upgrade for manual intervention if a check fails (default true)</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="nt">upgradeTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30m</span><span class="w">           </span><span class="c1"># per-pod step: readiness, rejoin and databases caught up (default 30m)</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="nt">healthCheckTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span><span class="w">        </span><span class="c1"># post-upgrade version verification (Verifying) timeout (default 5m)</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">    </span><span class="nt">stabilizationTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3m</span><span class="w">      </span><span class="c1"># post-upgrade cluster-stabilization wait (default 3m)</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">    </span><span class="nt">postUpgradeHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># validate cluster health after upgrade (default true)</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">upgradeStrategy</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RollingUpgrade</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="nt">preUpgradeHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">   </span><span class="c1"># validate cluster health before upgrading (default true)</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="w">    </span><span class="nt">autoPauseOnFailure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">      </span><span class="c1"># pause the upgrade for manual intervention if a check fails (default true)</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span><span class="nt">upgradeTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">30m</span><span class="w">           </span><span class="c1"># per-pod step: readiness, rejoin and databases caught up (default 30m)</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">    </span><span class="nt">healthCheckTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">5m</span><span class="w">        </span><span class="c1"># post-upgrade version verification (Verifying) timeout (default 5m)</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">stabilizationTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3m</span><span class="w">      </span><span class="c1"># post-upgrade cluster-stabilization wait (default 3m)</span>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">postUpgradeHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># validate cluster health after upgrade (default true)</span>
 </span></code></pre></div>
+<p>The three timeouts are Go durations: <code>30m</code>, <code>1h30m</code>, <code>90s</code>. A value that does not parse, such as <code>"5 minutes"</code>, is refused (the cluster turns <code>Failed</code> with a <code>ValidationFailed</code> event), and <code>kubectl neo4j validate</code> reports it before you apply.</p>
 <p>Servers always restart one at a time, as Neo4j's rolling upgrade requires. <code>maxUnavailableDuringUpgrade</code> is accepted for compatibility but has no effect; a value other than <code>1</code> raises a <code>ValidationWarning</code> event.</p>
 <p>When <code>preUpgradeHealthCheck</code> is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and <code>autoPauseOnFailure</code> is <code>true</code>, the upgrade is blocked until you intervene rather than proceeding against an unhealthy deployment.</p>
 <p>For the full field reference see the <a href="../../../api_reference/neo4jenterprisecluster/">API Reference</a>.</p>
 <h2 id="supported-upgrade-paths">Supported Upgrade Paths<a class="headerlink" href="#supported-upgrade-paths" title="Anchor link to this section">&para;</a></h2>
+<p>These follow Neo4j's <a href="https://neo4j.com/docs/upgrade-migration-guide/current/">Upgrade and Migration Guide</a>. Neo4j does not support downgrades: going back to an earlier version means restoring a backup taken before the upgrade, into a deployment that runs the earlier version.</p>
 <table>
 <thead>
 <tr>
@@ -4088,13 +4101,23 @@ delete and recreate the cluster.</p>
 <tbody>
 <tr>
 <td>SemVer 5.26.x</td>
-<td>SemVer 5.26.y (patch only)</td>
+<td>SemVer 5.26.y (later patch)</td>
 <td>✅</td>
+</tr>
+<tr>
+<td>SemVer 5.x before 5.26</td>
+<td>SemVer 5.26.y</td>
+<td>✅ (the step Neo4j requires before CalVer)</td>
 </tr>
 <tr>
 <td>SemVer 5.26.x</td>
 <td>CalVer 2025.y / 2026.y</td>
 <td>✅ (only 5.26.x — the last SemVer LTS — may cross to CalVer)</td>
+</tr>
+<tr>
+<td>SemVer 5.x before 5.26</td>
+<td>CalVer</td>
+<td>❌ (upgrade to 5.26 first)</td>
 </tr>
 <tr>
 <td>CalVer 2025.x</td>
@@ -4110,6 +4133,11 @@ delete and recreate the cluster.</p>
 <td>Any</td>
 <td>earlier version</td>
 <td>❌ (downgrade)</td>
+</tr>
+<tr>
+<td>Neo4j 4.x</td>
+<td>anything</td>
+<td>❌ (4.4 to 5 is a migration, not an upgrade)</td>
 </tr>
 </tbody>
 </table>

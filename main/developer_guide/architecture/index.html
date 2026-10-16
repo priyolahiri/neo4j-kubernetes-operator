@@ -6273,7 +6273,7 @@ proxy's NetworkPolicy admits, and the CR that carries the seed
 <li><strong>TopologyValidator</strong> (<code>topology_validator.go</code>): Cluster topology and server count validation</li>
 <li><strong>ClusterValidator</strong> (<code>cluster_validator.go</code>): Cluster-specific configuration validation</li>
 <li><strong>MemoryValidator</strong> (<code>memory_validator.go</code>): Neo4j memory settings vs container limits</li>
-<li><strong>ResourceValidator</strong> (<code>resource_validator.go</code>): CPU, memory, and storage validation</li>
+<li><strong>UpgradeValidator</strong> (<code>upgrade_validator.go</code>): <code>spec.upgradeStrategy</code> (a spec rule), and the image-tag upgrade path against <code>status.version</code>, the version the servers run — the one rule that needs the running cluster (<code>ClusterValidator.ValidateWithWarnings</code>; there is no previous spec without a webhook, <code>docs/knowledge/operations.md</code> id 139)</li>
 <li><strong>TLSValidator</strong> (<code>tls_validator.go</code>): TLS/SSL configuration validation</li>
 <li><strong>TruststoreValidator</strong> (<code>truststore_validator.go</code>): unique Secret names in <code>spec.trustedCASecrets</code> (the name doubles as the keytool alias) plus reserved-mount-path collision check for <code>spec.extraVolumeMounts</code> (<code>/data</code>, <code>/logs</code>, <code>/conf</code>, <code>/ssl</code>, <code>/plugins</code>, <code>/truststore</code>, <code>/truststore-ca</code>, <code>/var/lib/neo4j/...</code>)</li>
 <li><strong>DatabaseValidator</strong> (<code>database_validator.go</code>): Database creation and topology validation</li>
