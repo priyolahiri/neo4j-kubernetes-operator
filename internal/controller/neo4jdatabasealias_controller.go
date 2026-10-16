@@ -97,8 +97,11 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.advisoryWarnings.record(r.Recorder, alias, EventReasonValidationWarning, res.Warnings)
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
-			r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, "")
-			r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			// Announced when the failure starts or its message changes, not on
+			// every pass while the spec stays invalid (knowledge rule 136).
+			if r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, "") {
+				r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 	}
@@ -256,30 +259,45 @@ func (r *Neo4jDatabaseAliasReconciler) fail(ctx context.Context, alias *neo4jv1b
 	return ctrl.Result{}, err
 }
 
+// setStatus writes the phase, message and Ready condition. It reports whether
+// the write changed the phase, the message or the Ready condition's status or
+// reason — a state transition — from the attempt whose write succeeded, so a
+// caller can emit the matching event once, on the transition.
 func (r *Neo4jDatabaseAliasReconciler) setStatus(
 	ctx context.Context,
 	alias *neo4jv1beta1.Neo4jDatabaseAlias,
 	phase string,
 	readyStatus metav1.ConditionStatus,
 	readyReason, message, observedTarget string,
-) {
+) bool {
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jDatabaseAlias{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(alias), latest); err != nil {
 			return err
 		}
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message)
+		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message) {
+			changed = true
+		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
 		if observedTarget != "" {
 			latest.Status.ObservedTarget = observedTarget
 		}
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jDatabaseAlias status")
+		return false
 	}
+	return transitioned
 }
 
 func (r *Neo4jDatabaseAliasReconciler) setNamedCondition(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, condType string, status metav1.ConditionStatus, reason, message string) {

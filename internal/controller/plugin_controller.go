@@ -283,8 +283,12 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		r.advisoryWarnings.record(r.Recorder, plugin, EventReasonValidationWarning, result.Warnings)
 		if len(result.Errors) > 0 {
 			msg := fmt.Sprintf("Neo4jPlugin spec is invalid: %s", result.Errors.ToAggregate().Error())
-			r.updatePluginStatus(ctx, plugin, "Invalid", msg)
-			r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			// Announced when the failure starts or its message changes, not on
+			// every pass (a resync, any status write) while the spec stays
+			// invalid (knowledge rule 136).
+			if r.updatePluginStatus(ctx, plugin, "Invalid", msg) {
+				r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			}
 			return ctrl.Result{}, nil
 		}
 	}
@@ -817,13 +821,20 @@ func (r *Neo4jPluginReconciler) prunePluginSecurityEnv(ctx context.Context, plug
 	})
 }
 
-func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) {
+// updatePluginStatus writes the phase, message and Ready condition, and the
+// installed version on reaching Ready. It reports whether the write changed
+// the phase, the message or the Ready condition's status or reason — a state
+// transition — from the attempt whose write succeeded, so a caller can emit
+// the matching event once, on the transition.
+func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) bool {
 	// The version this reconcile installed: what spec.version asked for when
 	// the install ran (not whatever the spec says by the time the status write
 	// lands).
 	installedVersion := plugin.Spec.Version
 
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jPlugin{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(plugin), latest); err != nil {
 			return err
@@ -850,6 +861,7 @@ func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *
 			!recordInstall {
 			return nil
 		}
+		changed := latest.Status.Phase != phase || latest.Status.Message != message
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
@@ -859,13 +871,21 @@ func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *
 			latest.Status.InstallationTime = &now
 		}
 		condStatus, condReason := PhaseToConditionStatus(phase)
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
-		return r.Status().Update(ctx, latest)
+		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message) {
+			changed = true
+		}
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	}
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update plugin status")
+		return false
 	}
+	return transitioned
 }
 
 // SetupWithManager configures the controller with the manager

@@ -156,9 +156,12 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		if len(res.Errors) > 0 {
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
 			withdrawReplicaLag(replica)
-			r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
-				EventReasonValidationFailed, msg, nil)
-			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			// Announced when the failure starts or its message changes, not on
+			// every pass while the spec stays invalid (knowledge rule 136).
+			if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
+				EventReasonValidationFailed, msg, nil) {
+				r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 	}

@@ -243,20 +243,26 @@ type Neo4jDatabaseStatus struct {
 	// DataImported indicates whether initial data has been imported
 	DataImported *bool `json:"dataImported,omitempty"`
 
-	// CreationTime shows when the database was created
+	// CreationTime is when the operator first reported the database Ready,
+	// kept from then on. For a database that already existed it is when this
+	// CR first found it ready, not when Neo4j created it.
 	CreationTime *metav1.Time `json:"creationTime,omitempty"`
 
-	// Size shows the current database size
+	// Size is not populated: the operator does not read store sizes, and
+	// SHOW DATABASES does not report them.
 	Size string `json:"size,omitempty"`
 
-	// Current state of the database (online, offline, started, stopped)
+	// State is the database's currentStatus in SHOW DATABASES: "online" when
+	// every copy is online, otherwise the status of a copy that is not
+	// (offline, starting, store copying, quarantined, ...; the first by name
+	// when they differ). Written when it changes; a reconcile that does not
+	// reach the database leaves the last value.
 	State string `json:"state,omitempty"`
 
-	// Servers hosting this database (for topology tracking)
-	//
-	// Lists which cluster servers are currently hosting this database.
-	// This shows the actual distribution of database replicas across
-	// the available cluster server infrastructure.
+	// Servers hosting this database: the addresses of the servers holding a
+	// copy, sorted, from the same SHOW DATABASES read as state. Written when
+	// it changes; a reconcile that does not reach the database leaves the
+	// last value.
 	Servers []string `json:"servers,omitempty"`
 }
 

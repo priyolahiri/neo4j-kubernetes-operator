@@ -19,10 +19,12 @@ package controller
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -41,6 +43,23 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// databaseNeo4jClient is the part of the Neo4j client the database reconcile
+// uses. It exists so the branches that depend on what the server answers —
+// whether the database exists, what SHOW DATABASES lists for it — can be
+// driven without a Bolt server; production always supplies a *neo4j.Client.
+type databaseNeo4jClient interface {
+	DatabaseExists(ctx context.Context, databaseName string) (bool, error)
+	GetDatabases(ctx context.Context) ([]neo4j.DatabaseInfo, error)
+	CreateDatabaseWithLanguage(ctx context.Context, databaseName string, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error
+	CreateDatabaseWithTopology(ctx context.Context, databaseName string, primaries, secondaries int32, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error
+	CreateDatabaseFromSeedURI(ctx context.Context, databaseName, seedURI string, seedConfig *neo4jv1beta1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error
+	CreateDatabaseFromSeedURIWithTopology(ctx context.Context, databaseName, seedURI string, primaries, secondaries int32, seedConfig *neo4jv1beta1.SeedConfiguration, options map[string]string, wait bool, ifNotExists bool, cypherVersion string) error
+	PrepareCloudCredentials(ctx context.Context, k8sClient client.Client, database *neo4jv1beta1.Neo4jDatabase) error
+	ExecuteCypher(ctx context.Context, databaseName, statement string) error
+	DropDatabase(ctx context.Context, databaseName string) error
+	Close() error
+}
+
 // Neo4jDatabaseReconciler reconciles a Neo4jDatabase object
 type Neo4jDatabaseReconciler struct {
 	client.Client
@@ -53,6 +72,11 @@ type Neo4jDatabaseReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// newNeo4jClient builds the Neo4j client for the referenced host — the
+	// cluster, or the standalone when cluster is nil. nil selects the real
+	// one; tests substitute a scripted server.
+	newNeo4jClient func(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (databaseNeo4jClient, error)
 }
 
 const (
@@ -125,8 +149,12 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			}
 			message := fmt.Sprintf("Database validation failed: %v", errMessages)
 			logger.Error(nil, message)
-			r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonValidationFailed, message)
-			r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonValidationFailed, message)
+			// Announced when the failure starts or its message changes, not on
+			// every RequeueAfter while the spec stays invalid (knowledge rule
+			// 136): the status write reports the transition.
+			if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonValidationFailed, message) {
+				r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonValidationFailed, message)
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -163,7 +191,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Create Neo4j client with retry for transient connection issues
-	var neo4jClient *neo4j.Client
+	var neo4jClient databaseNeo4jClient
 	err = retry.OnError(retry.DefaultBackoff, func(err error) bool {
 		// Retry on connection errors
 		return strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "timeout")
@@ -228,7 +256,8 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Ensure database exists (with seed URI support)
 	logger.Info("Starting database creation/verification", "database", database.Spec.Name, "wait", database.Spec.Wait, "topology", database.Spec.Topology)
 	dbCreateStart := time.Now()
-	if err := r.ensureDatabase(ctx, neo4jClient, database, databaseHostImageTag(cluster, standalone, isStandalone), isStandalone); err != nil {
+	observed, err := r.ensureDatabase(ctx, neo4jClient, database, databaseHostImageTag(cluster, standalone, isStandalone), isStandalone)
+	if err != nil {
 		duration := time.Since(dbCreateStart)
 		logger.Error(err, "Failed to ensure database", "database", database.Spec.Name, "duration", duration)
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonCreationFailed,
@@ -244,8 +273,8 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if database.Spec.InitialData != nil && database.Spec.SeedURI == "" && database.Status.DataImported == nil {
 		if err := r.importInitialData(ctx, neo4jClient, database); err != nil {
 			logger.Error(err, "Failed to import initial data")
-			r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonDataImportFailed,
-				fmt.Sprintf("Failed to import initial data: %v", err))
+			r.updateDatabaseStatusObserved(ctx, database, metav1.ConditionFalse, EventReasonDataImportFailed,
+				fmt.Sprintf("Failed to import initial data: %v", err), observed)
 			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDataImportFailed,
 				"Failed to import initial data: %v", err)
 			return ctrl.Result{}, err
@@ -270,7 +299,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDataSeeded, "Database seeded from URI successfully")
 	}
 
-	r.reportDatabaseReady(ctx, database)
+	r.reportDatabaseReady(ctx, database, observed)
 
 	logger.Info("Successfully reconciled Neo4jDatabase")
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -284,9 +313,12 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 // object, then one every five minutes, so the repeats could crowd out the
 // events that report real changes. The transition is read from the persisted
 // condition, so an operator restart does not announce a steady state again.
-func (r *Neo4jDatabaseReconciler) reportDatabaseReady(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) {
+//
+// observed is this pass's SHOW DATABASES reading of the database, written in
+// the same status write (status.state, status.servers).
+func (r *Neo4jDatabaseReconciler) reportDatabaseReady(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, observed databaseObservation) {
 	const msg = "Database is ready and available"
-	if r.updateDatabaseStatus(ctx, database, metav1.ConditionTrue, EventReasonDatabaseReady, msg) {
+	if r.updateDatabaseStatusObserved(ctx, database, metav1.ConditionTrue, EventReasonDatabaseReady, msg, observed) {
 		r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDatabaseReady, msg)
 	}
 }
@@ -320,7 +352,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	}
 
 	// Create the Neo4j client for the resolved host (cluster or standalone).
-	var neo4jClient *neo4j.Client
+	var neo4jClient databaseNeo4jClient
 	switch {
 	case isStandalone:
 		neo4jClient, err = r.createNeo4jClientForStandalone(ctx, standalone)
@@ -438,13 +470,17 @@ func resolveDatabaseCreateInputs(database *neo4jv1beta1.Neo4jDatabase, imageTag 
 	return topology, neo4j.DefaultLanguageForImage(imageTag, database.Spec.DefaultCypherLanguage)
 }
 
-func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase, imageTag string, isStandalone bool) error {
+// ensureDatabase creates the database when it does not exist, then reads what
+// SHOW DATABASES says about it. The reading is returned, not set on database:
+// the status write that follows re-reads the object before writing, so a value
+// set on the reconcile's own copy never reaches the API.
+func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client databaseNeo4jClient, database *neo4jv1beta1.Neo4jDatabase, imageTag string, isStandalone bool) (databaseObservation, error) {
 	logger := log.FromContext(ctx)
 
 	// Check if database exists
 	exists, err := client.DatabaseExists(ctx, database.Spec.Name)
 	if err != nil {
-		return fmt.Errorf("failed to check if database exists: %w", err)
+		return databaseObservation{}, fmt.Errorf("failed to check if database exists: %w", err)
 	}
 
 	if !exists {
@@ -461,7 +497,7 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 		// Prepare cloud credentials if using seed URI with explicit credentials
 		if database.Spec.SeedURI != "" && database.Spec.SeedCredentials != nil {
 			if err := client.PrepareCloudCredentials(ctx, r.Client, database); err != nil {
-				return fmt.Errorf("failed to prepare cloud credentials: %w", err)
+				return databaseObservation{}, fmt.Errorf("failed to prepare cloud credentials: %w", err)
 			}
 		}
 
@@ -545,7 +581,7 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 		}
 
 		if err != nil {
-			return fmt.Errorf("failed to create database: %w", err)
+			return databaseObservation{}, fmt.Errorf("failed to create database: %w", err)
 		}
 
 		// Record appropriate success event based on creation method
@@ -561,27 +597,69 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client *ne
 		logger.Info("Database already exists", "database", database.Spec.Name)
 	}
 
-	// Always update database state and servers after creation or verification
-	// Check and update database state in status
-	state, err := client.GetDatabaseState(ctx, database.Spec.Name)
+	// Read the database's state and servers after creation or verification.
+	// Non-fatal: the status keeps its last reading when this one fails.
+	databases, err := client.GetDatabases(ctx)
 	if err != nil {
-		logger.Error(err, "Failed to get database state")
-	} else {
-		database.Status.State = state
+		logger.Error(err, "Failed to read the database's state and servers")
+		return databaseObservation{}, nil
 	}
-
-	// Get servers hosting the database
-	servers, err := client.GetDatabaseServers(ctx, database.Spec.Name)
-	if err != nil {
-		logger.Error(err, "Failed to get database servers")
-	} else {
-		database.Status.Servers = servers
-	}
-
-	return nil
+	return observeDatabase(database.Spec.Name, databases), nil
 }
 
-func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client *neo4j.Client, database *neo4jv1beta1.Neo4jDatabase) error {
+// databaseObservation is what one SHOW DATABASES pass says about a database:
+// the values of status.state and status.servers. The zero value observed
+// nothing (the read failed, or listed no copy of the database) and leaves the
+// persisted values as they are.
+type databaseObservation struct {
+	observed bool
+	state    string
+	servers  []string
+}
+
+// observeDatabase reads the database `name` out of a SHOW DATABASES listing,
+// which has one row per copy.
+//
+// The answer must not depend on the order of the rows: Neo4j does not keep it
+// stable between calls, and the status is written whenever the answer changes,
+// each write a watch event that reconciles the database again. So the servers
+// are sorted, and the state is "online" when every copy is online and
+// otherwise the first other status by name — summarizeShardCopies, the fold a
+// sharded database's shards use. It used to be the first row's status, which
+// in a cluster with one copy behind changed with the row order.
+//
+// Names are compared ignoring case: Neo4j lower-cases database names, and the
+// validator admits capitals in spec.name.
+func observeDatabase(name string, databases []neo4j.DatabaseInfo) databaseObservation {
+	var rows []neo4j.DatabaseInfo
+	servers := []string{}
+	for _, db := range databases {
+		if !strings.EqualFold(db.Name, name) {
+			continue
+		}
+		rows = append(rows, db)
+		if db.Address != "" {
+			servers = append(servers, db.Address)
+		}
+	}
+	if len(rows) == 0 {
+		return databaseObservation{}
+	}
+	state, _ := summarizeShardCopies(rows)
+	sort.Strings(servers)
+	return databaseObservation{observed: true, state: state, servers: slices.Compact(servers)}
+}
+
+// apply writes the observation onto status.
+func (o databaseObservation) apply(status *neo4jv1beta1.Neo4jDatabaseStatus) {
+	if !o.observed {
+		return
+	}
+	status.State = o.state
+	status.Servers = o.servers
+}
+
+func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client databaseNeo4jClient, database *neo4jv1beta1.Neo4jDatabase) error {
 	for _, statement := range database.Spec.InitialData.CypherStatements {
 		if err := client.ExecuteCypher(ctx, database.Spec.Name, statement); err != nil {
 			return fmt.Errorf("failed to execute cypher statement: %w", err)
@@ -590,14 +668,28 @@ func (r *Neo4jDatabaseReconciler) importInitialData(ctx context.Context, client 
 	return nil
 }
 
-func (r *Neo4jDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
+func (r *Neo4jDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (databaseNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(cluster, nil)
+	}
 	// Use the enterprise client method
-	return neo4j.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
+	c, err := neo4j.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
-func (r *Neo4jDatabaseReconciler) createNeo4jClientForStandalone(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (*neo4j.Client, error) {
+func (r *Neo4jDatabaseReconciler) createNeo4jClientForStandalone(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (databaseNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(nil, standalone)
+	}
 	// Use the enterprise client method for standalone
-	return neo4j.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
+	c, err := neo4j.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // isClusterReady includes a Degraded cluster (#444). Whether a database's
@@ -613,12 +705,24 @@ func (r *Neo4jDatabaseReconciler) isStandaloneReady(standalone *neo4jv1beta1.Neo
 }
 
 // updateDatabaseStatus writes the Ready condition, phase and message. It
-// reports whether the write changed the Ready condition's status or reason —
-// a state transition — so a caller can emit the matching event once, on the
-// transition. The answer comes from the attempt whose write succeeded, which
-// optimistic concurrency guarantees read the current object: a stale read
-// fails with a conflict and is re-read.
+// reports whether the write changed the Ready condition's status or reason,
+// the phase or the message — a state transition — so a caller can emit the
+// matching event once, on the transition. The answer comes from the attempt
+// whose write succeeded, which optimistic concurrency guarantees read the
+// current object: a stale read fails with a conflict and is re-read.
 func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, status metav1.ConditionStatus, reason, message string) bool {
+	return r.updateDatabaseStatusObserved(ctx, database, status, reason, message, databaseObservation{})
+}
+
+// updateDatabaseStatusObserved is updateDatabaseStatus that also writes what
+// this pass read from SHOW DATABASES (status.state, status.servers). The
+// observation is applied to the object re-read inside the conflict retry, the
+// one that is written: set on the reconcile's own copy, it was lost.
+//
+// Nothing is written when nothing differs from the persisted status. A status
+// write is a watch event that reconciles the database again, so a write on
+// every pass would keep a steady database reconciling (knowledge rule 143).
+func (r *Neo4jDatabaseReconciler) updateDatabaseStatusObserved(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, status metav1.ConditionStatus, reason, message string, observed databaseObservation) bool {
 	transitioned := false
 	update := func() error {
 		transitioned = false
@@ -626,6 +730,7 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, data
 		if err := r.Get(ctx, client.ObjectKeyFromObject(database), latest); err != nil {
 			return err
 		}
+		before := latest.Status.DeepCopy()
 		changed := SetReadyCondition(&latest.Status.Conditions, latest.Generation, status, reason, message)
 
 		// Set Phase field based on condition status for API consistency
@@ -656,10 +761,15 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, data
 		// Also update the message field for quick access
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
+		observed.apply(&latest.Status)
+
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
-		transitioned = changed
+		transitioned = changed || before.Phase != latest.Status.Phase || before.Message != latest.Status.Message
 		return nil
 	}
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)

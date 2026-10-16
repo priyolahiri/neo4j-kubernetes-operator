@@ -138,10 +138,15 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	// Validate the sharded database configuration
 	if err := r.validateShardedDatabase(ctx, &shardedDatabase); err != nil {
 		logger.Error(err, "Validation failed")
-		r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonValidationFailed, err.Error())
-
-		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Validation failed: %v", err), nil); statusErr != nil {
+		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Validation failed: %v", err), nil)
+		if statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after validation failure")
+		}
+		// Announced when the failure starts or its message changes, not on
+		// every RequeueAfter while the spec stays invalid: the persisted phase
+		// and message say whether this pass is news (knowledge rule 136).
+		if failed {
+			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonValidationFailed, err.Error())
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}

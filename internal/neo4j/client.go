@@ -195,6 +195,11 @@ type DatabaseInfo struct {
 	// works even when the upstream is unreachable, which is the usual reason
 	// a failover is happening.
 	ReplicationLag int64
+
+	// Address is the `address` column: the Bolt address of the server that
+	// holds this copy. One row per copy, so the rows of one database name list
+	// the servers hosting it (Neo4jDatabase status.servers).
+	Address string
 }
 
 // ServerInfo represents information about a Neo4j server
@@ -891,13 +896,13 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 		// 5.26 LTS and all CalVer — so they need no version gate. (Their
 		// *values* do vary: "graph shard"/"property shard" arrive in
 		// 2025.12 and "replica" in 2026.08, but an older server simply
-		// never returns them.)
+		// never returns them.) So is `address`.
 		result, err := session.Run(timeoutCtx, `
 			SHOW DATABASES
 			YIELD name, currentStatus, default, home, role, requestedStatus, type, access, writer,
-			      lastCommittedTxn, replicationLag
+			      lastCommittedTxn, replicationLag, address
 			RETURN name, currentStatus, default, home, role, requestedStatus, type, access, writer,
-			       lastCommittedTxn, replicationLag
+			       lastCommittedTxn, replicationLag, address
 		`, nil)
 		if err != nil {
 			return fmt.Errorf("failed to get databases: %w", err)
@@ -917,6 +922,7 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 			writer, _ := record.Get("writer")
 			lastTxn, _ := record.Get("lastCommittedTxn")
 			lag, _ := record.Get("replicationLag")
+			address, _ := record.Get("address")
 
 			databases = append(databases, DatabaseInfo{
 				Name:             fmt.Sprintf("%v", name),
@@ -930,6 +936,7 @@ func (c *Client) GetDatabases(ctx context.Context) ([]DatabaseInfo, error) {
 				Writer:           fmt.Sprintf("%v", writer) == TrueString,
 				LastCommittedTxn: columnInt64(lastTxn),
 				ReplicationLag:   columnInt64(lag),
+				Address:          columnString(address),
 			})
 		}
 
@@ -1202,66 +1209,6 @@ func (c *Client) AlterDatabase(ctx context.Context, databaseName string, options
 	}
 
 	return nil
-}
-
-// GetDatabaseState returns the current state of a database
-func (c *Client) GetDatabaseState(ctx context.Context, databaseName string) (string, error) {
-	databases, err := c.GetDatabases(ctx)
-	if err != nil {
-		return "", fmt.Errorf("failed to get database state: %w", err)
-	}
-
-	for _, db := range databases {
-		if db.Name == databaseName {
-			return db.Status, nil
-		}
-	}
-
-	return "", fmt.Errorf("database %s not found", databaseName)
-}
-
-// GetDatabaseServers returns the servers hosting a specific database
-func (c *Client) GetDatabaseServers(ctx context.Context, databaseName string) ([]string, error) {
-	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
-		AccessMode:   neo4j.AccessModeRead,
-		DatabaseName: "system",
-	})
-	defer session.Close(ctx)
-
-	query := `
-		SHOW DATABASES
-		YIELD name, address
-		WHERE name = $databaseName
-		RETURN collect(address) as servers
-	`
-
-	// Add timeout protection for CI environment compatibility
-	timeoutCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	result, err := session.Run(timeoutCtx, query, map[string]any{
-		"databaseName": databaseName,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to get database servers: %w", err)
-	}
-
-	if result.Next(timeoutCtx) {
-		record := result.Record()
-		if servers, found := record.Get("servers"); found {
-			if serverList, ok := servers.([]any); ok {
-				var serverAddresses []string
-				for _, addr := range serverList {
-					if addrStr, ok := addr.(string); ok {
-						serverAddresses = append(serverAddresses, addrStr)
-					}
-				}
-				return serverAddresses, nil
-			}
-		}
-	}
-
-	return []string{}, nil
 }
 
 // DropDatabase drops a database

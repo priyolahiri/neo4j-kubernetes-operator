@@ -63,7 +63,7 @@ func TestReportDatabaseReady_AnnouncesTheTransitionNotEveryPass(t *testing.T) {
 	ctx := context.Background()
 
 	for range 3 {
-		r.reportDatabaseReady(ctx, db)
+		r.reportDatabaseReady(ctx, db, databaseObservation{})
 	}
 	assert.Equal(t, []string{"Normal DatabaseReady Database is ready and available"}, drainEvents(rec),
 		"announced when the database becomes ready, not on the passes after")
@@ -74,13 +74,13 @@ func TestReportDatabaseReady_AnnouncesTheTransitionNotEveryPass(t *testing.T) {
 
 	// Back from a failure is a transition again.
 	r.updateDatabaseStatus(ctx, db, metav1.ConditionFalse, EventReasonConnectionFailed, "Failed to connect to Neo4j cluster")
-	r.reportDatabaseReady(ctx, db)
+	r.reportDatabaseReady(ctx, db, databaseObservation{})
 	assert.Len(t, eventsWithReason(drainEvents(rec), EventReasonDatabaseReady), 1)
 
 	// A new reconciler — an operator restart — reads the persisted Ready
 	// condition and stays quiet about a database that was already ready.
 	restarted := &Neo4jDatabaseReconciler{Client: c, Scheme: scheme, Recorder: rec}
-	restarted.reportDatabaseReady(ctx, db)
+	restarted.reportDatabaseReady(ctx, db, databaseObservation{})
 	assert.Empty(t, drainEvents(rec))
 }
 
