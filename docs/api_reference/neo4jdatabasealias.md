@@ -33,7 +33,7 @@ Because an alias may target a database that is still a replica, **create it at r
 |---|---|---|
 | `clusterRef` | `string` | **Required.** `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace hosting both alias and target. |
 | `name` | `string` | Alias name in Neo4j. Defaults to `metadata.name`. 3–63 chars, `^[a-zA-Z][a-zA-Z0-9_.\-]*$`. May not be `system`. |
-| `targetDatabase` | `string` | **Required.** Database the alias points at. May be a standard database or a cross-cluster replica; the alias survives promotion unchanged. May not be `system`, and may not equal the alias name. |
+| `targetDatabase` | `string` | **Required.** Database the alias points at. May be a standard database or a cross-cluster replica; the alias survives promotion unchanged. May not be `system`, and may not equal the alias name in any case (Neo4j lower-cases both). |
 | `deletionPolicy` | `string` | `Delete` (default) drops the alias on CR deletion; `Retain` leaves it and only releases the finalizer. |
 
 The target does **not** have to exist yet — the controller reports `Pending` and retries, so an alias and the replica it fronts can be applied together.

@@ -99,8 +99,8 @@ func (v *ReplicaValidator) Validate(_ context.Context, replica *neo4jv1beta1.Neo
 
 	// A replica named for the database it replicates is legal but usually a
 	// mistake worth surfacing, because the name is permanent through
-	// promotion.
-	if name == replica.Spec.UpstreamDatabase {
+	// promotion. In any spelling: database names are case-insensitive.
+	if strings.EqualFold(name, replica.Spec.UpstreamDatabase) {
 		res.Warnings = append(res.Warnings, fmt.Sprintf(
 			"replica %q has the same name as its upstream database; this is allowed, but note the name is "+
 				"permanent (Cypher has no RENAME DATABASE) and will collide if this cluster ever also hosts "+

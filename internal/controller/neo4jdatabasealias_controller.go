@@ -163,7 +163,7 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 		r.Recorder.Eventf(alias, corev1.EventTypeNormal, EventReasonAliasCreated,
 			"Alias %q created for database %q", aliasName, alias.Spec.TargetDatabase)
 
-	case existing.Database != alias.Spec.TargetDatabase:
+	case aliasTargetDiffers(existing.Database, alias.Spec.TargetDatabase):
 		// Drift: someone re-pointed the alias out of band, or spec.targetDatabase
 		// changed. Spec wins.
 		if err := nc.AlterAliasTarget(ctx, aliasName, alias.Spec.TargetDatabase); err != nil {
@@ -181,6 +181,15 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 	msg := fmt.Sprintf("alias %q resolves to %q", aliasName, alias.Spec.TargetDatabase)
 	r.setStatus(ctx, alias, "Ready", metav1.ConditionTrue, "AliasReady", msg, alias.Spec.TargetDatabase)
 	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// aliasTargetDiffers reports whether the database SHOW ALIASES lists for an
+// alias is not the one spec.targetDatabase names. Database names are compared
+// ignoring case: Neo4j lists the target lower-cased, and an exact match
+// against a target spelled `Orders` re-pointed the alias, and announced it, on
+// every pass.
+func aliasTargetDiffers(live, desired string) bool {
+	return !strings.EqualFold(live, desired)
 }
 
 func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, aliasName string) (ctrl.Result, error) {

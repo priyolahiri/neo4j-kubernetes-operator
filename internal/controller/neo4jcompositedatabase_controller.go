@@ -231,13 +231,10 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 	}
 	existing, lookalikes := classifyAliases(live, composite)
 
-	desired := map[string]struct{}{}
 	for _, c := range cd.Spec.Constituents {
-		desired[c.Name] = struct{}{}
-	}
-
-	for _, c := range cd.Spec.Constituents {
-		current, present := existing[c.Name]
+		// existing is keyed lower-cased: Neo4j lists the constituent spec
+		// calls `Latest` as `latest`.
+		current, present := existing[strings.ToLower(c.Name)]
 
 		if c.Remote != nil {
 			auth, err := r.remoteAuth(ctx, cd.Namespace, c.Remote)
@@ -287,9 +284,7 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 				"Constituent %q now resolves to %q",
 				neo4jclient.QualifyConstituent(composite, c.Name), c.TargetDatabase)
 
-		case current.Database != c.TargetDatabase || current.Location == "remote":
-			// Location changing from remote to local is a real transition: the
-			// alias has to be re-pointed at a local database.
+		case localConstituentDrifted(current, c):
 			if err := nc.AlterCompositeConstituent(ctx, composite, c.Name, c.TargetDatabase); err != nil {
 				return nil, nil, err
 			}
@@ -300,10 +295,7 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 	}
 
 	if compositeEnforce(cd) {
-		for name := range existing {
-			if _, wanted := desired[name]; wanted {
-				continue
-			}
+		for _, name := range undesiredConstituents(existing, cd.Spec.Constituents) {
 			if err := nc.DropCompositeConstituent(ctx, composite, name); err != nil {
 				return nil, nil, err
 			}
@@ -340,17 +332,26 @@ func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
 // collision would be worse than leaving it. It is returned so the caller can
 // say it out loud, because it is invisible in any listing that shows only
 // names.
+//
+// Names are compared ignoring case, and constituents are keyed by their short
+// name lower-cased. Neo4j normalises composite and alias names to lower case,
+// so SHOW ALIASES lists the constituent `Latest` of composite `Cineasts` as
+// `cineasts.latest` with composite `cineasts`, while the validator admits
+// capitals in spec. An exact match found none of a capitalised composite's
+// constituents: CREATE ALIAS was re-sent for each on every pass, and with
+// enforceConstituents a capitalised constituent was dropped as "not in
+// spec.constituents" and created again on the next.
 func classifyAliases(live []neo4jclient.AliasInfo, composite string) (
 	map[string]neo4jclient.AliasInfo, []string,
 ) {
 	existing := map[string]neo4jclient.AliasInfo{}
 	var lookalikes []string
-	prefix := composite + "."
+	prefix := strings.ToLower(composite + ".")
 	for _, a := range live {
 		switch {
-		case a.Composite == composite:
-			existing[neo4jclient.UnqualifyConstituent(composite, a.Name)] = a
-		case strings.HasPrefix(a.Name, prefix):
+		case strings.EqualFold(a.Composite, composite):
+			existing[strings.ToLower(neo4jclient.UnqualifyConstituent(composite, a.Name))] = a
+		case strings.HasPrefix(strings.ToLower(a.Name), prefix):
 			// Belongs to no composite, or to a different one — either way it
 			// is not a constituent of ours, however much the name suggests it.
 			lookalikes = append(lookalikes, a.Name)
@@ -392,6 +393,38 @@ func (r *Neo4jCompositeDatabaseReconciler) remoteAuth(
 	return auth, nil
 }
 
+// undesiredConstituents returns, sorted, the keys of the live constituents
+// (classifyAliases) that spec.constituents does not list — the ones
+// enforceConstituents drops. Spec names are lower-cased to match the keys: an
+// exact comparison dropped a constituent spec spells `Latest` on every other
+// pass, since Neo4j lists it as `latest`, and the next pass created it again.
+func undesiredConstituents(existing map[string]neo4jclient.AliasInfo, constituents []neo4jv1beta1.CompositeConstituent) []string {
+	desired := map[string]bool{}
+	for _, c := range constituents {
+		desired[strings.ToLower(c.Name)] = true
+	}
+	var out []string
+	for name := range existing {
+		if !desired[name] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// localConstituentDrifted reports whether a live constituent no longer matches
+// a local constituent in spec: it resolves to another database, or it is a
+// remote alias. Location changing from remote to local is a real transition:
+// the alias has to be re-pointed at a local database.
+//
+// The target is compared ignoring case. SHOW ALIASES lists the database
+// lower-cased, so an exact match against a target spelled `Movies` re-pointed
+// the constituent, and announced it, on every pass.
+func localConstituentDrifted(current neo4jclient.AliasInfo, c neo4jv1beta1.CompositeConstituent) bool {
+	return !strings.EqualFold(current.Database, c.TargetDatabase) || current.Location == "remote"
+}
+
 // remoteConstituentDrifted reports whether a live remote alias no longer
 // matches spec.
 //
@@ -410,7 +443,9 @@ func remoteConstituentDrifted(
 		// It is a LOCAL alias today and spec wants it remote.
 		return true
 	}
-	if current.Database != c.TargetDatabase || current.URL != c.Remote.URL {
+	// The target is a database name, compared ignoring case as every Neo4j
+	// database name is.
+	if !strings.EqualFold(current.Database, c.TargetDatabase) || current.URL != c.Remote.URL {
 		return true
 	}
 	// OIDC forwarding stores no user; stored credentials do. A change between
@@ -430,9 +465,16 @@ func (r *Neo4jCompositeDatabaseReconciler) namespaceBlocker(
 		// attempt speak for itself.
 		return ""
 	}
-	prefix := composite + "."
+	return aliasInNamespace(aliases, composite)
+}
+
+// aliasInNamespace returns the first alias named `<composite>.<something>`,
+// or "". The prefix is matched ignoring case: SHOW ALIASES lists names
+// lower-cased, and a composite spelled with capitals has the same namespace.
+func aliasInNamespace(aliases []neo4jclient.AliasInfo, composite string) string {
+	prefix := strings.ToLower(composite + ".")
 	for _, a := range aliases {
-		if strings.HasPrefix(a.Name, prefix) {
+		if strings.HasPrefix(strings.ToLower(a.Name), prefix) {
 			return a.Name
 		}
 	}

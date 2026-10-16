@@ -205,8 +205,17 @@ func QualifyConstituent(composite, constituent string) string {
 
 // UnqualifyConstituent is the inverse: it strips the composite prefix that the
 // server returns, so an observed list can be compared with spec.
+//
+// The prefix is matched ignoring case: the server lists `Cineasts.Latest` as
+// `cineasts.latest` (composite and alias names are normalised to lower case,
+// like every database name), while spec may spell the composite with
+// capitals. The name is returned as the server spells it.
 func UnqualifyConstituent(composite, qualified string) string {
-	return strings.TrimPrefix(qualified, composite+".")
+	prefix := composite + "."
+	if len(qualified) >= len(prefix) && strings.EqualFold(qualified[:len(prefix)], prefix) {
+		return qualified[len(prefix):]
+	}
+	return qualified
 }
 
 // runSystemWrite executes one admin statement against the system database.

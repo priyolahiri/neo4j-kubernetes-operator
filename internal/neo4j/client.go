@@ -2313,19 +2313,34 @@ func (c *Client) CreateDatabaseWithSeedURIUntil(ctx context.Context, databaseNam
 	return nil
 }
 
-// DatabaseExists checks if a database exists
+// DatabaseExists reports whether SHOW DATABASES lists a database of this name,
+// matched as FindDatabase matches it: ignoring case.
 func (c *Client) DatabaseExists(ctx context.Context, databaseName string) (bool, error) {
 	databases, err := c.GetDatabases(ctx)
 	if err != nil {
 		return false, err
 	}
+	return FindDatabase(databases, databaseName) != nil, nil
+}
 
-	for _, db := range databases {
-		if db.Name == databaseName {
-			return true, nil
+// FindDatabase returns the first row of a SHOW DATABASES listing for the
+// database name, or nil when none is listed.
+//
+// Names are compared ignoring case. Neo4j database names "are
+// case-insensitive and normalized to lowercase" (Operations Manual 5 and
+// /current/, "Naming rules for databases"), so SHOW DATABASES lists the
+// database created as `Orders` as `orders`, while the operator's validators
+// admit capitals in the name a spec gives. An exact match called such a
+// database absent on every pass: CREATE … IF NOT EXISTS was sent again each
+// time (without IF NOT EXISTS, refused with "already exists"), and a restore
+// over it took the create path instead of the recreate.
+func FindDatabase(databases []DatabaseInfo, databaseName string) *DatabaseInfo {
+	for i := range databases {
+		if strings.EqualFold(databases[i].Name, databaseName) {
+			return &databases[i]
 		}
 	}
-	return false, nil
+	return nil
 }
 
 // ExecuteCypher executes a cypher statement on a specific database

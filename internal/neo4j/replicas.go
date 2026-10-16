@@ -221,23 +221,19 @@ func (c *Client) PromoteReplicaDatabase(ctx context.Context, databaseName string
 }
 
 // GetDatabaseInfo returns the SHOW DATABASES row for one database, or nil when
-// it does not exist.
+// it does not exist. The name is matched ignoring case (FindDatabase).
 //
 // This is the observe step every mutating replica path runs first: it is how
 // the operator learns that a database it believes is a replica has in fact
 // been promoted, whether by a Neo4jReplicaPromotion or by someone at a
-// cypher-shell.
+// cypher-shell. The alias and composite controllers use it to wait for a
+// target database to exist.
 func (c *Client) GetDatabaseInfo(ctx context.Context, databaseName string) (*DatabaseInfo, error) {
 	databases, err := c.GetDatabases(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for i := range databases {
-		if databases[i].Name == databaseName {
-			return &databases[i], nil
-		}
-	}
-	return nil, nil
+	return FindDatabase(databases, databaseName), nil
 }
 
 // topologyClause renders the TOPOLOGY clause, or "" when no topology is

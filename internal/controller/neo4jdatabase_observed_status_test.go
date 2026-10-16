@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -36,46 +37,54 @@ import (
 // databaseServer is a scripted Neo4j for the Neo4jDatabase reconcile. rows is
 // what SHOW DATABASES lists, one row per copy, in the order the server returns
 // them — which Neo4j does not keep stable between calls. DatabaseExists
-// answers as the real client does, by exact name; CREATE stores the name
-// lower-cased, as Neo4j does.
+// answers as the real client does, through neo4j.FindDatabase. CREATE behaves
+// as Neo4j's does: it stores the name lower-cased, is a no-op for a name that
+// exists (in any case) under IF NOT EXISTS, and is refused without it.
 type databaseServer struct {
 	rows       []neo4j.DatabaseInfo
 	statements []string
 }
 
-func (s *databaseServer) DatabaseExists(_ context.Context, name string) (bool, error) {
-	for _, row := range s.rows {
-		if row.Name == name {
-			return true, nil
-		}
+func (s *databaseServer) DatabaseExists(ctx context.Context, name string) (bool, error) {
+	databases, err := s.GetDatabases(ctx)
+	if err != nil {
+		return false, err
 	}
-	return false, nil
+	return neo4j.FindDatabase(databases, name) != nil, nil
 }
 
 func (s *databaseServer) GetDatabases(context.Context) ([]neo4j.DatabaseInfo, error) {
 	return append([]neo4j.DatabaseInfo{{Name: "system", Status: "online", RequestedStatus: "online", Address: "server-0:7687"}}, s.rows...), nil
 }
 
-func (s *databaseServer) create(name string) error {
+func (s *databaseServer) create(name string, ifNotExists bool) error {
 	s.statements = append(s.statements, "CREATE DATABASE "+name)
+	for _, row := range s.rows {
+		if strings.EqualFold(row.Name, name) {
+			if ifNotExists {
+				return nil
+			}
+			return fmt.Errorf("failed to create the specified database '%s': database already exists", strings.ToLower(name))
+		}
+	}
 	s.rows = append(s.rows, neo4j.DatabaseInfo{Name: strings.ToLower(name), Status: "online", RequestedStatus: "online", Address: "server-0:7687"})
 	return nil
 }
 
-func (s *databaseServer) CreateDatabaseWithLanguage(_ context.Context, name string, _ map[string]string, _, _ bool, _ string) error {
-	return s.create(name)
+func (s *databaseServer) CreateDatabaseWithLanguage(_ context.Context, name string, _ map[string]string, _, ifNotExists bool, _ string) error {
+	return s.create(name, ifNotExists)
 }
 
-func (s *databaseServer) CreateDatabaseWithTopology(_ context.Context, name string, _, _ int32, _ map[string]string, _, _ bool, _ string) error {
-	return s.create(name)
+func (s *databaseServer) CreateDatabaseWithTopology(_ context.Context, name string, _, _ int32, _ map[string]string, _, ifNotExists bool, _ string) error {
+	return s.create(name, ifNotExists)
 }
 
-func (s *databaseServer) CreateDatabaseFromSeedURI(_ context.Context, name, _ string, _ *neo4jv1beta1.SeedConfiguration, _ map[string]string, _, _ bool, _ string) error {
-	return s.create(name)
+func (s *databaseServer) CreateDatabaseFromSeedURI(_ context.Context, name, _ string, _ *neo4jv1beta1.SeedConfiguration, _ map[string]string, _, ifNotExists bool, _ string) error {
+	return s.create(name, ifNotExists)
 }
 
-func (s *databaseServer) CreateDatabaseFromSeedURIWithTopology(_ context.Context, name, _ string, _, _ int32, _ *neo4jv1beta1.SeedConfiguration, _ map[string]string, _, _ bool, _ string) error {
-	return s.create(name)
+func (s *databaseServer) CreateDatabaseFromSeedURIWithTopology(_ context.Context, name, _ string, _, _ int32, _ *neo4jv1beta1.SeedConfiguration, _ map[string]string, _, ifNotExists bool, _ string) error {
+	return s.create(name, ifNotExists)
 }
 
 func (s *databaseServer) PrepareCloudCredentials(context.Context, client.Client, *neo4jv1beta1.Neo4jDatabase) error {

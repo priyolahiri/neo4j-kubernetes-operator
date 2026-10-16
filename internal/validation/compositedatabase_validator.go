@@ -263,19 +263,24 @@ func (v *CompositeDatabaseValidator) validateConstituents(
 				"the system database cannot be a constituent"))
 		}
 		// A constituent targeting the composite itself is a cycle the server
-		// will not resolve, and it is an easy copy-paste mistake.
-		if c.TargetDatabase == composite {
+		// will not resolve, and it is an easy copy-paste mistake. Names are
+		// compared ignoring case here and below: Neo4j normalises database and
+		// alias names to lower case, so `Movies` and `movies` are one name.
+		if strings.EqualFold(c.TargetDatabase, composite) {
 			errs = append(errs, field.Invalid(cPath.Child("targetDatabase"), c.TargetDatabase,
 				"a constituent cannot target its own composite"))
 		}
 		// The fully-qualified alias is what actually has to be unique; two
 		// constituents with the same name would collide silently, with the
-		// last write winning.
-		if prev, dup := seenNames[c.Name]; dup {
+		// last write winning — and two that differ only in case are the same
+		// alias, which the controller would re-point between their targets on
+		// every pass.
+		key := strings.ToLower(c.Name)
+		if prev, dup := seenNames[key]; dup {
 			errs = append(errs, field.Duplicate(cPath.Child("name"),
 				fmt.Sprintf("%q is already used by constituents[%d]", c.Name, prev)))
 		}
-		seenNames[c.Name] = i
+		seenNames[key] = i
 	}
 	return errs
 }

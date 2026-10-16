@@ -98,7 +98,9 @@ var standardArtifactFilenameRegex = regexp.MustCompile(
 //
 // dbName is required because the same Job log can contain unrelated
 // `.backup` references (e.g. earlier backups listed by `ls`); we anchor
-// on the requested database name.
+// on the requested database name — ignoring case, as Neo4j and neo4j-admin
+// match database names: the spec may spell the name with capitals that the
+// server's lower-cased name does not have.
 func parseStandardArtifactFromLog(logContent, dbName string) string {
 	if dbName == "" {
 		return ""
@@ -111,7 +113,7 @@ func parseStandardArtifactFromLog(logContent, dbName string) string {
 		matches := standardArtifactFilenameRegex.FindAllStringSubmatch(line, -1)
 		for _, m := range matches {
 			filename, matchedDB := m[1], m[2]
-			if matchedDB != dbName {
+			if !strings.EqualFold(matchedDB, dbName) {
 				continue
 			}
 			winner = filename
@@ -171,11 +173,13 @@ var backupTypeLineRegex = regexp.MustCompile(`(?i)\b(full|differential) backup o
 // FULL or a DIFF artifact. An AUTO differential that found no full to chain
 // from logs "Falling back to full backup", so any full line makes it FULL; a
 // differential with nothing new to fetch logs only its start line, and still
-// writes a DIFF artifact. Databases the log never mentions are absent.
+// writes a DIFF artifact. Databases the log never mentions are absent. Keys
+// are lower-cased, and read with artifactTypeOf, so a database is found
+// however the spec spells it.
 func parseArtifactTypesFromLog(logContent string) map[string]string {
 	types := map[string]string{}
 	for _, m := range backupTypeLineRegex.FindAllStringSubmatch(logContent, -1) {
-		db := m[2]
+		db := strings.ToLower(m[2])
 		if strings.EqualFold(m[1], "full") {
 			types[db] = backupArtifactFull
 		} else if types[db] == "" {
@@ -193,20 +197,26 @@ func parseArtifactTypesFromLog(logContent string) map[string]string {
 func recordArtifactTypes(run *neo4jv1beta1.BackupRun, logContent, dbName string) {
 	types := parseArtifactTypesFromLog(logContent)
 	if run.ArtifactFilename != "" {
-		run.ArtifactType = types[dbName]
+		run.ArtifactType = artifactTypeOf(types, dbName)
 	}
 	for i := range run.DatabaseArtifacts {
-		run.DatabaseArtifacts[i].Type = types[run.DatabaseArtifacts[i].Database]
+		run.DatabaseArtifacts[i].Type = artifactTypeOf(types, run.DatabaseArtifacts[i].Database)
 	}
 	for i := range run.ShardArtifacts {
-		run.ShardArtifacts[i].Type = types[run.ShardArtifacts[i].ShardName]
+		run.ShardArtifacts[i].Type = artifactTypeOf(types, run.ShardArtifacts[i].ShardName)
 	}
 	for f := range run.ShardedFamilies {
 		for i := range run.ShardedFamilies[f].ShardArtifacts {
 			a := &run.ShardedFamilies[f].ShardArtifacts[i]
-			a.Type = types[a.ShardName]
+			a.Type = artifactTypeOf(types, a.ShardName)
 		}
 	}
+}
+
+// artifactTypeOf reads a database's type from parseArtifactTypesFromLog's
+// map, ignoring case.
+func artifactTypeOf(types map[string]string, database string) string {
+	return types[strings.ToLower(database)]
 }
 
 // differentialShards names the shards recorded as DIFF. An untyped shard is

@@ -414,11 +414,14 @@ func (r *Neo4jUserReconciler) computeAlter(
 		opts.WithSuspended(desiredSuspended)
 	}
 
-	// Home database
+	// Home database. Compared ignoring case: Neo4j stores the name lower-cased
+	// (SET HOME DATABASE `Orders` is shown as `orders`), and an exact match
+	// re-sent ALTER USER … SET HOME DATABASE, with a UserUpdated event, on
+	// every pass.
 	switch {
 	case user.Spec.HomeDatabase == "" && info.HomeDatabase != "":
 		opts.WithoutHomeDatabase()
-	case user.Spec.HomeDatabase != "" && user.Spec.HomeDatabase != info.HomeDatabase:
+	case user.Spec.HomeDatabase != "" && !strings.EqualFold(user.Spec.HomeDatabase, info.HomeDatabase):
 		opts.WithHomeDatabase(user.Spec.HomeDatabase)
 	}
 

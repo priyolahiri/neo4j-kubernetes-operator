@@ -58,8 +58,9 @@ func (v *AliasValidator) Validate(_ context.Context, alias *neo4jv1beta1.Neo4jDa
 			alias.Spec.TargetDatabase, "database name may not contain a backtick"))
 	}
 
-	// An alias that points at itself is accepted by neither Neo4j nor sense.
-	if name != "" && name == alias.Spec.TargetDatabase {
+	// An alias that points at itself is accepted by neither Neo4j nor sense —
+	// in any spelling: Neo4j normalises both names to lower case.
+	if name != "" && strings.EqualFold(name, alias.Spec.TargetDatabase) {
 		res.Errors = append(res.Errors, field.Invalid(specPath.Child("targetDatabase"),
 			alias.Spec.TargetDatabase, "an alias cannot target a database of the same name"))
 	}

@@ -250,9 +250,10 @@ func restoreSeedArtifacts(restore *neo4jv1beta1.Neo4jRestore, snap *neo4jv1beta1
 	case snap.ArtifactFilename != "":
 		artifacts = []neo4jv1beta1.DatabaseArtifact{{Database: restoreSourceDatabase(restore), Filename: snap.ArtifactFilename, Type: snap.ArtifactType}}
 	default:
+		// Ignoring case, as artifactForDatabase matches.
 		db := restoreSourceDatabase(restore)
 		for _, a := range snap.DatabaseArtifacts {
-			if a.Database == db {
+			if strings.EqualFold(a.Database, db) {
 				artifacts = append(artifacts, a)
 			}
 		}

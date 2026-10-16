@@ -36,6 +36,13 @@ func TestQualifyAndUnqualifyConstituent(t *testing.T) {
 	// Constituent names may not contain dots (the validator enforces it), but
 	// the target database name is a separate identifier that legitimately can.
 	assert.Equal(t, "cineasts.a.b", QualifyConstituent("cineasts", "a.b"))
+
+	// The server lists names lower-cased; spec may spell the composite with
+	// capitals. Same namespace, and the name comes back as the server spells
+	// it.
+	assert.Equal(t, "latest", UnqualifyConstituent("Cineasts", "cineasts.latest"))
+	assert.Equal(t, "cineastsx.latest", UnqualifyConstituent("Cineasts", "cineastsx.latest"))
+	assert.Equal(t, "c", UnqualifyConstituent("C", "c.c"))
 }
 
 // The composite type string the server reports. Verified on 5.26.30 and
