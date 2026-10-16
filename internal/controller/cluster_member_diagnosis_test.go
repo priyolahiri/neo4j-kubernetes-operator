@@ -201,6 +201,89 @@ func TestDiagnoseUnhealthyMembers(t *testing.T) {
 		}
 	})
 
+	t.Run("an image that cannot be pulled points at the image, not at a log", func(t *testing.T) {
+		// No container ever ran, so `kubectl logs --previous` has nothing to
+		// show. The message used to say exactly that for every failure.
+		pull := func(name, reason string) *corev1.Pod {
+			pod := diagPod(cluster.Name, name, corev1.ContainerStatus{
+				Name:  "neo4j",
+				Ready: false,
+				State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: reason}},
+			})
+			pod.Spec.Containers = []corev1.Container{{Name: "neo4j", Image: "neo4j:2099.01.0-enterprise"}}
+			return pod
+		}
+		got := diagReconciler(t, cluster,
+			pull("three-node-simple-server-0", "ErrImagePull"),
+			pull("three-node-simple-server-1", "ImagePullBackOff"),
+		).diagnoseUnhealthyMembers(context.Background(), cluster)
+
+		for _, want := range []string{
+			"three-node-simple-server-0: ErrImagePull",
+			"three-node-simple-server-1: ImagePullBackOff",
+			"Image neo4j:2099.01.0-enterprise cannot be pulled", // named once, not per pod
+			"Docker Hub are public and need no pull secret",
+			"spec.image.pullSecrets",
+			"kubectl describe pod <pod>",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("diagnosis missing %q\ngot: %s", want, got)
+			}
+		}
+		if strings.Contains(got, "kubectl logs") {
+			t.Errorf("a pull failure has no log to read, got: %s", got)
+		}
+		if n := strings.Count(got, "neo4j:2099.01.0-enterprise"); n != 1 {
+			t.Errorf("the image is named %d times, want once\ngot: %s", n, got)
+		}
+	})
+
+	t.Run("each kind of failure gets its own hint", func(t *testing.T) {
+		pull := diagPod(cluster.Name, "three-node-simple-server-0", corev1.ContainerStatus{
+			Name:  "neo4j",
+			Image: "registry.example.com/neo4j:5.26.31-enterprise",
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "ImagePullBackOff"}},
+		})
+		crash := diagPod(cluster.Name, "three-node-simple-server-1", corev1.ContainerStatus{
+			Name:                 "neo4j",
+			State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+			LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}},
+		})
+		config := diagPod(cluster.Name, "three-node-simple-server-2", corev1.ContainerStatus{
+			Name:  "neo4j",
+			State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CreateContainerConfigError"}},
+		})
+
+		got := diagReconciler(t, cluster, pull, crash, config).diagnoseUnhealthyMembers(context.Background(), cluster)
+
+		// The image comes from the container status when the pod spec has none.
+		for _, want := range []string{
+			"Image registry.example.com/neo4j:5.26.31-enterprise cannot be pulled",
+			"A container that never started has no log; the pod's events say why: kubectl describe pod <pod>",
+			"Inspect a crash loop with: kubectl logs <pod> -c neo4j --previous",
+		} {
+			if !strings.Contains(got, want) {
+				t.Errorf("diagnosis missing %q\ngot: %s", want, got)
+			}
+		}
+		if atPull, atCrash := strings.Index(got, "cannot be pulled"), strings.Index(got, "crash loop"); atPull > atCrash {
+			t.Errorf("hints are not in their fixed order\ngot: %s", got)
+		}
+	})
+
+	t.Run("a container that exited and was not restarted yet reads its current log", func(t *testing.T) {
+		// --previous asks for the run BEFORE the one that just died, which is
+		// either another run or nothing at all.
+		pod := diagPod(cluster.Name, "three-node-simple-server-0", corev1.ContainerStatus{
+			Name:  "neo4j",
+			State: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}},
+		})
+		got := diagReconciler(t, cluster, pod).diagnoseUnhealthyMembers(context.Background(), cluster)
+		if !strings.HasSuffix(got, "Inspect the exited container with: kubectl logs <pod> -c neo4j") {
+			t.Errorf("expected the plain log command, got: %s", got)
+		}
+	})
+
 	t.Run("no pods at all yields nothing", func(t *testing.T) {
 		if got := diagReconciler(t, cluster).diagnoseUnhealthyMembers(context.Background(), cluster); got != "" {
 			t.Errorf("expected empty diagnosis with no pods, got: %s", got)

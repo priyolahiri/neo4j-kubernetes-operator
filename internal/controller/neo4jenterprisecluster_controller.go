@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -279,6 +280,16 @@ func (r *Neo4jEnterpriseClusterReconciler) recordValidationWarnings(cluster *neo
 	r.advisoryWarnings.record(r.Recorder, cluster, EventReasonValidationWarning, result.NoEffectWarnings)
 }
 
+// clusterEverAccepted reports whether a reconcile of this cluster has ever got
+// past spec validation. Reconcile adds the finalizer only once validation and
+// the StorageClass check have passed, and it stays until deletion. No status
+// field can say this: phase is "Failed" both for a cluster refused at creation
+// and for one whose later edit was refused, and every status write stamps
+// observedGeneration, a refusal's included.
+func clusterEverAccepted(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	return controllerutil.ContainsFinalizer(cluster, ClusterFinalizer)
+}
+
 func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -315,12 +326,16 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		// Apply defaults to the cluster
 		r.Validator.ApplyDefaults(ctx, cluster)
 
-		// Check if this is an update by looking at the generation
+		// Check if this is an update by looking at the generation. Every object
+		// read from the API server has a CreationTimestamp, so this is true on
+		// every pass, a cluster's first included: it decides which validations
+		// run, not what a refusal is called (see clusterEverAccepted).
 		isUpdate := cluster.Generation > 1 || !cluster.CreationTimestamp.IsZero()
 
 		if isUpdate {
 			// For updates, we need to get the current state from the API server
-			// to compare with the new desired state
+			// to compare with the new desired state. This reads the same object
+			// again, so the update-only checks compare its spec with itself.
 			currentCluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			if err := r.Get(ctx, req.NamespacedName, currentCluster); err != nil {
 				if !errors.IsNotFound(err) {
@@ -341,9 +356,17 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 				// Check for validation errors
 				if len(result.Errors) > 0 {
 					err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
-					logger.Error(err, "Cluster update validation failed")
-					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster update validation failed: %v", err)
-					_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Update validation failed: %v", err))
+					// A cluster no pass has ever accepted is being created,
+					// whatever isUpdate says: "Update validation failed" on a
+					// first apply sent people looking for an edit they never
+					// made.
+					event, status := "Cluster update validation failed", "Update validation failed"
+					if !clusterEverAccepted(cluster) {
+						event, status = "Cluster validation failed", "Validation failed"
+					}
+					logger.Error(err, event)
+					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "%s: %v", event, err)
+					_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err))
 					// A spec the user must fix is not a reconcile error: it is
 					// already logged, evented and in status, and returning it
 					// would make controller-runtime ignore RequeueAfter and
@@ -3507,7 +3530,7 @@ func (r *Neo4jEnterpriseClusterReconciler) diagnoseUnhealthyMembers(ctx context.
 	}
 
 	const maxReported = 3
-	var issues []string
+	var issues []memberIssue
 	for i := range pods.Items {
 		pod := &pods.Items[i]
 		for j := range pod.Status.ContainerStatuses {
@@ -3515,48 +3538,142 @@ func (r *Neo4jEnterpriseClusterReconciler) diagnoseUnhealthyMembers(ctx context.
 			if cs.Name != "neo4j" || cs.Ready {
 				continue
 			}
-			var detail string
+			var issue memberIssue
 			switch {
 			case cs.State.Waiting != nil:
+				reason := cs.State.Waiting.Reason
 				// Every healthy cluster passes through these on the way up, so
 				// reporting them would put "member pod not running" on the CR
 				// during normal formation and train people to ignore it. They
 				// only matter if the container has ALREADY died once, in which
 				// case the last-terminated state below carries the real cause.
-				if benignWaitingReasons[cs.State.Waiting.Reason] &&
+				if benignWaitingReasons[reason] &&
 					cs.LastTerminationState.Terminated == nil {
 					continue
 				}
-				detail = cs.State.Waiting.Reason
+				issue.detail = reason
 				// The waiting reason on a restart loop is just
 				// "CrashLoopBackOff"; the useful part is why the previous
 				// attempt died, which lives on the last terminated state.
-				if lt := cs.LastTerminationState.Terminated; lt != nil {
-					detail = fmt.Sprintf("%s (last exit %d %s: %s)",
-						detail, lt.ExitCode, lt.Reason, truncateForMessage(lt.Message, 160))
+				lt := cs.LastTerminationState.Terminated
+				if lt != nil {
+					issue.detail = fmt.Sprintf("%s (last exit %d %s: %s)",
+						issue.detail, lt.ExitCode, lt.Reason, truncateForMessage(lt.Message, 160))
+				}
+				switch {
+				case imagePullWaitingReasons[reason]:
+					issue.hint = memberHintImagePull
+					issue.image = memberPullImage(pod, cs)
+				case lt != nil || reason == "CrashLoopBackOff":
+					issue.hint = memberHintPreviousLog
+				default:
+					issue.hint = memberHintNeverStarted
 				}
 			case cs.State.Terminated != nil:
-				detail = fmt.Sprintf("Terminated (exit %d %s: %s)",
+				issue.detail = fmt.Sprintf("Terminated (exit %d %s: %s)",
 					cs.State.Terminated.ExitCode, cs.State.Terminated.Reason,
 					truncateForMessage(cs.State.Terminated.Message, 160))
+				issue.hint = memberHintLog
 			default:
 				continue // running but not yet Ready — normal during startup
 			}
-			issues = append(issues, fmt.Sprintf("%s: %s", pod.Name, detail))
+			issue.detail = fmt.Sprintf("%s: %s", pod.Name, issue.detail)
+			issues = append(issues, issue)
 		}
 	}
 	if len(issues) == 0 {
 		return ""
 	}
 
-	sort.Strings(issues) // stable text so the event does not churn
+	// Stable text so the event does not churn.
+	sort.Slice(issues, func(i, j int) bool { return issues[i].detail < issues[j].detail })
 	suffix := ""
 	if len(issues) > maxReported {
 		suffix = fmt.Sprintf(" (+%d more)", len(issues)-maxReported)
 		issues = issues[:maxReported]
 	}
-	return "member pod not running — " + strings.Join(issues, "; ") + suffix +
-		". Inspect with: kubectl logs <pod> -c neo4j --previous"
+	details := make([]string, len(issues))
+	for i := range issues {
+		details[i] = issues[i].detail
+	}
+	return "member pod not running — " + strings.Join(details, "; ") + suffix +
+		". " + memberIssueHints(issues)
+}
+
+// imagePullWaitingReasons are the waiting reasons of a container whose image
+// was never pulled. Nothing ran, so there is no log to read.
+var imagePullWaitingReasons = map[string]bool{
+	"ErrImagePull":     true,
+	"ImagePullBackOff": true,
+	"InvalidImageName": true,
+}
+
+// memberHint is where to look next for one kind of member failure. The values
+// order the hints in the message.
+type memberHint int
+
+const (
+	memberHintImagePull    memberHint = iota // the image cannot be pulled
+	memberHintNeverStarted                   // created, never started (config error, start error)
+	memberHintPreviousLog                    // ran, died, and was restarted
+	memberHintLog                            // ran and died, not restarted yet
+)
+
+type memberIssue struct {
+	detail string // "<pod>: <reason and exit>"
+	hint   memberHint
+	image  string // for memberHintImagePull: the image it cannot pull
+}
+
+// memberIssueHints says where the cause of each reported kind of failure is.
+// One "Inspect with: kubectl logs <pod> -c neo4j --previous" used to cover
+// them all, which for an image that will not pull sends the user to a log that
+// cannot exist: no container ever ran.
+func memberIssueHints(issues []memberIssue) string {
+	seen := map[memberHint]bool{}
+	var images []string
+	for _, issue := range issues {
+		seen[issue.hint] = true
+		if issue.hint == memberHintImagePull && issue.image != "" && !slices.Contains(images, issue.image) {
+			images = append(images, issue.image)
+		}
+	}
+	sort.Strings(images)
+
+	var hints []string
+	if seen[memberHintImagePull] {
+		image := "The image"
+		if len(images) > 0 {
+			image = "Image " + strings.Join(images, ", ")
+		}
+		hints = append(hints, image+" cannot be pulled, so no container ran and there is no log "+
+			"to read: check spec.image for a typo and that the tag exists (the official "+
+			"neo4j:<version>-enterprise images on Docker Hub are public and need no pull secret), "+
+			"that the registry is reachable and not rate-limiting, and that a private registry or "+
+			"mirror has a Secret in spec.image.pullSecrets. The registry's answer: kubectl describe pod <pod>")
+	}
+	if seen[memberHintNeverStarted] {
+		hints = append(hints, "A container that never started has no log; the pod's events say why: "+
+			"kubectl describe pod <pod>")
+	}
+	if seen[memberHintPreviousLog] {
+		hints = append(hints, "Inspect a crash loop with: kubectl logs <pod> -c neo4j --previous")
+	}
+	if seen[memberHintLog] {
+		hints = append(hints, "Inspect the exited container with: kubectl logs <pod> -c neo4j")
+	}
+	return strings.Join(hints, ". ")
+}
+
+// memberPullImage is the image the pod's neo4j container is trying to run:
+// the pod spec's, which is what the kubelet pulls, else the one in its status.
+func memberPullImage(pod *corev1.Pod, cs *corev1.ContainerStatus) string {
+	for i := range pod.Spec.Containers {
+		if pod.Spec.Containers[i].Name == cs.Name && pod.Spec.Containers[i].Image != "" {
+			return pod.Spec.Containers[i].Image
+		}
+	}
+	return cs.Image
 }
 
 // truncateForMessage keeps a container message short enough for a Kubernetes

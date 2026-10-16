@@ -77,10 +77,12 @@ const exitProblems = exitInvalid
 //	✗  something is wrong and will not fix itself
 //	…  waiting on something that may still resolve on its own
 //	⚠  worth knowing, not itself a failure
+//	✓  checked, and nothing was wrong
 const (
 	markProblem = "✗"
 	markWaiting = "…"
 	markWarning = "⚠"
+	markPass    = "✓"
 )
 
 // noStatusGrace is how long a resource may carry no phase at all before that
@@ -418,9 +420,7 @@ func diagnosePod(p *corev1.Pod) []symptom {
 					subject: "container " + cs.Name + " in " + p.Name,
 					what:    "image cannot be pulled (" + w.Reason + ")",
 					detail:  w.Message,
-					action: "Check spec.image.repo and spec.image.tag. Neo4j Enterprise images " +
-						"are not public: the namespace needs an imagePullSecret unless the " +
-						"registry allows anonymous pulls.",
+					action:  imagePullAction(p.Name, w.Reason),
 				})
 			case "CrashLoopBackOff":
 				symptoms = append(symptoms, symptom{
@@ -521,6 +521,34 @@ func diagnosePod(p *corev1.Pod) []symptom {
 		}
 	}
 	return symptoms
+}
+
+// imagePullAction says what to check for an image that will not pull. No
+// container ran, so there is no log: the cause is the registry's answer, which
+// the kubelet puts in the waiting message and in the pod's events.
+//
+// It used to say Neo4j Enterprise images are not public and need an
+// imagePullSecret. The official neo4j:<version>-enterprise images on Docker
+// Hub are public — every example in this repository pulls them without a
+// Secret — so that sent people to create credentials for a mistyped tag, the
+// usual cause.
+func imagePullAction(pod, reason string) string {
+	if reason == "InvalidImageName" {
+		return "The image reference cannot be parsed, so nothing was pulled. Check " +
+			"spec.image.repo and spec.image.tag for a stray character, a scheme such " +
+			"as https://, or an uppercase letter in the repository; the message above " +
+			"names the reference."
+	}
+	return "The registry's answer is in the message above, or in the pod's events " +
+		"(kubectl describe pod " + pod + "). \"not found\" or \"manifest unknown\": " +
+		"the tag does not exist — check spec.image.tag for a typo, or a tag that was " +
+		"never published or has been removed. \"pull access denied\" or " +
+		"\"unauthorized\": the repository name is wrong, or a private registry or " +
+		"mirror needs a Secret named in spec.image.pullSecrets — the official " +
+		"neo4j:<version>-enterprise images on Docker Hub are public and need none. " +
+		"\"toomanyrequests\": Docker Hub's rate limit on anonymous pulls. A timeout: " +
+		"the node cannot reach the registry. A backup or restore Job pulls its " +
+		"target deployment's image."
 }
 
 // isOOMKilled matches the kubelet's reason string OR exit code 137 (SIGKILL):
