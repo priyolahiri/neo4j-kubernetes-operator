@@ -4994,7 +4994,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <td><code>*boolean</code></td>
 <td>No</td>
 <td>true</td>
-<td>Pointer type. When unset (nil) or <code>true</code>, creation is idempotent (<code>CREATE DATABASE ... IF NOT EXISTS</code>). Set explicitly to <code>false</code> to omit the <code>IF NOT EXISTS</code> clause — required when paired with <code>replaceExisting: true</code></td>
+<td>Pointer type. When unset (nil) or <code>true</code>, creation is idempotent (<code>CREATE DATABASE ... IF NOT EXISTS</code>), and the operator stops sending <code>CREATE DATABASE</code> once <code>SHOW DATABASES</code> lists the family (the virtual database and its <code>-g000</code> graph shard). Set explicitly to <code>false</code> to omit the <code>IF NOT EXISTS</code> clause, so Neo4j refuses a database that already exists ("already exists", phase <code>Failed</code>) instead of the operator adopting it — required when paired with <code>replaceExisting: true</code>. A family this resource created itself (<code>status.virtualDatabase</code> names <code>spec.name</code>) is not sent <code>CREATE</code> again, so only one it did not create is refused. The destructive <code>replaceExisting</code> pass always drops and creates</td>
 </tr>
 <tr>
 <td><code>replaceExisting</code></td>

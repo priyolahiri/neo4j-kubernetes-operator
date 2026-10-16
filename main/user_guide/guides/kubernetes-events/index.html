@@ -4446,7 +4446,7 @@ and alerting systems.</p>
 <tr>
 <td><code>BackupScheduled</code></td>
 <td>Normal</td>
-<td>Backup CronJob created</td>
+<td>The backup's CronJob is armed: first created, back from another phase (<code>Suspended</code>, <code>Waiting</code>, …), or its schedule changed. The message names the CronJob and the schedule. Not repeated while the schedule stays as it is</td>
 </tr>
 <tr>
 <td><code>BackupStarted</code></td>
@@ -4543,7 +4543,7 @@ and alerting systems.</p>
 <tr>
 <td><code>DatabaseReady</code></td>
 <td>Normal</td>
-<td>Database is created and online</td>
+<td>Database became ready: created and online, or back from a failure. Not repeated while it stays ready</td>
 </tr>
 <tr>
 <td><code>DatabaseDeleted</code></td>
@@ -4768,7 +4768,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ShardedDatabaseReady</code></td>
 <td>Normal</td>
-<td>Sharded database is created and all shards are online</td>
+<td>Sharded database became ready (created and all shards online), or was recreated by <code>spec.replaceExisting</code>. Not repeated while it stays ready</td>
 </tr>
 <tr>
 <td><code>ShardedDatabaseDropped</code></td>
@@ -4778,7 +4778,7 @@ and alerting systems.</p>
 <tr>
 <td><code>SeedBackupPending</code></td>
 <td>Normal</td>
-<td><code>spec.seedBackupRef</code> names a <code>Neo4jBackup</code> with no Succeeded run yet; the sharded database stays <code>Pending</code> and requeues</td>
+<td><code>spec.seedBackupRef</code> names a <code>Neo4jBackup</code> with no Succeeded run yet; the sharded database stays <code>Pending</code> and requeues. Emitted when the wait starts, not on every retry</td>
 </tr>
 <tr>
 <td><code>SeedBackupResolutionFailed</code></td>
@@ -4788,7 +4788,7 @@ and alerting systems.</p>
 <tr>
 <td><code>SeedProxyStarting</code></td>
 <td>Normal</td>
-<td>Waiting for the PVC <code>backup-seed-proxy</code> Deployment to become Ready before seeding</td>
+<td>Waiting for the PVC <code>backup-seed-proxy</code> Deployment to become Ready before seeding. Emitted when the wait starts, not on every retry</td>
 </tr>
 <tr>
 <td>### Users, Roles and Role Bindings</td>
@@ -4885,7 +4885,7 @@ and alerting systems.</p>
 <tr>
 <td><code>PrivilegesApplied</code></td>
 <td>Normal</td>
-<td>Privileges were added to and/or revoked from the role</td>
+<td>Privileges were added to and/or revoked from the role. Only grants that created a privilege row count: learn mode re-grants every statement after an alias change on the cluster or a new image, and grants that change nothing are not reported</td>
 </tr>
 <tr>
 <td><code>PrivilegesDriftKept</code></td>
