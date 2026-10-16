@@ -460,7 +460,7 @@
       {
         "key": "Pending",
         "name": "Pending",
-        "description": "The Neo4jRestore CR was just created; the backup/storage source has not yet been resolved."
+        "description": "The Neo4jRestore CR was just created, or it waits on a precondition the controller re-checks on every requeue: the target or the backup run not there yet, the target's server pods lacking the cloud seed credentials or endpoint (until the user projects them or opts the target in), the seed-config rolling restart, or the seed proxy."
       },
       {
         "key": "Running",
@@ -487,7 +487,7 @@
       {
         "from": "Pending",
         "to": "Failed",
-        "label": "validateRestore rejects the spec, or the resolved backup source cannot be prepared (seed creds/endpoint not projectable)"
+        "label": "validateRestore rejects the spec, or the resolved backup source cannot be prepared (missing seed creds/endpoint is not one of these: the restore waits Pending for them)"
       },
       {
         "from": "Running",

@@ -342,11 +342,13 @@ kubectl logs job/production-restore-restore
    kubectl exec target-cluster-server-0 -- neo4j version
    ```
 
-#### Symptom: Restore reports `Failed` with "server pods can't reach the seed source"
+#### Symptom: Restore waits in `Pending` with "server pods can't reach the seed source"
 
-The `Neo4jRestore` message reads `cluster "<name>"'s server pods can't reach the seed source: missing <credentials and/or endpoint settings>. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation neo4j.com/auto-inherit-seed-creds="true" …` (with `standalone "<name>"` on a standalone), and a `SeedEndpointNotProjected` Warning event carries the same text.
+The `Neo4jRestore` message reads `cluster "<name>"'s server pods can't reach the seed source: missing <credentials and/or endpoint settings>. The server JVM fetches the seed itself. Provide these on the cluster CR, or set annotation neo4j.com/auto-inherit-seed-creds="true" on it … This restore waits and carries on by itself once they are there.` (with `standalone "<name>"` on a standalone). A `SeedEndpointNotProjected` Warning event carries the same text when the restore starts waiting.
 
 **Cause:** an online restore from cloud storage makes the Neo4j server pods fetch the seed, so they need the cloud credentials Secret projected via `spec.extraEnvFrom` (and, for MinIO / S3-compatible stores, the endpoint in `spec.env`).
+
+The restore has not touched any database yet, so you do not need to delete or edit it. Fix the cluster or standalone, and the restore checks again about every 30 seconds and carries on. On an all-databases restore, the pre-restore hooks have already run and do not run again. A restore that went `Failed` this way under an operator before this behaviour stays `Failed`; recreate it, or change its spec.
 
 **Fix:**
 

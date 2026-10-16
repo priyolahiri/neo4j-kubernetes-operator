@@ -318,11 +318,7 @@ func (r *Neo4jRestoreReconciler) ensureClusterSeedConfigReady(
 	projected, missing, projErr := r.projectSeedConfig(ctx, target, credsSecret, storage.Cloud)
 	if projErr != nil {
 		if stderrors.Is(projErr, errSeedConfigNotAutoInherited) {
-			msg := fmt.Sprintf("%s %q's server pods can't reach the seed source: missing %s. The server JVM fetches each seed itself. Provide these on the %s CR, or set annotation %s=\"true\" to let the operator inject them (one rolling restart).",
-				target.kind(), target.name(), strings.Join(missing, "; "), target.kind(), AutoInheritSeedCredsAnnotation)
-			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected, msg)
-			return ctrl.Result{}, false, nil
+			return r.awaitSeedConfig(ctx, restore, target, missing), false, nil
 		}
 		r.updateRestoreStatus(ctx, restore, StatusPending,
 			fmt.Sprintf("Retrying projection of seed configuration onto %s %q: %v", target.kind(), target.name(), projErr))

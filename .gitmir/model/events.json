@@ -488,7 +488,7 @@
   {
     "id": "ev-seed-endpoint-not-projected",
     "name": "SeedEndpointNotProjected",
-    "description": "The target cluster's server pods cannot reach the seed source because cloud credentials or a custom S3 endpoint could not be projected/auto-inherited onto the cluster.",
+    "description": "An online restore's target (cluster or standalone) has server pods that cannot reach the cloud seed source: the credentials Secret or custom S3 endpoint is missing and the target is not opted in to auto-inherit. Emitted when the restore starts waiting in Pending; it carries on once the target has them.",
     "moduleId": "mod-backup-restore"
   },
   {
