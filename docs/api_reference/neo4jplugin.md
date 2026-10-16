@@ -603,9 +603,9 @@ config:
 
 - **Pending**: Plugin resource created, waiting for processing
 - **Waiting**: Waiting for the deployment to be ready — on a cluster, also while any server is unavailable (`Degraded`), since installing restarts every server
-- **Installing**: Plugin installation in progress
-- **Ready**: Plugin successfully installed and active
-- **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs)
+- **Installing**: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, and while a `Ready` plugin restores what was removed from its target (`PluginMissing` event)
+- **Ready**: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set, the plugin goes back to `Installing` and restores it; if nothing is missing, the check writes nothing and the phase stays `Ready`
+- **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its `PluginInstallFailed` Warning is emitted once, not on each retry
 - **Invalid**: The spec failed validation (for example an unsupported `securityPolicy`, a missing `source.url`/`checksum`, or a non-https URL); the controller does not requeue until the CR is edited
 
 ## Supported Plugin Sources

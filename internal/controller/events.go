@@ -135,6 +135,11 @@ const (
 	// NEO4J_PLUGINS env value; the older CR (by creationTimestamp) wins
 	// and the newer one is marked Failed.
 	EventReasonPluginDuplicate = "PluginDuplicate"
+	// EventReasonPluginMissing is emitted on a Ready Neo4jPlugin whose target
+	// StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS
+	// entry, a variable it sets); the plugin goes back to Installing and
+	// restores it, which restarts the servers.
+	EventReasonPluginMissing = "PluginMissing"
 )
 
 // Split-brain events

@@ -1979,6 +1979,17 @@ func Neo4jSettingEnvVarName(key string) string {
 // than overwritten — overwriting silently drops the other sources' entries.
 func IsAdditiveConfKey(key string) bool { return additiveConfKeys[key] }
 
+// IsAdditiveConfEnvName reports whether an environment variable is the
+// Neo4jSettingEnvVarName form of an additive list key (IsAdditiveConfKey).
+func IsAdditiveConfEnvName(name string) bool {
+	for key := range additiveConfKeys {
+		if Neo4jSettingEnvVarName(key) == name {
+			return true
+		}
+	}
+	return false
+}
+
 // MergeConfListValues returns the comma-separated union of two list values,
 // de-duplicated and in first-seen order (a's tokens first, then b's new tokens).
 // Used for additive keys both in neo4j.conf and in NEO4J_*-style env vars.

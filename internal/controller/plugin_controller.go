@@ -19,11 +19,13 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"sort"
 	"strings"
 	"time"
 
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,9 +33,14 @@ import (
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -139,6 +146,30 @@ type Neo4jPluginReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// bolt replaces the network in tests; nil in production.
+	bolt *pluginBolt
+}
+
+// pluginBolt stands in, in tests, for the two steps of a pass that need a
+// running Neo4j.
+type pluginBolt struct {
+	functional func(ctx context.Context, deployment *DeploymentInfo) bool
+	configure  func(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error
+}
+
+func (r *Neo4jPluginReconciler) deploymentFunctional(ctx context.Context, deployment *DeploymentInfo) bool {
+	if r.bolt != nil && r.bolt.functional != nil {
+		return r.bolt.functional(ctx, deployment)
+	}
+	return r.isDeploymentFunctional(ctx, deployment)
+}
+
+func (r *Neo4jPluginReconciler) configure(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
+	if r.bolt != nil && r.bolt.configure != nil {
+		return r.bolt.configure(ctx, plugin, deployment)
+	}
+	return r.configurePlugin(ctx, plugin, deployment)
 }
 
 // PluginFinalizer is the finalizer for Neo4j plugin resources
@@ -311,13 +342,6 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// uninstalled plugins' keys behind). NEO4J_PLUGINS env + init containers below
 	// are still managed here.
 
-	// Check if deployment is actually functional, not just status reporting
-	if !r.isDeploymentFunctional(ctx, deployment) {
-		logger.Info("Target deployment not functional, requeuing", "type", deployment.Type, "name", deployment.Name)
-		r.updatePluginStatus(ctx, plugin, "Waiting", fmt.Sprintf("Waiting for %s %s to be functional", deployment.Type, deployment.Name))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-	}
-
 	// Announce Installing only when this is actually an install.
 	//
 	// This used to run on EVERY reconcile, including the many that happen once
@@ -327,17 +351,61 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// flapped with it — this project's own ArgoCD health checks included.
 	settled := plugin.Status.Phase == neo4jv1beta1.PhaseReady &&
 		plugin.Status.ObservedGeneration == plugin.Generation
-	if !settled {
+	if settled {
+		// A settled plugin is reconciled again whenever its target's pod
+		// template changes (SetupWithManager), because other controllers write
+		// that StatefulSet too. If it still carries the plugin there is nothing
+		// to do: no Bolt, no write, no phase change, so a rollout someone else
+		// started does not flip the plugin out of Ready. If something removed
+		// the plugin — a cluster-controller conflict retry once deleted
+		// NEO4J_PLUGINS (operations.md id 134) — it is not Ready any more: say
+		// so, and restore it below.
+		missing, err := r.missingFromTarget(ctx, plugin, deployment)
+		switch {
+		case err != nil:
+			// The install below reads the same StatefulSet and reports it.
+			logger.Error(err, "Cannot tell whether the target still carries the plugin")
+		case missing == "":
+			return ctrl.Result{}, nil
+		default:
+			logger.Info("Plugin missing from its target; restoring it", "missing", missing)
+			r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginMissing,
+				"%s; restoring it, which restarts the servers", missing)
+			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Restoring the plugin: "+missing)
+		}
+	}
+
+	// Check if deployment is actually functional, not just status reporting
+	if !r.deploymentFunctional(ctx, deployment) {
+		logger.Info("Target deployment not functional, requeuing", "type", deployment.Type, "name", deployment.Name)
+		r.updatePluginStatus(ctx, plugin, "Waiting", fmt.Sprintf("Waiting for %s %s to be functional", deployment.Type, deployment.Name))
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	}
+
+	// Installing is announced only where an install starts (see settled
+	// above), so not by a pass that continues one of this generation: one
+	// waiting for the servers, or retrying a failure. The Installing write is a
+	// change of its own and re-queues the plugin at once: while the pods
+	// restarted, "Installing plugin" and "Waiting for pods" took turns, and a
+	// lasting failure flipped Failed → Installing → Failed with a Warning each
+	// time, as fast as passes could run.
+	inProgress := plugin.Status.ObservedGeneration == plugin.Generation &&
+		(plugin.Status.Phase == neo4jv1beta1.PhaseInstalling || plugin.Status.Phase == neo4jv1beta1.PhaseFailed)
+	if !settled && !inProgress {
 		r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Installing plugin")
 	}
 
 	// Install plugin using NEO4J_PLUGINS environment variable (recommended by Neo4j docs)
 	if err := r.installPluginViaEnvironment(ctx, plugin, deployment); err != nil {
+		if retryablePluginError(err) {
+			logger.Info("Plugin installation interrupted; retrying", "error", err.Error())
+			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling,
+				fmt.Sprintf("Retrying the plugin installation: %v", err))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		logger.Error(err, "Failed to install plugin")
-		r.updatePluginStatus(ctx, plugin, "Failed", fmt.Sprintf("Plugin installation failed: %v", err))
-		r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginInstallFailed,
-			"Plugin %s installation failed: %v", plugin.Spec.Name, err)
-		return ctrl.Result{}, nil // Don't return error - status is set correctly
+		return r.installFailed(ctx, plugin, fmt.Sprintf("Plugin installation failed: %v", err),
+			fmt.Sprintf("Plugin %s installation failed: %v", plugin.Spec.Name, err))
 	}
 
 	// Check if deployment is ready after restart (non-blocking)
@@ -347,13 +415,20 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Configure plugin
-	if err := r.configurePlugin(ctx, plugin, deployment); err != nil {
+	// Configure plugin. This can run while the servers restart to take the
+	// plugin: the write above is what restarts them, and the old pods still
+	// report Ready until they stop. A server that cannot be reached then is
+	// part of the install, not a failed one.
+	if err := r.configure(ctx, plugin, deployment); err != nil {
+		if retryablePluginError(err) {
+			logger.Info("Cannot reach the target to configure the plugin yet; retrying", "error", err.Error())
+			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling,
+				fmt.Sprintf("Waiting for %s %s to accept connections to configure the plugin", deployment.Type, deployment.Name))
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+		}
 		logger.Error(err, "Failed to configure plugin")
-		r.updatePluginStatus(ctx, plugin, "Failed", fmt.Sprintf("Plugin configuration failed: %v", err))
-		r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginInstallFailed,
-			"Plugin %s configuration failed: %v", plugin.Spec.Name, err)
-		return ctrl.Result{}, nil // Don't return error - status is set correctly
+		return r.installFailed(ctx, plugin, fmt.Sprintf("Plugin configuration failed: %v", err),
+			fmt.Sprintf("Plugin %s configuration failed: %v", plugin.Spec.Name, err))
 	}
 
 	// Update status to "Ready"
@@ -363,6 +438,30 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	logger.Info("Plugin reconciliation completed")
 	return ctrl.Result{}, nil
+}
+
+// installFailed records a failed install or configuration: phase Failed, a
+// Warning when the failure is new, and another attempt after RequeueAfter. A
+// retry that fails the same way changes nothing and says nothing more. What
+// failed can lie outside the plugin (a Secret, the cluster's own spec), so the
+// plugin keeps trying rather than waiting for an edit to its CR.
+func (r *Neo4jPluginReconciler) installFailed(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, message, event string) (ctrl.Result, error) {
+	if plugin.Status.Phase != neo4jv1beta1.PhaseFailed || plugin.Status.Message != message {
+		r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginInstallFailed, event)
+	}
+	r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseFailed, message)
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// retryablePluginError reports whether an install or configuration step failed
+// for a reason to wait out rather than a failed install: the StatefulSet kept
+// changing under the write (its own controller rewrites its status at every
+// pod transition of a restart), or Neo4j could not be reached because the
+// servers are restarting to take the plugin.
+func retryablePluginError(err error) bool {
+	return errors.IsConflict(err) ||
+		neo4jclient.IsConnectivityError(err) ||
+		stderrors.Is(err, context.DeadlineExceeded)
 }
 
 func (r *Neo4jPluginReconciler) handleDeletion(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) (ctrl.Result, error) {
@@ -900,6 +999,7 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 	}
 
 	// Update the StatefulSet with retry on conflict
+	written := false
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		// Fetch latest version of StatefulSet for each retry
 		currentSts := &appsv1.StatefulSet{}
@@ -920,99 +1020,39 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 		}
 
 		// Apply the same plugin changes to the current StatefulSet
-		pluginName := r.mapPluginName(plugin.Spec.Name)
-		pluginsToInstall := []string{pluginName}
-		for _, dep := range plugin.Spec.Dependencies {
-			depName := r.mapPluginName(dep.Name)
-			pluginsToInstall = append(pluginsToInstall, depName)
+		before := currentNeo4jContainer.DeepCopy().Env
+		if err := r.applyPluginEnv(currentNeo4jContainer, plugin, deployment); err != nil {
+			return err
 		}
-
-		if !preBaked {
-			// Find existing NEO4J_PLUGINS environment variable or create new one
-			var pluginsEnvVar *corev1.EnvVar
-			for i := range currentNeo4jContainer.Env {
-				if currentNeo4jContainer.Env[i].Name == "NEO4J_PLUGINS" {
-					pluginsEnvVar = &currentNeo4jContainer.Env[i]
-					break
-				}
-			}
-			if pluginsEnvVar == nil {
-				// Add new NEO4J_PLUGINS environment variable with all plugins
-				var quotedPlugins []string
-				for _, plugin := range pluginsToInstall {
-					quotedPlugins = append(quotedPlugins, fmt.Sprintf("\"%s\"", plugin))
-				}
-				currentNeo4jContainer.Env = append(currentNeo4jContainer.Env, corev1.EnvVar{
-					Name:  "NEO4J_PLUGINS",
-					Value: fmt.Sprintf("[%s]", strings.Join(quotedPlugins, ",")),
-				})
-			} else {
-				// Update existing NEO4J_PLUGINS — delegate to the same helper used
-				// in the outer block (above) so the merge is JSON-aware,
-				// idempotent, and bug-free. The previous inline implementation
-				// here read `currentValue` once but then mutated only
-				// `pluginsEnvVar.Value`, leaving `currentValue` stale across
-				// loop iterations — only the first plugin in pluginsToInstall
-				// would actually land in the env var.
-				currentValue := pluginsEnvVar.Value
-				for _, plugin := range pluginsToInstall {
-					updated, err := r.addPluginToList(currentValue, plugin)
-					if err != nil {
-						return fmt.Errorf("failed to update plugin list: %w", err)
-					}
-					currentValue = updated
-				}
-				pluginsEnvVar.Value = currentValue
+		if equality.Semantic.DeepEqual(before, currentNeo4jContainer.Env) {
+			// Everything the plugin sets is there already. Writing would change
+			// nothing, and the passes that wait for the servers to restart would
+			// only race the writes of the StatefulSet's own controller.
+			return nil
+		}
+		if deployment.Type == "cluster" {
+			// The cluster controller puts its own value back on a variable it
+			// renders from the cluster's spec, which restarts the servers, and
+			// the plugin's next pass would change it again. Say so instead of
+			// starting that tug of war.
+			if owned := ownedEnvNames(changedEnvNames(before, currentNeo4jContainer.Env), readOwnedEnvVarNames(currentSts)); len(owned) > 0 {
+				return &pluginEnvOwnedError{statefulSet: currentSts.Name, cluster: deployment.Name, names: owned}
 			}
 		}
 
-		// A standalone carries a plugin's security and startup-only settings in
-		// neo4j.conf, merged there with the user's own spec.config by the
-		// standalone controller (#146). The image applies NEO4J_* env vars over
-		// neo4j.conf, so an env copy of such a key replaced that merged value —
-		// dropping the user's own procedure allowlist. Those keys stay out of a
-		// standalone's env; the plugin's other settings (APOC's, …) stay in it.
-		standalone := deployment.Type == "standalone"
-
-		// Add plugin-specific configuration as environment variables
-		for key, value := range plugin.Spec.Config {
-			if standalone && pluginConfKey(key) {
-				continue
-			}
-			envVarName := resources.Neo4jSettingEnvVarName(key)
-			// Check if environment variable already exists
-			exists := false
-			for i := range currentNeo4jContainer.Env {
-				if currentNeo4jContainer.Env[i].Name == envVarName {
-					currentNeo4jContainer.Env[i].Value = value
-					exists = true
-					break
-				}
-			}
-			if !exists {
-				currentNeo4jContainer.Env = append(currentNeo4jContainer.Env, corev1.EnvVar{
-					Name:  envVarName,
-					Value: value,
-				})
-			}
+		if err := r.Update(ctx, currentSts); err != nil {
+			return err
 		}
-
-		if standalone {
-			// …and env copies an earlier operator wrote are removed (one roll).
-			currentNeo4jContainer.Env = removeStandalonePluginConfEnv(currentNeo4jContainer.Env, plugin, r.pluginSecurityRemovalSettings(plugin))
-		} else {
-			// Apply security settings as environment variables, unioning additive
-			// allowlists across plugins (see mergePluginSecurityEnv).
-			currentNeo4jContainer.Env = mergePluginSecurityEnv(currentNeo4jContainer.Env, r.pluginSecuritySettings(plugin))
-		}
-
-		return r.Update(ctx, currentSts)
+		written = true
+		return nil
 	})
 	if err != nil {
 		return fmt.Errorf("failed to update StatefulSet with plugin configuration: %w", err)
 	}
 
-	logger.Info("Successfully updated StatefulSet with plugin configuration", "plugin", pluginName)
+	if written {
+		logger.Info("Successfully updated StatefulSet with plugin configuration", "plugin", pluginName)
+	}
 
 	// VerifiedDownload mode: after the regular config/env-var write,
 	// inject the checksum-verifying init container so the JAR lands in
@@ -1029,6 +1069,224 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 	// before connectivity checks to ensure security settings are applied before Neo4j starts
 
 	return nil
+}
+
+// applyPluginEnv makes on container, the target's neo4j container, every env
+// edit the plugin owns: its names in NEO4J_PLUGINS (Managed mode), its
+// spec.config settings, and its security settings (unioned into a cluster's
+// env; kept out of a standalone's). installPluginViaEnvironment writes what it
+// produces and missingFromTarget compares against it, so the two cannot
+// disagree about what the plugin needs.
+func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
+	pluginName := r.mapPluginName(plugin.Spec.Name)
+	pluginsToInstall := []string{pluginName}
+	for _, dep := range plugin.Spec.Dependencies {
+		depName := r.mapPluginName(dep.Name)
+		pluginsToInstall = append(pluginsToInstall, depName)
+	}
+
+	if !shouldSkipNeo4jPluginsEnv(plugin) {
+		// Find existing NEO4J_PLUGINS environment variable or create new one
+		var pluginsEnvVar *corev1.EnvVar
+		for i := range container.Env {
+			if container.Env[i].Name == "NEO4J_PLUGINS" {
+				pluginsEnvVar = &container.Env[i]
+				break
+			}
+		}
+		if pluginsEnvVar == nil {
+			// Add new NEO4J_PLUGINS environment variable with all plugins
+			var quotedPlugins []string
+			for _, plugin := range pluginsToInstall {
+				quotedPlugins = append(quotedPlugins, fmt.Sprintf("\"%s\"", plugin))
+			}
+			container.Env = append(container.Env, corev1.EnvVar{
+				Name:  "NEO4J_PLUGINS",
+				Value: fmt.Sprintf("[%s]", strings.Join(quotedPlugins, ",")),
+			})
+		} else {
+			// Update existing NEO4J_PLUGINS — delegate to the same helper used
+			// in installPluginViaEnvironment's outer block so the merge is
+			// JSON-aware, idempotent, and bug-free. A previous inline
+			// implementation read `currentValue` once but then mutated only
+			// `pluginsEnvVar.Value`, leaving `currentValue` stale across loop
+			// iterations — only the first plugin in pluginsToInstall would
+			// actually land in the env var.
+			currentValue := pluginsEnvVar.Value
+			for _, plugin := range pluginsToInstall {
+				updated, err := r.addPluginToList(currentValue, plugin)
+				if err != nil {
+					return fmt.Errorf("failed to update plugin list: %w", err)
+				}
+				currentValue = updated
+			}
+			pluginsEnvVar.Value = currentValue
+		}
+	}
+
+	// A standalone carries a plugin's security and startup-only settings in
+	// neo4j.conf, merged there with the user's own spec.config by the
+	// standalone controller (#146). The image applies NEO4J_* env vars over
+	// neo4j.conf, so an env copy of such a key replaced that merged value —
+	// dropping the user's own procedure allowlist. Those keys stay out of a
+	// standalone's env; the plugin's other settings (APOC's, …) stay in it.
+	standalone := deployment.Type == "standalone"
+
+	// Add plugin-specific configuration as environment variables
+	for key, value := range plugin.Spec.Config {
+		if standalone && pluginConfKey(key) {
+			continue
+		}
+		envVarName := resources.Neo4jSettingEnvVarName(key)
+		// Check if environment variable already exists
+		exists := false
+		for i := range container.Env {
+			if container.Env[i].Name == envVarName {
+				container.Env[i].Value = value
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			container.Env = append(container.Env, corev1.EnvVar{
+				Name:  envVarName,
+				Value: value,
+			})
+		}
+	}
+
+	if standalone {
+		// …and env copies an earlier operator wrote are removed (one roll).
+		container.Env = removeStandalonePluginConfEnv(container.Env, plugin, r.pluginSecurityRemovalSettings(plugin))
+	} else {
+		// Apply security settings as environment variables, unioning additive
+		// allowlists across plugins (see mergePluginSecurityEnv).
+		container.Env = mergePluginSecurityEnv(container.Env, r.pluginSecuritySettings(plugin))
+	}
+	return nil
+}
+
+// missingFromTarget reports what of the plugin its target's StatefulSet no
+// longer carries, or "" when it carries all of it: the plugin's edits are made
+// on a copy of the live neo4j container, and pluginEnvDrift decides which of
+// them a settled plugin puts right.
+func (r *Neo4jPluginReconciler) missingFromTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (string, error) {
+	stsName := r.getStatefulSetName(deployment)
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: deployment.Namespace}, sts); err != nil {
+		if errors.IsNotFound(err) {
+			return fmt.Sprintf("StatefulSet %s does not exist", stsName), nil
+		}
+		return "", fmt.Errorf("failed to get StatefulSet %s: %w", stsName, err)
+	}
+	var container *corev1.Container
+	for i := range sts.Spec.Template.Spec.Containers {
+		if sts.Spec.Template.Spec.Containers[i].Name == "neo4j" {
+			container = &sts.Spec.Template.Spec.Containers[i]
+			break
+		}
+	}
+	if container == nil {
+		return "", fmt.Errorf("neo4j container not found in StatefulSet %s", stsName)
+	}
+	desired := container.DeepCopy()
+	if err := r.applyPluginEnv(desired, plugin, deployment); err != nil {
+		return "", err
+	}
+	drift := pluginEnvDrift(container.Env, desired.Env, deployment.Type == "standalone")
+	if len(drift) == 0 {
+		return "", nil
+	}
+	return fmt.Sprintf("StatefulSet %s does not hold what the plugin sets in %s", stsName, strings.Join(drift, ", ")), nil
+}
+
+// pluginEnvDrift returns, sorted, the variables a settled plugin puts right on
+// its target (live is the neo4j container's env, desired the same after the
+// plugin's edits):
+//   - one it sets that is absent;
+//   - NEO4J_PLUGINS when it no longer lists a name the plugin needs (the merge
+//     only ever adds names, so a different value is a missing name);
+//   - on a standalone, a copy of one of the plugin's neo4j.conf settings that
+//     an earlier operator left in the env (operations.md id 114).
+//
+// A value someone else gave a variable the plugin sets is left alone. Two
+// writers that disagree on it — two plugins setting one key, or one whose
+// spec.config overwrites another's list — would otherwise restart the servers
+// in turn for ever, each pass woken by the other's write.
+func pluginEnvDrift(live, desired []corev1.EnvVar, standalone bool) []string {
+	have, want := envByName(live), envByName(desired)
+	var drift []string
+	for _, name := range changedEnvNames(live, desired) {
+		_, inLive := have[name]
+		_, inDesired := want[name]
+		// On a standalone the plugin only ever takes its tokens out of a
+		// list (no plugin writes one into a standalone's env), so a change
+		// there cannot be fought over.
+		if inLive && inDesired && name != "NEO4J_PLUGINS" &&
+			(!standalone || !resources.IsAdditiveConfEnvName(name)) {
+			continue
+		}
+		drift = append(drift, name)
+	}
+	return drift
+}
+
+// changedEnvNames returns, sorted, the names whose variable differs between
+// before and after: added, removed, or given another value.
+func changedEnvNames(before, after []corev1.EnvVar) []string {
+	was, is := envByName(before), envByName(after)
+	var changed []string
+	for name, now := range is {
+		if then, ok := was[name]; !ok || !equality.Semantic.DeepEqual(then, now) {
+			changed = append(changed, name)
+		}
+	}
+	for name := range was {
+		if _, ok := is[name]; !ok {
+			changed = append(changed, name)
+		}
+	}
+	sort.Strings(changed)
+	return changed
+}
+
+// envByName indexes env vars by name; of a repeated name the last one wins,
+// as in the container.
+func envByName(env []corev1.EnvVar) map[string]corev1.EnvVar {
+	out := make(map[string]corev1.EnvVar, len(env))
+	for _, e := range env {
+		out[e.Name] = e
+	}
+	return out
+}
+
+// ownedEnvNames returns the names in names that owned lists.
+func ownedEnvNames(names []string, owned map[string]struct{}) []string {
+	var out []string
+	for _, name := range names {
+		if _, ok := owned[name]; ok {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+// pluginEnvOwnedError: the plugin would change variables that the cluster
+// controller renders from the cluster's own spec (its
+// neo4j.com/cluster-controller-env-vars annotation lists them). That
+// controller puts its own value back whenever the live one differs, so writing
+// would only restart the servers twice, and then again at the plugin's next
+// pass.
+type pluginEnvOwnedError struct {
+	statefulSet string
+	cluster     string
+	names       []string
+}
+
+func (e *pluginEnvOwnedError) Error() string {
+	return fmt.Sprintf("%s on StatefulSet %s comes from Neo4jEnterpriseCluster %s itself (spec.env, or a setting it renders), "+
+		"which puts its own value back: set what the plugin needs there, or remove the variable from the cluster's spec",
+		strings.Join(e.names, ", "), e.statefulSet, e.cluster)
 }
 
 // mergePluginSecurityEnv applies a plugin's security settings to a container's
@@ -1663,7 +1921,63 @@ func RemoveFromNeo4jPluginList(existing string, remove string) (string, error) {
 func (r *Neo4jPluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jPlugin{}).
+		// What a plugin installs lives on its target's StatefulSet, which the
+		// cluster, standalone and fleet controllers write too, and a Ready
+		// plugin is not requeued. Without this, a plugin something removed —
+		// a conflict retry of the cluster controller once deleted NEO4J_PLUGINS
+		// (operations.md id 134) — stayed Ready without the plugin on its
+		// servers until the operator restarted.
+		Watches(&appsv1.StatefulSet{},
+			handler.EnqueueRequestsFromMapFunc(r.readyPluginsForStatefulSet),
+			builder.WithPredicates(podTemplateChanged)).
 		Complete(r)
+}
+
+// readyPluginsForStatefulSet maps a StatefulSet to the Ready Neo4jPlugins in
+// its namespace whose target it is: a cluster's {name}-server or a
+// standalone's {name}. Only Ready ones: a plugin in any other phase is part way
+// through an install and requeues on its own, or waits for an edit to its CR,
+// and a pass of those writes the StatefulSet again — enqueuing them on its
+// changes would let a controller that reverts the plugin's write (the cluster
+// controller drops a foreign init container, for one) restart the servers in a
+// loop.
+func (r *Neo4jPluginReconciler) readyPluginsForStatefulSet(ctx context.Context, obj client.Object) []reconcile.Request {
+	plugins := &neo4jv1beta1.Neo4jPluginList{}
+	if err := r.List(ctx, plugins, client.InNamespace(obj.GetNamespace())); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list Neo4jPlugins for a StatefulSet change",
+			"statefulSet", obj.GetName(), "namespace", obj.GetNamespace())
+		return nil
+	}
+	var requests []reconcile.Request
+	for i := range plugins.Items {
+		plugin := &plugins.Items[i]
+		if plugin.Status.Phase != neo4jv1beta1.PhaseReady || plugin.Spec.ClusterRef == "" {
+			continue
+		}
+		if obj.GetName() != plugin.Spec.ClusterRef+"-server" && obj.GetName() != plugin.Spec.ClusterRef {
+			continue
+		}
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(plugin)})
+	}
+	return requests
+}
+
+// podTemplateChanged passes the StatefulSet events that can take away what a
+// plugin wrote: a StatefulSet created (one recreated without it) and a pod
+// template changed. Status updates, which come at every pod transition of a
+// rollout, do not pass.
+var podTemplateChanged = predicate.Funcs{
+	CreateFunc: func(event.CreateEvent) bool { return true },
+	UpdateFunc: func(e event.UpdateEvent) bool {
+		oldSts, okOld := e.ObjectOld.(*appsv1.StatefulSet)
+		newSts, okNew := e.ObjectNew.(*appsv1.StatefulSet)
+		if !okOld || !okNew {
+			return false
+		}
+		return !equality.Semantic.DeepEqual(oldSts.Spec.Template, newSts.Spec.Template)
+	},
+	DeleteFunc:  func(event.DeleteEvent) bool { return false },
+	GenericFunc: func(event.GenericEvent) bool { return false },
 }
 
 // Helper functions

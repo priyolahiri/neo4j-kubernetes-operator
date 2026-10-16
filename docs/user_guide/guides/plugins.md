@@ -291,7 +291,8 @@ kubectl exec <pod-name> -c neo4j -- \
 | Event reason | Type | Meaning |
 |---|---|---|
 | `PluginInstalled` | Normal | Plugin installed and verified |
-| `PluginInstallFailed` | Warning | Installation failed — see the event message |
+| `PluginInstallFailed` | Warning | Installation failed — see the event message. Emitted once per failure; the controller retries every 30 seconds without repeating it. A server that is restarting or briefly unreachable is not a failure: the plugin stays `Installing` |
+| `PluginMissing` | Warning | A `Ready` plugin's target StatefulSet no longer carries what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets); the plugin goes back to `Installing` and restores it, which restarts the servers |
 | `PluginDuplicate` | Warning | Another CR already owns this `(clusterRef, name)` pair — delete one |
 | `ValidationFailed` | Warning | Spec rejected by the validator (hard error, no requeue) |
 | `ValidationWarning` | Warning | Advisory compatibility note, or a set field that nothing reads — does not block install |
@@ -299,6 +300,8 @@ kubectl exec <pod-name> -c neo4j -- \
 ### Other common issues
 
 - **`status.phase: Waiting`**: the target cluster/standalone isn't functional yet — the plugin controller requeues until it is. On a cluster it also waits while any server is unavailable (`Degraded` condition `True`, or phase `Degraded`), since installing a plugin restarts every server.
+- **A `Ready` plugin goes back to `Installing` with a `PluginMissing` event**: something removed what the plugin set from the target's StatefulSet — its `NEO4J_PLUGINS` entry, or a variable it sets. The controller re-checks a `Ready` plugin whenever that StatefulSet's pod template changes, and restores what is gone, which restarts the servers. It never overrides a value someone else gave one of its variables.
+- **`Failed` with "… comes from Neo4jEnterpriseCluster … itself"**: the cluster's own spec sets a variable the plugin needs to change — typically `NEO4J_PLUGINS` in `spec.env` without this plugin in it. The cluster controller would put its value back, restarting the servers each time, so the plugin does not write it. Add the plugin to the cluster's value, or remove the variable from `spec.env`; the plugin retries every 30 seconds and installs once the conflict is gone.
 - **VerifiedDownload pod stuck `Pending`**: checksum mismatch or unreachable URL — `kubectl describe pod` and read the init container's termination message.
 - **Plugin loads but procedures fail**: check `spec.security.allowedProcedures` and whether the plugin needs unrestricted procedures; for license-bound plugins (Bloom, GDS Enterprise, GenAI) verify the license file is mounted (`kubectl exec <pod> -c neo4j -- ls /licenses/`).
 
