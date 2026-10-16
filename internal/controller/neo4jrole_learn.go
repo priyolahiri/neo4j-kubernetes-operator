@@ -61,8 +61,8 @@ import (
 //
 // It re-learns, too, when the server or its image changes, or an alias the
 // role's statements name is created, dropped or re-pointed — any alias, for a
-// role with a statement on `*` (roleRenderingScope). An alias layout that
-// could not be read is not a change. It does not MOVE a privilege granted
+// role with a statement whose targets cannot be read (roleRenderingScope). An
+// alias layout that could not be read is not a change. It does not MOVE a privilege granted
 // through an alias that is later retargeted: the old target's rows are kept,
 // as Neo4j itself keeps them. Probe mode does move it.
 
@@ -321,7 +321,7 @@ func learnDesired(
 		}
 		// Only a grant that created a row changed the role. Re-learning grants
 		// every statement again — after a change to an alias the role names
-		// (any alias, for a role on `*`), a new image, or a vanished
+		// (any alias, for a role it cannot read), a new image, or a vanished
 		// unattributed row — and those grants are no-ops for every statement
 		// whose rendering did not move. Counting them reported "applied N
 		// added" on roles where nothing was added, once per alias change on

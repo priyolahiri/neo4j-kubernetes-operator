@@ -285,7 +285,11 @@ type privilegeItem struct {
 
 // privilegeItems splits s the way upperCaseReservedKeywords always has:
 // whitespace and the punctuation below end a token and are kept verbatim;
-// quoted strings and backtick identifiers are single tokens.
+// quoted strings and backtick identifiers are single tokens. A doubled
+// backtick inside a backtick identifier is Cypher's escape for a literal one
+// and stays inside it: the name a`b, written quoted with its backtick doubled,
+// is one identifier. Read as two quoted names back to back, each lost its
+// quotes and the pair canonicalised to ab — a different name.
 func privilegeItems(s string) []privilegeItem {
 	var items []privilegeItem
 	inSingle, inDouble, inBacktick, escape := false, false, false, false
@@ -298,7 +302,9 @@ func privilegeItems(s string) []privilegeItem {
 	}
 	sep := func(r rune) { items = append(items, privilegeItem{text: string(r)}) }
 
-	for _, r := range s {
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
 		if escape {
 			token.WriteRune(r)
 			escape = false
@@ -319,6 +325,11 @@ func privilegeItems(s string) []privilegeItem {
 		if inBacktick {
 			token.WriteRune(r)
 			if r == '`' {
+				if i+1 < len(rs) && rs[i+1] == '`' {
+					token.WriteRune('`')
+					i++
+					continue
+				}
 				flush()
 				inBacktick = false
 			}
@@ -506,8 +517,12 @@ func PrivilegeStatementMatchesRole(stmt, role string) bool {
 	if prev != "TO" {
 		return false
 	}
-	// Strip backticks from `roleName` form
-	last = strings.Trim(last, "`")
+	// Strip backticks from `roleName` form, resolving a doubled one.
+	if name, ok := parseName(last); ok {
+		last = name
+	} else {
+		last = strings.Trim(last, "`")
+	}
 	return strings.EqualFold(last, role)
 }
 
@@ -575,19 +590,18 @@ func PrivilegeGraphTargets(stmt string) []string {
 // and not the local database alias" (Operations Manual 5 and /current/, "Manage
 // database aliases"). So re-pointing an alias a statement names changes that
 // statement's stored form, while the rows already stored stay on the old
-// target. Nothing else in the alias layout reaches a statement: ON DBMS and ON
-// HOME / DEFAULT DATABASE|GRAPH store the keyword, never a database (recorded
-// in internal/controller/testdata/privilege_rendering.json).
+// target. Nothing else in the alias layout reaches a statement: ON DBMS, ON
+// HOME / DEFAULT DATABASE|GRAPH and the `*` wildcard are stored as the keyword
+// or the `*`, never as a database (recorded in
+// internal/controller/testdata/privilege_rendering.json), so no alias change
+// can move them.
 //
-// It returns the names the statement is scoped to, backticks removed — a
-// composite constituent written comp.c, `comp.c` or `comp`.`c` is comp.c, the
-// name SHOW ALIASES lists it under — and anyAlias = true when any alias on the
-// DBMS may matter:
-//   - a `*` target. It is stored as `*` (the same recording), but it is the one
-//     target every alias falls under, so it is kept on the whole layout;
-//   - a statement this cannot read: no ON clause, an ON it does not recognise,
-//     or a name it cannot take apart (a constituent whose parts need their
-//     quotes, `my-comp`.`x`). Unknown is answered with the safe default.
+// It returns the names the statement is scoped to, as Neo4j lists them — a
+// composite constituent written comp.c, `comp.c`, `comp`.`c` or `my-comp`.`x`
+// is comp.c or my-comp.x, the name SHOW ALIASES gives it — and anyAlias = true
+// when the statement cannot be read: no ON clause, an ON this does not
+// recognise, or a name it cannot take apart. Unknown is answered with the
+// safe default, that any alias may matter.
 //
 // A statement that canonicalises to nothing stores nothing: (nil, false).
 func PrivilegeAliasDependence(stmt string) (names []string, anyAlias bool) {
@@ -597,7 +611,7 @@ func PrivilegeAliasDependence(stmt string) (names []string, anyAlias bool) {
 	s := scanPrivilegeScopes(stmt, map[string]bool{
 		"DATABASE": true, "DATABASES": true, "GRAPH": true, "GRAPHS": true,
 	})
-	if s.wildcard || s.unreadable {
+	if s.unreadable {
 		return nil, true
 	}
 	return s.names, false
@@ -605,8 +619,7 @@ func PrivilegeAliasDependence(stmt string) (names []string, anyAlias bool) {
 
 // privilegeScope is what a statement's ON clauses say.
 type privilegeScope struct {
-	names      []string // under the scopes asked for, backticks removed
-	wildcard   bool     // a `*` under one of those scopes
+	names      []string // under the scopes asked for, as Neo4j lists them
 	unreadable bool     // no ON, an unrecognised ON, or a name not taken apart
 }
 
@@ -642,22 +655,18 @@ func scanPrivilegeScopes(stmt string, scopes map[string]bool) privilegeScope {
 		// Everything up to the next keyword is the comma-separated name list.
 		for k := j + 1; k < len(tokens); k++ {
 			t := tokens[k]
-			if t == "," {
+			if t == "," || t == "*" {
 				continue
 			}
 			if _, reserved := privilegeKeywords[t]; reserved {
 				break
 			}
-			if t == "*" {
-				out.wildcard = true
+			name, ok := parseName(t)
+			if !ok {
+				out.unreadable = true
 				continue
 			}
-			if !wholeName(t) {
-				out.unreadable = true
-			}
-			if name := strings.Trim(t, "`"); name != "" {
-				out.names = append(out.names, name)
-			}
+			out.names = append(out.names, name)
 		}
 	}
 	if !sawOn {
@@ -666,22 +675,64 @@ func scanPrivilegeScopes(stmt string, scopes map[string]bool) privilegeScope {
 	return out
 }
 
-// wholeName reports whether a name token is one name: unquoted, or quoted
-// once around the whole of it. `my-comp`.`x` arrives as two tokens, `my-comp`
-// and .`x`, and neither is the constituent's name.
-func wholeName(t string) bool {
-	switch strings.Count(t, "`") {
-	case 0:
-		return !strings.HasPrefix(t, ".")
-	case 2:
-		return strings.HasPrefix(t, "`") && strings.HasSuffix(t, "`")
+// parseName reads one database or graph name as written — dot-separated
+// parts, each bare or backtick-quoted, a doubled backtick standing for a
+// literal one — and returns it as Neo4j lists it: the parts joined by dots,
+// quotes and escapes resolved: `my-comp`.`x` is my-comp.x, and a`b quoted
+// with its backtick doubled is a`b. ok is false when t is not one name: an empty part, or a quote that opens
+// mid-part, never closes, or is followed by anything but a dot.
+func parseName(t string) (string, bool) {
+	var b strings.Builder
+	rs := []rune(t)
+	partLen := 0
+	for i := 0; i < len(rs); i++ {
+		switch r := rs[i]; r {
+		case '.':
+			if partLen == 0 {
+				return "", false
+			}
+			b.WriteRune('.')
+			partLen = 0
+		case '`':
+			if partLen != 0 {
+				return "", false
+			}
+			closed := false
+			for i++; i < len(rs); i++ {
+				if rs[i] != '`' {
+					b.WriteRune(rs[i])
+					partLen++
+					continue
+				}
+				if i+1 < len(rs) && rs[i+1] == '`' {
+					b.WriteRune('`')
+					partLen++
+					i++
+					continue
+				}
+				closed = true
+				break
+			}
+			if !closed || partLen == 0 || (i+1 < len(rs) && rs[i+1] != '.') {
+				return "", false
+			}
+		default:
+			b.WriteRune(r)
+			partLen++
+		}
 	}
-	return false
+	if partLen == 0 {
+		return "", false
+	}
+	return b.String(), true
 }
 
-// privilegeTokens splits a canonicalised privilege statement into words,
-// commas, and backtick-quoted identifiers (which are kept whole, backticks
-// included, so a database named `TO` is not mistaken for the keyword).
+// privilegeTokens splits a canonicalised privilege statement into words and
+// commas. A backtick-quoted identifier stays whole, backticks included, so a
+// database named `TO` is not mistaken for the keyword; so does a dotted name
+// with quoted parts, `my-comp`.`x`, and a name with an escaped (doubled)
+// backtick. A closing quote does not end the token — whitespace and commas outside
+// quotes do. Ending it there split `my-comp`.`x` into `my-comp` and .`x`.
 func privilegeTokens(s string) []string {
 	var tokens []string
 	var cur strings.Builder
@@ -697,9 +748,6 @@ func privilegeTokens(s string) []string {
 		case r == '`':
 			inBacktick = !inBacktick
 			cur.WriteRune(r)
-			if !inBacktick {
-				flush()
-			}
 		case inBacktick:
 			cur.WriteRune(r)
 		case r == ',':

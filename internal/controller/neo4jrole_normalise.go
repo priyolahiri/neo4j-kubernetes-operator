@@ -139,16 +139,18 @@ func roleRenderingScope(target ResolvedTarget, aliases []neo4jclient.AliasInfo, 
 // roleAliasFingerprint is aliasFingerprint over only the aliases a role's
 // statements can be stored through: those its statements name, matched by
 // name as Neo4j matches them (case-insensitively; a constituent by the
-// qualified name SHOW ALIASES lists). A statement on `*`, or one whose targets
-// cannot be read, puts the role on every alias (see
+// qualified name SHOW ALIASES lists, however its parts were quoted). A
+// statement on `*`, ON DBMS or ON HOME/DEFAULT adds none. Only a statement
+// whose targets cannot be read puts the role on every alias (see
 // neo4jclient.PrivilegeAliasDependence).
 //
 // The scope used to fingerprint every alias on the cluster, so creating,
 // dropping or re-pointing any alias, or adding or removing any composite
 // constituent, re-learned every role: each re-sent all its grants, every one
 // a security.log line and a no-op unless its own stored form moved. An alias
-// a role does not name cannot move its stored form, and a grant on a composite
-// is stored against the composite, not its constituents.
+// a role does not name cannot move its stored form — a `*` is stored as `*` —
+// and a grant on a composite is stored against the composite, not its
+// constituents.
 func roleAliasFingerprint(aliases []neo4jclient.AliasInfo, stmts []string) string {
 	named := map[string]bool{}
 	for _, stmt := range stmts {

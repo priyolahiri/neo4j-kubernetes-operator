@@ -261,12 +261,14 @@ func TestAliasFingerprintTracksTargets(t *testing.T) {
 
 // A role's alias fingerprint covers the aliases its statements name — matched
 // as Neo4j matches names, case-insensitively, a constituent by its qualified
-// name — and every alias once a statement is on `*`.
+// name however it was quoted — and every alias only when a statement cannot
+// be read. A statement on `*` is stored as `*` and adds none.
 func TestRoleAliasFingerprint(t *testing.T) {
 	layout := []neo4jclient.AliasInfo{
 		{Name: "orders", Database: "orders-v1"},
 		{Name: "reports", Database: "reports-v1"},
 		{Name: "cineasts.latest", Composite: "cineasts", Database: "movies"},
+		{Name: "my-comp.la test", Composite: "my-comp", Database: "movies-v2"},
 		{Name: "upcoming", Database: "upcoming", Location: "remote", URL: "neo4j+s://elsewhere:7687"},
 	}
 	only := func(names ...string) string {
@@ -294,6 +296,8 @@ func TestRoleAliasFingerprint(t *testing.T) {
 		}, only("orders", "reports")},
 		{"a constituent by its qualified name", []string{"GRANT ACCESS ON DATABASE cineasts.latest TO r"},
 			only("cineasts.latest")},
+		{"a constituent whose parts are quoted", []string{"GRANT ACCESS ON DATABASE `my-comp`.`la test` TO r"},
+			only("my-comp.la test")},
 		{"a remote alias, with its URL", []string{"GRANT ACCESS ON DATABASE upcoming TO r"}, only("upcoming")},
 		{"not a composite's constituents: a grant on the composite is stored on it",
 			[]string{"GRANT ACCESS ON DATABASE cineasts TO r"}, ""},
@@ -302,10 +306,13 @@ func TestRoleAliasFingerprint(t *testing.T) {
 			"GRANT ROLE MANAGEMENT ON DBMS TO r", "GRANT ACCESS ON HOME DATABASE TO r",
 		}, ""},
 		{"no statements", nil, ""},
-		{"a statement on * takes them all", []string{
+		{"a statement on * adds none", []string{
 			"GRANT ACCESS ON DATABASE orders TO r", "GRANT MATCH {*} ON GRAPH * NODES * TO r",
+			"GRANT ACCESS ON DATABASES * TO r",
+		}, only("orders")},
+		{"one that cannot be read takes them all", []string{
+			"GRANT ACCESS ON DATABASE orders TO r", "GRANT LOAD ON ALL DATA TO r",
 		}, aliasFingerprint(layout)},
-		{"so does one that cannot be read", []string{"GRANT LOAD ON ALL DATA TO r"}, aliasFingerprint(layout)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
