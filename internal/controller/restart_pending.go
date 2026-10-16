@@ -308,9 +308,13 @@ func restartPendingCondition(pending map[string][]string) (metav1.ConditionStatu
 		names = append(names, n)
 	}
 	sort.Strings(names)
+	// One server reads "its", several "their": the message is read by people.
+	format := "%s will apply %s at their next restart; the operator does not restart them for it"
+	if len(pods) == 1 {
+		format = "%s will apply %s at its next restart; the operator does not restart it for that"
+	}
 	return metav1.ConditionTrue, ConditionReasonSettingsAwaitRestart,
-		fmt.Sprintf("%s will apply %s at their next restart; the operator does not restart them for it",
-			strings.Join(pods, ", "), strings.Join(names, ", "))
+		fmt.Sprintf(format, strings.Join(pods, ", "), strings.Join(names, ", "))
 }
 
 // restartPendingChecker reads the servers' versions only when something that

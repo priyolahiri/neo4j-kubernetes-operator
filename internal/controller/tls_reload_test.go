@@ -264,7 +264,13 @@ func TestReconcileTLSReload_ThrottleAndGiveUp(t *testing.T) {
 	close(rec.Events)
 	var warned bool
 	for e := range rec.Events {
-		warned = warned || strings.Contains(e, EventReasonTLSCertificateNeedsRestart)
+		if strings.Contains(e, EventReasonTLSCertificateNeedsRestart) {
+			warned = true
+			// One server: the message must not speak of "they".
+			if !strings.Contains(e, "tg-server-0 keeps presenting the previous TLS certificate until it restarts") {
+				t.Errorf("a single server is named in the singular: %q", e)
+			}
+		}
 	}
 	if !warned {
 		t.Error("a server stuck on the old certificate must be reported")
