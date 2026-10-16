@@ -90,6 +90,57 @@ func TestIsAdditiveConfEnvName(t *testing.T) {
 	assert.False(t, resources.IsAdditiveConfEnvName("NEO4J_PLUGINS"))
 }
 
+// The additive keys are a closed set: a setting that only looks like one (a
+// user's own "allowlist") keeps last-wins semantics. Moved here from the
+// plugin controller's isMergeableCSVKey, a dead twin of this function.
+func TestIsAdditiveConfKey(t *testing.T) {
+	for _, k := range []string{
+		"dbms.security.procedures.unrestricted",
+		"dbms.security.procedures.allowlist",
+		"dbms.security.procedures.denylist",
+		"dbms.security.http_auth_allowlist",
+		"server.unmanaged_extension_classes",
+	} {
+		assert.True(t, resources.IsAdditiveConfKey(k), k)
+	}
+	for _, k := range []string{
+		"my.custom.allowlist",                    // a user's setting with "allowlist" in it
+		"NEO4J_MY_ALLOWLIST_SETTING",             // an env var name
+		"dbms.security.procedures.allowlist.foo", // a dotted suffix
+		"some.random.unrestricted",               // "unrestricted" in it
+		"dbms.security.procedures",               // a prefix
+		"",
+	} {
+		assert.False(t, resources.IsAdditiveConfKey(k), k)
+	}
+}
+
+// Additive values are unioned, de-duplicated, in first-seen order. Moved here
+// from the plugin controller's mergeCSV, a dead twin of this function.
+func TestMergeConfListValues(t *testing.T) {
+	for _, tc := range []struct {
+		name, a, b, expected string
+	}{
+		{"both empty", "", "", ""},
+		{"a empty", "", "x,y", "x,y"},
+		{"b empty", "x,y", "", "x,y"},
+		{"disjoint", "x,y", "z", "x,y,z"},
+		{"overlap is deduped", "x,y", "y,z", "x,y,z"},
+		{"identical inputs", "a,b,c", "a,b,c", "a,b,c"},
+		{"whitespace trimmed", " x , y ", "y, z ", "x,y,z"},
+		{"empty entries dropped", "x,,y", ",,z,,", "x,y,z"},
+		// Bloom's list applied twice is still the list, not the list twice.
+		{"bloom http_auth_allowlist roundtrip", "/,/browser.*,/bloom.*", "/,/browser.*,/bloom.*", "/,/browser.*,/bloom.*"},
+		// Patterns are plain strings: dedupe is string equality.
+		{"regex-like overlap is deduped", "gds.*,apoc.*", "gds.*,n10s.*", "gds.*,apoc.*,n10s.*"},
+		{"path patterns merge with overlap", "/browser.*", "/bloom.*,/", "/browser.*,/bloom.*,/"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.expected, resources.MergeConfListValues(tc.a, tc.b))
+		})
+	}
+}
+
 func TestUpsertNeo4jConfSettings(t *testing.T) {
 	conf := strings.Join([]string{
 		"# base",

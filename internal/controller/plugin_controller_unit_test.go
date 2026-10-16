@@ -338,81 +338,6 @@ func TestMergeNeo4jPluginList(t *testing.T) {
 	}
 }
 
-func TestIsMergeableCSVKey(t *testing.T) {
-	// Iterate the production map directly so any new entry is auto-covered
-	// without having to update this test.
-	for k := range mergeableCSVKeys {
-		t.Run("mergeable: "+k, func(t *testing.T) {
-			assert.True(t, isMergeableCSVKey(k))
-		})
-	}
-
-	notMergeable := []string{
-		"my.custom.allowlist",                    // user-supplied with substring "allowlist"
-		"NEO4J_MY_ALLOWLIST_SETTING",             // GHAS reviewer's example
-		"dbms.security.procedures.allowlist.foo", // dotted suffix
-		"some.random.unrestricted",               // user-supplied with substring "unrestricted"
-		"dbms.security.procedures",               // prefix
-		"",                                       // empty
-	}
-	for _, k := range notMergeable {
-		t.Run("not mergeable: "+k, func(t *testing.T) {
-			assert.False(t, isMergeableCSVKey(k))
-		})
-	}
-}
-
-func TestMergeCSV(t *testing.T) {
-	cases := []struct {
-		name     string
-		a, b     string
-		expected string
-	}{
-		{"both empty", "", "", ""},
-		{"a empty", "", "x,y", "x,y"},
-		{"b empty", "x,y", "", "x,y"},
-		{"disjoint", "x,y", "z", "x,y,z"},
-		{"overlap is deduped", "x,y", "y,z", "x,y,z"},
-		{"identical inputs", "a,b,c", "a,b,c", "a,b,c"},
-		{"whitespace trimmed", " x , y ", "y, z ", "x,y,z"},
-		{"empty entries dropped", "x,,y", ",,z,,", "x,y,z"},
-		{
-			// The Bloom failure mode this change fixes: previously,
-			// `env.Value + "," + value` would have produced
-			// "/,/browser.*,/bloom.*,/,/browser.*,/bloom.*" on the
-			// second reconcile. mergeCSV produces the union.
-			name:     "bloom http_auth_allowlist roundtrip",
-			a:        "/,/browser.*,/bloom.*",
-			b:        "/,/browser.*,/bloom.*",
-			expected: "/,/browser.*,/bloom.*",
-		},
-		{
-			// Regex-style values (gds.*, apoc.*) appear in
-			// `dbms.security.procedures.allowlist` / `unrestricted`.
-			// mergeCSV treats `*` and `.` as ordinary bytes, so the
-			// dedup is purely string-equality on the trimmed elements.
-			name:     "regex-like overlap is deduped",
-			a:        "gds.*,apoc.*",
-			b:        "gds.*,n10s.*",
-			expected: "gds.*,apoc.*,n10s.*",
-		},
-		{
-			// Bloom adds path patterns to `dbms.security.http_auth_allowlist`.
-			// Make sure the union is computed correctly when one side
-			// brings overlapping path patterns and a bare `/`.
-			name:     "path patterns merge with overlap",
-			a:        "/browser.*",
-			b:        "/bloom.*,/",
-			expected: "/browser.*,/bloom.*,/",
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			assert.Equal(t, tc.expected, mergeCSV(tc.a, tc.b))
-		})
-	}
-}
-
 // TestFleetManagementPluginType verifies that "fleet-management" is recognised as a
 // Neo4j config plugin (not environment-variable-only) and gets the correct security settings.
 func TestFleetManagementPluginType(t *testing.T) {
@@ -429,7 +354,7 @@ func TestFleetManagementPluginType(t *testing.T) {
 	})
 
 	t.Run("fleet-management security settings are correct", func(t *testing.T) {
-		settings := r.getRequiredProcedureSecuritySettings("fleet-management")
+		settings := r.getAutomaticSecuritySettings("fleet-management")
 		assert.Equal(t, "fleetManagement.*", settings["dbms.security.procedures.unrestricted"])
 		assert.Equal(t, "fleetManagement.*", settings["dbms.security.procedures.allowlist"])
 	})

@@ -1712,47 +1712,6 @@ func (r *Neo4jPluginReconciler) mapPluginName(pluginName string) string {
 	}
 }
 
-// getRequiredProcedureSecuritySettings returns the required procedure security settings for a plugin
-func (r *Neo4jPluginReconciler) getRequiredProcedureSecuritySettings(pluginName string) map[string]string {
-	settings := make(map[string]string)
-
-	switch pluginName {
-	case "graph-data-science", "gds":
-		// GDS requires unrestricted access for performance
-		settings["dbms.security.procedures.unrestricted"] = "gds.*"
-		settings["dbms.security.procedures.allowlist"] = "gds.*"
-	case "bloom":
-		// Bloom requires unrestricted access
-		settings["dbms.security.procedures.unrestricted"] = "bloom.*"
-		// Bloom also needs HTTP auth allowlist for web interface
-		settings["dbms.security.http_auth_allowlist"] = "/,/browser.*,/bloom.*"
-		// Unmanaged extension for hosting Bloom client
-		settings["server.unmanaged_extension_classes"] = "com.neo4j.bloom.server=/bloom"
-	case "apoc", "apoc-extended":
-		// APOC procedures should be configured via allowlist (principle of least privilege)
-		// Note: This is handled separately since APOC config is environment-variable only
-		// These settings would still go through neo4j.conf for procedure security
-		break
-	case "genai":
-		// GenAI may need procedure allowlist depending on usage
-		break
-	case "n10s", "neosemantics":
-		// Neo Semantics procedures
-		settings["dbms.security.procedures.unrestricted"] = "n10s.*"
-		settings["dbms.security.procedures.allowlist"] = "n10s.*"
-	case "graphql":
-		// GraphQL plugin procedures
-		settings["dbms.security.procedures.unrestricted"] = "graphql.*"
-		settings["dbms.security.procedures.allowlist"] = "graphql.*"
-	case "fleet-management":
-		// Fleet management plugin procedures
-		settings["dbms.security.procedures.unrestricted"] = "fleetManagement.*"
-		settings["dbms.security.procedures.allowlist"] = "fleetManagement.*"
-	}
-
-	return settings
-}
-
 // isDeploymentFunctional checks if the deployment is actually functional by testing Neo4j connectivity
 func (r *Neo4jPluginReconciler) isDeploymentFunctional(ctx context.Context, deployment *DeploymentInfo) bool {
 	logger := log.FromContext(ctx)
@@ -1824,56 +1783,6 @@ func (r *Neo4jPluginReconciler) isDeploymentFunctional(ctx context.Context, depl
 // addPluginToList is a method shim that delegates to the package-level MergeNeo4jPluginList.
 func (r *Neo4jPluginReconciler) addPluginToList(existing string, newPlugin string) (string, error) {
 	return MergeNeo4jPluginList(existing, newPlugin)
-}
-
-// mergeableCSVKeys is the closed set of plugin-driven Neo4j config keys whose
-// values are comma-separated lists where merging the union (rather than
-// overwriting one with the other) is the correct behaviour. Keep this list
-// closed — substring matches are dangerous: a user-supplied setting like
-// `my.custom.allowlist` should not silently get merge semantics.
-var mergeableCSVKeys = map[string]struct{}{
-	"dbms.security.procedures.allowlist":    {},
-	"dbms.security.procedures.unrestricted": {},
-	"dbms.security.procedures.denylist":     {},
-	"dbms.security.http_auth_allowlist":     {},
-	"server.unmanaged_extension_classes":    {},
-}
-
-// isMergeableCSVKey reports whether a Neo4j config key carries a CSV value
-// that should be unioned (rather than overwritten) when both an existing
-// env var and a plugin-required setting specify a value.
-func isMergeableCSVKey(key string) bool {
-	_, ok := mergeableCSVKeys[key]
-	return ok
-}
-
-// mergeCSV returns the deduplicated comma-separated union of a and b,
-// preserving first-seen order. Whitespace around each element is trimmed;
-// empty elements are dropped.
-//
-// Used for security/extension settings (see mergeableCSVKeys) where
-// multiple sources contribute entries — typically the user via
-// plugin.Spec.Config plus the operator's required defaults for the
-// plugin. The previous code concatenated `existing + "," + new` blindly,
-// which produced duplicate-laden values when `new` was itself
-// multi-element (e.g. Bloom's `http_auth_allowlist`).
-func mergeCSV(a, b string) string {
-	seen := make(map[string]struct{})
-	var out []string
-	for _, src := range [...]string{a, b} {
-		for _, p := range strings.Split(src, ",") {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			if _, dup := seen[p]; dup {
-				continue
-			}
-			seen[p] = struct{}{}
-			out = append(out, p)
-		}
-	}
-	return strings.Join(out, ",")
 }
 
 // MergeNeo4jPluginList parses the existing NEO4J_PLUGINS JSON array value and adds
