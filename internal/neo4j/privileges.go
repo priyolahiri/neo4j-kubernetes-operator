@@ -285,7 +285,11 @@ type privilegeItem struct {
 
 // privilegeItems splits s the way upperCaseReservedKeywords always has:
 // whitespace and the punctuation below end a token and are kept verbatim;
-// quoted strings and backtick identifiers are single tokens.
+// quoted strings and backtick identifiers are single tokens. A doubled
+// backtick inside a backtick identifier is Cypher's escape for a literal one
+// and stays inside it: the name a`b, written quoted with its backtick doubled,
+// is one identifier. Read as two quoted names back to back, each lost its
+// quotes and the pair canonicalised to ab — a different name.
 func privilegeItems(s string) []privilegeItem {
 	var items []privilegeItem
 	inSingle, inDouble, inBacktick, escape := false, false, false, false
@@ -298,7 +302,9 @@ func privilegeItems(s string) []privilegeItem {
 	}
 	sep := func(r rune) { items = append(items, privilegeItem{text: string(r)}) }
 
-	for _, r := range s {
+	rs := []rune(s)
+	for i := 0; i < len(rs); i++ {
+		r := rs[i]
 		if escape {
 			token.WriteRune(r)
 			escape = false
@@ -319,6 +325,11 @@ func privilegeItems(s string) []privilegeItem {
 		if inBacktick {
 			token.WriteRune(r)
 			if r == '`' {
+				if i+1 < len(rs) && rs[i+1] == '`' {
+					token.WriteRune('`')
+					i++
+					continue
+				}
 				flush()
 				inBacktick = false
 			}
@@ -506,8 +517,12 @@ func PrivilegeStatementMatchesRole(stmt, role string) bool {
 	if prev != "TO" {
 		return false
 	}
-	// Strip backticks from `roleName` form
-	last = strings.Trim(last, "`")
+	// Strip backticks from `roleName` form, resolving a doubled one.
+	if name, ok := parseName(last); ok {
+		last = name
+	} else {
+		last = strings.Trim(last, "`")
+	}
 	return strings.EqualFold(last, role)
 }
 
@@ -549,9 +564,9 @@ func PrivilegeStatementVerb(stmt string) string {
 // a WARNING, never a rejection, so the cost of a name it fails to recognise is
 // a warning not raised, not a valid configuration refused.
 func PrivilegeDatabaseTargets(stmt string) []string {
-	return privilegeTargets(stmt, map[string]bool{
+	return scanPrivilegeScopes(stmt, map[string]bool{
 		"DATABASE": true, "DATABASES": true, "GRAPH": true, "GRAPHS": true,
-	})
+	}).names
 }
 
 // PrivilegeGraphTargets returns only the names under a GRAPH scope.
@@ -564,54 +579,160 @@ func PrivilegeDatabaseTargets(stmt string) []string {
 // the statement, persists it, and shows it back in SHOW ROLE PRIVILEGES, so
 // nothing about the system says it does nothing.
 func PrivilegeGraphTargets(stmt string) []string {
-	return privilegeTargets(stmt, map[string]bool{"GRAPH": true, "GRAPHS": true})
+	return scanPrivilegeScopes(stmt, map[string]bool{"GRAPH": true, "GRAPHS": true}).names
 }
 
-// privilegeTargets extracts the names under the given ON-scopes.
-func privilegeTargets(stmt string, scopes map[string]bool) []string {
+// PrivilegeAliasDependence reports which database aliases can change how Neo4j
+// STORES a privilege statement.
+//
+// Neo4j resolves a local alias when the command runs and stores the privilege
+// against the alias's target: "Privileges are defined on the target database,
+// and not the local database alias" (Operations Manual 5 and /current/, "Manage
+// database aliases"). So re-pointing an alias a statement names changes that
+// statement's stored form, while the rows already stored stay on the old
+// target. Nothing else in the alias layout reaches a statement: ON DBMS, ON
+// HOME / DEFAULT DATABASE|GRAPH and the `*` wildcard are stored as the keyword
+// or the `*`, never as a database (recorded in
+// internal/controller/testdata/privilege_rendering.json), so no alias change
+// can move them.
+//
+// It returns the names the statement is scoped to, as Neo4j lists them — a
+// composite constituent written comp.c, `comp.c`, `comp`.`c` or `my-comp`.`x`
+// is comp.c or my-comp.x, the name SHOW ALIASES gives it — and anyAlias = true
+// when the statement cannot be read: no ON clause, an ON this does not
+// recognise, or a name it cannot take apart. Unknown is answered with the
+// safe default, that any alias may matter.
+//
+// A statement that canonicalises to nothing stores nothing: (nil, false).
+func PrivilegeAliasDependence(stmt string) (names []string, anyAlias bool) {
+	if CanonicalisePrivilegeStatement(stmt) == "" {
+		return nil, false
+	}
+	s := scanPrivilegeScopes(stmt, map[string]bool{
+		"DATABASE": true, "DATABASES": true, "GRAPH": true, "GRAPHS": true,
+	})
+	if s.unreadable {
+		return nil, true
+	}
+	return s.names, false
+}
+
+// privilegeScope is what a statement's ON clauses say.
+type privilegeScope struct {
+	names      []string // under the scopes asked for, as Neo4j lists them
+	unreadable bool     // no ON, an unrecognised ON, or a name not taken apart
+}
+
+// scanPrivilegeScopes reads the ON clauses of a statement for the given
+// scopes (DATABASE, GRAPH, ...).
+func scanPrivilegeScopes(stmt string, scopes map[string]bool) privilegeScope {
 	tokens := privilegeTokens(CanonicalisePrivilegeStatement(stmt))
 
-	var out []string
+	var out privilegeScope
+	sawOn := false
 	for i := 0; i < len(tokens); i++ {
 		if tokens[i] != "ON" {
 			continue
 		}
+		sawOn = true
 		j := i + 1
-		// ON DEFAULT DATABASE / ON HOME GRAPH name nothing.
-		if j < len(tokens) && (tokens[j] == "DEFAULT" || tokens[j] == "HOME") {
+		if j >= len(tokens) {
+			out.unreadable = true
 			continue
 		}
-		if j >= len(tokens) {
+		switch tokens[j] {
+		case "DEFAULT", "HOME", "DBMS":
+			// ON DEFAULT DATABASE / ON HOME GRAPH / ON DBMS name nothing.
+			continue
+		case "DATABASE", "DATABASES", "GRAPH", "GRAPHS":
+		default:
+			out.unreadable = true
 			continue
 		}
 		if !scopes[tokens[j]] {
-			// A scope we were not asked about, ON DBMS, or something we do
-			// not recognise.
-			continue
+			continue // a scope we were not asked about
 		}
 		// Everything up to the next keyword is the comma-separated name list.
 		for k := j + 1; k < len(tokens); k++ {
 			t := tokens[k]
-			if t == "," {
+			if t == "," || t == "*" {
 				continue
 			}
 			if _, reserved := privilegeKeywords[t]; reserved {
 				break
 			}
-			if t == "*" {
+			name, ok := parseName(t)
+			if !ok {
+				out.unreadable = true
 				continue
 			}
-			if name := strings.Trim(t, "`"); name != "" {
-				out = append(out, name)
-			}
+			out.names = append(out.names, name)
 		}
+	}
+	if !sawOn {
+		out.unreadable = true
 	}
 	return out
 }
 
-// privilegeTokens splits a canonicalised privilege statement into words,
-// commas, and backtick-quoted identifiers (which are kept whole, backticks
-// included, so a database named `TO` is not mistaken for the keyword).
+// parseName reads one database or graph name as written — dot-separated
+// parts, each bare or backtick-quoted, a doubled backtick standing for a
+// literal one — and returns it as Neo4j lists it: the parts joined by dots,
+// quotes and escapes resolved: `my-comp`.`x` is my-comp.x, and a`b quoted
+// with its backtick doubled is a`b. ok is false when t is not one name: an empty part, or a quote that opens
+// mid-part, never closes, or is followed by anything but a dot.
+func parseName(t string) (string, bool) {
+	var b strings.Builder
+	rs := []rune(t)
+	partLen := 0
+	for i := 0; i < len(rs); i++ {
+		switch r := rs[i]; r {
+		case '.':
+			if partLen == 0 {
+				return "", false
+			}
+			b.WriteRune('.')
+			partLen = 0
+		case '`':
+			if partLen != 0 {
+				return "", false
+			}
+			closed := false
+			for i++; i < len(rs); i++ {
+				if rs[i] != '`' {
+					b.WriteRune(rs[i])
+					partLen++
+					continue
+				}
+				if i+1 < len(rs) && rs[i+1] == '`' {
+					b.WriteRune('`')
+					partLen++
+					i++
+					continue
+				}
+				closed = true
+				break
+			}
+			if !closed || partLen == 0 || (i+1 < len(rs) && rs[i+1] != '.') {
+				return "", false
+			}
+		default:
+			b.WriteRune(r)
+			partLen++
+		}
+	}
+	if partLen == 0 {
+		return "", false
+	}
+	return b.String(), true
+}
+
+// privilegeTokens splits a canonicalised privilege statement into words and
+// commas. A backtick-quoted identifier stays whole, backticks included, so a
+// database named `TO` is not mistaken for the keyword; so does a dotted name
+// with quoted parts, `my-comp`.`x`, and a name with an escaped (doubled)
+// backtick. A closing quote does not end the token — whitespace and commas outside
+// quotes do. Ending it there split `my-comp`.`x` into `my-comp` and .`x`.
 func privilegeTokens(s string) []string {
 	var tokens []string
 	var cur strings.Builder
@@ -627,9 +748,6 @@ func privilegeTokens(s string) []string {
 		case r == '`':
 			inBacktick = !inBacktick
 			cur.WriteRune(r)
-			if !inBacktick {
-				flush()
-			}
 		case inBacktick:
 			cur.WriteRune(r)
 		case r == ',':

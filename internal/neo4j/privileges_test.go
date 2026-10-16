@@ -142,6 +142,9 @@ func TestPrivilegeStatementMatchesRole(t *testing.T) {
 		{"GRANT ACCESS ON DATABASE x", "analytics_reader", false},
 		{"", "analytics_reader", false},
 		{"GRANT ACCESS ON DATABASE x TO `analytics_reader`", "analytics_reader", true},
+		// A doubled backtick is one literal backtick in the role's name.
+		{"GRANT ACCESS ON DATABASE x TO `ops``team`", "ops`team", true},
+		{"GRANT ACCESS ON DATABASE x TO `ops``team`", "opsteam", false},
 	}
 	for _, tc := range cases {
 		got := PrivilegeStatementMatchesRole(tc.stmt, tc.role)
@@ -361,6 +364,39 @@ func TestCanonicalise_ReservedAndSpecialNamesKeepBackticks(t *testing.T) {
 	}
 }
 
+// A doubled backtick inside a quoted name is Cypher's escape for a literal
+// backtick: `a“b` is the one name a`b. Read as two quoted names back to back,
+// each lost its redundant quotes and the statement canonicalised to `ab` — the
+// canonical form of a different name, so a grant on a`b and one on ab compared
+// equal, and the derived REVOKE named the wrong database or role.
+func TestCanonicalise_EscapedBacktickStaysInTheName(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"a database", "GRANT ACCESS ON DATABASE `a``b` TO r", "GRANT ACCESS ON DATABASE `a``b` TO r"},
+		{"a role", "GRANT ACCESS ON DATABASE sales TO `ops``team`", "GRANT ACCESS ON DATABASE sales TO `ops``team`"},
+		{"a property", "GRANT READ {`x``y`} ON GRAPH sales TO r", "GRANT READ {`x``y`} ON GRAPH sales TO r"},
+		{"at the end of a name", "GRANT ACCESS ON DATABASE `a``` TO r", "GRANT ACCESS ON DATABASE `a``` TO r"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := CanonicalisePrivilegeStatement(tc.in)
+			require.Equal(t, tc.want, got)
+			require.Equal(t, got, CanonicalisePrivilegeStatement(got), "idempotent")
+		})
+	}
+	require.NotEqual(t,
+		CanonicalisePrivilegeStatement("GRANT ACCESS ON DATABASE `a``b` TO r"),
+		CanonicalisePrivilegeStatement("GRANT ACCESS ON DATABASE ab TO r"),
+		"two different databases must not canonicalise alike")
+
+	revoke, err := DerivePrivilegeRevoke("GRANT ACCESS ON DATABASE sales TO `ops``team`")
+	require.NoError(t, err)
+	require.Equal(t, "REVOKE GRANT ACCESS ON DATABASE sales FROM `ops``team`", revoke)
+}
+
 // TestCanonicalise_StableUnderReReconcile models the controller's diff: the
 // desired statement (from spec, bare) and the current statement (from
 // AS COMMANDS, quoted) must produce an empty add/remove set, and re-running
@@ -418,6 +454,23 @@ func TestPrivilegeDatabaseTargets(t *testing.T) {
 		{"a name that needs its quotes keeps working",
 			"DENY WRITE ON GRAPH `my db` TO r", []string{"my db"}},
 
+		// A composite constituent is named as SHOW ALIASES lists it,
+		// composite.constituent, however its parts are quoted. Split into
+		// `my-comp` and .`x`, the second never resolved — the grant was
+		// skipped as naming a missing database — and the first read as a
+		// graph privilege on the composite.
+		{"a constituent, both parts quoted",
+			"GRANT ACCESS ON DATABASE `my-comp`.`latest x` TO r", []string{"my-comp.latest x"}},
+		{"a constituent, the composite quoted",
+			"GRANT ACCESS ON DATABASE `my-comp`.latest TO r", []string{"my-comp.latest"}},
+		{"a constituent, the constituent quoted",
+			"GRANT ACCESS ON DATABASE cineasts.`latest-v2` TO r", []string{"cineasts.latest-v2"}},
+		{"a constituent in a list",
+			"GRANT ACCESS ON DATABASES `my-comp`.`a`, `my-comp`.`b-1` TO r", []string{"my-comp.a", "my-comp.b-1"}},
+		{"an escaped backtick", "GRANT ACCESS ON DATABASE `a``b` TO r", []string{"a`b"}},
+		{"an escaped backtick in a constituent",
+			"GRANT ACCESS ON DATABASE `my-comp`.`x``y` TO r", []string{"my-comp.x`y"}},
+
 		// Nothing here can be missing, so nothing is reported.
 		{"the wildcard names no database", "GRANT ACCESS ON DATABASE * TO r", nil},
 		{"HOME resolves at query time", "GRANT ACCESS ON HOME DATABASE TO r", nil},
@@ -463,10 +516,69 @@ func TestPrivilegeGraphTargets_OnlyGraphScope(t *testing.T) {
 		{"the wildcard names nothing", "GRANT MATCH {*} ON GRAPH * NODES * TO r", nil},
 		{"HOME GRAPH names nothing", "GRANT MATCH {*} ON HOME GRAPH NODES * TO r", nil},
 		{"a quoted composite name", "DENY WRITE ON GRAPH `my-composite` TO r", []string{"my-composite"}},
+		// A constituent is not its composite: this grant attaches to the
+		// constituent's target and is not the inert composite case.
+		{"a quoted constituent is not its composite", "GRANT MATCH {*} ON GRAPH `my-composite`.`latest` NODES * TO r",
+			[]string{"my-composite.latest"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.want, PrivilegeGraphTargets(tc.stmt))
+		})
+	}
+}
+
+// Which aliases a statement's stored form can depend on. A role re-learns its
+// renderings when one of these changes, so a name missed here is a re-point
+// the role never notices, and anyAlias where a name would do is a role that
+// re-sends every grant on every alias change on the cluster.
+func TestPrivilegeAliasDependence(t *testing.T) {
+	cases := []struct {
+		name     string
+		stmt     string
+		names    []string
+		anyAlias bool
+	}{
+		{"a database", "GRANT ACCESS ON DATABASE orders TO r", []string{"orders"}, false},
+		{"a list", "GRANT ACCESS ON DATABASES orders, `sales-v2` TO r", []string{"orders", "sales-v2"}, false},
+		{"a graph with a segment", "GRANT MATCH {*} ON GRAPH orders NODES Person TO r", []string{"orders"}, false},
+		{"a property rule stops at FOR", "GRANT MATCH {*} ON GRAPH sales FOR (n:Secret) WHERE n.level < 3 TO r",
+			[]string{"sales"}, false},
+		{"a constituent, unquoted", "GRANT ACCESS ON DATABASE cineasts.latest TO r", []string{"cineasts.latest"}, false},
+		{"a constituent, quoted whole", "GRANT ACCESS ON DATABASE `cineasts.latest` TO r",
+			[]string{"cineasts.latest"}, false},
+		// Canonicalisation drops the parts' redundant quotes.
+		{"a constituent, simple parts quoted apart", "GRANT ACCESS ON DATABASE `cineasts`.`latest` TO r",
+			[]string{"cineasts.latest"}, false},
+		{"a constituent whose parts need their quotes", "GRANT ACCESS ON DATABASE `my-comp`.`la test` TO r",
+			[]string{"my-comp.la test"}, false},
+		{"a constituent with one such part", "GRANT ACCESS ON DATABASE `my-comp`.latest TO r",
+			[]string{"my-comp.latest"}, false},
+		{"an escaped backtick", "GRANT ACCESS ON DATABASE `a``b` TO r", []string{"a`b"}, false},
+
+		// Stored as the keyword or the `*`, never as a database: no alias
+		// change can move them.
+		{"DBMS", "GRANT ROLE MANAGEMENT ON DBMS TO r", nil, false},
+		{"HOME", "GRANT ACCESS ON HOME DATABASE TO r", nil, false},
+		{"DEFAULT", "GRANT MATCH {*} ON DEFAULT GRAPH NODES * TO r", nil, false},
+		{"a procedure list on DBMS", "GRANT EXECUTE PROCEDURE db.labels, db.schema.* ON DBMS TO r", nil, false},
+		{"the database wildcard", "GRANT ACCESS ON DATABASES * TO r", nil, false},
+		{"the graph wildcard", "GRANT MATCH {*} ON GRAPH * NODES * TO r", nil, false},
+		{"a wildcard after the transaction list", "GRANT SHOW TRANSACTION (alice, bob) ON DATABASES * TO r", nil, false},
+
+		// Cannot be read: every alias may matter.
+		{"a name with an empty part", "GRANT ACCESS ON DATABASE `my-comp`..`x` TO r", nil, true},
+		{"a name with a trailing dot", "GRANT ACCESS ON DATABASE `my-comp`. TO r", nil, true},
+		{"an ON this does not know", "GRANT LOAD ON ALL DATA TO r", nil, true},
+		{"no ON at all", "GRANT ROLE reader TO r", nil, true},
+
+		{"an empty statement stores nothing", "  ", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			names, anyAlias := PrivilegeAliasDependence(tc.stmt)
+			require.Equal(t, tc.names, names)
+			require.Equal(t, tc.anyAlias, anyAlias)
 		})
 	}
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -328,10 +329,11 @@ func TestLearnDesired_ScopeChangeRelearnsAndKeepsRows(t *testing.T) {
 
 // The v1.20.0 and v1.21.0 journeys saw PrivilegesApplied "N added" on roles
 // where nothing had changed, once per alias change on the cluster ("7 added"
-// six times on one role). The alias layout is part of every role's rendering
-// scope, so an alias change anywhere re-learns every statement: the GRANTs
-// really run again, once, and are no-ops unless the statement's rendering
-// moved. Only a grant that created a row is counted as added.
+// six times on one role). A scope change re-learns every statement: the
+// GRANTs really run again, once, and are no-ops unless the statement's
+// rendering moved. Only a grant that created a row is counted as added. (An
+// alias the role does not name no longer changes its scope at all —
+// TestLearnDesired_AnAliasTheRoleDoesNotNameSendsNoGrants.)
 func TestLearnDesired_RelearnCountsOnlyGrantsThatAddedARow(t *testing.T) {
 	s := newFakeRoleServer(t)
 	target := "orders-v1"
@@ -356,7 +358,9 @@ func TestLearnDesired_RelearnCountsOnlyGrantsThatAddedARow(t *testing.T) {
 	require.Equal(t, 4, s.grants)
 	assert.Zero(t, steady.added)
 
-	// An alias no statement names is created elsewhere on the cluster.
+	// The scope changes without moving any rendering: a new image, or an
+	// alias created on a cluster where the role has a statement the operator
+	// cannot read.
 	elsewhere := learn(t, s, stmts, steady.state, "orders=orders-v1,reports=reports-v1")
 	assert.Equal(t, 8, s.grants, "the scope changed, so every statement is granted again once...")
 	assert.Zero(t, elsewhere.added, "...and none of those grants added anything, so nothing is reported")
@@ -372,6 +376,282 @@ func TestLearnDesired_RelearnCountsOnlyGrantsThatAddedARow(t *testing.T) {
 	after := learn(t, s, stmts, moved.state, "orders=orders-v2,reports=reports-v1")
 	assert.Zero(t, after.added)
 	assert.Equal(t, 12, s.grants, "the pass after a re-learn grants nothing")
+}
+
+// learnTarget is the cluster the alias-layout tests' roles live on.
+var learnTarget = ResolvedTarget{Found: true, Cluster: &neo4jv1beta1.Neo4jEnterpriseCluster{
+	ObjectMeta: metav1.ObjectMeta{UID: "cluster-uid"},
+	Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+		Image: neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "2026.08.1-enterprise"},
+	},
+}}
+
+// scopeFor is the scope a reconcile computes for these statements when SHOW
+// ALIASES lists these aliases.
+func scopeFor(stmts []string, aliases ...neo4jclient.AliasInfo) string {
+	return roleRenderingScope(learnTarget, aliases, true, stmts)
+}
+
+func alias(name, target string) neo4jclient.AliasInfo {
+	return neo4jclient.AliasInfo{Name: name, Database: target, Location: "local"}
+}
+
+func constituent(composite, name, target string) neo4jclient.AliasInfo {
+	return neo4jclient.AliasInfo{Name: composite + "." + name, Composite: composite, Database: target, Location: "local"}
+}
+
+// aliasedRole is a role with one statement through each alias in targets,
+// whose stored form follows that alias's current target, as Neo4j's does.
+func aliasedRole(t *testing.T, targets map[string]*string) (*fakeRoleServer, []string) {
+	t.Helper()
+	s := newFakeRoleServer(t)
+	stmts := []string{
+		spec(t, "GRANT ACCESS ON DATABASES sales, probedb TO probe"),
+		spec(t, "GRANT MATCH {*} ON GRAPH sales TO probe"),
+	}
+	via := map[string]string{}
+	for _, name := range sortedKeys(keysOfPtr(targets)) {
+		stmt := "GRANT ACCESS ON DATABASE " + name + " TO r"
+		via[stmt] = name
+		stmts = append(stmts, stmt)
+	}
+	s.rendered = func(stmt string) []string {
+		name, ok := via[stmt]
+		require.True(t, ok, "statement not in fixture: %s", stmt)
+		return []string{"GRANT ACCESS ON DATABASE `" + *targets[name] + "` TO `r`"}
+	}
+	return s, stmts
+}
+
+func keysOfPtr(m map[string]*string) map[string]bool {
+	out := make(map[string]bool, len(m))
+	for k := range m {
+		out[k] = true
+	}
+	return out
+}
+
+// The scope used to fingerprint every alias on the cluster, so an alias
+// created, re-pointed or dropped anywhere, or a constituent added to any
+// composite, re-sent every grant of every role. A role re-learns only on a
+// change it can be stored through.
+func TestLearnDesired_AnAliasTheRoleDoesNotNameSendsNoGrants(t *testing.T) {
+	ordersTarget := "orders-v1"
+	s, stmts := aliasedRole(t, map[string]*string{"orders": &ordersTarget})
+	orders := alias("orders", "orders-v1")
+
+	first := learn(t, s, stmts, learnState{}, scopeFor(stmts, orders))
+	require.Equal(t, 3, s.grants)
+
+	prior := first.state
+	for _, elsewhere := range []struct {
+		change string
+		layout []neo4jclient.AliasInfo
+	}{
+		{"an alias created", []neo4jclient.AliasInfo{orders, alias("reports", "reports-v1")}},
+		{"that alias re-pointed", []neo4jclient.AliasInfo{orders, alias("reports", "reports-v2")}},
+		{"a constituent added", []neo4jclient.AliasInfo{orders, alias("reports", "reports-v2"),
+			constituent("cineasts", "latest", "movies")}},
+		{"the constituent re-pointed", []neo4jclient.AliasInfo{orders, alias("reports", "reports-v2"),
+			constituent("cineasts", "latest", "movies-v2")}},
+		{"both dropped", []neo4jclient.AliasInfo{orders}},
+	} {
+		lo := learn(t, s, stmts, prior, scopeFor(stmts, elsewhere.layout...))
+		assert.Equal(t, 3, s.grants, "%s elsewhere on the cluster re-sent the role's grants", elsewhere.change)
+		assert.Zero(t, lo.added)
+		assert.Empty(t, revocable(lo, s.current()))
+		prior = lo.state
+	}
+}
+
+// Nothing that needs a re-learn is missed: a change to an alias the role
+// names — re-pointed, dropped, created, or a constituent it names re-pointed —
+// still re-grants once, and the grant through the moved alias adds its new
+// target.
+func TestLearnDesired_AChangeToAnAliasTheRoleNamesRelearns(t *testing.T) {
+	ordersTarget, latestTarget := "orders-v1", "movies-v1"
+	s, stmts := aliasedRole(t, map[string]*string{"orders": &ordersTarget, "cineasts.latest": &latestTarget})
+	layout := func() []neo4jclient.AliasInfo {
+		return []neo4jclient.AliasInfo{alias("orders", ordersTarget), constituent("cineasts", "latest", latestTarget),
+			alias("reports", "reports-v1")}
+	}
+	prior := learn(t, s, stmts, learnState{}, scopeFor(stmts, layout()...)).state
+	require.Equal(t, 4, s.grants)
+
+	ordersTarget = "orders-v2"
+	lo := learn(t, s, stmts, prior, scopeFor(stmts, layout()...))
+	assert.Equal(t, 8, s.grants, "the alias the role names was re-pointed: every statement is granted once")
+	assert.Equal(t, 1, lo.added)
+	assert.True(t, s.rows["GRANT ACCESS ON DATABASE `orders-v2` TO `r`"], "the new target's row is in place")
+
+	latestTarget = "movies-v2"
+	lo = learn(t, s, stmts, lo.state, scopeFor(stmts, layout()...))
+	assert.Equal(t, 12, s.grants, "so was the constituent it names")
+	assert.Equal(t, 1, lo.added)
+	assert.True(t, s.rows["GRANT ACCESS ON DATABASE `movies-v2` TO `r`"])
+
+	// Dropped, then created again: each is a change to a name the role uses.
+	withoutOrders := []neo4jclient.AliasInfo{constituent("cineasts", "latest", latestTarget), alias("reports", "reports-v1")}
+	lo = learn(t, s, stmts, lo.state, scopeFor(stmts, withoutOrders...))
+	assert.Equal(t, 16, s.grants, "the alias the role names was dropped")
+	lo = learn(t, s, stmts, lo.state, scopeFor(stmts, layout()...))
+	assert.Equal(t, 20, s.grants, "and created again")
+
+	learn(t, s, stmts, lo.state, scopeFor(stmts, layout()...))
+	assert.Equal(t, 20, s.grants, "the pass after a re-learn grants nothing")
+}
+
+// A statement on `*` is stored as `*` whatever the aliases are, so no alias
+// change can move it: a role on `*` re-learns only for the aliases its other
+// statements name.
+func TestLearnDesired_AWildcardRoleRelearnsOnlyForTheAliasesItNames(t *testing.T) {
+	wildcards := []string{
+		spec(t, "GRANT ACCESS ON DATABASES * TO probe"),
+		spec(t, "GRANT WRITE ON GRAPHS * TO probe"),
+	}
+	elsewhere := [][]neo4jclient.AliasInfo{
+		{alias("reports", "reports-v1")},
+		{alias("reports", "reports-v2"), constituent("cineasts", "latest", "movies")},
+		nil,
+	}
+
+	t.Run("a role only on *", func(t *testing.T) {
+		s := newFakeRoleServer(t)
+		prior := learn(t, s, wildcards, learnState{}, scopeFor(wildcards)).state
+		require.Equal(t, 2, s.grants)
+
+		for _, layout := range elsewhere {
+			prior = learn(t, s, wildcards, prior, scopeFor(wildcards, layout...)).state
+		}
+		assert.Equal(t, 2, s.grants, "an alias change re-learned a role that names none")
+	})
+
+	t.Run("a role on * that also names an alias", func(t *testing.T) {
+		ordersTarget := "orders-v1"
+		s, named := aliasedRole(t, map[string]*string{"orders": &ordersTarget})
+		stmts := append(append([]string(nil), named...), wildcards...)
+		orders := alias("orders", "orders-v1")
+		prior := learn(t, s, stmts, learnState{}, scopeFor(stmts, orders)).state
+		require.Equal(t, 5, s.grants)
+
+		for _, layout := range elsewhere {
+			prior = learn(t, s, stmts, prior, scopeFor(stmts, append([]neo4jclient.AliasInfo{orders}, layout...)...)).state
+		}
+		assert.Equal(t, 5, s.grants, "an alias it does not name re-learned it")
+
+		ordersTarget = "orders-v2"
+		moved := learn(t, s, stmts, prior, scopeFor(stmts, alias("orders", "orders-v2")))
+		assert.Equal(t, 10, s.grants, "the alias it names was re-pointed: one round")
+		assert.Equal(t, 1, moved.added)
+		learn(t, s, stmts, moved.state, scopeFor(stmts, alias("orders", "orders-v2")))
+		assert.Equal(t, 10, s.grants)
+	})
+}
+
+// A statement whose targets cannot be read might name any alias, so it keeps
+// its role on the whole layout.
+func TestLearnDesired_AnUnreadableStatementRelearnsOnAnyAliasChange(t *testing.T) {
+	s := newFakeRoleServer(t)
+	s.rendered = func(stmt string) []string {
+		require.Equal(t, "GRANT LOAD ON ALL DATA TO r", stmt)
+		return []string{"GRANT LOAD ON ALL DATA TO `r`"}
+	}
+	stmts := []string{spec(t, "GRANT ACCESS ON DATABASES sales, probedb TO probe"), "GRANT LOAD ON ALL DATA TO r"}
+
+	first := learn(t, s, stmts, learnState{}, scopeFor(stmts, alias("orders", "orders-v1")))
+	require.Equal(t, 2, s.grants)
+
+	lo := learn(t, s, stmts, first.state, scopeFor(stmts, alias("orders", "orders-v1"), alias("reports", "reports-v1")))
+	assert.Equal(t, 4, s.grants, "any alias change re-learns the role")
+	assert.Zero(t, lo.added)
+
+	learn(t, s, stmts, lo.state, scopeFor(stmts, alias("orders", "orders-v1"), alias("reports", "reports-v1")))
+	assert.Equal(t, 4, s.grants, "once")
+}
+
+// A failed SHOW ALIASES (or SHOW DATABASES) is an unknown layout, not an empty
+// one. Read as empty, it changed the scope on the failure and again on the
+// recovery: two rounds of every grant of every role on the cluster.
+func TestLearnDesired_AnUnreadableAliasLayoutIsNotAScopeChange(t *testing.T) {
+	ordersTarget := "orders-v1"
+	s, stmts := aliasedRole(t, map[string]*string{"orders": &ordersTarget})
+	layout := []neo4jclient.AliasInfo{alias("orders", "orders-v1"), alias("reports", "reports-v1")}
+	first := learn(t, s, stmts, learnState{}, scopeFor(stmts, layout...))
+	require.Equal(t, 3, s.grants)
+
+	unknown := roleRenderingScope(learnTarget, nil, false, stmts)
+	failed := learn(t, s, stmts, first.state, unknown)
+	assert.Equal(t, 3, s.grants, "the failed listing re-sent the role's grants")
+	assert.Equal(t, first.state.scope, failed.state.scope, "the scope the renderings were learned in is kept")
+
+	recovered := learn(t, s, stmts, failed.state, scopeFor(stmts, layout...))
+	assert.Equal(t, 3, s.grants, "the recovery re-sent them")
+
+	// A change made while the layout could not be read is still seen, on the
+	// first pass that can read it.
+	ordersTarget = "orders-v2"
+	during := learn(t, s, stmts, recovered.state, unknown)
+	assert.Equal(t, 3, s.grants)
+	moved := learn(t, s, stmts, during.state, scopeFor(stmts, alias("orders", "orders-v2"), alias("reports", "reports-v1")))
+	assert.Equal(t, 6, s.grants, "the re-point the failed pass could not see re-learns the role")
+	assert.Equal(t, 1, moved.added)
+	assert.True(t, s.rows["GRANT ACCESS ON DATABASE `orders-v2` TO `r`"])
+}
+
+// The scope's key changed with the narrowing, so a role learned by a release
+// that fingerprinted every alias re-learns once on upgrade when the cluster
+// has an alias it does not name — one round of no-op grants, then nothing.
+// That includes a role on `*`, whose key used to be every alias and is now
+// none. On a cluster without aliases the old and new keys are the same, and
+// a role whose statements cannot be read keeps the cluster-wide key: neither
+// re-learns.
+func TestLearnDesired_UpgradeRelearnsOnceThenSettles(t *testing.T) {
+	layout := []neo4jclient.AliasInfo{alias("orders", "orders-v1"), alias("reports", "reports-v1")}
+	// What the previous release stored: every alias in the scope.
+	previous := func(aliases ...neo4jclient.AliasInfo) string {
+		return renderingScope(learnTarget, aliasFingerprint(aliases))
+	}
+	onceThenSettles := func(t *testing.T, s *fakeRoleServer, stmts []string, aliases []neo4jclient.AliasInfo, rounds int) {
+		t.Helper()
+		before := learn(t, s, stmts, learnState{}, previous(aliases...))
+		perRound := s.grants
+
+		upgraded := learn(t, s, stmts, before.state, scopeFor(stmts, aliases...))
+		assert.Equal(t, perRound*(1+rounds), s.grants, "re-learn rounds on the new key")
+		assert.Zero(t, upgraded.added, "of grants that change nothing")
+		assert.Empty(t, revocable(upgraded, s.current()))
+
+		next := upgraded.state
+		for i := 0; i < 3; i++ {
+			next = learn(t, s, stmts, next, scopeFor(stmts, aliases...)).state
+		}
+		assert.Equal(t, perRound*(1+rounds), s.grants, "and never again")
+	}
+
+	t.Run("a role naming databases", func(t *testing.T) {
+		ordersTarget := "orders-v1"
+		s, stmts := aliasedRole(t, map[string]*string{"orders": &ordersTarget})
+		onceThenSettles(t, s, stmts, layout, 1)
+	})
+
+	t.Run("a role on *", func(t *testing.T) {
+		stmts := []string{spec(t, "GRANT ACCESS ON DATABASES * TO probe"), spec(t, "GRANT WRITE ON GRAPHS * TO probe")}
+		onceThenSettles(t, newFakeRoleServer(t), stmts, layout, 1)
+	})
+
+	t.Run("a role on * on a cluster without aliases", func(t *testing.T) {
+		stmts := []string{spec(t, "GRANT ACCESS ON DATABASES * TO probe")}
+		require.Equal(t, previous(), scopeFor(stmts), "the key did not change")
+		onceThenSettles(t, newFakeRoleServer(t), stmts, nil, 0)
+	})
+
+	t.Run("a role whose statements cannot be read", func(t *testing.T) {
+		s := newFakeRoleServer(t)
+		s.rendered = func(string) []string { return []string{"GRANT LOAD ON ALL DATA TO `r`"} }
+		stmts := []string{"GRANT LOAD ON ALL DATA TO r"}
+		require.Equal(t, previous(layout...), scopeFor(stmts, layout...), "it keeps the cluster-wide key")
+		onceThenSettles(t, s, stmts, layout, 0)
+	})
 }
 
 // A grant failing mid-pass must not lose what was known about the

@@ -602,7 +602,7 @@
   {
     "id": "ev-privileges-applied",
     "name": "PrivilegesApplied",
-    "description": "Emitted when privilege statements changed a role: GRANT/DENY statements whose grant created a row, plus derived REVOKEs (neo4jrole_controller.go finishReconcile). In learn mode a re-learn — after any alias-layout change on the cluster, a new image, or a vanished unattributed row — re-grants every statement once; grants that create nothing are not counted, so an unchanged role reports nothing (knowledge operations.md id 136).",
+    "description": "Emitted when privilege statements changed a role: GRANT/DENY statements whose grant created a row, plus derived REVOKEs (neo4jrole_controller.go finishReconcile). In learn mode a re-learn — after a change to an alias the role's statements name (any alias, for a role with a statement whose targets cannot be read), a new image, or a vanished unattributed row — re-grants every statement of that role once; grants that create nothing are not counted, so an unchanged role reports nothing (knowledge operations.md ids 136, 142).",
     "moduleId": "mod-security"
   },
   {

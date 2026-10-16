@@ -58,8 +58,9 @@ const renderingPlaceholderRole = "operator_rendering_grantee"
 
 const (
 	// renderingCacheTTL bounds how long a rendering is trusted. The key
-	// already covers what changes it — the server image and the alias map —
-	// so this only heals an upgrade that probed a not-yet-upgraded server.
+	// already covers what changes it — the server image and the aliases the
+	// role's statements name — so this only heals an upgrade that probed a
+	// not-yet-upgraded server.
 	renderingCacheTTL = time.Hour
 	// renderingCacheMax caps memory; exceeding it clears the cache, which
 	// costs one probe per statement on the next reconcile of each role.
@@ -108,8 +109,8 @@ func (c *privilegeRenderingCache) put(key string, rows []string) {
 
 // renderingScope identifies everything a statement's rendering depends on
 // besides its text: which server (target UID), which version (image), and
-// where each alias points (Neo4j stores a grant on an alias against the
-// alias's target database).
+// where the aliases it can be stored through point (Neo4j stores a grant on
+// an alias against the alias's target database).
 func renderingScope(target ResolvedTarget, aliasFingerprint string) string {
 	var uid, image string
 	switch {
@@ -123,7 +124,54 @@ func renderingScope(target ResolvedTarget, aliasFingerprint string) string {
 	return uid + "\x00" + image + "\x00" + aliasFingerprint
 }
 
-// aliasFingerprint is a stable string of every alias → target mapping.
+// roleRenderingScope is the rendering scope of one role's statements, or ""
+// when the alias layout could not be read this pass (listed false). Unknown is
+// not the same as no aliases: an empty fingerprint there would count as a
+// change on the failure and again on the recovery. learnDesired keeps the
+// scope it learned in instead; renderStatement probes without the cache.
+func roleRenderingScope(target ResolvedTarget, aliases []neo4jclient.AliasInfo, listed bool, stmts []string) string {
+	if !listed {
+		return ""
+	}
+	return renderingScope(target, roleAliasFingerprint(aliases, stmts))
+}
+
+// roleAliasFingerprint is aliasFingerprint over only the aliases a role's
+// statements can be stored through: those its statements name, matched by
+// name as Neo4j matches them (case-insensitively; a constituent by the
+// qualified name SHOW ALIASES lists, however its parts were quoted). A
+// statement on `*`, ON DBMS or ON HOME/DEFAULT adds none. Only a statement
+// whose targets cannot be read puts the role on every alias (see
+// neo4jclient.PrivilegeAliasDependence).
+//
+// The scope used to fingerprint every alias on the cluster, so creating,
+// dropping or re-pointing any alias, or adding or removing any composite
+// constituent, re-learned every role: each re-sent all its grants, every one
+// a security.log line and a no-op unless its own stored form moved. An alias
+// a role does not name cannot move its stored form — a `*` is stored as `*` —
+// and a grant on a composite is stored against the composite, not its
+// constituents.
+func roleAliasFingerprint(aliases []neo4jclient.AliasInfo, stmts []string) string {
+	named := map[string]bool{}
+	for _, stmt := range stmts {
+		names, anyAlias := neo4jclient.PrivilegeAliasDependence(stmt)
+		if anyAlias {
+			return aliasFingerprint(aliases)
+		}
+		for _, name := range names {
+			named[strings.ToLower(name)] = true
+		}
+	}
+	var relevant []neo4jclient.AliasInfo
+	for _, a := range aliases {
+		if named[strings.ToLower(a.Name)] {
+			relevant = append(relevant, a)
+		}
+	}
+	return aliasFingerprint(relevant)
+}
+
+// aliasFingerprint is a stable string of each alias → target mapping given.
 func aliasFingerprint(aliases []neo4jclient.AliasInfo) string {
 	pairs := make([]string, 0, len(aliases))
 	for _, a := range aliases {
@@ -201,9 +249,14 @@ func (r *Neo4jRoleReconciler) renderStatement(
 	if err != nil {
 		return nil, false
 	}
+	// "": the alias layout is unknown this pass, so no key is safe to read or
+	// to fill — probe afresh and keep nothing.
+	cacheable := scope != ""
 	key := scope + "\x00" + keyed
-	if rows, ok := cache.get(key); ok {
-		return rows, true
+	if cacheable {
+		if rows, ok := cache.get(key); ok {
+			return rows, true
+		}
 	}
 	if probe != nil && !probe(stmt) {
 		return nil, false
@@ -232,7 +285,9 @@ func (r *Neo4jRoleReconciler) renderStatement(
 		}
 		rows = append(rows, placeholder)
 	}
-	cache.put(key, rows)
+	if cacheable {
+		cache.put(key, rows)
+	}
 	return rows, true
 }
 

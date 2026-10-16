@@ -117,6 +117,22 @@ func TestUnresolvedPrivilegeDatabases(t *testing.T) {
 		assert.Empty(t, privilegeDatabaseNames(privileges))
 	})
 
+	// A constituent whose parts need their quotes was read as two names,
+	// `my-comp` and .`latest x`. The second never resolved, so the grant was
+	// SKIPPED as naming a missing database, and the warning named a database
+	// that nobody wrote. SHOW ALIASES lists the constituent as
+	// my-comp.latest x, and resolvableDatabaseNames lower-cases it.
+	t.Run("a constituent whose parts are quoted resolves", func(t *testing.T) {
+		privileges := []string{
+			"GRANT ACCESS ON DATABASE `my-comp`.`latest x` TO r",
+			"GRANT MATCH {*} ON GRAPH `My-Comp`.latest NODES * TO r",
+		}
+		known := map[string]bool{"my-comp": true, "my-comp.latest x": true, "my-comp.latest": true}
+		named := privilegeDatabaseNames(privileges)
+		assert.Equal(t, []string{"my-comp.latest x", "My-Comp.latest"}, named)
+		assert.Empty(t, unresolvedDatabaseNames(named, known))
+	})
+
 	t.Run("several missing databases are all reported, in order", func(t *testing.T) {
 		privileges := []string{
 			"GRANT ACCESS ON DATABASES foo, bar TO r",

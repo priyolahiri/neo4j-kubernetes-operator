@@ -1818,7 +1818,7 @@
         "name": "status.privilegeRenderingScope",
         "type": "string",
         "isNullable": true,
-        "note": "Learn mode only: digest of target UID, image and alias targets; a change re-learns every statement."
+        "note": "Learn mode only: digest of target UID, image and the targets of the aliases the role's statements name (every alias only for a role with a statement whose targets cannot be read; statements on *, HOME, DEFAULT and DBMS name no alias); a change re-learns every statement of the role. A pass that cannot list databases or aliases keeps it unchanged (knowledge operations.md id 142)."
       },
       {
         "id": "f-neo4jrole-status-unattributed-privileges",
