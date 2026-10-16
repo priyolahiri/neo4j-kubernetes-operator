@@ -515,3 +515,16 @@ func TestRestartPending_ConnectTimeout_SpecConfigChange(t *testing.T) {
 		t.Fatalf("a later edit moves the since and names them again, got %+v", c)
 	}
 }
+
+// The condition message names the waiting servers in a sentence; one server
+// must not read "fc-server-0 will apply … at their next restart".
+func TestRestartPendingCondition_AgreesInNumber(t *testing.T) {
+	_, _, one := restartPendingCondition(map[string][]string{"c-server-0": {"a.setting"}})
+	if one != "c-server-0 will apply a.setting at its next restart; the operator does not restart it for that" {
+		t.Errorf("one server: %q", one)
+	}
+	_, _, two := restartPendingCondition(map[string][]string{"c-server-1": {"a.setting"}, "c-server-0": {"a.setting"}})
+	if two != "c-server-0, c-server-1 will apply a.setting at their next restart; the operator does not restart them for it" {
+		t.Errorf("two servers: %q", two)
+	}
+}

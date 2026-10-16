@@ -271,9 +271,12 @@ func reconcileTLSReload(ctx context.Context, c client.Client, rec record.EventRe
 			pods = append(pods, p)
 		}
 		sort.Strings(pods)
+		format := "%s keep presenting the previous TLS certificate until they restart: %s"
+		if len(pods) == 1 {
+			format = "%s keeps presenting the previous TLS certificate until it restarts: %s"
+		}
 		rec.Eventf(owner, corev1.EventTypeWarning, EventReasonTLSCertificateNeedsRestart,
-			"%s keep presenting the previous TLS certificate until they restart: %s",
-			strings.Join(pods, ", "), out.NeedRestart[pods[0]])
+			format, strings.Join(pods, ", "), out.NeedRestart[pods[0]])
 	}
 	if len(out.Waiting) > 0 {
 		logger.V(1).Info("TLS reload: servers still present the previous certificate; retrying", "statefulSet", stsName, "servers", out.Waiting)
