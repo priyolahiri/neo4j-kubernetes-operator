@@ -142,18 +142,21 @@ func summarizeShardCopies(rows []neo4j.DatabaseInfo) (state string, ready bool) 
 // a SHOW DATABASES result. Only names that are exactly the logical name, its
 // graph shard `<logical>-g000`, or a property shard `<logical>-pNNN` count:
 // a database that merely shares the prefix (`orders2`, `orders-archive`) is not
-// part of the family.
+// part of the family. Names are compared case-insensitively, as Neo4j compares
+// database names: the validator admits capitals in spec.name, and SHOW
+// DATABASES lists the database lower-cased, so an exact match recorded nothing
+// for such a name.
 func observeShardFamily(logical string, databases []neo4j.DatabaseInfo) shardStatusObservation {
 	graphName := logical + "-g000"
-	propertyPattern := regexp.MustCompile(`^` + regexp.QuoteMeta(logical) + `-p(\d{3})$`)
+	propertyPattern := regexp.MustCompile(`(?i)^` + regexp.QuoteMeta(logical) + `-p(\d{3})$`)
 
 	var parent, graph []neo4j.DatabaseInfo
 	property := map[int32][]neo4j.DatabaseInfo{}
 	for _, db := range databases {
-		switch db.Name {
-		case logical:
+		switch {
+		case strings.EqualFold(db.Name, logical):
 			parent = append(parent, db)
-		case graphName:
+		case strings.EqualFold(db.Name, graphName):
 			graph = append(graph, db)
 		default:
 			if m := propertyPattern.FindStringSubmatch(db.Name); m != nil {

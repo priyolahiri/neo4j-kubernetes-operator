@@ -223,6 +223,28 @@ func TestShardedReconcile_IfNotExistsFalseSkipsTheFamilyItCreated(t *testing.T) 
 	assert.Equal(t, "Ready", got.Status.Phase)
 }
 
+// The validator admits capitals in spec.name, and Neo4j lists the database
+// lower-cased. The family is still recognised as the one this CR created.
+func TestShardedReconcile_IfNotExistsFalseSkipsTheFamilyItCreatedWithAMixedCaseName(t *testing.T) {
+	server := &shardedServer{name: "products"} // as SHOW DATABASES lists it
+	sd := productsShardedDB()
+	sd.Spec.Name = "Products"
+	sd.Spec.IfNotExists = ptr.To(false)
+	r, _ := shardedTestReconciler(t, server, shardingCluster(), sd)
+
+	for range 3 {
+		require.NoError(t, reconcileSharded(t, r, sd))
+	}
+	assert.Equal(t, 1, server.count("CREATE DATABASE"), "created once; later passes skip CREATE")
+
+	got := &neo4jv1beta1.Neo4jShardedDatabase{}
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(sd), got))
+	assert.Equal(t, "Ready", got.Status.Phase)
+	require.NotNil(t, got.Status.VirtualDatabase, "the family is recorded despite the case difference")
+	require.NotNil(t, got.Status.GraphShard)
+	assert.Len(t, got.Status.PropertyShards, 2)
+}
+
 // replaceExisting needs ifNotExists: false, so the CREATE that every pass
 // sent after a destructive restore had no IF NOT EXISTS, and Neo4j refused
 // it: the pass after the restore failed with "already exists" and turned the

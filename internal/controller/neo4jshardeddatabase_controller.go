@@ -510,7 +510,8 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 //
 // "This CR created it" is status.virtualDatabase naming spec.name: the
 // reconcile writes it from SHOW DATABASES only after its own CREATE succeeded
-// (or IF NOT EXISTS adopted the family), and for exactly spec.name. Status
+// (or IF NOT EXISTS adopted the family), and for spec.name (compared ignoring
+// case, as Neo4j compares database names). Status
 // survives an operator restart. creationTime and shardingReady are not tied
 // to a name, and spec.name can change.
 func shardCreateNeeded(sd *neo4jv1beta1.Neo4jShardedDatabase, destructive bool, databases []neo4j.DatabaseInfo) bool {
@@ -520,7 +521,9 @@ func shardCreateNeeded(sd *neo4jv1beta1.Neo4jShardedDatabase, destructive bool, 
 	if sd.Spec.IfNotExistsEffective() {
 		return false
 	}
-	recorded := sd.Status.VirtualDatabase != nil && sd.Status.VirtualDatabase.Name == sd.Spec.Name
+	// Case-insensitive, as Neo4j compares database names (the validator
+	// admits capitals in spec.name; SHOW DATABASES lists them lower-cased).
+	recorded := sd.Status.VirtualDatabase != nil && strings.EqualFold(sd.Status.VirtualDatabase.Name, sd.Spec.Name)
 	return !recorded
 }
 
