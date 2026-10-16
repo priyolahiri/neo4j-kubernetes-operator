@@ -54,7 +54,7 @@
         "from": "Initializing",
         "to": "Failed",
         "label": "spec validation or resource creation failed",
-        "condition": "ValidateCreateWithWarnings/ValidateServerRoleHints errors, missing StorageClass, or a resource create/update error"
+        "condition": "ValidateWithWarnings/ValidateServerRoleHints errors, missing StorageClass, or a resource create/update error"
       },
       {
         "from": "Forming",
@@ -105,8 +105,8 @@
       {
         "from": "Ready",
         "to": "Failed",
-        "label": "update validation, storage shrink, or property-sharding validation failed on a later reconcile",
-        "condition": "ValidateUpdateWithWarnings errors, a shrink is detected, or property-sharding validation fails"
+        "label": "validation, storage shrink, or property-sharding validation failed on a later reconcile",
+        "condition": "ValidateWithWarnings errors (including a spec.image.tag below status.version), a shrink is detected, or property-sharding validation fails"
       },
       {
         "from": "Ready",

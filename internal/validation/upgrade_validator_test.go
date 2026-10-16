@@ -43,13 +43,27 @@ func TestValidateVersionUpgrade(t *testing.T) {
 		{"CalVer minor upgrade", "2025.01.0-enterprise", "2025.02.0-enterprise", 0},
 		{"CalVer year upgrade", "2025.01.0-enterprise", "2026.01.0-enterprise", 0},
 		{"SemVer to CalVer migration", "5.26.0-enterprise", "2025.01.0-enterprise", 0},
+		// "All upgrades from earlier than 5.26 must first upgrade to Neo4j
+		// 5.26 LTS": the step to 5.26 is the supported one, not a refusal.
+		{"an earlier 5.x to 5.26", "5.25.1-enterprise", "5.26.3-enterprise", 0},
+
+		// Nothing to compare with, or nothing that can be ordered.
+		{"no verified version yet", "", "2025.01.0-enterprise", 0},
+		{"unchanged", "2026.08.1-enterprise", "2026.08.1-enterprise", 0},
+		{"recorded version does not parse", "latest", "2026.08.1-enterprise", 0},
+		{"tag without a patch floats to the newest one", "5.26.12-enterprise", "5.26-enterprise", 0},
+		{"from a floating tag to a named patch", "2026.08-enterprise", "2026.08.0-enterprise", 0},
 
 		// Invalid upgrades
 		{"CalVer to SemVer downgrade rejected", "2025.01.0-enterprise", "5.26.0-enterprise", 1},
 		{"CalVer downgrade", "2025.02.0-enterprise", "2025.01.0-enterprise", 1},
+		{"CalVer patch downgrade", "2026.08.1-enterprise", "2026.08.0-enterprise", 1},
+		{"SemVer patch downgrade", "5.26.12-enterprise", "5.26.10-enterprise", 1},
 		{"CalVer to SemVer downgrade always rejected", "2025.01.0-enterprise", "5.26.0-enterprise", 1},
+		{"an earlier 5.x straight to CalVer", "5.25.1-enterprise", "2025.01.0-enterprise", 1},
 		{"invalid version format", "5.26.0-enterprise", "not-a-version", 1},
 		{"Neo4j 4.x not supported", "4.4.0-enterprise", "4.4.9-enterprise", 1},
+		{"Neo4j 4.x to 5 is a migration, not an upgrade", "4.4.0-enterprise", "5.26.0-enterprise", 1},
 	}
 
 	for _, tc := range cases {

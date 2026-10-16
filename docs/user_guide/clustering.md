@@ -365,6 +365,8 @@ kubectl edit neo4jenterprisecluster my-cluster
 
 **Scale-up** raises the replica count. New servers join, and you rebalance databases onto them (`REALLOCATE DATABASES`, or set a per-database `TOPOLOGY`).
 
+The operator does not check node capacity before a scale-up: whether the new pods fit is the scheduler's decision, and a node autoscaler may add the nodes they need. Check before you apply with `kubectl neo4j preflight -f <manifest>`, which reports when no Ready node can fit a server's memory request. A server that cannot be scheduled stays `Pending`; `kubectl neo4j diagnose` names it and the scheduler's reason. Lowering `servers` again removes it: a server that never started has nothing to drain.
+
 **Servers already running are not restarted when the new servers join as system secondaries.** That covers any scale-up from `minSystemPrimaries` servers or more, for example 3→5. Each new server's discovery list names every server, and the running servers learn about it through discovery. They read the longer list at their next restart. A `ScaledWithoutRestart` event records it.
 
 A scale-up that adds a system primary does restart the running servers one at a time, because Neo4j requires every system primary in each server's discovery list. With the default, that only happens from 2 servers to 3 or more. Scaling down never restarts the servers that stay.

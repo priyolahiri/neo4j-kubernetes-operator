@@ -34,6 +34,7 @@ import (
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
 // RollingUpgradeOrchestrator handles intelligent rolling upgrades for Neo4j clusters
@@ -157,44 +158,20 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 	return nil
 }
 
+// validateVersionCompatibility asks the rule the reconciler's validation runs
+// on every pass (validation.UpgradeValidator.ValidateVersionUpgrade, with the
+// same status.version), so an edit that validation accepted is never refused
+// here, and the two cannot drift apart. An empty current version (never
+// verified, e.g. the first upgrade after the operator was installed against an
+// existing cluster) is not checked.
 func (r *RollingUpgradeOrchestrator) validateVersionCompatibility(currentVersion, targetVersion string) error {
-	// When Status.Version is empty (e.g. first upgrade after operator deployment or
-	// status was cleared), we cannot check the upgrade path but we must not block
-	// the upgrade entirely.  Skip compatibility checks and allow it to proceed.
-	if currentVersion == "" {
-		return nil
+	if errs := validation.NewUpgradeValidator().ValidateVersionUpgrade(currentVersion, targetVersion); len(errs) > 0 {
+		return errs.ToAggregate()
 	}
-
-	// Parse current and target versions
-	current := r.parseVersion(currentVersion)
-	target := r.parseVersion(targetVersion)
-
-	if current == nil || target == nil {
-		return fmt.Errorf("invalid version format (current=%q, target=%q)", currentVersion, targetVersion)
-	}
-
-	// Prevent downgrades
-	if r.isDowngrade(current, target) {
-		return fmt.Errorf("downgrades are not supported (current: %s, target: %s)", currentVersion, targetVersion)
-	}
-
-	// Validate upgrade path based on versioning scheme
-	if r.isCalVer(current) && r.isCalVer(target) {
-		// CalVer to CalVer upgrade (2025.x.x -> 2025.y.y or 2026.x.x)
-		return r.validateCalVerUpgrade(current, target, currentVersion, targetVersion)
-	} else if r.isSemVer(current) && r.isSemVer(target) {
-		// SemVer to SemVer upgrade (5.x.x -> 5.y.y)
-		return r.validateSemVerUpgrade(current, target, currentVersion, targetVersion)
-	} else if r.isSemVer(current) && r.isCalVer(target) {
-		// SemVer to CalVer upgrade (5.x.x -> 2025.x.x)
-		return r.validateSemVerToCalVerUpgrade(current, target, currentVersion, targetVersion)
-	} else {
-		// CalVer to SemVer (not supported)
-		return fmt.Errorf("downgrade from CalVer to SemVer is not supported")
-	}
+	return nil
 }
 
-// Version parsing and validation helper methods
+// parseVersion reads a tag or a server-reported version for versionsMatch.
 func (r *RollingUpgradeOrchestrator) parseVersion(version string) *VersionInfo {
 	// Remove any prefix like "v" and suffixes like "-enterprise"
 	version = strings.TrimPrefix(version, "v")
@@ -229,93 +206,6 @@ func (r *RollingUpgradeOrchestrator) parseVersion(version string) *VersionInfo {
 		Minor: minor,
 		Patch: patch,
 	}
-}
-
-func (r *RollingUpgradeOrchestrator) isDowngrade(current, target *VersionInfo) bool {
-	// For CalVer (year-based)
-	if r.isCalVer(current) && r.isCalVer(target) {
-		if target.Major < current.Major {
-			return true
-		}
-		if target.Major == current.Major && target.Minor < current.Minor {
-			return true
-		}
-		if target.Major == current.Major && target.Minor == current.Minor && target.Patch < current.Patch {
-			return true
-		}
-		return false
-	}
-
-	// For SemVer or mixed comparison
-	if target.Major < current.Major {
-		return true
-	}
-	if target.Major == current.Major && target.Minor < current.Minor {
-		return true
-	}
-	if target.Major == current.Major && target.Minor == current.Minor && target.Patch < current.Patch {
-		return true
-	}
-
-	// Special case: CalVer to SemVer is always a downgrade
-	if r.isCalVer(current) && r.isSemVer(target) {
-		return true
-	}
-
-	return false
-}
-
-func (r *RollingUpgradeOrchestrator) isCalVer(version *VersionInfo) bool {
-	return version.Major >= 2025
-}
-
-func (r *RollingUpgradeOrchestrator) isSemVer(version *VersionInfo) bool {
-	return version.Major >= 4 && version.Major <= 10 // Neo4j 4.x, 5.x
-}
-
-func (r *RollingUpgradeOrchestrator) validateCalVerUpgrade(current, target *VersionInfo, currentStr, targetStr string) error {
-	// Allow upgrades within same year (patch/minor)
-	if current.Major == target.Major {
-		return nil // 2025.1.0 -> 2025.1.1 or 2025.1.0 -> 2025.2.0
-	}
-
-	// Allow upgrades to newer years
-	if target.Major > current.Major {
-		return nil // 2025.x.x -> 2026.x.x
-	}
-
-	return fmt.Errorf("unsupported CalVer upgrade path from %s to %s", currentStr, targetStr)
-}
-
-func (r *RollingUpgradeOrchestrator) validateSemVerUpgrade(current, target *VersionInfo, currentStr, targetStr string) error {
-	// Only allow upgrades within same major version
-	if target.Major != current.Major {
-		return fmt.Errorf("major version upgrades are not supported")
-	}
-
-	// Only patch upgrades within 5.26.x are supported (last semver LTS; no 5.27+ exists)
-	if current.Major == 5 && target.Major == 5 {
-		if current.Minor == 26 && target.Minor == 26 {
-			return nil // Allow patch upgrades within 5.26.x
-		}
-		return fmt.Errorf("only Neo4j 5.26.x (last semver LTS) or 2025.x.x (CalVer) versions are supported")
-	}
-
-	// Neo4j 4.x is no longer supported
-	if current.Major == 4 || target.Major == 4 {
-		return fmt.Errorf("Neo4j 4.x versions are not supported - only 5.26.x (last semver LTS) or 2025.x.x (CalVer) versions are supported")
-	}
-
-	return fmt.Errorf("unsupported SemVer upgrade path from %s to %s", currentStr, targetStr)
-}
-
-func (r *RollingUpgradeOrchestrator) validateSemVerToCalVerUpgrade(current, _ *VersionInfo, currentStr, targetStr string) error {
-	// Only 5.26.x (last semver LTS) may upgrade to CalVer 2025.x.x
-	if current.Major == 5 && current.Minor == 26 {
-		return nil // 5.26.x -> 2025.x.x is the only supported semver-to-calver path
-	}
-
-	return fmt.Errorf("upgrade from %s to CalVer %s requires Neo4j 5.26.x (last semver LTS)", currentStr, targetStr)
 }
 
 // VersionInfo represents parsed version information

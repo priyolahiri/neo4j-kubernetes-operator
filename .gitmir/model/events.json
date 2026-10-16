@@ -20,13 +20,13 @@
   {
     "id": "ev-topology-warning",
     "name": "TopologyWarning",
-    "description": "Fires for each non-fatal warning returned by the spec validator's ValidateCreateWithWarnings/ValidateUpdateWithWarnings during Reconcile. Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
+    "description": "Fires for each non-fatal warning returned by the spec validator's ValidateWithWarnings during Reconcile. Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-validation-failed",
     "name": "ValidationFailed",
-    "description": "Fires when an inline spec validator (cluster, standalone, database, sharded database, composite database, alias, replica, plugin, user, role, role binding, auth rule) rejects the CR's spec with hard errors; reconciliation halts until the spec is fixed. Emitted after the status write that records the failure, and only when that write changed the phase, the message or the Ready condition's status or reason — when the failure starts or its message changes — not on every retry while the spec stays invalid, nor after an operator restart (knowledge operations.md id 136).",
+    "description": "Fires when an inline spec validator (cluster, standalone, database, sharded database, composite database, alias, replica, plugin, user, role, role binding, auth rule) rejects the CR's spec with hard errors; reconciliation halts until the spec is fixed. Emitted after the status write that records the failure, and only when that write changed the phase, the message or the Ready condition's status or reason — when the failure starts or its message changes — not on every retry while the spec stays invalid, nor after an operator restart (knowledge operations.md id 136). For a cluster this includes a spec.image.tag below status.version (a downgrade), checked on every pass; the message says \"Validation failed\" until a pass has accepted the cluster, then \"Update validation failed\".",
     "moduleId": "mod-platform"
   },
   {

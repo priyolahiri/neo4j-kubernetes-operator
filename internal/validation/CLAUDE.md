@@ -9,7 +9,7 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 
 | File | What it does |
 |---|---|
-| `cluster_validator.go` | `ClusterValidator` — composes edition/topology/image/storage/tls/auth/upgrade/memory/resource/config sub-validators; entry points `ValidateCreate`/`ValidateUpdate`/`ValidateCreateWithWarnings`/`ApplyDefaults`. |
+| `cluster_validator.go` | `ClusterValidator` — composes edition/topology/image/storage/tls/auth/upgrade/memory/config sub-validators; entry points `ValidateWithWarnings` (what the reconciler and `kubectl neo4j validate` run: the spec rules plus `validateAgainstRunning`), `ValidateCreateWithWarnings`/`ValidateCreate` (spec rules only), `ApplyDefaults`. |
 | `standalone_validator.go` | `StandaloneValidator` — single-node equivalent (`ValidateCreate`/`ValidateUpdate`). |
 | `database_validator.go` | `DatabaseValidator` for `Neo4jDatabase` — tries cluster lookup first, then standalone. |
 | `image_validator.go` | Rejects `-community` tags (`isCommunityTag`) + Neo4j version support check. |
@@ -17,11 +17,11 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 | `topology_validator.go` | Server count, `serverModeConstraint`/`serverRoles` index/dup/all-SECONDARY checks. |
 | `config_validator.go` | Rejects deprecated / operator-managed / per-pod runtime `spec.config` keys; calls `ValidateSettingValues`. |
 | `setting_values.go` | `typedSettings` (setting → Neo4j value type + documented minimum) and `ValidateSettingValues`: refuses a typed value Neo4j would refuse at startup, with readers that mirror Neo4j's own parsers. Narrow on purpose — see `docs/knowledge/operations.md` id 140 before adding a setting. |
-| `memory_validator.go`, `resource_validator.go`, `storage_validator.go` | Memory floors, scaling resource checks, PVC/storage checks. |
+| `memory_validator.go`, `storage_validator.go` | Memory floors, PVC/storage checks. |
 | `tls_validator.go`, `truststore_validator.go` | TLS mode/issuer/strict-peer rules, trusted CA secrets. |
 | `auth_validator.go`, `user_validator.go`, `role_validator.go`, `rolebinding_validator.go`, `authrule_validator.go` | Auth providers and the user/role/binding/authrule CRDs. |
 | `backup_validator.go` | `BackupValidator` + standalone helper `ValidateNeo4jVersion`. |
-| `upgrade_validator.go`, `plugin_validator.go`, `fleet_validator.go`, `mcp_validator.go`, `shardeddatabase_validator.go`, `sharding.go` | Version-upgrade rules, plugins, Aura fleet, MCP, sharded DB, `IsClusterShardingReady`. |
+| `upgrade_validator.go` (`ValidateVersionUpgrade`, shared with the upgrade state machine; `ValidateUpgradeStrategy`), `plugin_validator.go`, `fleet_validator.go`, `mcp_validator.go`, `shardeddatabase_validator.go`, `sharding.go` | Version-upgrade rules, plugins, Aura fleet, MCP, sharded DB, `IsClusterShardingReady`. |
 | `alias_validator.go`, `compositedatabase_validator.go`, `replica_validator.go`, `ccdr_proxy_validator.go`, `backup_replication_source.go` | `Neo4jDatabaseAlias`, `Neo4jCompositeDatabase`, `Neo4jReplicaDatabase`; `spec.crossClusterReplication` (refused without `spec.tls`); replication-source `Neo4jBackup` rules. |
 | `admin_password_validator.go`, `license_validator.go`, `networkpolicy_validator.go` | Admin password shape (no leading `-`), `acceptLicenseAgreement` (`yes`/`eval`), `spec.networkPolicy`. |
 | `*_validator_test.go`, `sharding_test.go` | Table-driven unit tests (one per validator). |
@@ -37,7 +37,7 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 
 ## Conventions & gotchas
 
-- **No webhooks** — these run inline from reconcilers, e.g. `r.Validator.ValidateCreateWithWarnings`
+- **No webhooks** — these run inline from reconcilers, e.g. `r.Validator.ValidateWithWarnings`
   in `internal/controller/neo4jenterprisecluster_controller.go`; the standalone/backup/plugin
   controllers hold a `*validation.X` field. Don't add `_webhook.go` or webhook configs.
 - `cluster_validator.go` **reports every validator, not just the first**: the early return on
@@ -63,6 +63,11 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
   when the `5.x` and `dev` settings docs agree on its type AND Neo4j's source declares it identically on
   both lines; a spelling the readers do not model is `valueUnknown` and passes. The memory rules read
   sizes with the same `readNeo4jByteSize` (their old parser refused `1GiB` and read `2Gi`).
+- **There is no "old" object** (`docs/knowledge/operations.md` id 139). Without a webhook the
+  reconciler sees only the current object, so a rule that needs the previous state reads what the
+  operator recorded in status (`validateAgainstRunning`: `spec.image.tag` vs `status.version`). The
+  update path used to fetch the cluster again and compare it with itself, so its rules never fired.
+  A rule that needs only the spec goes in `validateCluster`, where the CLI also runs it.
 - **Every published manifest is validated in CI** by `TestPublishedManifestsPassOurOwnValidators`,
   which walks `examples/` and `config/samples/`. Three shipped examples were unappliable before
   it existed, and `kubectl apply --dry-run=server` accepted all of them — the CRD schema cannot

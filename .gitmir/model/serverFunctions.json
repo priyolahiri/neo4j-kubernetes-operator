@@ -4,7 +4,7 @@
     "name": "Reconcile Cluster",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Top-level Reconcile loop: validates the spec, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified, requeueing a Ready cluster after --ready-poll-interval (default 30s; every other path keeps RequeueAfter) — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series. The server pods run under the {cluster}-discovery ServiceAccount, bound to no Role (LIST discovery never calls the Kubernetes API); a {cluster}-discovery Role, RoleBinding or Service (V1 port 5000) the cluster controls, created by releases up to v1.20, is deleted. A failed pass is retried on its own 5–30s backoff, with a shared 10/s storm guard.",
+    "description": "Top-level Reconcile loop: validates the spec and the image tag against the version the servers run (status.version) on every pass, refusing with phase Failed and a ValidationFailed event, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified, requeueing a Ready cluster after --ready-poll-interval (default 30s; every other path keeps RequeueAfter) — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series. The server pods run under the {cluster}-discovery ServiceAccount, bound to no Role (LIST discovery never calls the Kubernetes API); a {cluster}-discovery Role, RoleBinding or Service (V1 port 5000) the cluster controls, created by releases up to v1.20, is deleted. A failed pass is retried on its own 5–30s backoff, with a shared 10/s storm guard.",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -12,6 +12,7 @@
       "status.phase"
     ],
     "callsFunctionIds": [
+      "sf-validate-cluster",
       "sf-validate-spec-config",
       "sf-reconcile-cluster-configmap",
       "sf-reconcile-restart-pending",
@@ -187,7 +188,7 @@
     "name": "Advance Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight, so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime. In Rolling it lowers the partition only after the server it just restarted is Available and every database copy on it has caught up (statusCheck APPLYING, SHOW DATABASES at requested status), naming the lagging databases in status.upgradeStatus.message (#488). After each step, the pass collects the cluster's diagnostics (SHOW SERVERS, SHOW DATABASES → status.diagnostics, ServersHealthy, DatabasesHealthy, server_health) at most once per --ready-poll-interval, so they follow the servers through the upgrade; nothing else of the normal pass runs while an upgrade is active.",
+    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight (a new target below status.version is refused by the validation that runs before it), so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime. In Rolling it lowers the partition only after the server it just restarted is Available and every database copy on it has caught up (statusCheck APPLYING, SHOW DATABASES at requested status), naming the lagging databases in status.upgradeStatus.message (#488). After each step, the pass collects the cluster's diagnostics (SHOW SERVERS, SHOW DATABASES → status.diagnostics, ServersHealthy, DatabasesHealthy, server_health) at most once per --ready-poll-interval, so they follow the servers through the upgrade; nothing else of the normal pass runs while an upgrade is active. Before an upgrade starts it checks the upgrade path with the same rule the validation runs (ValidateVersionUpgrade against status.version).",
     "readsFieldIds": [
       "status.upgradeStatus.phase",
       "status.upgradeStatus.phaseStartTime"
@@ -199,7 +200,8 @@
     ],
     "callsFunctionIds": [
       "sf-verify-version-upgrade",
-      "sf-pause-rolling-upgrade"
+      "sf-pause-rolling-upgrade",
+      "sf-validate-cluster"
     ],
     "emitsEventIds": [
       "ev-upgrade-started",
@@ -1773,6 +1775,22 @@
     "moduleId": "mod-aura-core"
   },
   {
+    "id": "sf-validate-cluster",
+    "name": "Validate Neo4jEnterpriseCluster spec",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "ClusterValidator.ValidateWithWarnings, called on every reconcile pass and by `kubectl neo4j validate`: the spec rules (topology, image, storage, TLS, auth, spec.config keys and values, memory, spec.upgradeStrategy timeouts as Go durations, MCP, Aura Fleet Management, network policy, CCDR, admin password shape) plus the one rule that needs the running cluster: spec.image.tag against status.version, the version the operator verified every server runs. It refuses a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26, and 4.x, following Neo4j's upgrade guide; it does not judge an empty or unparseable status.version or a patch-less (floating) tag's patch. There is no webhook and so no previous spec: the old update path read the cluster again and compared it with itself, so its rules never fired (operations.md id 139). The server count has no running-state rule: at least 2 servers is a spec rule, a scale-down is the drain's, and capacity for a scale-up is the scheduler's. The rolling-upgrade state machine calls the same version rule (ValidateVersionUpgrade) before it starts an upgrade (internal/validation/cluster_validator.go, upgrade_validator.go).",
+    "readsFieldIds": [
+      "f-neo4jenterprisecluster-image-tag",
+      "f-neo4jenterprisecluster-status-version"
+    ],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
     "id": "sf-call-aura-api",
     "name": "Call Aura API (shared client)",
     "serverUnitId": "su-aura-client",
@@ -1929,11 +1947,12 @@
     "name": "CLI Validate",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names.",
+    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. A Neo4jEnterpriseCluster runs the same ValidateWithWarnings the operator runs on every pass: offline it drops any status in the manifest and its summary says the image-tag rule needs --connect; with --connect it copies in the live cluster's status, so a downgrade below the version the cluster runs is refused, and a cluster it cannot read is a warning. Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
-      "sf-validate-spec-config"
+      "sf-validate-spec-config",
+      "sf-validate-cluster"
     ],
     "emitsEventIds": [],
     "subscribesEventIds": [],

@@ -25,10 +25,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	appsv1 "k8s.io/api/apps/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
@@ -69,6 +71,10 @@ type kindValidator struct {
 	// "not found" for things that merely are not reachable — a false error,
 	// which is worse than not checking — so they are skipped unless connected.
 	needsClient bool
+	// connectedChecks names what a kind validated offline still checks only
+	// with a connection, because the rule compares the manifest with the object
+	// already in the cluster. Empty when everything runs offline.
+	connectedChecks string
 }
 
 // validators is the full set of kinds this operator has a Go validator for.
@@ -86,16 +92,25 @@ type kindValidator struct {
 //   - DatabaseAlias, ReplicaDatabase — accept a client and never dereference it.
 //   - CompositeDatabase — its one client call (the CalVer gate on
 //     defaultCypherLanguage) returns early on nil.
-//   - EnterpriseCluster — its one client call returns early on nil.
+//   - EnterpriseCluster — its client calls (the admin Secret, the live
+//     cluster's status) are skipped on nil.
 var validators = map[string]kindValidator{
-	"Neo4jEnterpriseCluster": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
-		var obj neo4jv1beta1.Neo4jEnterpriseCluster
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			return nil, nil, nil, err
-		}
-		out := validation.NewClusterValidator(c).ValidateCreateWithWarnings(context.Background(), &obj)
-		return out.Errors, append(out.Warnings, out.NoEffectWarnings...), nil, nil
-	}},
+	// The same entry point the operator runs on every pass, so a manifest is
+	// held to the same rules here as when it is applied.
+	"Neo4jEnterpriseCluster": {
+		connectedChecks: "a Neo4jEnterpriseCluster's spec.image.tag against the version the cluster already runs",
+		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+			var obj neo4jv1beta1.Neo4jEnterpriseCluster
+			if err := yaml.Unmarshal(doc, &obj); err != nil {
+				return nil, nil, nil, err
+			}
+			ctx := context.Background()
+			notChecked := withLiveClusterStatus(ctx, c, &obj)
+			out := validation.NewClusterValidator(c).ValidateWithWarnings(ctx, &obj)
+			warnings := append(out.Warnings, out.NoEffectWarnings...)
+			return out.Errors, append(warnings, notChecked...), nil, nil
+		},
+	},
 	"Neo4jEnterpriseStandalone": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jEnterpriseStandalone
 		if err := yaml.Unmarshal(doc, &obj); err != nil {
@@ -201,6 +216,33 @@ var validators = map[string]kindValidator{
 	}},
 }
 
+// withLiveClusterStatus gives obj the status of the cluster already in the API
+// server under its name: the status the operator reads when it validates the
+// applied spec, which is how it knows the version the servers run. kubectl
+// apply sends no status for a kind with a status subresource, so whatever the
+// manifest says there is dropped first. Offline, and for a cluster not created
+// yet, there is no status, and the rules that need one have nothing to compare.
+// A read that fails for another reason is returned as a warning: the user asked
+// for those rules, and they did not run.
+func withLiveClusterStatus(ctx context.Context, c client.Client, obj *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
+	obj.Status = neo4jv1beta1.Neo4jEnterpriseClusterStatus{}
+	if c == nil {
+		return nil
+	}
+	live := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	err := c.Get(ctx, client.ObjectKeyFromObject(obj), live)
+	switch {
+	case err == nil:
+		obj.Status = live.Status
+	case apierrors.IsNotFound(err):
+	default:
+		return []string{fmt.Sprintf(
+			"could not read Neo4jEnterpriseCluster %s/%s, so spec.image.tag was not checked against the version it runs: %v",
+			obj.Namespace, obj.Name, err)}
+	}
+	return nil
+}
+
 // newObjectForKind returns an empty instance of a Neo4j CRD kind, or nil when
 // the kind is not one of ours.
 //
@@ -246,6 +288,9 @@ type docResult struct {
 	name     string
 	skipped  string // non-empty = reason this document was not validated
 	findings []finding
+	// notCheckedOffline is the kind's connectedChecks when it was validated
+	// without a connection: rules that did not run, which the summary names.
+	notCheckedOffline string
 }
 
 func (d docResult) errorCount() int { return d.countOf("error") }
@@ -286,7 +331,9 @@ Usage:
 
 Runs OFFLINE by default: no cluster connection is made, and kinds whose
 validators resolve cross-references (clusterRef, Secrets, roles) are reported
-as skipped. Pass --connect (or --context/--kubeconfig) to check those too.
+as skipped. Pass --connect (or --context/--kubeconfig) to check those too, and
+to check a cluster's spec.image.tag against the version the cluster already
+runs (a downgrade is refused).
 
 Note: the operator stops validating a resource after certain critical errors,
 so fixing the reported errors and re-running may surface further ones. A clean
@@ -615,6 +662,9 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 	if err != nil {
 		return docResult{}, fmt.Errorf("cannot decode %s: %w", meta.Kind, err)
 	}
+	if c == nil {
+		res.notCheckedOffline = kv.connectedChecks
+	}
 	for _, e := range errs {
 		res.findings = append(res.findings, finding{"error", e.Field, e.ErrorBody()})
 	}
@@ -638,6 +688,7 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 
 func report(results []docResult, stdout *os.File, strict, quiet, connected bool) int {
 	totalErr, totalWarn, totalPending, validated, skipped := 0, 0, 0, 0, 0
+	var notChecked []string
 
 	for _, r := range results {
 		// Skipped AND findings happens when a kind whose validator needs a
@@ -651,6 +702,9 @@ func report(results []docResult, stdout *os.File, strict, quiet, connected bool)
 			continue
 		}
 		validated++
+		if r.notCheckedOffline != "" && !slices.Contains(notChecked, r.notCheckedOffline) {
+			notChecked = append(notChecked, r.notCheckedOffline)
+		}
 		totalErr += r.errorCount()
 		totalWarn += r.warningCount()
 		totalPending += r.pendingCount()
@@ -692,6 +746,12 @@ func report(results []docResult, stdout *os.File, strict, quiet, connected bool)
 		fmt.Fprintln(stdout, summary)
 		if !connected && skipped > 0 {
 			fmt.Fprintln(stdout, "run with --connect to also check kinds that resolve cross-references")
+		}
+		// Rules that compare a manifest with the object already in the
+		// cluster cannot run without one; a clean offline run has not checked
+		// them, and the operator will.
+		for _, what := range notChecked {
+			fmt.Fprintf(stdout, "run with --connect to also check %s\n", what)
 		}
 		// Offline output is only authoritative for the release it was built
 		// from. Saying so is the cheap half of the version-skew answer.

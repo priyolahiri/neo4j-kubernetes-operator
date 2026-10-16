@@ -114,7 +114,7 @@ cluster reaches `Ready` — see [`Neo4jRestore`](neo4jrestore.md).
 | Field | Type | Description |
 |---|---|---|
 | `repo` | `string` | **Required.** Image repository (e.g. `"neo4j"`) |
-| `tag` | `string` | **Required.** Image tag |
+| `tag` | `string` | **Required.** Image tag. For the cluster's `spec.image`, a change is checked against `status.version` on every reconcile: a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)) |
 | `pullPolicy` | `string` | Pull policy: `"Always"`, `"IfNotPresent"`, `"Never"` (default: `"IfNotPresent"`) |
 | `pullSecrets` | `[]string` | Image pull secrets |
 
@@ -904,10 +904,10 @@ Configures how the operator handles Neo4j version upgrades.
 | `strategy` | `string` | Upgrade strategy: `"RollingUpgrade"` (default) or `"Recreate"` |
 | `preUpgradeHealthCheck` | `bool` | Enable health validation before upgrade (default: `true`) |
 | `maxUnavailableDuringUpgrade` | `*int32` | Accepted but has no effect: the operator restarts one server at a time, as Neo4j's rolling upgrade requires, and waits for its databases to catch up before the next. A value other than `1` (the default) raises a `ValidationWarning` |
-| `upgradeTimeout` | `string` | Timeout for the entire upgrade process (default: `"30m"`) |
+| `upgradeTimeout` | `string` | Budget for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: `"30m"`). A Go duration (`30m`, `1h30m`, `90s`); one that does not parse is refused |
 | `postUpgradeHealthCheck` | `bool` | Enable health validation after upgrade (default: `true`) |
-| `healthCheckTimeout` | `string` | Timeout for health checks (default: `"5m"`) |
-| `stabilizationTimeout` | `string` | Wait time for cluster stabilization (default: `"3m"`) |
+| `healthCheckTimeout` | `string` | Timeout for post-upgrade version verification (default: `"5m"`). A Go duration; one that does not parse is refused |
+| `stabilizationTimeout` | `string` | Wait time for cluster stabilization (default: `"3m"`). A Go duration; one that does not parse is refused |
 | `autoPauseOnFailure` | `bool` | Pause upgrade on failure for manual intervention (default: `true`) |
 
 ## Status
@@ -922,7 +922,7 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | `conditions` | `[]metav1.Condition` | Cluster conditions (e.g. `Ready`, `Degraded`, `ClusterFormed`, `ServersHealthy`, `DatabasesHealthy`, `ServersPendingDrain`) — see [Conditions](#conditions) |
 | `replicas` | [`*ReplicaStatus`](#replicastatus) | Server counts: `servers` (desired) and `ready` |
 | `endpoints` | [`EndpointStatus`](#endpointstatus) | Service endpoints |
-| `version` | `string` | Current Neo4j version |
+| `version` | `string` | The image tag every server was verified to run: recorded at the first `Ready` and after each verified upgrade, unchanged while an upgrade is in flight or after one fails. `spec.image.tag` is checked against it on every reconcile, and a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)) |
 | `upgradeStatus` | [`*UpgradeStatus`](#upgradestatus) | Detailed upgrade progress information |
 | `lastUpgradeTime` | `*metav1.Time` | When the last upgrade was performed |
 | `propertyShardingReady` | `bool` | Whether property sharding is configured and ready (Neo4j 2025.12+) |

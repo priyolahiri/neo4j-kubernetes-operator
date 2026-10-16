@@ -68,7 +68,8 @@ off — already-rolled pods are not rolled again.
 an upgrade is running, the state machine retargets to the new image: pods not
 yet rolled go straight to the new version, and pods already rolled to the
 intermediate version are rolled again. You don't need to wait for the first
-upgrade to finish.
+upgrade to finish. A new target below the version the cluster ran before the
+upgrade (`status.version`) is refused instead (see [Version checks](#version-checks)).
 
 **Version verification across SemVer/CalVer.** The `Verifying` phase compares
 each server's `SHOW SERVERS` version against the image tag, normalizing
@@ -91,9 +92,24 @@ tag — there is no formed quorum to protect, so a corrected `spec.image`
 applies immediately. Fix the tag and the pods re-pull; you do not need to
 delete and recreate the cluster.
 
-### First upgrade after operator deployment
+### Version checks
 
-If `status.version` is not yet set on the cluster resource (e.g. immediately after the operator is first deployed against an existing cluster), the version-compatibility check is skipped and the upgrade proceeds. Downgrade protection is applied on all subsequent upgrades.
+Every reconcile checks `spec.image.tag` against `status.version`, the version the operator verified every server runs. It is recorded when the cluster first becomes `Ready` and after each verified upgrade, and it does not move while an upgrade is in flight or after one fails — so setting the tag back to it, or on to a later target, is always allowed.
+
+A tag the cluster cannot move to (see [Supported Upgrade Paths](#supported-upgrade-paths)) is refused before anything changes: the cluster turns `Failed`, with a `ValidationFailed` event and a message that names the field and what the servers run:
+
+```
+Update validation failed: validation failed: spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
+```
+
+The servers keep running the version they ran; nothing else in the spec is applied until the tag is fixed. Set it back and the next reconcile carries on. The check applies mid-upgrade too: a new target below the version the servers ran before the upgrade is refused rather than rolled, and the upgrade waits where it was until the tag is fixed.
+
+`kubectl neo4j validate --connect` runs the same check against the running cluster before you apply (see [`validate`](../cli/validate.md#checking-cross-references-with-connect)). Offline it cannot: a manifest does not say what the cluster runs.
+
+Not checked:
+
+- **No `status.version` yet** — a cluster that has not been `Ready` since the operator was installed. There is nothing verified to compare with; the operator records the version at the next `Ready`, for a cluster created by an older release too.
+- **A tag without a patch number.** `5.26-enterprise` and `2026.08-enterprise` float to the newest patch, so moving between `5.26.12-enterprise` and `5.26-enterprise` is not treated as a downgrade.
 
 ## Upgrade Strategy
 
@@ -116,6 +132,8 @@ spec:
     postUpgradeHealthCheck: true  # validate cluster health after upgrade (default true)
 ```
 
+The three timeouts are Go durations: `30m`, `1h30m`, `90s`. A value that does not parse, such as `"5 minutes"`, is refused (the cluster turns `Failed` with a `ValidationFailed` event), and `kubectl neo4j validate` reports it before you apply.
+
 Servers always restart one at a time, as Neo4j's rolling upgrade requires. `maxUnavailableDuringUpgrade` is accepted for compatibility but has no effect; a value other than `1` raises a `ValidationWarning` event.
 
 When `preUpgradeHealthCheck` is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and `autoPauseOnFailure` is `true`, the upgrade is blocked until you intervene rather than proceeding against an unhealthy deployment.
@@ -124,10 +142,15 @@ For the full field reference see the [API Reference](../../api_reference/neo4jen
 
 ## Supported Upgrade Paths
 
+These follow Neo4j's [Upgrade and Migration Guide](https://neo4j.com/docs/upgrade-migration-guide/current/). Neo4j does not support downgrades: going back to an earlier version means restoring a backup taken before the upgrade, into a deployment that runs the earlier version.
+
 | From | To | Supported |
 |---|---|---|
-| SemVer 5.26.x | SemVer 5.26.y (patch only) | ✅ |
+| SemVer 5.26.x | SemVer 5.26.y (later patch) | ✅ |
+| SemVer 5.x before 5.26 | SemVer 5.26.y | ✅ (the step Neo4j requires before CalVer) |
 | SemVer 5.26.x | CalVer 2025.y / 2026.y | ✅ (only 5.26.x — the last SemVer LTS — may cross to CalVer) |
+| SemVer 5.x before 5.26 | CalVer | ❌ (upgrade to 5.26 first) |
 | CalVer 2025.x | CalVer 2025.y / 2026.y (newer minor, patch, or year) | ✅ |
 | CalVer 2025.x | SemVer 5.y | ❌ (downgrade) |
 | Any | earlier version | ❌ (downgrade) |
+| Neo4j 4.x | anything | ❌ (4.4 to 5 is a migration, not an upgrade) |

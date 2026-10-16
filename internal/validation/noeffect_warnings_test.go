@@ -160,14 +160,17 @@ func TestClusterValidator_NoEffectWarnings(t *testing.T) {
 			cluster := validClusterForWarnings()
 			tc.mutate(cluster)
 
-			// Create and update both report it, and neither turns it into an error.
+			// The spec rules and the per-pass entry point both report it, and
+			// neither turns it into an error.
 			create := validator.ValidateCreateWithWarnings(ctx, cluster)
 			assert.Empty(t, create.Errors, "the cluster must still be accepted")
 			requireNoEffectWarning(t, create.NoEffectWarnings, tc.path, tc.instead)
 
-			update := validator.ValidateUpdateWithWarnings(ctx, validClusterForWarnings(), cluster)
-			assert.Empty(t, update.Errors, "the update must still be accepted")
-			requireNoEffectWarning(t, update.NoEffectWarnings, tc.path, tc.instead)
+			running := cluster.DeepCopy()
+			running.Status.Version = running.Spec.Image.Tag
+			pass := validator.ValidateWithWarnings(ctx, running)
+			assert.Empty(t, pass.Errors, "a running cluster must still be accepted")
+			requireNoEffectWarning(t, pass.NoEffectWarnings, tc.path, tc.instead)
 
 			// They are not topology warnings: that channel keeps its own reason.
 			assert.Zero(t, noEffectCount(create.Warnings), "no-effect warnings belong in NoEffectWarnings")
