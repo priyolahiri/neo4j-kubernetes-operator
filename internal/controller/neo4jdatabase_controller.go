@@ -270,13 +270,25 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDataSeeded, "Database seeded from URI successfully")
 	}
 
-	// Update status to ready
-	r.updateDatabaseStatus(ctx, database, metav1.ConditionTrue, EventReasonDatabaseReady,
-		"Database is ready and available")
-	r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDatabaseReady, "Database is ready and available")
+	r.reportDatabaseReady(ctx, database)
 
 	logger.Info("Successfully reconciled Neo4jDatabase")
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// reportDatabaseReady writes the Ready condition and announces DatabaseReady
+// when the database BECOMES ready — its first time, or back from a failure —
+// not on every pass. A Ready database is reconciled every RequeueAfter, and
+// emitting on each pass (about 6 a minute, v1.21.0 journey) spent the
+// object's event budget: client-go's spam filter allows a burst of 25 per
+// object, then one every five minutes, so the repeats could crowd out the
+// events that report real changes. The transition is read from the persisted
+// condition, so an operator restart does not announce a steady state again.
+func (r *Neo4jDatabaseReconciler) reportDatabaseReady(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) {
+	const msg = "Database is ready and available"
+	if r.updateDatabaseStatus(ctx, database, metav1.ConditionTrue, EventReasonDatabaseReady, msg) {
+		r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDatabaseReady, msg)
+	}
 }
 
 func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) (ctrl.Result, error) {
@@ -600,13 +612,21 @@ func (r *Neo4jDatabaseReconciler) isStandaloneReady(standalone *neo4jv1beta1.Neo
 	return standalone.Status.Ready
 }
 
-func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, status metav1.ConditionStatus, reason, message string) {
+// updateDatabaseStatus writes the Ready condition, phase and message. It
+// reports whether the write changed the Ready condition's status or reason —
+// a state transition — so a caller can emit the matching event once, on the
+// transition. The answer comes from the attempt whose write succeeded, which
+// optimistic concurrency guarantees read the current object: a stale read
+// fails with a conflict and is re-read.
+func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, status metav1.ConditionStatus, reason, message string) bool {
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jDatabase{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(database), latest); err != nil {
 			return err
 		}
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, status, reason, message)
+		changed := SetReadyCondition(&latest.Status.Conditions, latest.Generation, status, reason, message)
 
 		// Set Phase field based on condition status for API consistency
 		switch status {
@@ -636,12 +656,18 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatus(ctx context.Context, data
 		// Also update the message field for quick access
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	}
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update database status")
+		return false
 	}
+	return transitioned
 }
 
 // SetupWithManager sets up the controller with the Manager.

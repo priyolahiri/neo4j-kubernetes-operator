@@ -323,6 +323,13 @@ When an alias is retargeted, a privilege granted through it stays on the
 **old** target — as it does in Neo4j itself — and gains the new one. Revoke the
 old target's row by hand if it should go.
 
+Learn mode also re-learns when the cluster's alias layout changes — an alias
+created, dropped or retargeted, a composite constituent added or removed — or
+the image changes: it grants every statement of every role on that cluster
+once more. Those grants change nothing unless a statement's stored form moved,
+and `PrivilegesApplied` counts only the ones that added a row, so an unchanged
+role reports nothing.
+
 !!! warning "Upgrade the CRDs with the operator"
     Learn mode keeps its state in `Neo4jRole` status fields that older CRDs do
     not have, and the API server silently drops fields its CRD does not

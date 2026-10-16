@@ -175,6 +175,11 @@ const (
 	EventReasonShardedDatabaseReady = "ShardedDatabaseReady"
 	EventReasonClusterNotReady      = "ClusterNotReady"
 	EventReasonClientCreationFailed = "ClientCreationFailed"
+	// EventReasonSeedBackupPending / EventReasonSeedProxyStarting — the
+	// sharded database waits for its seedBackupRef's first Succeeded run, or
+	// for the PVC seed proxy. Emitted when the wait starts, not on every pass.
+	EventReasonSeedBackupPending = "SeedBackupPending"
+	EventReasonSeedProxyStarting = "SeedProxyStarting"
 )
 
 // User and role management events
