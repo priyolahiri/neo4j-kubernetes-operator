@@ -73,6 +73,18 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
+// shardedNeo4jClient is the part of the Neo4j client the sharded database
+// reconcile uses. It exists so the branches that depend on what the server
+// answers — whether the family already exists, what CREATE returns — can be
+// driven without a Bolt server; production always supplies a *neo4j.Client.
+type shardedNeo4jClient interface {
+	GetDatabases(ctx context.Context) ([]neo4j.DatabaseInfo, error)
+	ExecuteCypher(ctx context.Context, databaseName, statement string) error
+	ExecuteCypherWithParams(ctx context.Context, databaseName, statement string, params map[string]any) error
+	PrepareCloudCredentialsForShardedDatabase(ctx context.Context, k8sClient client.Client, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) error
+	Close() error
+}
+
 // Neo4jShardedDatabaseReconciler reconciles a Neo4jShardedDatabase object
 type Neo4jShardedDatabaseReconciler struct {
 	client.Client
@@ -81,6 +93,10 @@ type Neo4jShardedDatabaseReconciler struct {
 	MaxConcurrentReconciles  int
 	RequeueAfter             time.Duration
 	ShardedDatabaseValidator *validation.ShardedDatabaseValidator
+
+	// newNeo4jClient builds the Neo4j client for the referenced cluster. nil
+	// selects the real one; tests substitute a scripted server.
+	newNeo4jClient func(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (shardedNeo4jClient, error)
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jshardeddatabases,verbs=get;list;watch;create;update;patch;delete
@@ -214,11 +230,17 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 			if stderrors.Is(seedErr, ErrBackupNotReady) {
 				logger.Info("seedBackupRef target has no Succeeded run yet, requeuing",
 					"seedBackupRef", shardedDatabase.Spec.SeedBackupRef, "error", seedErr.Error())
-				r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, "SeedBackupPending",
-					"Waiting for referenced Neo4jBackup to complete a successful run")
-				if statusErr := r.updateStatus(ctx, &shardedDatabase, "Pending",
-					fmt.Sprintf("Waiting for Neo4jBackup %q to produce a Succeeded run", shardedDatabase.Spec.SeedBackupRef), nil); statusErr != nil {
+				// Once when the wait starts, not on every pass: repeated every
+				// RequeueAfter it exhausted the object's event budget, and
+				// SeedCredsAutoInherited never reached the API (v1.20.0 journey).
+				waiting, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Pending",
+					fmt.Sprintf("Waiting for Neo4jBackup %q to produce a Succeeded run", shardedDatabase.Spec.SeedBackupRef), nil)
+				if statusErr != nil {
 					logger.Error(statusErr, "Failed to update status to Pending")
+				}
+				if waiting {
+					r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, EventReasonSeedBackupPending,
+						"Waiting for referenced Neo4jBackup to complete a successful run")
 				}
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
@@ -245,11 +267,14 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 			if !resolved.ProxyAvailable {
 				logger.Info("PVC seed proxy not yet Ready; requeuing",
 					"seedBackupRef", shardedDatabase.Spec.SeedBackupRef)
-				r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, "SeedProxyStarting",
-					"Waiting for backup-seed-proxy Deployment to become Ready")
-				if statusErr := r.updateStatus(ctx, &shardedDatabase, "Pending",
-					"Waiting for PVC seed proxy to become Ready", nil); statusErr != nil {
+				waiting, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Pending",
+					"Waiting for PVC seed proxy to become Ready", nil)
+				if statusErr != nil {
 					logger.Error(statusErr, "Failed to update status to Pending")
+				}
+				if waiting {
+					r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, EventReasonSeedProxyStarting,
+						"Waiting for backup-seed-proxy Deployment to become Ready")
 				}
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
@@ -298,7 +323,8 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	if err := r.teardownPVCSeedProxy(ctx, &shardedDatabase); err != nil {
 		logger.Error(err, "Failed to tear down seed proxy after sharded DB became Ready (non-fatal)")
 	}
-	if err := r.updateStatus(ctx, &shardedDatabase, "Ready", "Sharded database is operational", &ready); err != nil {
+	becameReady, err := r.transitionStatus(ctx, &shardedDatabase, "Ready", "Sharded database is operational", &ready)
+	if err != nil {
 		logger.Error(err, "Failed to update status to Ready")
 		return ctrl.Result{}, err
 	}
@@ -311,7 +337,12 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}
 
-	r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, EventReasonShardedDatabaseReady, "Sharded database is ready and operational")
+	// Announced when the database becomes Ready, or is Ready again after a
+	// destructive recreate — not on every pass, which spent the object's
+	// event budget on a steady state.
+	if becameReady || destructive {
+		r.Recorder.Event(&shardedDatabase, corev1.EventTypeNormal, EventReasonShardedDatabaseReady, "Sharded database is ready and operational")
+	}
 	logger.Info("Successfully reconciled Neo4jShardedDatabase")
 
 	if shardFamilySettling(&shardedDatabase.Status, time.Now()) {
@@ -391,7 +422,10 @@ func (r *Neo4jShardedDatabaseReconciler) clusterSupportsPropertySharding(cluster
 }
 
 // createNeo4jClient creates a Neo4j client for the specified cluster
-func (r *Neo4jShardedDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4j.Client, error) {
+func (r *Neo4jShardedDatabaseReconciler) createNeo4jClient(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (shardedNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(cluster)
+	}
 	// Use the same pattern as the database controller
 	return neo4j.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
 }
@@ -402,11 +436,13 @@ func (r *Neo4jShardedDatabaseReconciler) createNeo4jClient(ctx context.Context, 
 // caller is expected to record that generation in
 // Status.LastDestructiveRestoreGeneration so future reconciles at the
 // same generation skip the destructive branch.
-func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) (destructive bool, err error) {
+func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client shardedNeo4jClient) (destructive bool, err error) {
 	logger := log.FromContext(ctx)
 
-	// Wait for Neo4j to be ready for database operations
-	if err := r.waitForNeo4jReadiness(ctx, client); err != nil {
+	// Wait for Neo4j to be ready for database operations. The SHOW DATABASES
+	// that proves it also says whether the family exists already.
+	databases, err := r.waitForNeo4jReadiness(ctx, client)
+	if err != nil {
 		return false, fmt.Errorf("Neo4j not ready for database operations: %w", err)
 	}
 
@@ -430,15 +466,27 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 			fmt.Sprintf("Dropped existing sharded database %q before recreating from seed", shardedDB.Spec.Name))
 	}
 
-	// Create the sharded database using Cypher 25 syntax in a single command
-	if (shardedDB.Spec.SeedURI != "" || len(shardedDB.Spec.SeedURIs) > 0) && shardedDB.Spec.SeedCredentials != nil {
-		if credErr := client.PrepareCloudCredentialsForShardedDatabase(ctx, r.Client, shardedDB); credErr != nil {
-			return destructive, fmt.Errorf("failed to prepare cloud credentials: %w", credErr)
+	// The family is created once. CREATE ran on every pass before — harmless
+	// with IF NOT EXISTS (a no-op on an existing name), but a DDL statement
+	// against the system database every pass for the life of the CR. And
+	// without IF NOT EXISTS, which replaceExisting requires, Neo4j refuses
+	// CREATE on an existing name, so every pass after a destructive restore
+	// failed with "already exists" and turned the CR Failed. The destructive
+	// pass always creates: it has just dropped the family, and the listing
+	// above predates the drop.
+	if !destructive && shardFamilyExists(shardedDB.Spec.Name, databases) {
+		logger.V(1).Info("Sharded database already exists; not creating it again", "database", shardedDB.Spec.Name)
+	} else {
+		// Create the sharded database using Cypher 25 syntax in a single command
+		if (shardedDB.Spec.SeedURI != "" || len(shardedDB.Spec.SeedURIs) > 0) && shardedDB.Spec.SeedCredentials != nil {
+			if credErr := client.PrepareCloudCredentialsForShardedDatabase(ctx, r.Client, shardedDB); credErr != nil {
+				return destructive, fmt.Errorf("failed to prepare cloud credentials: %w", credErr)
+			}
 		}
-	}
 
-	if createErr := r.createShardedDatabase(ctx, shardedDB, client); createErr != nil {
-		return destructive, fmt.Errorf("failed to create sharded database: %w", createErr)
+		if createErr := r.createShardedDatabase(ctx, shardedDB, client); createErr != nil {
+			return destructive, fmt.Errorf("failed to create sharded database: %w", createErr)
+		}
 	}
 
 	// Update shard status
@@ -463,7 +511,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 // CYPHER 25 prefix matches createShardedDatabase's invocation — the rest
 // of the sharded DB Cypher path is Cypher 25 so the prefix stays
 // consistent (CLAUDE.md rule 30 territory).
-func (r *Neo4jShardedDatabaseReconciler) dropShardedDatabaseIfExists(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
+func (r *Neo4jShardedDatabaseReconciler) dropShardedDatabaseIfExists(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client shardedNeo4jClient) error {
 	query := neo4j.Cypher25(fmt.Sprintf("DROP DATABASE `%s` IF EXISTS DESTROY DATA WAIT", neo4j.EscapeBackticks(shardedDB.Spec.Name)))
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name, "query", query)
 	logger.Info("Executing destructive DROP DATABASE for replaceExisting")
@@ -555,7 +603,7 @@ func buildCreateShardedDatabaseCypher(shardedDB *neo4jv1beta1.Neo4jShardedDataba
 	return queryStr, params, nil
 }
 
-func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client) error {
+func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client shardedNeo4jClient) error {
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name)
 
 	// Build the Cypher 25 CREATE DATABASE command for property sharding
@@ -576,7 +624,7 @@ func (r *Neo4jShardedDatabaseReconciler) createShardedDatabase(ctx context.Conte
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		// Execute against system database for DDL commands (params bind the
 		// user-supplied seed values — see buildShardedDatabaseOptions).
-		err := (*client).ExecuteCypherWithParams(ctx, "system", queryStr, params)
+		err := client.ExecuteCypherWithParams(ctx, "system", queryStr, params)
 		if err == nil {
 			logger.Info("Successfully created sharded database")
 			return nil
@@ -695,7 +743,7 @@ func isTransientError(err error) bool {
 // observed, never turned into a failure here -- that can be a transient state
 // during startup. The write is skipped when nothing changed (see
 // applyShardStatus).
-func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client *neo4j.Client, recreated bool) error {
+func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, client shardedNeo4jClient, recreated bool) error {
 	logger := log.FromContext(ctx).WithValues("database", shardedDB.Spec.Name)
 
 	databases, err := client.GetDatabases(ctx)
@@ -723,12 +771,25 @@ func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, 
 
 // updateStatus updates the sharded database status
 func (r *Neo4jShardedDatabaseReconciler) updateStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, phase, message string, shardingReady *bool) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	_, err := r.transitionStatus(ctx, shardedDB, phase, message, shardingReady)
+	return err
+}
+
+// transitionStatus is updateStatus that also reports whether the write
+// changed the persisted phase or message — a state transition — so a caller
+// can emit the matching event once, on the transition, not on every pass. The
+// answer comes from the attempt whose write succeeded, which optimistic
+// concurrency guarantees read the current object.
+func (r *Neo4jShardedDatabaseReconciler) transitionStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, phase, message string, shardingReady *bool) (bool, error) {
+	transitioned := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		transitioned = false
 		// Fetch latest version
 		var latest neo4jv1beta1.Neo4jShardedDatabase
 		if err := r.Get(ctx, client.ObjectKeyFromObject(shardedDB), &latest); err != nil {
 			return err
 		}
+		changed := latest.Status.Phase != phase || latest.Status.Message != message
 
 		// Update status
 		latest.Status.Phase = phase
@@ -743,8 +804,13 @@ func (r *Neo4jShardedDatabaseReconciler) updateStatus(ctx context.Context, shard
 		condStatus, condReason := PhaseToConditionStatus(phase)
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
 
-		return r.Status().Update(ctx, &latest)
+		if err := r.Status().Update(ctx, &latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	})
+	return transitioned && err == nil, err
 }
 
 // recordDestructiveRestoreGeneration stamps Status.LastDestructiveRestoreGeneration
@@ -768,8 +834,9 @@ func (r *Neo4jShardedDatabaseReconciler) recordDestructiveRestoreGeneration(ctx 
 	})
 }
 
-// waitForNeo4jReadiness waits for Neo4j to be ready for database operations
-func (r *Neo4jShardedDatabaseReconciler) waitForNeo4jReadiness(ctx context.Context, client *neo4j.Client) error {
+// waitForNeo4jReadiness waits for Neo4j to be ready for database operations,
+// returning the SHOW DATABASES listing that proved it.
+func (r *Neo4jShardedDatabaseReconciler) waitForNeo4jReadiness(ctx context.Context, client shardedNeo4jClient) ([]neo4j.DatabaseInfo, error) {
 	logger := log.FromContext(ctx)
 
 	// Check if we can execute basic queries (system database readiness)
@@ -778,10 +845,10 @@ func (r *Neo4jShardedDatabaseReconciler) waitForNeo4jReadiness(ctx context.Conte
 		logger.V(1).Info("Checking Neo4j readiness", "attempt", i+1, "maxRetries", maxRetries)
 
 		// Try to get databases (this will fail if system database is not ready)
-		_, err := (*client).GetDatabases(ctx)
+		databases, err := client.GetDatabases(ctx)
 		if err == nil {
 			logger.Info("Neo4j is ready for database operations")
-			return nil
+			return databases, nil
 		}
 
 		// Check if this is a transient error we should retry (simple string check)
@@ -796,17 +863,17 @@ func (r *Neo4jShardedDatabaseReconciler) waitForNeo4jReadiness(ctx context.Conte
 			logger.V(1).Info("Neo4j not ready yet, retrying", "error", err.Error())
 			select {
 			case <-ctx.Done():
-				return ctx.Err()
+				return nil, ctx.Err()
 			case <-time.After(time.Second):
 				continue
 			}
 		} else {
 			// Non-transient error, fail immediately
-			return fmt.Errorf("Neo4j readiness check failed with non-transient error: %w", err)
+			return nil, fmt.Errorf("Neo4j readiness check failed with non-transient error: %w", err)
 		}
 	}
 
-	return fmt.Errorf("timeout waiting for Neo4j to become ready for database operations after %d attempts", maxRetries)
+	return nil, fmt.Errorf("timeout waiting for Neo4j to become ready for database operations after %d attempts", maxRetries)
 }
 
 // SetupWithManager sets up the controller with the Manager.

@@ -31,6 +31,7 @@ import (
 	"regexp"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
@@ -198,6 +199,28 @@ func observeShardFamily(logical string, databases []neo4j.DatabaseInfo) shardSta
 		obs.VirtualDatabase = &neo4jv1beta1.VirtualDatabaseStatus{Name: logical, Ready: ready}
 	}
 	return obs
+}
+
+// shardFamilyExists reports whether a SHOW DATABASES listing has the sharded
+// database `logical` created: its virtual database and its graph shard, the
+// two rows CREATE DATABASE adds first. CREATE DATABASE ... IF NOT EXISTS is a
+// no-op for such a name, and without IF NOT EXISTS Neo4j refuses it, so the
+// reconcile does not send it. A name held only by an ordinary database (no
+// graph shard) does not count: that is not a sharded family, and CREATE is
+// left to say so as before. Names are compared case-insensitively, as Neo4j
+// compares database names.
+func shardFamilyExists(logical string, databases []neo4j.DatabaseInfo) bool {
+	graphName := logical + "-g000"
+	virtual, graph := false, false
+	for _, db := range databases {
+		switch {
+		case strings.EqualFold(db.Name, logical):
+			virtual = true
+		case strings.EqualFold(db.Name, graphName):
+			graph = true
+		}
+	}
+	return virtual && graph
 }
 
 // applyShardStatus writes the observed shard state onto the CR's status.

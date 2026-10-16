@@ -187,7 +187,7 @@ type learnOutcome struct {
 	state       learnState
 	desired     map[string]string // canonical row -> spec statement
 	current     map[string]bool   // the role's rows after the pass
-	granted     int               // GRANT/DENY statements executed
+	added       int               // statements whose GRANT/DENY created a row
 	ambiguous   []string          // statements whose rows are unknown
 	unresolved  []string          // statements naming a missing database
 	grantErrStm string            // statement whose grant failed, when err != nil
@@ -299,7 +299,6 @@ func learnDesired(
 			out.grantErrStm = stmt
 			return out, err
 		}
-		out.granted++
 		b, a := out.state.rememberAll(before), out.state.rememberAll(after)
 		out.current = a
 
@@ -308,6 +307,16 @@ func learnDesired(
 			if !b[row] {
 				rows[row] = true
 			}
+		}
+		// Only a grant that created a row changed the role. Re-learning grants
+		// every statement again — after an alias change anywhere on the
+		// cluster, a new image, or a vanished unattributed row — and those
+		// grants are no-ops for every statement whose rendering did not move.
+		// Counting them reported "applied N added" on roles where nothing was
+		// added, once per alias change on every role of the cluster (v1.20.0
+		// and v1.21.0 journeys: "7 added" six times on one unchanged role).
+		if len(rows) > 0 {
+			out.added++
 		}
 		// Rows learned before that are still there remain the statement's:
 		// the grant was a no-op for them, which is why they are not new.
@@ -466,7 +475,7 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 	// A revoked row of a statement that left the spec may have been hiding
 	// one of another statement's rows (both grant the same thing). Re-learn
 	// everything: the grants recreate whatever was hidden.
-	applied := lo.granted
+	applied := lo.added
 	orphans := orphanedRows(prior, stmts)
 	for _, row := range revoked {
 		if !orphans[row] {
@@ -484,7 +493,7 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 		if err := r.setLearnState(ctx, role, relearned.state, stmts); err != nil {
 			return r.fail(ctx, role, "persisting learned privilege renderings failed", err, requeue)
 		}
-		lo, applied = relearned, applied+relearned.granted
+		lo, applied = relearned, applied+relearned.added
 		break
 	}
 

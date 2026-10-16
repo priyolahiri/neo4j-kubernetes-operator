@@ -326,6 +326,54 @@ func TestLearnDesired_ScopeChangeRelearnsAndKeepsRows(t *testing.T) {
 	assert.Empty(t, revocable(lo, s.current()))
 }
 
+// The v1.20.0 and v1.21.0 journeys saw PrivilegesApplied "N added" on roles
+// where nothing had changed, once per alias change on the cluster ("7 added"
+// six times on one role). The alias layout is part of every role's rendering
+// scope, so an alias change anywhere re-learns every statement: the GRANTs
+// really run again, once, and are no-ops unless the statement's rendering
+// moved. Only a grant that created a row is counted as added.
+func TestLearnDesired_RelearnCountsOnlyGrantsThatAddedARow(t *testing.T) {
+	s := newFakeRoleServer(t)
+	target := "orders-v1"
+	const viaAlias = "GRANT ACCESS ON DATABASE orders TO r" // orders is an alias
+	s.rendered = func(stmt string) []string {
+		if stmt == viaAlias {
+			return []string{"GRANT ACCESS ON DATABASE `" + target + "` TO `r`"}
+		}
+		return nil
+	}
+	stmts := []string{
+		spec(t, "GRANT ACCESS ON DATABASES sales, probedb TO probe"),
+		spec(t, "GRANT READ {name, age} ON GRAPH sales NODES Person TO probe"),
+		spec(t, "GRANT MATCH {*} ON GRAPH sales TO probe"),
+		viaAlias,
+	}
+
+	first := learn(t, s, stmts, learnState{}, "orders=orders-v1")
+	require.Equal(t, 4, first.added, "a new role: every grant created its rows")
+
+	steady := learn(t, s, stmts, first.state, "orders=orders-v1")
+	require.Equal(t, 4, s.grants)
+	assert.Zero(t, steady.added)
+
+	// An alias no statement names is created elsewhere on the cluster.
+	elsewhere := learn(t, s, stmts, steady.state, "orders=orders-v1,reports=reports-v1")
+	assert.Equal(t, 8, s.grants, "the scope changed, so every statement is granted again once...")
+	assert.Zero(t, elsewhere.added, "...and none of those grants added anything, so nothing is reported")
+	assert.Empty(t, revocable(elsewhere, s.current()))
+
+	// The alias a statement names is re-pointed: that grant adds a row.
+	target = "orders-v2"
+	moved := learn(t, s, stmts, elsewhere.state, "orders=orders-v2,reports=reports-v1")
+	assert.Equal(t, 1, moved.added, "the one statement whose rendering moved")
+	assert.True(t, s.rows["GRANT ACCESS ON DATABASE `orders-v2` TO `r`"])
+	assert.Empty(t, revocable(moved, s.current()), "the old target's row is kept, as Neo4j keeps it")
+
+	after := learn(t, s, stmts, moved.state, "orders=orders-v2,reports=reports-v1")
+	assert.Zero(t, after.added)
+	assert.Equal(t, 12, s.grants, "the pass after a re-learn grants nothing")
+}
+
 // A grant failing mid-pass must not lose what was known about the
 // statements the pass had not reached yet.
 func TestLearnDesired_ErrorKeepsUnreachedRenderings(t *testing.T) {

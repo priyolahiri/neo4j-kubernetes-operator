@@ -350,9 +350,17 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 		return ctrl.Result{}, err
 	}
 
-	// Update status
-	r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseScheduled, "Backup scheduled with CronJob "+cronJob.Name)
-	r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupScheduled, "Backup scheduled with CronJob "+cronJob.Name)
+	// Announce the schedule when it is armed — first time, back from
+	// suspended or waiting, or when the CronJob or its schedule changed — not
+	// on every pass: Scheduled is this backup's resting phase, and repeating
+	// the event every RequeueAfter (about 6 a minute, v1.21.0 journey) spent
+	// the object's event budget, which the events reporting real runs need.
+	// The transition is read from the persisted phase and message, so an
+	// operator restart does not announce a steady schedule again.
+	msg := scheduledBackupMessage(cronJob)
+	if r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseScheduled, msg) {
+		r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupScheduled, msg)
+	}
 
 	// Record any completed CronJob child Jobs in status.history. Non-fatal —
 	// a failure to update history must not block scheduled backup
@@ -362,6 +370,13 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 	}
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// scheduledBackupMessage is a scheduled backup's status message and its
+// BackupScheduled event: the CronJob and the schedule it runs on, so editing
+// spec.schedule is announced as the change it is.
+func scheduledBackupMessage(cronJob *batchv1.CronJob) string {
+	return fmt.Sprintf("Backup scheduled with CronJob %s (schedule %q)", cronJob.Name, cronJob.Spec.Schedule)
 }
 
 // reconcileScheduledHistory scans Jobs spawned by this backup's CronJob and
@@ -2234,12 +2249,21 @@ func parseFindTimeArg(maxAge string) string {
 	}
 }
 
-func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, phase, message string) {
+// updateBackupStatus writes the phase, message and Ready condition. It reports
+// whether the write changed the persisted phase or message — a state
+// transition — so a caller can emit the matching event once, on the
+// transition. The answer comes from the attempt whose write succeeded, which
+// optimistic concurrency guarantees read the current object: a stale read
+// fails with a conflict and is re-read.
+func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, phase, message string) bool {
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jBackup{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(backup), latest); err != nil {
 			return err
 		}
+		changed := latest.Status.Phase != phase || latest.Status.Message != message
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
@@ -2252,12 +2276,18 @@ func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *
 		case neo4jv1beta1.PhaseCompleted:
 			latest.Status.LastSuccessTime = &now
 		}
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	}
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update backup status")
+		return false
 	}
+	return transitioned
 }
 
 // setReplicationPullURI publishes the object-storage directory a downstream

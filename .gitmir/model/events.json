@@ -236,7 +236,7 @@
   {
     "id": "ev-database-ready",
     "name": "DatabaseReady",
-    "description": "The Neo4jDatabase reconcile completed successfully and the Ready condition/status.phase is set to Ready.",
+    "description": "The Neo4jDatabase became ready: the status write set the Ready condition to True with reason DatabaseReady where it was not before (first creation, or back from a failure). Not emitted again while the database stays Ready, and not after an operator restart, since the transition is read from the persisted condition (reportDatabaseReady; knowledge operations.md id 136).",
     "moduleId": "mod-database"
   },
   {
@@ -296,7 +296,7 @@
   {
     "id": "ev-sharded-database-ready",
     "name": "ShardedDatabaseReady",
-    "description": "The property-sharded database's graph shard reports online in SHOW DATABASES and the CR is marked Ready.",
+    "description": "The property-sharded database became ready: the status write moved the CR to phase Ready (graph shard online in SHOW DATABASES), or a destructive replaceExisting pass recreated it. Not emitted again while it stays Ready (knowledge operations.md id 136).",
     "moduleId": "mod-database"
   },
   {
@@ -308,7 +308,7 @@
   {
     "id": "ev-seed-backup-pending",
     "name": "SeedBackupPending",
-    "description": "The Neo4jShardedDatabase is waiting for its seedBackupRef's Neo4jBackup to produce a Succeeded run before it can seed.",
+    "description": "The Neo4jShardedDatabase is waiting for its seedBackupRef's Neo4jBackup to produce a Succeeded run before it can seed. Emitted when the wait starts (the status write changes the phase or message), not on every retry (knowledge operations.md id 136).",
     "moduleId": "mod-database"
   },
   {
@@ -320,7 +320,7 @@
   {
     "id": "ev-seed-proxy-starting",
     "name": "SeedProxyStarting",
-    "description": "The operator-managed PVC seed-proxy Deployment fronting a PVC-backed backup is not yet Ready.",
+    "description": "The operator-managed PVC seed-proxy Deployment fronting a PVC-backed backup is not yet Ready. Emitted when the wait starts (the status write changes the phase or message), not on every retry (knowledge operations.md id 136).",
     "moduleId": "mod-database"
   },
   {
@@ -398,7 +398,7 @@
   {
     "id": "ev-backup-scheduled",
     "name": "BackupScheduled",
-    "description": "A CronJob was created or updated for a Neo4jBackup CR with spec.schedule set.",
+    "description": "A scheduled Neo4jBackup's CronJob is armed. Emitted when the status write changes the phase or message to Scheduled — first creation, back from another phase (Suspended, Waiting), or a changed schedule, since the message names the CronJob and its schedule — not on every reconcile (knowledge operations.md id 136).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -602,7 +602,7 @@
   {
     "id": "ev-privileges-applied",
     "name": "PrivilegesApplied",
-    "description": "Emitted after any GRANT/DENY or derived REVOKE privilege statements are applied to bring a role's live privileges in line with spec.privileges (neo4jrole_controller.go).",
+    "description": "Emitted when privilege statements changed a role: GRANT/DENY statements whose grant created a row, plus derived REVOKEs (neo4jrole_controller.go finishReconcile). In learn mode a re-learn — after any alias-layout change on the cluster, a new image, or a vanished unattributed row — re-grants every statement once; grants that create nothing are not counted, so an unchanged role reports nothing (knowledge operations.md id 136).",
     "moduleId": "mod-security"
   },
   {

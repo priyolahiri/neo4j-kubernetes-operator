@@ -71,7 +71,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 
 | Reason | Type | Description |
 |---|---|---|
-| `BackupScheduled` | Normal | Backup CronJob created |
+| `BackupScheduled` | Normal | The backup's CronJob is armed: first created, back from another phase (`Suspended`, `Waiting`, …), or its schedule changed. The message names the CronJob and the schedule. Not repeated while the schedule stays as it is |
 | `BackupStarted` | Normal | Backup job has started |
 | `BackupCompleted` | Normal | Backup job completed successfully |
 | `BackupFailed` | Warning | Backup job failed |
@@ -93,7 +93,7 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 
 | Reason | Type | Description |
 |---|---|---|
-| `DatabaseReady` | Normal | Database is created and online |
+| `DatabaseReady` | Normal | Database became ready: created and online, or back from a failure. Not repeated while it stays ready |
 | `DatabaseDeleted` | Normal | Database was dropped |
 | `DatabaseCreatedFromSeed` | Normal | Database created from a seed URI |
 | `CreationFailed` | Warning | Database creation failed |
@@ -151,11 +151,11 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 
 | Reason | Type | Description |
 |---|---|---|
-| `ShardedDatabaseReady` | Normal | Sharded database is created and all shards are online |
+| `ShardedDatabaseReady` | Normal | Sharded database became ready (created and all shards online), or was recreated by `spec.replaceExisting`. Not repeated while it stays ready |
 | `ShardedDatabaseDropped` | Normal | An existing sharded database was dropped before being recreated from a seed (`spec.replaceExisting` with `spec.force`) |
-| `SeedBackupPending` | Normal | `spec.seedBackupRef` names a `Neo4jBackup` with no Succeeded run yet; the sharded database stays `Pending` and requeues |
+| `SeedBackupPending` | Normal | `spec.seedBackupRef` names a `Neo4jBackup` with no Succeeded run yet; the sharded database stays `Pending` and requeues. Emitted when the wait starts, not on every retry |
 | `SeedBackupResolutionFailed` | Warning | `spec.seedBackupRef` could not be resolved into a concrete seed |
-| `SeedProxyStarting` | Normal | Waiting for the PVC `backup-seed-proxy` Deployment to become Ready before seeding |
+| `SeedProxyStarting` | Normal | Waiting for the PVC `backup-seed-proxy` Deployment to become Ready before seeding. Emitted when the wait starts, not on every retry |
 ### Users, Roles and Role Bindings
 
 Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
@@ -177,7 +177,7 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | `RoleDeleted` | Normal | Role dropped |
 | `RoleDeletionFailed` | Warning | `DROP ROLE` failed; retried, finalizer released if it keeps failing |
 | `RoleSyncFailed` | Warning | Reconciling the role against Neo4j failed |
-| `PrivilegesApplied` | Normal | Privileges were added to and/or revoked from the role |
+| `PrivilegesApplied` | Normal | Privileges were added to and/or revoked from the role. Only grants that created a privilege row count: learn mode re-grants every statement after an alias change on the cluster or a new image, and grants that change nothing are not reported |
 | `PrivilegesDriftKept` | Warning | A drifting privilege was not revoked (it is immutable, or no `REVOKE` could be derived) |
 | `PrivilegeNamesUnknownDatabase` | Warning | A privilege names a database that does not exist on the cluster and is not an alias for one (it is skipped), or grants graph privileges on a composite database (accepted by Neo4j but inert); see `PrivilegesResolve` on the role |
 | `PrivilegeTargetDropped` | Warning | A `Neo4jDatabase` was dropped while a `Neo4jRole` on the same cluster still grants on it; emitted on both objects |
