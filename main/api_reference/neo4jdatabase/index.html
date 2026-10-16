@@ -5220,27 +5220,27 @@
 <tr>
 <td><code>dataImported</code></td>
 <td><code>*bool</code></td>
-<td>Whether initial data has been imported</td>
+<td><code>true</code> once <code>spec.initialData.cypherStatements</code> have run, or, for a <code>seedURI</code> database, once it was created from the seed. Set once; the statements are not run again</td>
 </tr>
 <tr>
 <td><code>creationTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the database was created</td>
+<td>When the operator first reported the database <code>Ready</code>. Kept from then on; for a database that already existed it is when this CR first found it ready, not when Neo4j created it</td>
 </tr>
 <tr>
 <td><code>size</code></td>
 <td><code>string</code></td>
-<td>Database size</td>
+<td>Not populated: the operator does not read store sizes (<code>SHOW DATABASES</code> does not report them)</td>
 </tr>
 <tr>
 <td><code>state</code></td>
 <td><code>string</code></td>
-<td>Current database state: <code>"online"</code>, <code>"offline"</code>, <code>"started"</code>, <code>"stopped"</code></td>
+<td>The database's <code>currentStatus</code> in <code>SHOW DATABASES</code>: <code>online</code> when every copy is online, otherwise the status of a copy that is not (<code>offline</code>, <code>starting</code>, <code>store copying</code>, <code>quarantined</code>, …; the first by name when they differ). Read on each reconcile that reaches the database and written when it changes; a reconcile that does not get that far (host not ready or unreachable, invalid spec) leaves the last value</td>
 </tr>
 <tr>
 <td><code>servers</code></td>
 <td><code>[]string</code></td>
-<td>Servers hosting the database</td>
+<td>Addresses of the servers hosting a copy of the database, sorted, from the same <code>SHOW DATABASES</code> read as <code>state</code>. Written when it changes, kept like <code>state</code> otherwise</td>
 </tr>
 </tbody>
 </table>

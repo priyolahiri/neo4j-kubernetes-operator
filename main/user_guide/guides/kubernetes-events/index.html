@@ -4280,7 +4280,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ValidationFailed</code></td>
 <td>Warning</td>
-<td>Cluster spec validation failed</td>
+<td>The spec failed validation; the message names what to fix and is also in <code>status.message</code>. Emitted when the failure starts or its message changes, not on every retry while the spec stays invalid (a cluster or replica also announces it again after an edit that leaves the spec invalid). Also emitted by <code>Neo4jEnterpriseStandalone</code>, <code>Neo4jDatabase</code>, <code>Neo4jShardedDatabase</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jReplicaDatabase</code>, <code>Neo4jPlugin</code>, <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code> and <code>Neo4jAuthRule</code></td>
 </tr>
 <tr>
 <td><code>TopologyWarning</code></td>
