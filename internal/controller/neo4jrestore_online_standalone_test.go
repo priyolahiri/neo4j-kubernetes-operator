@@ -300,7 +300,7 @@ func TestStartRestore_StandaloneTakesTheOnlinePath(t *testing.T) {
 
 	got := &neo4jv1beta1.Neo4jRestore{}
 	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
-	assert.Equal(t, StatusFailed, got.Status.Phase)
+	assert.Equal(t, StatusPending, got.Status.Phase, "it waits for the credentials (Rule 138)")
 	assert.True(t, strings.HasPrefix(got.Status.Message, `standalone "sa"'s server pods can't reach the seed source`), got.Status.Message)
 }
 

@@ -80,10 +80,11 @@ const (
 	// namespace ServiceAccount; last writer wins and the others' cloud
 	// access breaks (#227).
 	EventReasonServiceAccountAnnotationConflict = "ServiceAccountAnnotationConflict"
-	// EventReasonSeedEndpointNotProjected — a cluster Cypher restore
-	// resolved to a custom S3 endpoint (MinIO etc.) but the server pods
-	// verifiably lack AWS_ENDPOINT_URL_S3, so the server-side seed fetch
-	// will target s3.amazonaws.com and fail (#252).
+	// EventReasonSeedEndpointNotProjected — an online restore from cloud
+	// storage found the target's server pods lacking the credentials Secret
+	// or the custom S3 endpoint (AWS_ENDPOINT_URL_S3, #252) the server-side
+	// seed fetch needs, and the target not opted in to inject them. The
+	// restore waits Pending and carries on once they are there.
 	EventReasonSeedEndpointNotProjected = "SeedEndpointNotProjected"
 	EventReasonBackupStarted            = "BackupStarted"
 	EventReasonBackupCompleted          = "BackupCompleted"

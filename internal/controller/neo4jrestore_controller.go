@@ -1352,9 +1352,38 @@ const seedEndpointEnvVar = "AWS_ENDPOINT_URL_S3"
 
 // errSeedConfigNotAutoInherited is returned by projectClusterSeedConfig when
 // seed config (creds and/or a custom endpoint) is missing from the cluster and
-// the cluster hasn't opted in to auto-inherit. Detect with errors.Is; the
-// caller builds the actionable Failed message from the returned missing list.
+// the cluster hasn't opted in to auto-inherit. Detect with errors.Is; a
+// restore waits on it (awaitSeedConfig), naming the returned missing list.
 var errSeedConfigNotAutoInherited = fmt.Errorf("cluster seed configuration not auto-inheritable")
+
+// seedConfigMissingMessage tells the user what the target's server pods lack
+// to fetch a cloud seed, the two ways to provide it, and that the restore
+// carries on by itself once they are there.
+func seedConfigMissingMessage(target restoreTarget, missing []string) string {
+	return fmt.Sprintf("%s %q's server pods can't reach the seed source: missing %s. The server JVM fetches the seed itself. "+
+		"Provide these on the %s CR, or set annotation %s=\"true\" on it to let the operator inject them (one rolling restart). "+
+		"This restore waits and carries on by itself once they are there.",
+		target.kind(), target.name(), strings.Join(missing, "; "), target.kind(), AutoInheritSeedCredsAnnotation)
+}
+
+// awaitSeedConfig holds a restore Pending while the target's server pods
+// cannot reach the cloud seed and the target is not opted in to inject what
+// they lack. It is checked before anything is done to a database: before a
+// single-database restore runs its pre-restore hooks or issues its CREATE or
+// recreate, and before an all-databases restore seeds its first database. So
+// the restore re-checks on every requeue and carries on once the target
+// carries the configuration, whether the user adds it or sets the annotation.
+// It used to go Failed, which the previously-failed guard in Reconcile keeps
+// until the spec changes, while its message said the annotation was enough.
+// The Warning is emitted when the restore starts waiting, not on every check.
+func (r *Neo4jRestoreReconciler) awaitSeedConfig(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, target restoreTarget, missing []string) ctrl.Result {
+	msg := seedConfigMissingMessage(target, missing)
+	if restore.Status.Phase != StatusPending || restore.Status.Message != msg {
+		r.updateRestoreStatus(ctx, restore, StatusPending, msg)
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected, msg)
+	}
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}
+}
 
 // hasSecretEnvFrom reports whether envFrom already projects the named Secret.
 func hasSecretEnvFrom(envFrom []corev1.EnvFromSource, secretName string) bool {
@@ -1379,7 +1408,7 @@ func hasSecretEnvFrom(envFrom []corev1.EnvFromSource, secretName string) bool {
 //   - (true, nil, nil)                 patched something — caller returns
 //     Pending while the single roll completes.
 //   - (false, missing, errSeedConfigNotAutoInherited)  missing + not opted in:
-//     caller sets Failed naming `missing`.
+//     a restore waits Pending naming `missing` (awaitSeedConfig).
 //   - (false, nil, other)              transient (conflict on the patch).
 func (r *Neo4jRestoreReconciler) projectSeedConfig(ctx context.Context, target restoreTarget, credsSecret string, cloud *neo4jv1beta1.CloudBlock) (bool, []string, error) {
 	needCreds := credsSecret != "" && !hasSecretEnvFrom(target.extraEnvFrom(), credsSecret)
@@ -3140,11 +3169,7 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		projected, missing, projErr := r.projectSeedConfig(ctx, target, credsSecret, storage.Cloud)
 		if projErr != nil {
 			if stderrors.Is(projErr, errSeedConfigNotAutoInherited) {
-				msg := fmt.Sprintf("%s %q's server pods can't reach the seed source: missing %s. The server JVM fetches the seed itself. Provide these on the %s CR, or set annotation %s=\"true\" to let the operator inject them (triggers one rolling restart).",
-					target.kind(), target.name(), strings.Join(missing, "; "), target.kind(), AutoInheritSeedCredsAnnotation)
-				r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-				r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected, msg)
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+				return r.awaitSeedConfig(ctx, restore, target, missing), nil
 			}
 			logger.Error(projErr, "Failed to project seed configuration onto the target")
 			r.updateRestoreStatus(ctx, restore, StatusPending,
