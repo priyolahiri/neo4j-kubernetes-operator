@@ -1106,7 +1106,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						// without this would clobber plugin / fleet env vars and
 						// trigger cross-controller oscillation. See envVarsEqual
 						// docs and mergeEnvVars for the design.
-						previousOwned := readOwnedEnvVarNames(sts)
+						owned := readOwnedTemplateItems(sts, sts.Spec.Template)
 						currentEnv := []corev1.EnvVar{}
 						if len(sts.Spec.Template.Spec.Containers) > 0 {
 							currentEnv = sts.Spec.Template.Spec.Containers[0].Env
@@ -1115,7 +1115,14 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						if len(updatedTemplate.Spec.Containers) > 0 {
 							desiredEnv = updatedTemplate.Spec.Containers[0].Env
 						}
-						merged := mergeEnvVars(currentEnv, desiredEnv, previousOwned)
+						merged := mergeEnvVars(currentEnv, desiredEnv, owned.env)
+						// Init containers and volumes the same way, by name: the
+						// plugin controller's VerifiedDownload init container and
+						// its auth/CA volumes are not the cluster's, and replacing
+						// the list wholesale dropped them, so the servers restarted
+						// without the plugin's JAR (operations.md id 141).
+						currentInit := sts.Spec.Template.Spec.InitContainers
+						currentVolumes := sts.Spec.Template.Spec.Volumes
 
 						// Capture foreign pod-template annotations before the
 						// wholesale replace so the config-restart/config-hash stamps
@@ -1126,8 +1133,12 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						if len(sts.Spec.Template.Spec.Containers) > 0 {
 							sts.Spec.Template.Spec.Containers[0].Env = merged
 						}
+						sts.Spec.Template.Spec.InitContainers = mergeOwnedByName(
+							currentInit, updatedTemplate.Spec.InitContainers, owned.initContainers, containerNameOf)
+						sts.Spec.Template.Spec.Volumes = mergeOwnedByName(
+							currentVolumes, updatedTemplate.Spec.Volumes, owned.volumes, volumeNameOf)
 						sts.Spec.Template.Annotations = mergePodTemplateAnnotations(livePodAnnotations, updatedTemplate.Annotations)
-						writeOwnedEnvVarNames(sts, desiredEnv)
+						writeOwnedTemplateItems(sts, *updatedTemplate)
 						// Record the desired template hash so the next stable
 						// reconcile can detect drift in fields the field-by-field
 						// check omits. updatedTemplate keeps cluster-owned env only
@@ -1149,9 +1160,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					livePodAnnotations := sts.Spec.Template.Annotations
 					sts.Spec.Template = desiredSpec.Template
 					sts.Spec.Template.Annotations = mergePodTemplateAnnotations(livePodAnnotations, desiredSpec.Template.Annotations)
-					if len(desiredSpec.Template.Spec.Containers) > 0 {
-						writeOwnedEnvVarNames(sts, desiredSpec.Template.Spec.Containers[0].Env)
-					}
+					writeOwnedTemplateItems(sts, desiredSpec.Template)
 					setClusterTemplateHash(sts, desiredSpec.Template)
 				}
 			} else {
@@ -1161,9 +1170,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					"statefulSet", sts.Name,
 					"namespace", sts.Namespace)
 				sts.Spec = desiredSpec
-				if len(desiredSpec.Template.Spec.Containers) > 0 {
-					writeOwnedEnvVarNames(sts, desiredSpec.Template.Spec.Containers[0].Env)
-				}
+				writeOwnedTemplateItems(sts, desiredSpec.Template)
 				// Stamp on create as well as on update. The stamp is what lets a
 				// cluster that never finishes forming still accept a corrected
 				// template (see isTemplateChangeSignificant); a StatefulSet that
@@ -1217,17 +1224,18 @@ func (r *Neo4jEnterpriseClusterReconciler) isTemplateChangeSignificant(ctx conte
 	// For a stable cluster a change is significant if EITHER:
 	//   - a cluster-owned core field drifted from desired (env/volumes/init
 	//     containers/image/resources/securityContext/SA — foreign-tolerant via
-	//     envVarsEqual so plugin/fleet/Aura-owned env vars don't trip it), OR
+	//     envVarsEqual, initContainersEqual and volumesEqual so plugin/fleet/
+	//     Aura-owned env vars and a plugin's init container don't trip it), OR
 	//   - the desired template's hash differs from the one we last applied.
 	// The hash closes the fields the field-by-field check omits (nodeSelector,
 	// affinity, tolerations, probes, resource requests, volume sources,
 	// initContainer args/env). It is computed over the *desired* template
-	// (cluster-owned env only) and compared to a stored annotation, never to
-	// the live template — so foreign env vars and the config-restart annotation
-	// never enter it and cannot cause oscillation against the env-ownership
-	// protocol. A missing annotation (first reconcile after an operator
-	// upgrade) reads as changed, converging once.
-	if r.hasSignificantTemplateChanges(currentTemplate, desiredTemplate, readOwnedEnvVarNames(sts)) {
+	// (cluster-owned items only) and compared to a stored annotation, never to
+	// the live template — so foreign env vars, init containers, volumes and the
+	// config-restart annotation never enter it and cannot cause oscillation
+	// against the ownership protocol. A missing annotation (first reconcile
+	// after an operator upgrade) reads as changed, converging once.
+	if r.hasSignificantTemplateChanges(currentTemplate, desiredTemplate, readOwnedTemplateItems(sts, currentTemplate)) {
 		return true
 	}
 	return podTemplateSpecHash(desiredTemplate) != sts.Annotations[clusterTemplateHashAnnotation]
@@ -1277,10 +1285,12 @@ func (r *Neo4jEnterpriseClusterReconciler) hasCriticalTemplateChanges(current, d
 }
 
 // hasSignificantTemplateChanges checks for any meaningful changes in stable clusters.
-// previousOwned is the env-var name set this controller recorded as owned on the
-// previous reconcile (read from the StatefulSet annotation by the caller). It is
-// used by envVarsEqual to detect removals from the controller's own desired set.
-func (r *Neo4jEnterpriseClusterReconciler) hasSignificantTemplateChanges(current, desired corev1.PodTemplateSpec, previousOwned map[string]struct{}) bool {
+// previousOwned is what this controller recorded as owned on the previous
+// reconcile (read from the StatefulSet's annotations by the caller): the env
+// vars, init containers and volumes it rendered. envVarsEqual,
+// initContainersEqual and volumesEqual use it to tell a removal from the
+// controller's own desired set from an item another controller added.
+func (r *Neo4jEnterpriseClusterReconciler) hasSignificantTemplateChanges(current, desired corev1.PodTemplateSpec, previousOwned ownedTemplateItems) bool {
 	// For stable clusters, allow more changes including:
 	// - Environment variable updates
 	// - Volume mount changes
@@ -1294,18 +1304,18 @@ func (r *Neo4jEnterpriseClusterReconciler) hasSignificantTemplateChanges(current
 
 	// Check for environment variable changes
 	if len(current.Spec.Containers) > 0 && len(desired.Spec.Containers) > 0 {
-		if !r.envVarsEqual(current.Spec.Containers[0].Env, desired.Spec.Containers[0].Env, previousOwned) {
+		if !r.envVarsEqual(current.Spec.Containers[0].Env, desired.Spec.Containers[0].Env, previousOwned.env) {
 			return true
 		}
 	}
 
 	// Check for volume changes
-	if !r.volumesEqual(current.Spec.Volumes, desired.Spec.Volumes) {
+	if !r.volumesEqual(current.Spec.Volumes, desired.Spec.Volumes, previousOwned.volumes) {
 		return true
 	}
 
 	// Check for init container changes
-	if !r.initContainersEqual(current.Spec.InitContainers, desired.Spec.InitContainers) {
+	if !r.initContainersEqual(current.Spec.InitContainers, desired.Spec.InitContainers, previousOwned.initContainers) {
 		return true
 	}
 
@@ -1397,6 +1407,125 @@ func writeOwnedEnvVarNames(sts *appsv1.StatefulSet, desired []corev1.EnvVar) {
 		sts.Annotations = map[string]string{}
 	}
 	sts.Annotations[ownedEnvVarsAnnotation] = strings.Join(names, ",")
+}
+
+// ownedInitContainersAnnotation and ownedVolumesAnnotation do for the server
+// pod template's init containers and volumes what ownedEnvVarsAnnotation does
+// for env vars: they list, sorted and comma-separated, the names the cluster
+// controller rendered on its last apply, so the next one drops an item it no
+// longer renders (the truststore init container and its volumes once
+// spec.trustedCASecrets is cleared) and keeps one it never rendered (the
+// plugin controller's VerifiedDownload init container and its auth/CA
+// volumes). The standalone controller keeps the same record under its own
+// names (standaloneOwnedInitContainersAnnotation).
+const (
+	ownedInitContainersAnnotation = "neo4j.com/cluster-controller-init-containers"
+	ownedVolumesAnnotation        = "neo4j.com/cluster-controller-volumes"
+)
+
+// ownedTemplateItems is what the cluster controller rendered into the server
+// pod template on its last apply, by name: the neo4j container's env vars, the
+// init containers and the volumes.
+type ownedTemplateItems struct {
+	env            map[string]struct{}
+	initContainers map[string]struct{}
+	volumes        map[string]struct{}
+}
+
+// readOwnedTemplateItems reads the record writeOwnedTemplateItems left on sts;
+// live is its pod template.
+//
+// A StatefulSet an earlier operator wrote has the env record but not the other
+// two. That operator replaced the init containers and volumes wholesale on
+// every apply, so every one on live is its own except what the plugin
+// controller added since: the init containers it lists in its
+// neo4j.com/plugin-init-containers pod-template annotation, and the volumes
+// only those mount. Reading the missing record as "owns nothing" instead would
+// keep for ever an init container the cluster stops rendering — the truststore
+// one, still reading a CA Secret the user then deletes.
+func readOwnedTemplateItems(sts *appsv1.StatefulSet, live corev1.PodTemplateSpec) ownedTemplateItems {
+	owned := ownedTemplateItems{env: readOwnedEnvVarNames(sts)}
+
+	raw, recorded := sts.Annotations[ownedInitContainersAnnotation]
+	if recorded {
+		owned.initContainers = splitCSVSet(raw)
+	} else {
+		plugins := parsePluginInitOwned(live.Annotations[PluginInitContainersAnnotation])
+		owned.initContainers = map[string]struct{}{}
+		for _, c := range live.Spec.InitContainers {
+			if _, isPlugin := plugins[c.Name]; !isPlugin {
+				owned.initContainers[c.Name] = struct{}{}
+			}
+		}
+	}
+
+	raw, recorded = sts.Annotations[ownedVolumesAnnotation]
+	if recorded {
+		owned.volumes = splitCSVSet(raw)
+		return owned
+	}
+	usedByOwn, usedByPlugin := map[string]struct{}{}, map[string]struct{}{}
+	for _, c := range live.Spec.Containers {
+		for _, m := range c.VolumeMounts {
+			usedByOwn[m.Name] = struct{}{}
+		}
+	}
+	for _, c := range live.Spec.InitContainers {
+		used := usedByPlugin
+		if _, ours := owned.initContainers[c.Name]; ours {
+			used = usedByOwn
+		}
+		for _, m := range c.VolumeMounts {
+			used[m.Name] = struct{}{}
+		}
+	}
+	owned.volumes = map[string]struct{}{}
+	for _, v := range live.Spec.Volumes {
+		_, own := usedByOwn[v.Name]
+		_, plugin := usedByPlugin[v.Name]
+		if own || !plugin {
+			owned.volumes[v.Name] = struct{}{}
+		}
+	}
+	return owned
+}
+
+// writeOwnedTemplateItems records what the cluster controller renders into the
+// server pod template — desired, never the merged live template, or another
+// controller's items would be recorded as the cluster's and removed by the next
+// apply (operations.md id 134).
+func writeOwnedTemplateItems(sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) {
+	var env []corev1.EnvVar
+	if len(desired.Spec.Containers) > 0 {
+		env = desired.Spec.Containers[0].Env
+	}
+	writeOwnedEnvVarNames(sts, env)
+	sts.Annotations[ownedInitContainersAnnotation] = sortedNamesCSV(desired.Spec.InitContainers, containerNameOf)
+	sts.Annotations[ownedVolumesAnnotation] = sortedNamesCSV(desired.Spec.Volumes, volumeNameOf)
+}
+
+func containerNameOf(c corev1.Container) string { return c.Name }
+
+func volumeNameOf(v corev1.Volume) string { return v.Name }
+
+// withoutForeign returns current less the items another writer added: those
+// neither desired nor previously owned. What is left is what the cluster
+// controller renders, plus anything it rendered before and no longer does.
+func withoutForeign[T any](current, desired []T, previousOwned map[string]struct{}, nameOf func(T) string) []T {
+	desiredNames := make(map[string]struct{}, len(desired))
+	for _, d := range desired {
+		desiredNames[nameOf(d)] = struct{}{}
+	}
+	out := make([]T, 0, len(current))
+	for _, c := range current {
+		n := nameOf(c)
+		_, inDesired := desiredNames[n]
+		_, owned := previousOwned[n]
+		if inDesired || owned {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // mergeEnvVars produces the env-var slice the cluster controller should write
@@ -1500,7 +1629,14 @@ func (r *Neo4jEnterpriseClusterReconciler) envVarSourceEqual(a, b *corev1.EnvVar
 	return equality.Semantic.DeepEqual(a, b)
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) volumesEqual(current, desired []corev1.Volume) bool {
+// volumesEqual reports whether the volumes the cluster renders are on the live
+// template, by name. A volume another writer added (neither desired nor in
+// previousOwned — a VerifiedDownload plugin's auth or CA volume) is not a
+// change; one the cluster rendered before and no longer does is. Counting
+// every live volume made a plugin's volume a "significant change" on every
+// pass of a stable cluster, and the apply then removed it.
+func (r *Neo4jEnterpriseClusterReconciler) volumesEqual(current, desired []corev1.Volume, previousOwned map[string]struct{}) bool {
+	current = withoutForeign(current, desired, previousOwned, volumeNameOf)
 	if len(current) != len(desired) {
 		return false
 	}
@@ -1523,7 +1659,13 @@ func (r *Neo4jEnterpriseClusterReconciler) volumesEqual(current, desired []corev
 	return true
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) initContainersEqual(current, desired []corev1.Container) bool {
+// initContainersEqual reports whether the init containers the cluster renders
+// are on the live template, in order, with their images. One another writer
+// added (neither desired nor in previousOwned — a VerifiedDownload plugin's
+// plugin-init-<name>) is not a change, wherever it sits; one the cluster
+// rendered before and no longer does is.
+func (r *Neo4jEnterpriseClusterReconciler) initContainersEqual(current, desired []corev1.Container, previousOwned map[string]struct{}) bool {
+	current = withoutForeign(current, desired, previousOwned, containerNameOf)
 	if len(current) != len(desired) {
 		return false
 	}

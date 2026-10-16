@@ -18,7 +18,7 @@
 | `neo4juser_controller.go` / `neo4jrole_controller.go` / `neo4jrolebinding_controller.go` / `neo4jauthrule_controller.go` | Auth-model reconcilers. |
 | `neo4jcompositedatabase_controller.go` / `neo4jdatabasealias_controller.go` / `neo4jreplicadatabase_controller.go` / `neo4jreplicapromotion_controller.go` | Composite DB, alias and cross-cluster replication reconcilers. |
 | `aura*_controller.go`, `aura_fleet_provision.go` | Aura (cloud) reconcilers on the Aura REST API (`internal/aura/`); no Bolt. Refusals must not reach an `aura.IsTransient` branch unmarked (knowledge `operations.md` id 88). |
-| `plugin_controller.go` | `Neo4jPlugin` reconciler; home of `MergeNeo4jPluginList`. Watches target StatefulSets so a `Ready` plugin restores what something removed, and nothing else (knowledge `operations.md` id 135). |
+| `plugin_controller.go` | `Neo4jPlugin` reconciler; home of `MergeNeo4jPluginList`. Watches target StatefulSets so a `Ready` plugin restores what something removed, and nothing else (knowledge `operations.md` id 135); a write to the servers waits until the target is `Ready` with every server available (id 141). |
 | `events.go` | All `EventReason*` string constants — emit these, never raw strings. |
 | `conditions.go` | Most `Condition{Type,Reason}*` constants (the rest are in `events.go`) + `SetReadyCondition` / `SetNamedCondition` / `PhaseToConditionStatus`. |
 | `cluster_resolver.go` | `ResolveClusterRef`, `ResolvedTarget`, `EnqueueDependentsForClusterChange`. |
@@ -44,7 +44,7 @@
 - **Status writes wrap `retry.RetryOnConflict(retry.DefaultRetry, ...)`** (or `DefaultBackoff`) — required for 2025.01.0 cluster formation. See `neo4jenterprisecluster_controller.go` (`grep -n RetryOnConflict`). Re-fetch the object inside the closure.
 - **StatefulSet existence check is `sts.UID != ""`, NOT `ResourceVersion`** (ResourceVersion is set even on never-created objects). See `createOrUpdateResourceInternal` in `neo4jenterprisecluster_controller.go`.
 - **Emit events via `EventReason*` constants from `events.go`** with `corev1.EventTypeNormal` / `corev1.EventTypeWarning` — never raw strings.
-- **Env vars: subset-merge, never wholesale-replace.** `envVarsEqual` checks desired vars exist with the right value but tolerates foreign extras; `mergeEnvVars` merges and enforces removals via the owned-keys annotation (`owned_keys.go`). Do not bake `NEO4J_PLUGINS` into the static StatefulSet template; use `MergeNeo4jPluginList`. (CLAUDE.md "Key Implementation Patterns".)
+- **Env vars: subset-merge, never wholesale-replace.** `envVarsEqual` checks desired vars exist with the right value but tolerates foreign extras; `mergeEnvVars` merges and enforces removals via the owned-keys annotation (`owned_keys.go`). Do not bake `NEO4J_PLUGINS` into the static StatefulSet template; use `MergeNeo4jPluginList`. (CLAUDE.md "Key Implementation Patterns".) Init containers and volumes of the server pod template follow the same model by name (`mergeOwnedByName`, `readOwnedTemplateItems`; knowledge `operations.md` id 141) — a `VerifiedDownload` plugin's init container is not the cluster's.
 - **`CollectDiagnostics` is non-fatal** — surface errors to `status.diagnostics.collectionError`, never `return err`.
 - **Server-based naming only**: `{cluster}-server-0…N-1`; never `primary-*`/`secondary-*` (invariant 5). `splitbrain_detector.go` enumerates pods by this scheme.
 

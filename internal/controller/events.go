@@ -137,9 +137,17 @@ const (
 	EventReasonPluginDuplicate = "PluginDuplicate"
 	// EventReasonPluginMissing is emitted on a Ready Neo4jPlugin whose target
 	// StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS
-	// entry, a variable it sets); the plugin goes back to Installing and
-	// restores it, which restarts the servers.
+	// entry, a variable it sets, a VerifiedDownload init container or its
+	// volumes); the plugin goes back to Installing and restores it, which
+	// restarts the servers — once the target is Ready with every server
+	// available (Waiting until then).
 	EventReasonPluginMissing = "PluginMissing"
+	// EventReasonPluginInstallDeferred is emitted once when a Neo4jPlugin's
+	// install waits (phase Waiting) because its target is not Ready with every
+	// server available — Degraded, still forming, rolling or upgrading: the
+	// install restarts every server, which a cluster short of one could lose
+	// its majority to (operations.md id 141).
+	EventReasonPluginInstallDeferred = "PluginInstallDeferred"
 )
 
 // Split-brain events

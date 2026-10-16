@@ -81,6 +81,24 @@ func selfHealSTS(env ...corev1.EnvVar) *appsv1.StatefulSet {
 	return sts
 }
 
+// readyCluster is cluster "c" Ready with every server available: what a write
+// of the plugin to the servers waits for (operations.md id 141).
+func readyCluster() *neo4jv1beta1.Neo4jEnterpriseCluster {
+	c := minimalCluster("c", selfHealNS)
+	c.Status.Phase = neo4jv1beta1.PhaseReady
+	return c
+}
+
+// degradedCluster is cluster "c" formed and serving with a server down: phase
+// Ready inside the grace period, Degraded past it.
+func degradedCluster(phase string) *neo4jv1beta1.Neo4jEnterpriseCluster {
+	c := minimalCluster("c", selfHealNS)
+	c.Status.Phase = phase
+	c.Status.Conditions = []metav1.Condition{serversUnavailableCondition("1 of 2 servers unavailable: c-server-1")}
+	c.Status.Conditions[0].LastTransitionTime = metav1.Now()
+	return c
+}
+
 // readyClusterPods are cluster "c"'s two server pods, Running and Ready.
 func readyClusterPods() []client.Object {
 	var pods []client.Object
@@ -189,7 +207,7 @@ func TestReconcile_SettledPluginReAddsWhatWasRemoved(t *testing.T) {
 	sts := selfHealSTS(corev1.EnvVar{Name: "NEO4J_apoc_export_file_enabled", Value: "true"})
 	bolt := &pluginBolt{functional: func(context.Context, *DeploymentInfo) bool { return true }}
 	// No server pods yet: the re-add restarts them, so the pass waits.
-	r, rec, stsUpdates := selfHealReconciler(t, bolt, nil, plugin, minimalCluster("c", selfHealNS), sts)
+	r, rec, stsUpdates := selfHealReconciler(t, bolt, nil, plugin, readyCluster(), sts)
 
 	res := reconcilePlugin(t, r, "apoc")
 
@@ -225,7 +243,10 @@ func TestReconcile_SettledPluginReAddsWhatWasRemoved(t *testing.T) {
 func TestReconcile_SettledStandalonePluginDropsALeftoverConfCopy(t *testing.T) {
 	plugin := selfHealPlugin("apoc", "sa", neo4jv1beta1.PhaseReady, "Plugin installed and configured successfully")
 	plugin.Spec.Security = &neo4jv1beta1.PluginSecurity{AllowedProcedures: []string{"apoc.coll.*"}}
-	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: selfHealNS}}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+		ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: selfHealNS},
+		Status:     neo4jv1beta1.Neo4jEnterpriseStandaloneStatus{Phase: neo4jv1beta1.PhaseReady},
+	}
 	// Only the plugin's tokens: the copy goes. With another plugin's tokens
 	// in it, only this plugin's go.
 	allowlistOnly := []corev1.EnvVar{
@@ -433,7 +454,7 @@ func TestReconcile_ConfigureWhileTheServersRestartIsNotAFailure(t *testing.T) {
 		functional: func(context.Context, *DeploymentInfo) bool { return true },
 		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return unreachable },
 	}
-	objs := append([]client.Object{plugin, minimalCluster("c", selfHealNS), selfHealSTS()}, readyClusterPods()...)
+	objs := append([]client.Object{plugin, readyCluster(), selfHealSTS()}, readyClusterPods()...)
 	r, rec, _ := selfHealReconciler(t, bolt, nil, objs...)
 
 	res := reconcilePlugin(t, r, "apoc")
@@ -455,7 +476,7 @@ func TestReconcile_InstallConflictIsNotAFailure(t *testing.T) {
 		return apierrors.NewConflict(schema.GroupResource{Group: "apps", Resource: "statefulsets"}, "c-server",
 			errors.New("the object has been modified; please apply your changes to the latest version and try again"))
 	}
-	r, rec, _ := selfHealReconciler(t, bolt, conflict, plugin, minimalCluster("c", selfHealNS), selfHealSTS())
+	r, rec, _ := selfHealReconciler(t, bolt, conflict, plugin, readyCluster(), selfHealSTS())
 
 	res := reconcilePlugin(t, r, "apoc")
 
@@ -477,7 +498,7 @@ func TestReconcile_ARealFailureIsAnnouncedOnceAndRetried(t *testing.T) {
 		functional: func(context.Context, *DeploymentInfo) bool { return true },
 		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return rejected },
 	}
-	objs := append([]client.Object{plugin, minimalCluster("c", selfHealNS), selfHealSTS()}, readyClusterPods()...)
+	objs := append([]client.Object{plugin, readyCluster(), selfHealSTS()}, readyClusterPods()...)
 	r, rec, _ := selfHealReconciler(t, bolt, nil, objs...)
 
 	res := reconcilePlugin(t, r, "apoc")
@@ -575,15 +596,18 @@ func TestPluginController_ReAddsARemovedNeo4jPlugins(t *testing.T) {
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
 	require.NoError(t, err)
 
-	// The target: a standalone, its StatefulSet and its one Ready pod.
-	require.NoError(t, c.Create(ctx, &neo4jv1beta1.Neo4jEnterpriseStandalone{
+	// The target: a Ready standalone, its StatefulSet and its one Ready pod.
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
 		ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: selfHealNS},
 		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
 			AcceptLicenseAgreement: "eval",
 			Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26-enterprise"},
 			Storage:                neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "1Gi"},
 		},
-	}))
+	}
+	require.NoError(t, c.Create(ctx, standalone))
+	standalone.Status.Phase = neo4jv1beta1.PhaseReady
+	require.NoError(t, c.Status().Update(ctx, standalone))
 	labels := map[string]string{"app": "sa"}
 	container := corev1.Container{Name: "neo4j", Image: "neo4j:5.26-enterprise"}
 	require.NoError(t, c.Create(ctx, &appsv1.StatefulSet{

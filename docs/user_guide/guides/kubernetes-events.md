@@ -115,7 +115,8 @@ kubectl get events -A --field-selector involvedObject.apiVersion=neo4j.neo4j.com
 |---|---|---|
 | `PluginInstalled` | Normal | Plugin successfully installed |
 | `PluginInstallFailed` | Warning | Plugin installation failed (once per failure; retried every 30s without repeating it). A server that is restarting or briefly unreachable is not a failure: the plugin stays `Installing` |
-| `PluginMissing` | Warning | A `Ready` plugin's target StatefulSet no longer carries what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets); the plugin goes back to `Installing` and restores it, which restarts the servers |
+| `PluginMissing` | Warning | A `Ready` plugin's target StatefulSet no longer carries what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or its volumes); the plugin goes back to `Installing` and restores it, which restarts the servers — or, while the target is not `Ready` with every server available, says so and is `Waiting` until it is |
+| `PluginInstallDeferred` | Normal | Installing the plugin would restart the servers of a target that is not `Ready` with every server available (a cluster `Degraded`, or forming, rolling or upgrading); the plugin is `Waiting` and installs once the target is. Once per wait |
 | `PluginDuplicate` | Warning | Another `Neo4jPlugin` already targets this name (only the first owner reconciles; duplicates sit in `Failed` until the conflict is resolved) |
 
 ### Split-Brain Detection

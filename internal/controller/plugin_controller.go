@@ -362,8 +362,9 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// to do: no Bolt, no write, no phase change, so a rollout someone else
 		// started does not flip the plugin out of Ready. If something removed
 		// the plugin — a cluster-controller conflict retry once deleted
-		// NEO4J_PLUGINS (operations.md id 134) — it is not Ready any more: say
-		// so, and restore it below.
+		// NEO4J_PLUGINS (operations.md id 134), its template apply dropped a
+		// VerifiedDownload init container (id 141) — it is not Ready any more:
+		// say so, and restore it below, once the target can take the restart.
 		missing, err := r.missingFromTarget(ctx, plugin, deployment)
 		switch {
 		case err != nil:
@@ -371,11 +372,35 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			logger.Error(err, "Cannot tell whether the target still carries the plugin")
 		case missing == "":
 			return ctrl.Result{}, nil
+		case !deployment.IsReady:
+			// Restoring it restarts every server, like an install, and waits
+			// for the same reason (below).
+			logger.Info("Plugin missing from its target; restoring it once the target is fully available", "missing", missing)
+			return r.deferInstall(ctx, plugin, deployment, missing)
 		default:
 			logger.Info("Plugin missing from its target; restoring it", "missing", missing)
 			r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginMissing,
 				"%s; restoring it, which restarts the servers", missing)
 			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Restoring the plugin: "+missing)
+		}
+	}
+
+	// An install restarts every server, and so does any write of the plugin to
+	// the target's StatefulSet. A cluster already short of a server (Degraded),
+	// or still forming, rolling or upgrading, could lose its majority to it
+	// (CLAUDE.md, "Server availability (#444)"), so the write waits until the
+	// target is Ready with every server available. A pass with nothing to write
+	// — one waiting for the servers this install restarted, which turned the
+	// cluster Forming — carries on.
+	if !deployment.IsReady {
+		changes, err := r.installChangesTarget(ctx, plugin, deployment)
+		switch {
+		case err != nil:
+			// The install below reads the same StatefulSet and reports it.
+			logger.Error(err, "Cannot tell whether installing the plugin would change its target")
+		case changes:
+			logger.Info("Target not fully available; deferring the plugin installation", "type", deployment.Type, "name", deployment.Name)
+			return r.deferInstall(ctx, plugin, deployment, "")
 		}
 	}
 
@@ -455,6 +480,52 @@ func (r *Neo4jPluginReconciler) installFailed(ctx context.Context, plugin *neo4j
 	}
 	r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseFailed, message)
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// deferInstall holds a write of the plugin to a target that is not Ready with
+// every server available: phase Waiting, another look after RequeueAfter, and
+// one event when the wait starts — PluginMissing for a Ready plugin whose target
+// lost what it set (missing says what), PluginInstallDeferred otherwise. The
+// event follows the status write that starts the wait (operations.md id 136),
+// so the passes that go on waiting, and an operator restart, say nothing more.
+func (r *Neo4jPluginReconciler) deferInstall(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo, missing string) (ctrl.Result, error) {
+	until := targetAvailable(deployment)
+	message := "Waiting until " + until + ": installing the plugin restarts every server"
+	if deployment.Type == "standalone" {
+		message = "Waiting until " + until + ": installing the plugin restarts it"
+	}
+	if r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseWaiting, message) {
+		if missing != "" {
+			r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginMissing,
+				"%s; restoring it restarts the servers, so it waits until %s", missing, until)
+		} else {
+			r.Recorder.Event(plugin, corev1.EventTypeNormal, EventReasonPluginInstallDeferred, message)
+		}
+	}
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// targetAvailable names the state deferInstall waits for.
+func targetAvailable(deployment *DeploymentInfo) string {
+	if deployment.Type == "standalone" {
+		return fmt.Sprintf("Neo4jEnterpriseStandalone %s is Ready", deployment.Name)
+	}
+	return fmt.Sprintf("Neo4jEnterpriseCluster %s is Ready with every server available", deployment.Name)
+}
+
+// installChangesTarget reports whether installing the plugin would change its
+// target's StatefulSet, which restarts the servers: the install's own edits
+// (applyPluginToTemplate) made on a copy of the live pod template.
+func (r *Neo4jPluginReconciler) installChangesTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (bool, error) {
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
+		return false, err
+	}
+	desired := sts.Spec.Template.DeepCopy()
+	if err := r.applyPluginToTemplate(desired, plugin, deployment); err != nil {
+		return false, err
+	}
+	return !equality.Semantic.DeepEqual(sts.Spec.Template, *desired), nil
 }
 
 // retryablePluginError reports whether an install or configuration step failed
@@ -888,16 +959,14 @@ func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *
 	return transitioned
 }
 
-// SetupWithManager configures the controller with the manager
-// installPluginViaEnvironment installs the plugin using NEO4J_PLUGINS environment variable
-// This is the recommended approach by Neo4j for Docker plugin installation
+// installPluginViaEnvironment writes the plugin onto its target's StatefulSet,
+// in one update: its env edits (NEO4J_PLUGINS in Managed mode — the approach
+// Neo4j recommends for its Docker image — and its settings) and, in
+// VerifiedDownload mode, its checksum-verifying init container and the volumes
+// that container reads (applyPluginToTemplate). A pass whose edits change
+// nothing writes nothing.
 func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
 	logger := log.FromContext(ctx)
-	// preBaked retained as the local variable name for diff stability —
-	// it gates the same code paths whether the user is bringing the JAR
-	// via a custom image (PreBaked) or via the operator-injected init
-	// container (VerifiedDownload).
-	preBaked := shouldSkipNeo4jPluginsEnv(plugin)
 	switch {
 	case isVerifiedDownloadInstallMode(plugin):
 		logger.Info("Configuring plugin in VerifiedDownload mode — injecting checksum-verifying init container, skipping NEO4J_PLUGINS mutation", "plugin", plugin.Spec.Name)
@@ -907,115 +976,9 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 		logger.Info("Installing plugin via NEO4J_PLUGINS environment variable", "plugin", plugin.Spec.Name)
 	}
 
-	// Get the StatefulSet for the deployment
-	sts := &appsv1.StatefulSet{}
 	stsKey := types.NamespacedName{
 		Name:      r.getStatefulSetName(deployment),
 		Namespace: deployment.Namespace,
-	}
-
-	if err := r.Get(ctx, stsKey, sts); err != nil {
-		return fmt.Errorf("failed to get StatefulSet: %w", err)
-	}
-
-	// Find the Neo4j container
-	var neo4jContainer *corev1.Container
-	for i := range sts.Spec.Template.Spec.Containers {
-		if sts.Spec.Template.Spec.Containers[i].Name == "neo4j" {
-			neo4jContainer = &sts.Spec.Template.Spec.Containers[i]
-			break
-		}
-	}
-
-	if neo4jContainer == nil {
-		return fmt.Errorf("neo4j container not found in StatefulSet")
-	}
-
-	// Prepare plugin name and dependencies for NEO4J_PLUGINS
-	pluginName := r.mapPluginName(plugin.Spec.Name)
-
-	// Collect all plugins to install (main plugin + dependencies)
-	pluginsToInstall := []string{pluginName}
-	for _, dep := range plugin.Spec.Dependencies {
-		depName := r.mapPluginName(dep.Name)
-		pluginsToInstall = append(pluginsToInstall, depName)
-	}
-
-	if !preBaked {
-		// Find existing NEO4J_PLUGINS environment variable or create new one
-		var pluginsEnvVar *corev1.EnvVar
-		for i := range neo4jContainer.Env {
-			if neo4jContainer.Env[i].Name == "NEO4J_PLUGINS" {
-				pluginsEnvVar = &neo4jContainer.Env[i]
-				break
-			}
-		}
-
-		if pluginsEnvVar == nil {
-			// Add new NEO4J_PLUGINS environment variable with all plugins
-			var quotedPlugins []string
-			for _, plugin := range pluginsToInstall {
-				quotedPlugins = append(quotedPlugins, fmt.Sprintf("\"%s\"", plugin))
-			}
-			neo4jContainer.Env = append(neo4jContainer.Env, corev1.EnvVar{
-				Name:  "NEO4J_PLUGINS",
-				Value: fmt.Sprintf("[%s]", strings.Join(quotedPlugins, ",")),
-			})
-		} else {
-			// Update existing NEO4J_PLUGINS - parse and add all new plugins
-			currentValue := pluginsEnvVar.Value
-			for _, plugin := range pluginsToInstall {
-				updatedPlugins, err := r.addPluginToList(currentValue, plugin)
-				if err != nil {
-					return fmt.Errorf("failed to update plugin list: %w", err)
-				}
-				currentValue = updatedPlugins
-			}
-			pluginsEnvVar.Value = currentValue
-		}
-	}
-
-	// Add plugin configuration as environment variables
-	for key, value := range plugin.Spec.Config {
-		envVarName := resources.Neo4jSettingEnvVarName(key)
-		neo4jContainer.Env = append(neo4jContainer.Env, corev1.EnvVar{
-			Name:  envVarName,
-			Value: value,
-		})
-	}
-
-	// Add required procedure security settings if the plugin needs them and they're not environment-variable only
-	if r.getPluginType(plugin.Spec.Name) != PluginTypeEnvironmentOnly {
-		requiredSettings := r.getRequiredProcedureSecuritySettings(plugin.Spec.Name)
-		for key, value := range requiredSettings {
-			envVarName := resources.Neo4jSettingEnvVarName(key)
-
-			// Check if this environment variable already exists
-			exists := false
-			for i, env := range neo4jContainer.Env {
-				if env.Name == envVarName {
-					// Merge (union, dedup) for known comma-separated settings.
-					// Previously we used strings.Contains(key, "allowlist"|"unrestricted")
-					// which technically covered all our known keys — but a user-typed
-					// custom setting like `my.custom.allowlist` could trigger merge
-					// semantics that aren't appropriate. And the old "value+,+new"
-					// concat produced duplicates whenever the existing value was
-					// itself multi-valued (e.g. Bloom's http_auth_allowlist).
-					if isMergeableCSVKey(key) {
-						neo4jContainer.Env[i].Value = mergeCSV(env.Value, value)
-					}
-					exists = true
-					break
-				}
-			}
-
-			if !exists {
-				neo4jContainer.Env = append(neo4jContainer.Env, corev1.EnvVar{
-					Name:  envVarName,
-					Value: value,
-				})
-			}
-		}
 	}
 
 	// Update the StatefulSet with retry on conflict
@@ -1027,24 +990,12 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 			return err
 		}
 
-		// Find the Neo4j container in the current StatefulSet
-		var currentNeo4jContainer *corev1.Container
-		for i := range currentSts.Spec.Template.Spec.Containers {
-			if currentSts.Spec.Template.Spec.Containers[i].Name == "neo4j" {
-				currentNeo4jContainer = &currentSts.Spec.Template.Spec.Containers[i]
-				break
-			}
-		}
-		if currentNeo4jContainer == nil {
-			return fmt.Errorf("neo4j container not found in current StatefulSet")
-		}
-
-		// Apply the same plugin changes to the current StatefulSet
-		before := currentNeo4jContainer.DeepCopy().Env
-		if err := r.applyPluginEnv(currentNeo4jContainer, plugin, deployment); err != nil {
+		// Apply the plugin's edits to the current StatefulSet
+		before := currentSts.Spec.Template.DeepCopy()
+		if err := r.applyPluginToTemplate(&currentSts.Spec.Template, plugin, deployment); err != nil {
 			return err
 		}
-		if equality.Semantic.DeepEqual(before, currentNeo4jContainer.Env) {
+		if equality.Semantic.DeepEqual(*before, currentSts.Spec.Template) {
 			// Everything the plugin sets is there already. Writing would change
 			// nothing, and the passes that wait for the servers to restart would
 			// only race the writes of the StatefulSet's own controller.
@@ -1055,7 +1006,8 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 			// renders from the cluster's spec, which restarts the servers, and
 			// the plugin's next pass would change it again. Say so instead of
 			// starting that tug of war.
-			if owned := ownedEnvNames(changedEnvNames(before, currentNeo4jContainer.Env), readOwnedEnvVarNames(currentSts)); len(owned) > 0 {
+			changed := changedEnvNames(neo4jContainerEnv(before.Spec), neo4jContainerEnv(currentSts.Spec.Template.Spec))
+			if owned := ownedEnvNames(changed, readOwnedEnvVarNames(currentSts)); len(owned) > 0 {
 				return &pluginEnvOwnedError{statefulSet: currentSts.Name, cluster: deployment.Name, names: owned}
 			}
 		}
@@ -1071,23 +1023,54 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 	}
 
 	if written {
-		logger.Info("Successfully updated StatefulSet with plugin configuration", "plugin", pluginName)
-	}
-
-	// VerifiedDownload mode: after the regular config/env-var write,
-	// inject the checksum-verifying init container so the JAR lands in
-	// /plugins before Neo4j starts. This is the only code path that
-	// emits init containers; PreBaked relies on the user's custom
-	// image carrying the JAR, and Managed delegates to the entrypoint.
-	if isVerifiedDownloadInstallMode(plugin) {
-		if err := r.injectVerifiedDownloadInitContainer(ctx, plugin, deployment); err != nil {
-			return fmt.Errorf("failed to inject verified-download init container: %w", err)
-		}
+		logger.Info("Successfully updated StatefulSet with plugin configuration", "plugin", plugin.Spec.Name)
 	}
 
 	// Note: ConfigMap updates for standalone deployments are now handled earlier in reconcile flow
 	// before connectivity checks to ensure security settings are applied before Neo4j starts
 
+	return nil
+}
+
+// applyPluginToTemplate makes on template, the target's pod template, every
+// edit the plugin owns: its env edits on the neo4j container (applyPluginEnv)
+// and, in VerifiedDownload mode, its init container and volumes
+// (applyVerifiedDownload). installPluginViaEnvironment writes what it
+// produces; missingFromTarget and installChangesTarget compare against it, so
+// the three cannot disagree about what the plugin needs.
+func (r *Neo4jPluginReconciler) applyPluginToTemplate(template *corev1.PodTemplateSpec, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
+	container := neo4jContainer(&template.Spec)
+	if container == nil {
+		return fmt.Errorf("neo4j container not found in StatefulSet")
+	}
+	if err := r.applyPluginEnv(container, plugin, deployment); err != nil {
+		return err
+	}
+	// VerifiedDownload mode: the init container puts the verified JAR in
+	// /plugins before Neo4j starts. This is the only code path that emits
+	// init containers; PreBaked relies on the user's custom image carrying
+	// the JAR, and Managed delegates to the entrypoint.
+	if isVerifiedDownloadInstallMode(plugin) {
+		r.applyVerifiedDownload(template, plugin, deployment)
+	}
+	return nil
+}
+
+// neo4jContainer returns the pod's neo4j container, or nil.
+func neo4jContainer(pod *corev1.PodSpec) *corev1.Container {
+	for i := range pod.Containers {
+		if pod.Containers[i].Name == "neo4j" {
+			return &pod.Containers[i]
+		}
+	}
+	return nil
+}
+
+// neo4jContainerEnv returns the env of the pod's neo4j container.
+func neo4jContainerEnv(pod corev1.PodSpec) []corev1.EnvVar {
+	if c := neo4jContainer(&pod); c != nil {
+		return c.Env
+	}
 	return nil
 }
 
@@ -1188,8 +1171,8 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 
 // missingFromTarget reports what of the plugin its target's StatefulSet no
 // longer carries, or "" when it carries all of it: the plugin's edits are made
-// on a copy of the live neo4j container, and pluginEnvDrift decides which of
-// them a settled plugin puts right.
+// on a copy of the live pod template, and pluginEnvDrift and pluginPodDrift
+// decide which of them a settled plugin puts right.
 func (r *Neo4jPluginReconciler) missingFromTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (string, error) {
 	stsName := r.getStatefulSetName(deployment)
 	sts := &appsv1.StatefulSet{}
@@ -1199,25 +1182,45 @@ func (r *Neo4jPluginReconciler) missingFromTarget(ctx context.Context, plugin *n
 		}
 		return "", fmt.Errorf("failed to get StatefulSet %s: %w", stsName, err)
 	}
-	var container *corev1.Container
-	for i := range sts.Spec.Template.Spec.Containers {
-		if sts.Spec.Template.Spec.Containers[i].Name == "neo4j" {
-			container = &sts.Spec.Template.Spec.Containers[i]
-			break
-		}
-	}
-	if container == nil {
+	if neo4jContainer(&sts.Spec.Template.Spec) == nil {
 		return "", fmt.Errorf("neo4j container not found in StatefulSet %s", stsName)
 	}
-	desired := container.DeepCopy()
-	if err := r.applyPluginEnv(desired, plugin, deployment); err != nil {
+	desired := sts.Spec.Template.DeepCopy()
+	if err := r.applyPluginToTemplate(desired, plugin, deployment); err != nil {
 		return "", err
 	}
-	drift := pluginEnvDrift(container.Env, desired.Env, deployment.Type == "standalone")
+	drift := pluginEnvDrift(neo4jContainerEnv(sts.Spec.Template.Spec), neo4jContainerEnv(desired.Spec), deployment.Type == "standalone")
+	drift = append(drift, pluginPodDrift(sts.Spec.Template.Spec, desired.Spec)...)
 	if len(drift) == 0 {
 		return "", nil
 	}
 	return fmt.Sprintf("StatefulSet %s does not hold what the plugin sets in %s", stsName, strings.Join(drift, ", ")), nil
+}
+
+// pluginPodDrift returns the init containers and volumes a VerifiedDownload
+// plugin adds that live, the target's pod spec, does not have (desired is live
+// after the plugin's edits): what something removed — a StatefulSet recreated
+// from the cluster's own template (storage expansion does that), or an earlier
+// operator's cluster controller, which dropped them on every apply. Only
+// absence is put right, as with env vars: the live init container carries the
+// API server's defaults, and nothing else writes the plugin's own names.
+func pluginPodDrift(live, desired corev1.PodSpec) []string {
+	var drift []string
+	initContainers := make(map[string]struct{}, len(live.InitContainers))
+	for _, c := range live.InitContainers {
+		initContainers[c.Name] = struct{}{}
+	}
+	for _, c := range desired.InitContainers {
+		if _, ok := initContainers[c.Name]; !ok {
+			drift = append(drift, "init container "+c.Name)
+		}
+	}
+	for _, v := range desired.Volumes {
+		if !podSpecHasVolume(&live, v.Name) {
+			drift = append(drift, "volume "+v.Name)
+		}
+	}
+	return drift
 }
 
 // pluginEnvDrift returns, sorted, the variables a settled plugin puts right on
@@ -1472,101 +1475,90 @@ func mergePluginSecurityEnv(env []corev1.EnvVar, settings map[string]string) []c
 	return env
 }
 
-// injectVerifiedDownloadInitContainer adds (or updates) the plugin's
-// init container on the target StatefulSet's pod template, plus the
-// matching auth/CA volumes. Ownership-tracked via the
-// PluginInitContainersAnnotation so the controller can remove its
-// own containers on uninstall without disturbing foreign ones.
+// applyVerifiedDownload adds (or updates) the plugin's init container on the
+// target's pod template, plus the matching auth/CA volumes. Ownership-tracked
+// via the PluginInitContainersAnnotation so the controller can remove its own
+// containers on uninstall without disturbing foreign ones; the cluster
+// controller reads the same annotation on a StatefulSet that has no record of
+// its own init containers yet (readOwnedTemplateItems).
 //
-// Same retry-on-conflict mechanics as the env-var path — the
-// StatefulSet's ResourceVersion races with the cluster controller's
-// own reconciles.
-func (r *Neo4jPluginReconciler) injectVerifiedDownloadInitContainer(
-	ctx context.Context,
-	plugin *neo4jv1beta1.Neo4jPlugin,
-	deployment *DeploymentInfo,
-) error {
-	stsKey := types.NamespacedName{
-		Name:      r.getStatefulSetName(deployment),
-		Namespace: deployment.Namespace,
-	}
-	containerName := resources.PluginInitContainerName(plugin.Spec.Name)
-
-	// CA bundle is sourced from the OWNING cluster/standalone's
-	// trustedCASecrets field — the JAR fetch typically goes to an
-	// internal Artifactory using the same corporate CA the rest of
-	// the deployment already trusts.
-	var caSecrets []neo4jv1beta1.TrustedCASecret
-	switch deployment.Type {
-	case "cluster":
-		if c, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok {
-			caSecrets = c.Spec.TrustedCASecrets
-		}
-	case "standalone":
-		if s, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone); ok {
-			caSecrets = s.Spec.TrustedCASecrets
-		}
-	}
-
+// The live init container carries what the API server defaulted
+// (terminationMessagePath, …), so it is replaced only when a field the plugin
+// sets differs from it: replacing it on every pass made each one a change, and
+// a change is a write and a restart of the servers.
+func (r *Neo4jPluginReconciler) applyVerifiedDownload(template *corev1.PodTemplateSpec, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) {
+	caSecrets := deploymentTrustedCASecrets(deployment)
 	desired := resources.BuildPluginVerifiedDownloadInitContainer(plugin, r.PluginInitImage, caSecrets)
 	authVol := resources.BuildPluginAuthVolume(plugin)
 	caVol := resources.BuildPluginCAVolume(caSecrets)
 
-	return retry.RetryOnConflict(retry.DefaultBackoff, func() error {
-		sts := &appsv1.StatefulSet{}
-		if err := r.Get(ctx, stsKey, sts); err != nil {
-			return err
-		}
+	podSpec := &template.Spec
 
-		podSpec := &sts.Spec.Template.Spec
+	// Replace existing init container of the same name; otherwise append.
+	// Same name is the source of truth — Kubernetes itself enforces
+	// uniqueness, and our annotation tracks ownership for cleanup.
+	found := false
+	for i := range podSpec.InitContainers {
+		if podSpec.InitContainers[i].Name != desired.Name {
+			continue
+		}
+		found = true
+		if !equality.Semantic.DeepDerivative(desired, podSpec.InitContainers[i]) {
+			podSpec.InitContainers[i] = desired
+		}
+		break
+	}
+	if !found {
+		podSpec.InitContainers = append(podSpec.InitContainers, desired)
+	}
 
-		// Replace existing init container of the same name; otherwise append.
-		// Same name is the source of truth — Kubernetes itself enforces
-		// uniqueness, and our annotation tracks ownership for cleanup.
-		found := false
-		for i, ic := range podSpec.InitContainers {
-			if ic.Name == containerName {
-				podSpec.InitContainers[i] = desired
-				found = true
-				break
-			}
-		}
-		if !found {
-			podSpec.InitContainers = append(podSpec.InitContainers, desired)
-		}
+	// Add volumes if not already present (multiple VerifiedDownload
+	// plugins on the same cluster share the CA volume; each plugin
+	// has its own auth volume).
+	if authVol != nil && !podSpecHasVolume(podSpec, authVol.Name) {
+		podSpec.Volumes = append(podSpec.Volumes, *authVol)
+	}
+	if caVol != nil && !podSpecHasVolume(podSpec, caVol.Name) {
+		podSpec.Volumes = append(podSpec.Volumes, *caVol)
+	}
 
-		// Add volumes if not already present (multiple VerifiedDownload
-		// plugins on the same cluster share the CA volume; each plugin
-		// has its own auth volume).
-		if authVol != nil && !podSpecHasVolume(podSpec, authVol.Name) {
-			podSpec.Volumes = append(podSpec.Volumes, *authVol)
-		}
-		if caVol != nil && !podSpecHasVolume(podSpec, caVol.Name) {
-			podSpec.Volumes = append(podSpec.Volumes, *caVol)
-		}
+	// Record ownership in the annotation so the uninstall path can
+	// remove only our init containers. The annotation lives on the
+	// PodTemplate annotation map so it travels with the spec
+	// fingerprint and triggers a rolling restart on change.
+	if template.Annotations == nil {
+		template.Annotations = map[string]string{}
+	}
+	owned := parsePluginInitOwned(template.Annotations[PluginInitContainersAnnotation])
+	if _, exists := owned[desired.Name]; !exists {
+		owned[desired.Name] = struct{}{}
+		template.Annotations[PluginInitContainersAnnotation] = formatPluginInitOwned(owned)
+	}
+}
 
-		// Record ownership in the annotation so the uninstall path can
-		// remove only our init containers. The annotation lives on the
-		// PodTemplate annotation map so it travels with the spec
-		// fingerprint and triggers a rolling restart on change.
-		if sts.Spec.Template.Annotations == nil {
-			sts.Spec.Template.Annotations = map[string]string{}
+// deploymentTrustedCASecrets is the target's spec.trustedCASecrets. The CA
+// bundle a VerifiedDownload init container trusts comes from the owning
+// cluster/standalone: the JAR fetch typically goes to an internal Artifactory
+// using the same corporate CA the rest of the deployment already trusts.
+func deploymentTrustedCASecrets(deployment *DeploymentInfo) []neo4jv1beta1.TrustedCASecret {
+	switch deployment.Type {
+	case "cluster":
+		if c, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok {
+			return c.Spec.TrustedCASecrets
 		}
-		owned := parsePluginInitOwned(sts.Spec.Template.Annotations[PluginInitContainersAnnotation])
-		if _, exists := owned[containerName]; !exists {
-			owned[containerName] = struct{}{}
-			sts.Spec.Template.Annotations[PluginInitContainersAnnotation] = formatPluginInitOwned(owned)
+	case "standalone":
+		if s, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone); ok {
+			return s.Spec.TrustedCASecrets
 		}
-
-		return r.Update(ctx, sts)
-	})
+	}
+	return nil
 }
 
 // removeVerifiedDownloadInitContainer is the inverse of
-// injectVerifiedDownloadInitContainer: drops the plugin's init
-// container from the StatefulSet PodSpec, removes the plugin-specific
-// auth volume if present, and updates the ownership annotation. The
-// shared CA volume is left alone — other VerifiedDownload plugins on
+// applyVerifiedDownload: drops the plugin's init container from the
+// StatefulSet PodSpec, removes the plugin-specific auth volume if
+// present, and updates the ownership annotation. The shared CA volume
+// goes only once nothing mounts it — other VerifiedDownload plugins on
 // the same StatefulSet may still be using it; deleting it
 // unilaterally would break them.
 //
@@ -1607,10 +1599,14 @@ func (r *Neo4jPluginReconciler) removeVerifiedDownloadInitContainer(
 		}
 		podSpec.InitContainers = filtered
 
-		// Strip the per-plugin auth volume (CA volume is shared — leave it).
+		// Strip the per-plugin auth volume, and the shared CA volume once no
+		// container mounts it: the cluster controller keeps volumes it did not
+		// render, so an orphaned one would stay, still projecting CA Secrets
+		// the pods then cannot start without once they are deleted.
+		caUnused := !podSpecMountsVolume(podSpec, resources.PluginCAVolumeName)
 		filteredVols := podSpec.Volumes[:0]
 		for _, v := range podSpec.Volumes {
-			if v.Name == authVolName {
+			if v.Name == authVolName || (caUnused && v.Name == resources.PluginCAVolumeName) {
 				changed = true
 				continue
 			}
@@ -1647,6 +1643,21 @@ func podSpecHasVolume(podSpec *corev1.PodSpec, name string) bool {
 	for _, v := range podSpec.Volumes {
 		if v.Name == name {
 			return true
+		}
+	}
+	return false
+}
+
+// podSpecMountsVolume reports whether any container or init container of the
+// pod mounts the named volume.
+func podSpecMountsVolume(podSpec *corev1.PodSpec, name string) bool {
+	for _, list := range [][]corev1.Container{podSpec.InitContainers, podSpec.Containers} {
+		for _, c := range list {
+			for _, m := range c.VolumeMounts {
+				if m.Name == name {
+					return true
+				}
+			}
 		}
 	}
 	return false
@@ -1958,9 +1969,9 @@ func (r *Neo4jPluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
 // standalone's {name}. Only Ready ones: a plugin in any other phase is part way
 // through an install and requeues on its own, or waits for an edit to its CR,
 // and a pass of those writes the StatefulSet again — enqueuing them on its
-// changes would let a controller that reverts the plugin's write (the cluster
-// controller drops a foreign init container, for one) restart the servers in a
-// loop.
+// changes would let a controller that reverts the plugin's write restart the
+// servers in a loop. (The cluster controller once did that to a
+// VerifiedDownload init container, operations.md id 141.)
 func (r *Neo4jPluginReconciler) readyPluginsForStatefulSet(ctx context.Context, obj client.Object) []reconcile.Request {
 	plugins := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, plugins, client.InNamespace(obj.GetNamespace())); err != nil {
