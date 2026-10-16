@@ -83,13 +83,17 @@ spec:
                 type: boolean
               ifNotExists:
                 description: |-
-                  IfNotExists controls whether the sharded database creation is
-                  idempotent. When unset (nil) or true, the operator emits
-                  `CREATE DATABASE ... IF NOT EXISTS` which is a no-op if the database
-                  already exists. Set explicitly to false to allow `CREATE DATABASE`
-                  without the `IF NOT EXISTS` clause — required when paired with
-                  `replaceExisting=true` (the destructive recreate path), and disallowed
-                  otherwise without manual handling of "database already exists" errors.
+                  IfNotExists controls what happens when a database of this name already
+                  exists. When unset (nil) or true, the operator emits
+                  `CREATE DATABASE ... IF NOT EXISTS`, a no-op on an existing database,
+                  and stops sending CREATE once SHOW DATABASES lists the sharded family.
+                  Set explicitly to false to emit `CREATE DATABASE` without the
+                  `IF NOT EXISTS` clause: Neo4j then refuses a name that already exists
+                  ("already exists") instead of the operator adopting it. Required when
+                  paired with `replaceExisting=true` (the destructive recreate path). The
+                  operator stops sending CREATE once the family exists if this resource
+                  created it (status.virtualDatabase names spec.name), so only a family it
+                  did not create is refused.
 
                   Pointer type rather than bool with default=true: a `bool` field with
                   `omitempty` would silently revert to the server-side default whenever

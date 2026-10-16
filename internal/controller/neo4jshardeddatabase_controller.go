@@ -466,15 +466,7 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 			fmt.Sprintf("Dropped existing sharded database %q before recreating from seed", shardedDB.Spec.Name))
 	}
 
-	// The family is created once. CREATE ran on every pass before — harmless
-	// with IF NOT EXISTS (a no-op on an existing name), but a DDL statement
-	// against the system database every pass for the life of the CR. And
-	// without IF NOT EXISTS, which replaceExisting requires, Neo4j refuses
-	// CREATE on an existing name, so every pass after a destructive restore
-	// failed with "already exists" and turned the CR Failed. The destructive
-	// pass always creates: it has just dropped the family, and the listing
-	// above predates the drop.
-	if !destructive && shardFamilyExists(shardedDB.Spec.Name, databases) {
+	if !shardCreateNeeded(shardedDB, destructive, databases) {
 		logger.V(1).Info("Sharded database already exists; not creating it again", "database", shardedDB.Spec.Name)
 	} else {
 		// Create the sharded database using Cypher 25 syntax in a single command
@@ -496,6 +488,40 @@ func (r *Neo4jShardedDatabaseReconciler) reconcileShardedDatabase(ctx context.Co
 	}
 
 	return destructive, nil
+}
+
+// shardCreateNeeded decides whether this pass sends CREATE DATABASE, from the
+// readiness SHOW DATABASES listing and the CR's persisted status.
+//
+// CREATE used to run on every pass. With IF NOT EXISTS that is a no-op on an
+// existing name, but a DDL statement against the system database on every
+// pass for the life of the CR. Without IF NOT EXISTS, which replaceExisting
+// requires, Neo4j refuses CREATE on an existing name, so every pass after a
+// destructive restore failed with "already exists" and turned the CR Failed.
+//
+// So CREATE is sent when:
+//   - this is the destructive pass, which has just dropped the family (the
+//     listing predates the drop);
+//   - the family is not listed;
+//   - the family is listed, ifNotExists is false, and this CR did not create
+//     it. ifNotExists: false means "create, do not adopt", and Neo4j's
+//     refusal is the answer it asks for. The validator does not tie it to
+//     replaceExisting, so it can meet a family made outside the operator.
+//
+// "This CR created it" is status.virtualDatabase naming spec.name: the
+// reconcile writes it from SHOW DATABASES only after its own CREATE succeeded
+// (or IF NOT EXISTS adopted the family), and for exactly spec.name. Status
+// survives an operator restart. creationTime and shardingReady are not tied
+// to a name, and spec.name can change.
+func shardCreateNeeded(sd *neo4jv1beta1.Neo4jShardedDatabase, destructive bool, databases []neo4j.DatabaseInfo) bool {
+	if destructive || !shardFamilyExists(sd.Spec.Name, databases) {
+		return true
+	}
+	if sd.Spec.IfNotExistsEffective() {
+		return false
+	}
+	recorded := sd.Status.VirtualDatabase != nil && sd.Status.VirtualDatabase.Name == sd.Spec.Name
+	return !recorded
 }
 
 // dropShardedDatabaseIfExists runs `CYPHER 25 DROP DATABASE name IF EXISTS

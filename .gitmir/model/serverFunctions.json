@@ -654,7 +654,7 @@
     "name": "Reconcile Neo4jShardedDatabase",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. CREATE DATABASE is sent only while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard) or on the destructive replaceExisting pass; ShardedDatabaseReady, SeedBackupPending and SeedProxyStarting are emitted only when the status write (transitionStatus) changes the phase or message.",
+    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. shardCreateNeeded decides whether CREATE DATABASE is sent: always on the destructive replaceExisting pass and while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard); for a listed family only under ifNotExists: false when this CR did not create it (status.virtualDatabase does not name spec.name), so Neo4j's 'already exists' refusal surfaces instead of the family being adopted. ShardedDatabaseReady, SeedBackupPending and SeedProxyStarting are emitted only when the status write (transitionStatus) changes the phase or message.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -679,7 +679,7 @@
     "name": "Create Sharded Database",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "create",
-    "description": "createShardedDatabase() executes the statement buildCreateShardedDatabaseCypher() renders: `CYPHER 25 CREATE DATABASE ... SET DEFAULT LANGUAGE CYPHER 25 SET GRAPH SHARD {...} SET PROPERTY SHARDS {...} OPTIONS {...}`, binding every seed/user-supplied value as a driver parameter. The language clause is always emitted: shard sub-databases inherit the parent's language, and the server no longer forces CYPHER_25 for sharding. Called only while SHOW DATABASES does not list the family, or right after the destructive replaceExisting drop: without IF NOT EXISTS (which replaceExisting requires) Neo4j refuses CREATE on an existing name.",
+    "description": "createShardedDatabase() executes the statement buildCreateShardedDatabaseCypher() renders: `CYPHER 25 CREATE DATABASE ... SET DEFAULT LANGUAGE CYPHER 25 SET GRAPH SHARD {...} SET PROPERTY SHARDS {...} OPTIONS {...}`, binding every seed/user-supplied value as a driver parameter. The language clause is always emitted: shard sub-databases inherit the parent's language, and the server no longer forces CYPHER_25 for sharding. Called on the destructive replaceExisting pass, while SHOW DATABASES does not list the family, or under ifNotExists: false for a family this CR did not create: without IF NOT EXISTS Neo4j refuses CREATE on an existing name, which is what ifNotExists: false asks for.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],

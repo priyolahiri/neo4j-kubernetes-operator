@@ -178,6 +178,51 @@ func TestShardedReconcile_ExistingFamilyIsNotCreated(t *testing.T) {
 	assert.Zero(t, server.count("CREATE DATABASE"))
 }
 
+// ifNotExists: false means "create, do not adopt": CREATE goes out without
+// IF NOT EXISTS, and Neo4j refuses a name that already exists. The validator
+// accepts it without replaceExisting, so a family this CR did not create must
+// still be refused, not silently adopted.
+func TestShardedReconcile_IfNotExistsFalseRefusesAFamilyItDidNotCreate(t *testing.T) {
+	server := &shardedServer{name: "products", exists: true}
+	sd := productsShardedDB()
+	sd.Spec.IfNotExists = ptr.To(false)
+	r, _ := shardedTestReconciler(t, server, shardingCluster(), sd)
+
+	err := reconcileSharded(t, r, sd)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "already exists", "Neo4j's refusal surfaces")
+	assert.Equal(t, 1, server.count("CREATE DATABASE"))
+	assert.NotContains(t, server.statements[0], "IF NOT EXISTS")
+
+	got := &neo4jv1beta1.Neo4jShardedDatabase{}
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(sd), got))
+	assert.Equal(t, "Failed", got.Status.Phase)
+	assert.Nil(t, got.Status.VirtualDatabase, "nothing records the family as this CR's")
+}
+
+// The family this CR created itself with ifNotExists: false is its own: the
+// passes after creation, and after an operator restart, do not send CREATE
+// again (which Neo4j would refuse).
+func TestShardedReconcile_IfNotExistsFalseSkipsTheFamilyItCreated(t *testing.T) {
+	server := &shardedServer{name: "products"}
+	sd := productsShardedDB()
+	sd.Spec.IfNotExists = ptr.To(false)
+	r, rec := shardedTestReconciler(t, server, shardingCluster(), sd)
+
+	for range 3 {
+		require.NoError(t, reconcileSharded(t, r, sd))
+	}
+	assert.Equal(t, 1, server.count("CREATE DATABASE"))
+
+	restarted := &Neo4jShardedDatabaseReconciler{Client: r.Client, Scheme: r.Scheme, Recorder: rec, newNeo4jClient: r.newNeo4jClient}
+	require.NoError(t, reconcileSharded(t, restarted, sd), "the record is in status, not in memory")
+	assert.Equal(t, 1, server.count("CREATE DATABASE"))
+
+	got := &neo4jv1beta1.Neo4jShardedDatabase{}
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(sd), got))
+	assert.Equal(t, "Ready", got.Status.Phase)
+}
+
 // replaceExisting needs ifNotExists: false, so the CREATE that every pass
 // sent after a destructive restore had no IF NOT EXISTS, and Neo4j refused
 // it: the pass after the restore failed with "already exists" and turned the
