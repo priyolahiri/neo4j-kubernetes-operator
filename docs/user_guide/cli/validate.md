@@ -87,6 +87,7 @@ What it adds is everything that lives in the operator's validators *beyond* the 
 - `spec.config` values Neo4j would refuse at startup, for the settings whose type the operator knows — `db.tx_log.buffer.size: "1MiB"` (a long), `server.memory.heap.max_size: "2Gi"` (a Kubernetes suffix, not a Neo4j unit), `db.transaction.timeout: "30 sec"`; see [Value types](../configuration.md#value-types-checked-before-apply)
 - TLS strictness and issuer-capability rules
 - storage, image, and licence-acceptance requirements
+- `spec.upgradeStrategy` timeouts (`upgradeTimeout`, `healthCheckTimeout`, `stabilizationTimeout`), which must be Go durations such as `30m`, `1h30m` or `90s` — `"5 minutes"` is refused, as the operator refuses it
 - advisory topology warnings — even server counts, two-server clusters with
   limited fault tolerance, all-PRIMARY or all-SECONDARY mode constraints
 
@@ -107,6 +108,16 @@ The operator has **27 CRD kinds, but only 13 have operator-side validators**. Th
 - Neo4jRestore/restore-1 (restore.yaml): skipped — no operator-side validator for Neo4jRestore; its CRD schema still applies (kubectl apply --dry-run=server)
 ```
 
+**Checked offline does not mean every rule ran.** One cluster rule compares the manifest with the cluster already running under its name: `spec.image.tag` against the version its servers run (`status.version`), which refuses a downgrade. A manifest carries no such state — a `status` in the file is ignored, as `kubectl apply` ignores it — so offline the summary says what was not checked:
+
+```
+✓ Neo4jEnterpriseCluster/prod (cluster.yaml): ok
+
+1 validated, 0 skipped — 0 error(s), 0 warning(s)
+run with --connect to also check a Neo4jEnterpriseCluster's spec.image.tag against the version the cluster already runs
+validated against operator rules v1.17.0
+```
+
 **Skipped is never a failure.** For the middle row, reporting "cluster not found" for a cluster that is merely unreachable would be a false error — worse than not checking — so the command declines to guess. For the bottom row, no amount of connecting will help, and the message says so rather than sending you after a check that does not exist.
 
 ### Checking cross-references with `--connect`
@@ -119,7 +130,16 @@ kubectl neo4j validate -f manifests/ --connect -n team-a    # namespace for mani
 
 Connecting is **opt-in**. Defaulting to the current context would make a command documented as offline fail in CI, where there is usually no kubeconfig at all.
 
-With a connection, the command resolves `clusterRef`s, password Secrets and role references, and adds a third finding type:
+With a connection, the command resolves `clusterRef`s, password Secrets and role references, and checks a cluster manifest against the cluster of the same name that already runs, as the operator will once it is applied:
+
+```
+Neo4jEnterpriseCluster/prod (cluster.yaml):
+  ✗ spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
+```
+
+A cluster that does not exist yet has nothing to compare with. One the command cannot read (no `get` permission) is a warning saying the tag was not checked, rather than a silent pass.
+
+The connection also adds a third finding type:
 
 ```
 Neo4jUser/analytics (users.yaml):
@@ -141,7 +161,7 @@ It is advisory and silent when it cannot tell — the operator may be in a names
 
 ### Required permissions
 
-`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster`, `Neo4jEnterpriseStandalone`, `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, and `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
+`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster` (for a cluster manifest, the running cluster's status; for the other kinds, their `clusterRef`), `Neo4jEnterpriseStandalone`, `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, and `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
 
 ### A clean run may not be the last word
 

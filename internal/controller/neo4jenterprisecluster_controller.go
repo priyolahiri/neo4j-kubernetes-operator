@@ -326,77 +326,38 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		// Apply defaults to the cluster
 		r.Validator.ApplyDefaults(ctx, cluster)
 
-		// Check if this is an update by looking at the generation. Every object
-		// read from the API server has a CreationTimestamp, so this is true on
-		// every pass, a cluster's first included: it decides which validations
-		// run, not what a refusal is called (see clusterEverAccepted).
-		isUpdate := cluster.Generation > 1 || !cluster.CreationTimestamp.IsZero()
+		// One set of rules on every pass. There is no webhook, so there is no
+		// previous spec to compare an edit with — reading the object again
+		// returns the same spec, which is what the update-only rules used to
+		// compare with itself (operations.md id 139). The rules that depend on
+		// what the cluster already runs read it from status (status.version).
+		result := r.Validator.ValidateWithWarnings(ctx, cluster)
 
-		if isUpdate {
-			// For updates, we need to get the current state from the API server
-			// to compare with the new desired state. This reads the same object
-			// again, so the update-only checks compare its spec with itself.
-			currentCluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-			if err := r.Get(ctx, req.NamespacedName, currentCluster); err != nil {
-				if !errors.IsNotFound(err) {
-					logger.Error(err, "Failed to get current cluster state for validation")
-					return ctrl.Result{}, err
-				}
-				// If not found, treat as create
-				isUpdate = false
+		// Emit warnings as events
+		r.recordValidationWarnings(cluster, result)
+
+		if len(result.Errors) > 0 {
+			err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
+			// What a refusal is called follows whether any pass has accepted
+			// the cluster: "Update validation failed" on a first apply sent
+			// people looking for an edit they never made.
+			event, status := "Cluster update validation failed", "Update validation failed"
+			if !clusterEverAccepted(cluster) {
+				event, status = "Cluster validation failed", "Validation failed"
 			}
-
-			if isUpdate {
-				// Validate the cluster update with warnings
-				result := r.Validator.ValidateUpdateWithWarnings(ctx, currentCluster, cluster)
-
-				// Emit warnings as events
-				r.recordValidationWarnings(cluster, result)
-
-				// Check for validation errors
-				if len(result.Errors) > 0 {
-					err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
-					// A cluster no pass has ever accepted is being created,
-					// whatever isUpdate says: "Update validation failed" on a
-					// first apply sent people looking for an edit they never
-					// made.
-					event, status := "Cluster update validation failed", "Update validation failed"
-					if !clusterEverAccepted(cluster) {
-						event, status = "Cluster validation failed", "Validation failed"
-					}
-					logger.Error(err, event)
-					// Announced when the failure starts or its message
-					// changes, not on every RequeueAfter while the spec stays
-					// invalid (knowledge rule 136).
-					if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err)) {
-						r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "%s: %v", event, err)
-					}
-					// A spec the user must fix is not a reconcile error: it is
-					// already logged, evented and in status, and returning it
-					// would make controller-runtime ignore RequeueAfter and
-					// retry on error backoff instead. The same holds for the
-					// validation returns below.
-					return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-				}
+			logger.Error(err, event)
+			// Announced when the failure starts or its message changes, not
+			// on every RequeueAfter while the spec stays invalid (knowledge
+			// rule 136).
+			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err)) {
+				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "%s: %v", event, err)
 			}
-		}
-
-		if !isUpdate {
-			// Validate the cluster configuration for create with warnings
-			result := r.Validator.ValidateCreateWithWarnings(ctx, cluster)
-
-			// Emit warnings as events
-			r.recordValidationWarnings(cluster, result)
-
-			// Check for validation errors
-			if len(result.Errors) > 0 {
-				err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
-				logger.Error(err, "Cluster validation failed")
-				if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Validation failed: %v", err)) {
-					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "Cluster validation failed: %v", err)
-				}
-				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-			}
+			// A spec the user must fix is not a reconcile error: it is
+			// already logged, evented and in status, and returning it
+			// would make controller-runtime ignore RequeueAfter and
+			// retry on error backoff instead. The same holds for the
+			// validation returns below.
+			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 
 		// Validate server role hints for both create and update

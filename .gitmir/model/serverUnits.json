@@ -382,7 +382,7 @@
     "id": "su-validation",
     "name": "Inline Spec Validators",
     "kind": "service",
-    "description": "Inline spec validators under internal/validation/, one struct per CRD, called synchronously from each reconciler's Reconcile — explicitly NOT a Kubernetes admission webhook, which this project forbids (invariant 1). Also owns the advisory warnings for schema fields that are accepted but not read by any code (noeffect_warnings.go), which reconcilers emit as ValidationWarning events without blocking.",
+    "description": "Inline spec validators under internal/validation/, one struct per CRD, called synchronously from each reconciler's Reconcile and run client-side by `kubectl neo4j validate` — explicitly NOT a Kubernetes admission webhook, which this project forbids (invariant 1). Also owns the advisory warnings for schema fields that are accepted but not read by any code (noeffect_warnings.go), which reconcilers emit as ValidationWarning events without blocking. With no webhook there is no previous spec: a rule that needs the running state reads what the operator recorded in status (the cluster's image tag against status.version).",
     "entityIds": [],
     "dependsOn": [],
     "moduleId": "mod-platform",
@@ -395,7 +395,9 @@
       "internal/validation/noeffect_warnings.go",
       "internal/validation/config_validator.go",
       "internal/validation/setting_values.go",
-      "internal/validation/memory_validator.go"
+      "internal/validation/memory_validator.go",
+      "internal/validation/cluster_validator.go",
+      "internal/validation/upgrade_validator.go"
     ]
   },
   {

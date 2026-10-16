@@ -31,7 +31,8 @@
         "id": "f-neo4jenterprisecluster-image-tag",
         "name": "image.tag",
         "type": "string",
-        "isNullable": false
+        "isNullable": false,
+        "note": "Neo4j version tag (5.26.x or 2025.01+); a change is checked against status.version on every pass, and a downgrade is refused."
       },
       {
         "id": "f-neo4jenterprisecluster-topology-servers",
@@ -184,7 +185,7 @@
         "name": "status.version",
         "type": "string",
         "isNullable": true,
-        "note": "Current observed Neo4j version running in the cluster"
+        "note": "The image tag every server was verified to run: stamped at the first Ready and after each verified upgrade, unchanged while an upgrade is in flight or after one fails. spec.image.tag is validated against it on every pass (no downgrades)."
       },
       {
         "id": "f-neo4jenterprisecluster-cross-cluster-replication-enabled",

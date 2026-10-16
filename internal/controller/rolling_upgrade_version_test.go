@@ -46,99 +46,10 @@ func TestParseVersion(t *testing.T) {
 	}
 }
 
-func TestIsCalVer(t *testing.T) {
-	r := newOrchestrator()
-	assert.True(t, r.isCalVer(&VersionInfo{2025, 1, 0}))
-	assert.True(t, r.isCalVer(&VersionInfo{2026, 0, 0}))
-	assert.False(t, r.isCalVer(&VersionInfo{5, 26, 0}))
-	assert.False(t, r.isCalVer(&VersionInfo{2024, 12, 0}))
-}
-
-func TestIsSemVer(t *testing.T) {
-	r := newOrchestrator()
-	assert.True(t, r.isSemVer(&VersionInfo{5, 26, 0}))
-	assert.True(t, r.isSemVer(&VersionInfo{4, 4, 0}))
-	assert.False(t, r.isSemVer(&VersionInfo{3, 5, 0}))
-	assert.False(t, r.isSemVer(&VersionInfo{2025, 1, 0}))
-}
-
-func TestIsDowngrade(t *testing.T) {
-	r := newOrchestrator()
-
-	tests := []struct {
-		name     string
-		current  *VersionInfo
-		target   *VersionInfo
-		expected bool
-	}{
-		{"patch upgrade", &VersionInfo{5, 26, 0}, &VersionInfo{5, 26, 1}, false},
-		{"patch downgrade", &VersionInfo{5, 26, 1}, &VersionInfo{5, 26, 0}, true},
-		{"minor downgrade", &VersionInfo{5, 26, 0}, &VersionInfo{5, 25, 0}, true},
-		{"calver upgrade", &VersionInfo{2025, 1, 0}, &VersionInfo{2025, 2, 0}, false},
-		{"calver downgrade", &VersionInfo{2025, 2, 0}, &VersionInfo{2025, 1, 0}, true},
-		{"semver to calver", &VersionInfo{5, 26, 0}, &VersionInfo{2025, 1, 0}, false},
-		{"calver to semver always downgrade", &VersionInfo{2025, 1, 0}, &VersionInfo{5, 26, 0}, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, r.isDowngrade(tt.current, tt.target))
-		})
-	}
-}
-
-func TestValidateCalVerUpgrade(t *testing.T) {
-	r := newOrchestrator()
-
-	assert.NoError(t, r.validateCalVerUpgrade(
-		&VersionInfo{2025, 1, 0}, &VersionInfo{2025, 1, 1}, "2025.1.0", "2025.1.1"))
-	assert.NoError(t, r.validateCalVerUpgrade(
-		&VersionInfo{2025, 1, 0}, &VersionInfo{2025, 2, 0}, "2025.1.0", "2025.2.0"))
-	assert.NoError(t, r.validateCalVerUpgrade(
-		&VersionInfo{2025, 12, 0}, &VersionInfo{2026, 1, 0}, "2025.12.0", "2026.1.0"))
-}
-
-func TestValidateSemVerUpgrade(t *testing.T) {
-	r := newOrchestrator()
-
-	t.Run("patch within 5.26.x", func(t *testing.T) {
-		assert.NoError(t, r.validateSemVerUpgrade(
-			&VersionInfo{5, 26, 0}, &VersionInfo{5, 26, 1}, "5.26.0", "5.26.1"))
-	})
-
-	t.Run("different minor rejected", func(t *testing.T) {
-		assert.Error(t, r.validateSemVerUpgrade(
-			&VersionInfo{5, 25, 0}, &VersionInfo{5, 26, 0}, "5.25.0", "5.26.0"))
-	})
-
-	t.Run("5.27 not supported", func(t *testing.T) {
-		assert.Error(t, r.validateSemVerUpgrade(
-			&VersionInfo{5, 27, 0}, &VersionInfo{5, 27, 1}, "5.27.0", "5.27.1"))
-	})
-
-	t.Run("4.x not supported", func(t *testing.T) {
-		assert.Error(t, r.validateSemVerUpgrade(
-			&VersionInfo{4, 4, 0}, &VersionInfo{4, 4, 1}, "4.4.0", "4.4.1"))
-	})
-}
-
-func TestValidateSemVerToCalVerUpgrade(t *testing.T) {
-	r := newOrchestrator()
-
-	t.Run("5.26 to 2025.x allowed", func(t *testing.T) {
-		assert.NoError(t, r.validateSemVerToCalVerUpgrade(
-			&VersionInfo{5, 26, 0}, &VersionInfo{2025, 1, 0}, "5.26.0", "2025.1.0"))
-	})
-
-	t.Run("5.25 to 2025.x rejected", func(t *testing.T) {
-		assert.Error(t, r.validateSemVerToCalVerUpgrade(
-			&VersionInfo{5, 25, 0}, &VersionInfo{2025, 1, 0}, "5.25.0", "2025.1.0"))
-	})
-
-	t.Run("4.x to 2025.x rejected", func(t *testing.T) {
-		assert.Error(t, r.validateSemVerToCalVerUpgrade(
-			&VersionInfo{4, 4, 0}, &VersionInfo{2025, 1, 0}, "4.4.0", "2025.1.0"))
-	})
-}
+// The upgrade-path rules (downgrades, SemVer/CalVer paths) live in one place,
+// validation.UpgradeValidator.ValidateVersionUpgrade, which validateVersionCompatibility
+// delegates to; their cases are in internal/validation/upgrade_validator_test.go, and
+// TestValidateVersionCompatibility (upgrade_detection_test.go) pins the delegation.
 
 func TestGetUpgradeTimeout(t *testing.T) {
 	r := newOrchestrator()

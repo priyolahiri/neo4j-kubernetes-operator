@@ -49,7 +49,6 @@ type ClusterValidator struct {
 	authValidator     *AuthValidator
 	upgradeValidator  *UpgradeValidator
 	memoryValidator   *MemoryValidator
-	resourceValidator *ResourceValidator
 	configValidator   *ConfigValidator
 }
 
@@ -65,7 +64,6 @@ func NewClusterValidator(client client.Client) *ClusterValidator {
 		authValidator:     NewAuthValidator(),
 		upgradeValidator:  NewUpgradeValidator(),
 		memoryValidator:   NewMemoryValidator(),
-		resourceValidator: NewResourceValidator(client),
 		configValidator:   NewConfigValidator(),
 	}
 }
@@ -73,17 +71,6 @@ func NewClusterValidator(client client.Client) *ClusterValidator {
 // ValidateCreate validates a Neo4jEnterpriseCluster for creation
 func (v *ClusterValidator) ValidateCreate(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	allErrs := v.validateCluster(ctx, cluster)
-	if len(allErrs) > 0 {
-		return fmt.Errorf("validation failed: %s", allErrs.ToAggregate().Error())
-	}
-	return nil
-}
-
-// ValidateUpdate validates a Neo4jEnterpriseCluster for update
-func (v *ClusterValidator) ValidateUpdate(ctx context.Context, oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
-	allErrs := v.validateCluster(ctx, newCluster)
-	allErrs = append(allErrs, v.validateClusterUpdate(ctx, oldCluster, newCluster)...)
-
 	if len(allErrs) > 0 {
 		return fmt.Errorf("validation failed: %s", allErrs.ToAggregate().Error())
 	}
@@ -193,6 +180,13 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	allErrs = append(allErrs, v.tlsValidator.Validate(cluster)...)
 	allErrs = append(allErrs, v.authValidator.Validate(cluster)...)
 
+	// spec.upgradeStrategy needs only the spec, so it is checked here, where
+	// `kubectl neo4j validate` checks it too. It used to sit with the
+	// update-only rules, where the operator ran it on every pass and the CLI
+	// never did: a timeout of "5 minutes" passed validate and was refused on
+	// apply.
+	allErrs = append(allErrs, v.upgradeValidator.ValidateUpgradeStrategy(cluster)...)
+
 	// spec.config validation — rejects deprecated keys, operator-managed
 	// discovery/SSL keys, per-pod runtime-managed keys (advertised
 	// addresses, topology) that would collide with the operator's own
@@ -264,47 +258,8 @@ func resolveAdminSecretName(auth *neo4jv1beta1.AuthSpec) string {
 	return resources.DefaultAdminSecret
 }
 
-// validateClusterUpdate performs validation specific to cluster updates
-func (v *ClusterValidator) validateClusterUpdate(ctx context.Context, oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
-	var allErrs field.ErrorList
-
-	// Validate scaling resource requirements
-	if v.isScalingUp(oldCluster, newCluster) {
-		allErrs = append(allErrs, v.resourceValidator.ValidateScaling(ctx, newCluster, newCluster.Spec.Topology)...)
-	}
-
-	// Prevent downgrading server count below minimum
-	if newCluster.Spec.Topology.Servers < oldCluster.Spec.Topology.Servers {
-		if newCluster.Spec.Topology.Servers < 2 {
-			allErrs = append(allErrs, field.Invalid(
-				field.NewPath("spec", "topology", "servers"),
-				newCluster.Spec.Topology.Servers,
-				"cannot reduce servers below 2",
-			))
-		}
-	}
-
-	// Validate image upgrades
-	if oldCluster.Spec.Image.Tag != newCluster.Spec.Image.Tag {
-		if upgradeErrs := v.upgradeValidator.ValidateVersionUpgrade(oldCluster.Spec.Image.Tag, newCluster.Spec.Image.Tag); len(upgradeErrs) > 0 {
-			allErrs = append(allErrs, upgradeErrs...)
-		}
-	}
-
-	// Validate upgrade strategy changes
-	if newCluster.Spec.UpgradeStrategy != nil {
-		allErrs = append(allErrs, v.upgradeValidator.ValidateUpgradeStrategy(newCluster)...)
-	}
-
-	return allErrs
-}
-
-// isScalingUp checks if the cluster is scaling up (increasing server count)
-func (v *ClusterValidator) isScalingUp(oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	return newCluster.Spec.Topology.Servers > oldCluster.Spec.Topology.Servers
-}
-
-// ValidateCreateWithWarnings validates a Neo4jEnterpriseCluster for creation and returns warnings
+// ValidateCreateWithWarnings runs the rules that need only the spec: what a
+// cluster that does not run yet is held to, and a part of every later pass.
 func (v *ClusterValidator) ValidateCreateWithWarnings(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ClusterValidationResult {
 	result := ClusterValidationResult{
 		Errors:   v.validateCluster(ctx, cluster),
@@ -319,19 +274,42 @@ func (v *ClusterValidator) ValidateCreateWithWarnings(ctx context.Context, clust
 	return result
 }
 
-// ValidateUpdateWithWarnings validates a Neo4jEnterpriseCluster for update and returns warnings
-func (v *ClusterValidator) ValidateUpdateWithWarnings(ctx context.Context, oldCluster, newCluster *neo4jv1beta1.Neo4jEnterpriseCluster) ClusterValidationResult {
-	result := ClusterValidationResult{
-		Errors: v.validateCluster(ctx, newCluster),
-	}
-	result.Errors = append(result.Errors, v.validateClusterUpdate(ctx, oldCluster, newCluster)...)
-
-	// Get topology warnings
-	topologyResult := v.topologyValidator.ValidateWithWarnings(newCluster)
-	result.Warnings = append(result.Warnings, topologyResult.Warnings...)
-	result.NoEffectWarnings = v.NoEffectWarnings(newCluster)
-
+// ValidateWithWarnings is what the reconciler runs on every pass, and what
+// `kubectl neo4j validate` runs: the spec rules (ValidateCreateWithWarnings)
+// plus the rules that compare the spec with what the cluster already runs.
+//
+// There is no admission webhook, so there is no previous spec to compare with:
+// the reconciler only ever sees the object as it is now. What the cluster runs
+// is read from the status the operator writes, so a cluster with no status (a
+// manifest not yet applied) is held to the spec rules alone.
+func (v *ClusterValidator) ValidateWithWarnings(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ClusterValidationResult {
+	result := v.ValidateCreateWithWarnings(ctx, cluster)
+	result.Errors = append(result.Errors, v.validateAgainstRunning(cluster)...)
 	return result
+}
+
+// validateAgainstRunning holds the rules that need the cluster's running state.
+//
+// spec.image.tag is checked against status.version, the version the operator
+// verified every server runs. It is set at the first Ready and after each
+// verified upgrade, and it stays at the version the servers ran while an
+// upgrade is in flight or after one failed, so moving the tag back to it (or
+// onto a later target) is not a downgrade. The check also covers the paths
+// where the upgrade machine checks nothing: a target changed mid-upgrade,
+// which re-stages without a version check, and a cluster with no ready server,
+// whose new image goes straight to the StatefulSet.
+//
+// The server count has no rule here. At least two servers is a spec rule, a
+// scale-down is the drain's to carry out or refuse with its reason
+// (internal/controller/scale_down.go), and whether added servers fit on the
+// nodes is the scheduler's call: `kubectl neo4j preflight` estimates it before
+// an apply, and a server that does not fit stays Pending.
+func (v *ClusterValidator) validateAgainstRunning(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
+	if cluster.Status.Version == "" || v.upgradeValidator.parseVersion(cluster.Spec.Image.Tag) == nil {
+		// Nothing verified yet, or a tag the image rule already refuses.
+		return nil
+	}
+	return v.upgradeValidator.ValidateVersionUpgrade(cluster.Status.Version, cluster.Spec.Image.Tag)
 }
 
 // validatePropertySharding validates property sharding configuration and version requirements.
