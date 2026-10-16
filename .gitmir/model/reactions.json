@@ -47,5 +47,35 @@
         "description": "Emits a SplitBrainDetected Warning event on detection, then a SplitBrainRepaired Normal event on successful repair or SplitBrainRepairFailed if a pod deletion errors."
       }
     ]
+  },
+  {
+    "id": "rx-plugin-target-self-heal",
+    "name": "Plugin Restores What Its Target Lost",
+    "description": "When a Neo4jPlugin's target StatefulSet (a cluster's {name}-server, a standalone's {name}) is created or its pod template changes, the plugin controller re-checks every Ready plugin targeting it. If the template still carries what the plugin set, nothing is written and the plugin stays Ready; if something removed it (NEO4J_PLUGINS, a variable the plugin sets), the plugin turns Installing, emits PluginMissing and writes it back, which restarts the servers. Values someone else gave the plugin's variables are left alone, and variables the cluster renders from its own spec are never overwritten.",
+    "moduleId": "mod-plugins",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "StatefulSet.spec.template (the target's server StatefulSet; a standalone's StatefulSet likewise)",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "recalculate",
+        "entityId": "ent-neo4jplugin",
+        "fieldName": "status.phase",
+        "description": "Ready stays Ready when nothing is missing; otherwise Installing until the restored servers are ready, then Ready again."
+      },
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet.spec.template.spec.containers[neo4j].env",
+        "description": "Writes back the missing NEO4J_PLUGINS entry or plugin variable (or, on a standalone, removes a leftover env copy of the plugin's neo4j.conf settings)."
+      },
+      {
+        "kind": "notify",
+        "entityId": "ent-neo4jplugin",
+        "description": "Emits a PluginMissing Warning naming what the StatefulSet no longer holds."
+      }
+    ]
   }
 ]

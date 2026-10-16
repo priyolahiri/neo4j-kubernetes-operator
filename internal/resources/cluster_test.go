@@ -82,6 +82,14 @@ func TestNeo4jSettingEnvVarName(t *testing.T) {
 		resources.Neo4jSettingEnvVarName("server.unmanaged_extension_classes"))
 }
 
+func TestIsAdditiveConfEnvName(t *testing.T) {
+	assert.True(t, resources.IsAdditiveConfEnvName("NEO4J_dbms_security_procedures_unrestricted"))
+	assert.True(t, resources.IsAdditiveConfEnvName("NEO4J_dbms_security_http__auth__allowlist"))
+	assert.False(t, resources.IsAdditiveConfEnvName("NEO4J_dbms_security_http_auth_allowlist"), "an unescaped underscore names another setting")
+	assert.False(t, resources.IsAdditiveConfEnvName("NEO4J_apoc_export_file_enabled"))
+	assert.False(t, resources.IsAdditiveConfEnvName("NEO4J_PLUGINS"))
+}
+
 func TestUpsertNeo4jConfSettings(t *testing.T) {
 	conf := strings.Join([]string{
 		"# base",

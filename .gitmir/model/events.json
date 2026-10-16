@@ -992,13 +992,19 @@
   {
     "id": "ev-plugin-install-failed",
     "name": "PluginInstallFailed",
-    "description": "Emitted when validating or merging a Neo4jPlugin into its target fails.",
+    "description": "Emitted when merging a Neo4jPlugin into its target or configuring it fails for a reason that needs action (including a variable the cluster's own spec sets, which the plugin will not overwrite). Emitted once per failure; the plugin is retried every RequeueAfter without repeating it. A StatefulSet conflict or an unreachable server while the servers restart is not a failure: the plugin stays Installing and no event is emitted.",
     "moduleId": "mod-plugins"
   },
   {
     "id": "ev-plugin-duplicate",
     "name": "PluginDuplicate",
     "description": "Emitted when another Neo4jPlugin CR in the same namespace already targets the same clusterRef with the same spec.name; the newer CR (by creationTimestamp) is marked Failed rather than racing on the shared NEO4J_PLUGINS value.",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-missing",
+    "name": "PluginMissing",
+    "description": "Warning on a Ready Neo4jPlugin whose target StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS entry, a variable it sets, or, on a standalone, a leftover env copy of its neo4j.conf settings is still there). The plugin goes back to Installing and restores it, which restarts the servers.",
     "moduleId": "mod-plugins"
   },
   {
