@@ -4364,7 +4364,7 @@
 <tr>
 <td><code>privilegeRenderingScope</code></td>
 <td><code>string</code></td>
-<td>Learn mode: digest of the server, image and alias targets the renderings were learned against. A change re-learns them.</td>
+<td>Learn mode: digest of the server, image and the targets of the aliases the role's statements name (every alias, for a role with a statement the operator cannot read) that the renderings were learned against. A change re-learns them; a pass that cannot list the aliases changes nothing.</td>
 </tr>
 <tr>
 <td><code>unattributedPrivileges</code></td>
