@@ -4516,7 +4516,7 @@ and alerting systems.</p>
 <tr>
 <td><code>SeedEndpointNotProjected</code></td>
 <td>Warning</td>
-<td>A cluster restore's server pods lack the cloud credentials or custom S3 endpoint (<code>AWS_ENDPOINT_URL_S3</code>) the seed fetch needs, and the cluster is not opted in to <code>neo4j.com/auto-inherit-seed-creds</code>; the restore goes <code>Failed</code> with the missing items named</td>
+<td>An online restore's server pods (cluster or standalone) lack the cloud credentials or custom S3 endpoint (<code>AWS_ENDPOINT_URL_S3</code>) the seed fetch needs, and the target is not opted in to <code>neo4j.com/auto-inherit-seed-creds</code>. The restore waits in <code>Pending</code> with the missing items named, and carries on once the target has them or is opted in. Emitted when the restore starts waiting</td>
 </tr>
 <tr>
 <td><code>RestoreSeedProgress</code></td>
