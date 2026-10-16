@@ -323,12 +323,24 @@ When an alias is retargeted, a privilege granted through it stays on the
 **old** target — as it does in Neo4j itself — and gains the new one. Revoke the
 old target's row by hand if it should go.
 
-Learn mode also re-learns when the cluster's alias layout changes — an alias
-created, dropped or retargeted, a composite constituent added or removed — or
-the image changes: it grants every statement of every role on that cluster
-once more. Those grants change nothing unless a statement's stored form moved,
-and `PrivilegesApplied` counts only the ones that added a row, so an unchanged
-role reports nothing.
+Learn mode also re-learns a role — grants each of its statements once more —
+when the image changes, or when an alias one of its statements names is
+created, dropped or retargeted (a composite constituent it names counts, by its
+`composite.constituent` name). Those grants change nothing unless a statement's
+stored form moved, and `PrivilegesApplied` counts only the ones that added a
+row, so an unchanged role reports nothing. A change to an alias the role does
+not name re-learns nothing — it cannot change how the role's privileges are
+stored — except on a role with a statement on `*` (`ON DATABASE *`,
+`ON GRAPH *`) or a statement whose targets the operator cannot read (such as
+`LOAD ON ALL DATA`): such a role re-learns on any alias change on the cluster.
+A pass that cannot list the cluster's databases or aliases changes nothing
+either: the operator keeps what it learned and compares again on the next
+pass.
+
+After upgrading to an operator release with this behaviour, each role whose
+statements name their databases re-learns once — one round of grants that
+change nothing and are not reported — and then settles. Roles with a
+statement on `*` re-learn nothing.
 
 !!! warning "Upgrade the CRDs with the operator"
     Learn mode keeps its state in `Neo4jRole` status fields that older CRDs do
@@ -344,10 +356,11 @@ role reports nothing.
 `--privilege-normalisation=probe` attributes every row exactly, including on
 roles that already had privileges. It grants each distinct statement once to a
 short-lived role named `operator_privilege_probe_<random>`, reads it back and
-drops that role. The result is cached in memory per server version and alias
-layout, so this happens once per statement per operator process, not on every
-reconcile. It also moves a privilege when the alias it was granted through is
-retargeted.
+drops that role. The result is cached in memory per server version and the
+targets of the aliases the role's statements name (every alias, for a role
+with a statement on `*`), so this happens once per statement per operator
+process, not on every reconcile. It also moves a privilege when the alias it
+was granted through is retargeted.
 
 Those short-lived roles appear in Neo4j's security log, which is why this is
 not the default. A role with that prefix that survives was left by an operator

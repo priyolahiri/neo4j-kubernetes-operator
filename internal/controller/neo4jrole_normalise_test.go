@@ -259,6 +259,89 @@ func TestAliasFingerprintTracksTargets(t *testing.T) {
 	assert.NotEqual(t, a, c, "retargeting an alias changes what a grant on it means")
 }
 
+// A role's alias fingerprint covers the aliases its statements name — matched
+// as Neo4j matches names, case-insensitively, a constituent by its qualified
+// name — and every alias once a statement is on `*`.
+func TestRoleAliasFingerprint(t *testing.T) {
+	layout := []neo4jclient.AliasInfo{
+		{Name: "orders", Database: "orders-v1"},
+		{Name: "reports", Database: "reports-v1"},
+		{Name: "cineasts.latest", Composite: "cineasts", Database: "movies"},
+		{Name: "upcoming", Database: "upcoming", Location: "remote", URL: "neo4j+s://elsewhere:7687"},
+	}
+	only := func(names ...string) string {
+		var picked []neo4jclient.AliasInfo
+		for _, a := range layout {
+			for _, n := range names {
+				if a.Name == n {
+					picked = append(picked, a)
+				}
+			}
+		}
+		return aliasFingerprint(picked)
+	}
+
+	cases := []struct {
+		name  string
+		stmts []string
+		want  string
+	}{
+		{"the alias a statement names", []string{"GRANT ACCESS ON DATABASE orders TO r"}, only("orders")},
+		{"matched ignoring case", []string{"GRANT ACCESS ON DATABASE `ORDERS` TO r"}, only("orders")},
+		{"over every statement", []string{
+			"GRANT ACCESS ON DATABASE orders TO r",
+			"GRANT MATCH {*} ON GRAPH reports NODES * TO r",
+		}, only("orders", "reports")},
+		{"a constituent by its qualified name", []string{"GRANT ACCESS ON DATABASE cineasts.latest TO r"},
+			only("cineasts.latest")},
+		{"a remote alias, with its URL", []string{"GRANT ACCESS ON DATABASE upcoming TO r"}, only("upcoming")},
+		{"not a composite's constituents: a grant on the composite is stored on it",
+			[]string{"GRANT ACCESS ON DATABASE cineasts TO r"}, ""},
+		{"a database that is no alias", []string{"GRANT ACCESS ON DATABASE sales TO r"}, ""},
+		{"DBMS and HOME name none", []string{
+			"GRANT ROLE MANAGEMENT ON DBMS TO r", "GRANT ACCESS ON HOME DATABASE TO r",
+		}, ""},
+		{"no statements", nil, ""},
+		{"a statement on * takes them all", []string{
+			"GRANT ACCESS ON DATABASE orders TO r", "GRANT MATCH {*} ON GRAPH * NODES * TO r",
+		}, aliasFingerprint(layout)},
+		{"so does one that cannot be read", []string{"GRANT LOAD ON ALL DATA TO r"}, aliasFingerprint(layout)},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, roleAliasFingerprint(layout, tc.stmts))
+		})
+	}
+}
+
+// An alias layout that could not be read is "" — unknown — and no aliases is
+// a real scope.
+func TestRoleRenderingScope_UnknownIsNotEmpty(t *testing.T) {
+	stmts := []string{"GRANT ACCESS ON DATABASE orders TO r"}
+	assert.Empty(t, roleRenderingScope(ResolvedTarget{}, nil, false, stmts))
+	assert.NotEmpty(t, roleRenderingScope(ResolvedTarget{}, nil, true, stmts))
+}
+
+// Probe mode under an unknown alias layout: no cache key is safe, so it probes
+// without the cache — nothing read from it, nothing left in it for a later
+// pass to be served.
+func TestNormaliseDesired_UnknownAliasLayoutIsNotCached(t *testing.T) {
+	p := newFixtureProber(t, loadRenderingFixture(t))
+	r := &Neo4jRoleReconciler{}
+	stmts := []string{"GRANT MATCH {*} ON GRAPH sales NODES * TO a"}
+	unknown := roleRenderingScope(ResolvedTarget{}, nil, false, stmts)
+
+	r.normaliseDesired(context.Background(), p, unknown, "a", stmts, nil)
+	desired, _ := r.normaliseDesired(context.Background(), p, unknown, "a", stmts, nil)
+	assert.Equal(t, 2, p.calls, "probed on each pass")
+	assert.Equal(t, []string{"GRANT MATCH {*} ON GRAPH sales NODE * TO a"}, desired)
+
+	// The key a layout with no aliases gives this role: what an unknown
+	// layout used to be read as.
+	r.normaliseDesired(context.Background(), p, roleRenderingScope(ResolvedTarget{}, nil, true, stmts), "a", stmts, nil)
+	assert.Equal(t, 3, p.calls, "a known layout is not served what the unknown one probed")
+}
+
 type proberFunc func(role, stmt string) ([]string, error)
 
 func (f proberFunc) ProbePrivilegeRendering(_ context.Context, role, stmt string) ([]string, error) {

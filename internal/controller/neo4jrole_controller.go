@@ -178,7 +178,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// missing one is neither probed nor applied. A failure to LIST databases
 	// withholds nothing: unknown is not missing, and treating it as missing
 	// would silently withhold every grant on a transient error.
-	known, aliasPrint, knownErr := r.resolvableDatabaseNames(ctx, nc)
+	known, aliases, aliasesListed, knownErr := r.resolvableDatabaseNames(ctx, nc)
 	resolves := func(stmt string) bool {
 		if knownErr != nil {
 			return true
@@ -191,14 +191,15 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return true
 	}
 
-	scope := renderingScope(target, aliasPrint)
+	stmts := rolePrivilegeStatements(role)
+	scope := roleRenderingScope(target, aliases, aliasesListed, stmts)
 	if r.learnMode() {
 		return r.reconcileLearned(ctx, nc, role, roleName, scope, resolves, requeue)
 	}
 
 	// Privilege diff, against the server's own rendering of each statement
 	// (see neo4jrole_normalise.go) rather than the spec text.
-	desired, desiredByCanonical := r.normaliseDesired(ctx, nc, scope, roleName, rolePrivilegeStatements(role), resolves)
+	desired, desiredByCanonical := r.normaliseDesired(ctx, nc, scope, roleName, stmts, resolves)
 	current, immutableSet, currentByCanonical, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
 	if err != nil {
 		return r.fail(ctx, role, "fetch current privileges failed", err, requeue)
@@ -441,7 +442,7 @@ func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
 		return
 	}
 
-	known, _, err := r.resolvableDatabaseNames(ctx, nc)
+	known, _, _, err := r.resolvableDatabaseNames(ctx, nc)
 	if err != nil {
 		// Unknown is not the same as missing. Say nothing rather than warn
 		// about databases we simply could not list.
@@ -577,36 +578,37 @@ func (r *Neo4jRoleReconciler) compositeGraphTargets(
 // included because naming one is not by itself a mistake — the privilege
 // simply resolves to the alias's target.
 //
-// It also returns a fingerprint of every alias's target, which privilege
-// normalisation keys on: Neo4j stores a grant on an alias against the alias's
+// It also returns the aliases, which privilege normalisation keys on (see
+// roleRenderingScope): Neo4j stores a grant on an alias against the alias's
 // target database, so retargeting an alias changes what a statement means.
+// listed is false when they could not be read; nil aliases alone do not say
+// that, since a DBMS with no aliases lists none.
 func (r *Neo4jRoleReconciler) resolvableDatabaseNames(
 	ctx context.Context, nc *neo4jclient.Client,
-) (map[string]bool, string, error) {
+) (known map[string]bool, aliases []neo4jclient.AliasInfo, listed bool, err error) {
 	databases, err := nc.GetDatabases(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, nil, false, err
 	}
 	// Keys are lower-cased: Neo4j database names are case-insensitive —
 	// GRANT ACCESS ON DATABASE `ORDERS` lands on `orders`, verified on
 	// 2026.08.1 — so an exact-case lookup would call a correctly written
 	// privilege unresolved. Harmless while this only warned; since unresolved
 	// privileges are now SKIPPED, it would silently drop a valid grant.
-	known := map[string]bool{}
+	known = map[string]bool{}
 	for _, db := range databases {
 		known[strings.ToLower(db.Name)] = true
 	}
 	// Aliases are best-effort: a server that cannot list them still gives a
 	// useful answer for databases, and treating that failure as fatal would
 	// suppress the warning entirely.
-	fingerprint := ""
-	if aliases, err := nc.ShowAliases(ctx); err == nil {
-		for _, a := range aliases {
+	if listedAliases, aliasErr := nc.ShowAliases(ctx); aliasErr == nil {
+		for _, a := range listedAliases {
 			known[strings.ToLower(a.Name)] = true
 		}
-		fingerprint = aliasFingerprint(aliases)
+		aliases, listed = listedAliases, true
 	}
-	return known, fingerprint, nil
+	return known, aliases, listed, nil
 }
 
 func quoteAndJoin(names []string) string {

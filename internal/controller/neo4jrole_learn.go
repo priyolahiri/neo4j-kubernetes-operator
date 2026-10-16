@@ -59,10 +59,12 @@ import (
 //     or rows of a statement removed from spec are revoked — every statement
 //     is re-learned, so the grant that follows recreates whatever was hidden.
 //
-// It re-learns, too, when the server, its image or the alias layout changes.
-// It does not MOVE a privilege granted through an alias that is later
-// retargeted: the old target's rows are kept, as Neo4j itself keeps them.
-// Probe mode does move it.
+// It re-learns, too, when the server or its image changes, or an alias the
+// role's statements name is created, dropped or re-pointed — any alias, for a
+// role with a statement on `*` (roleRenderingScope). An alias layout that
+// could not be read is not a change. It does not MOVE a privilege granted
+// through an alias that is later retargeted: the old target's rows are kept,
+// as Neo4j itself keeps them. Probe mode does move it.
 
 // Privilege normalisation modes.
 const (
@@ -204,12 +206,21 @@ func scopeDigest(scope string) string {
 // current is the role's rows now, as Neo4j shows them. forceRelearn re-grants every
 // statement; it is set by the caller after revoking rows of statements that
 // left the spec, since those rows may have been hiding another statement's.
+// scope is roleRenderingScope's, "" when the alias layout is unknown this pass.
 func learnDesired(
 	ctx context.Context, learner privilegeLearner, roleName string,
 	stmts []string, resolves func(string) bool,
 	prior learnState, scope string, current []string, forceRelearn bool,
 ) (learnOutcome, error) {
 	digest := scopeDigest(scope)
+	if scope == "" && prior.scope != "" {
+		// The alias layout could not be read. Unknown is not a change: read
+		// as an empty layout it re-learned every statement twice, on the
+		// failure and again on the recovery. The renderings stay under the
+		// scope they were learned in, and the next pass that can read the
+		// layout compares against that.
+		digest = prior.scope
+	}
 	out := learnOutcome{
 		state:   newLearnState(digest),
 		desired: map[string]string{},
@@ -309,12 +320,14 @@ func learnDesired(
 			}
 		}
 		// Only a grant that created a row changed the role. Re-learning grants
-		// every statement again — after an alias change anywhere on the
-		// cluster, a new image, or a vanished unattributed row — and those
-		// grants are no-ops for every statement whose rendering did not move.
-		// Counting them reported "applied N added" on roles where nothing was
-		// added, once per alias change on every role of the cluster (v1.20.0
-		// and v1.21.0 journeys: "7 added" six times on one unchanged role).
+		// every statement again — after a change to an alias the role names
+		// (any alias, for a role on `*`), a new image, or a vanished
+		// unattributed row — and those grants are no-ops for every statement
+		// whose rendering did not move. Counting them reported "applied N
+		// added" on roles where nothing was added, once per alias change on
+		// every role of the cluster while the scope covered every alias
+		// (v1.20.0 and v1.21.0 journeys: "7 added" six times on one unchanged
+		// role).
 		if len(rows) > 0 {
 			out.added++
 		}
@@ -424,7 +437,9 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 	// anything. It makes the baseline durable ahead of the grants, and a CRD
 	// too old to hold learn-mode status fails here — before a single
 	// statement is sent — instead of after a round of grants on every
-	// reconcile.
+	// reconcile. With the alias layout unknown (scope ""), the digest of ""
+	// matches no real scope, so the first pass that reads the layout
+	// re-learns once.
 	if prior.scope == "" {
 		first := newLearnState(scopeDigest(scope))
 		for _, row := range current {

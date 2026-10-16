@@ -549,9 +549,9 @@ func PrivilegeStatementVerb(stmt string) string {
 // a WARNING, never a rejection, so the cost of a name it fails to recognise is
 // a warning not raised, not a valid configuration refused.
 func PrivilegeDatabaseTargets(stmt string) []string {
-	return privilegeTargets(stmt, map[string]bool{
+	return scanPrivilegeScopes(stmt, map[string]bool{
 		"DATABASE": true, "DATABASES": true, "GRAPH": true, "GRAPHS": true,
-	})
+	}).names
 }
 
 // PrivilegeGraphTargets returns only the names under a GRAPH scope.
@@ -564,30 +564,80 @@ func PrivilegeDatabaseTargets(stmt string) []string {
 // the statement, persists it, and shows it back in SHOW ROLE PRIVILEGES, so
 // nothing about the system says it does nothing.
 func PrivilegeGraphTargets(stmt string) []string {
-	return privilegeTargets(stmt, map[string]bool{"GRAPH": true, "GRAPHS": true})
+	return scanPrivilegeScopes(stmt, map[string]bool{"GRAPH": true, "GRAPHS": true}).names
 }
 
-// privilegeTargets extracts the names under the given ON-scopes.
-func privilegeTargets(stmt string, scopes map[string]bool) []string {
+// PrivilegeAliasDependence reports which database aliases can change how Neo4j
+// STORES a privilege statement.
+//
+// Neo4j resolves a local alias when the command runs and stores the privilege
+// against the alias's target: "Privileges are defined on the target database,
+// and not the local database alias" (Operations Manual 5 and /current/, "Manage
+// database aliases"). So re-pointing an alias a statement names changes that
+// statement's stored form, while the rows already stored stay on the old
+// target. Nothing else in the alias layout reaches a statement: ON DBMS and ON
+// HOME / DEFAULT DATABASE|GRAPH store the keyword, never a database (recorded
+// in internal/controller/testdata/privilege_rendering.json).
+//
+// It returns the names the statement is scoped to, backticks removed — a
+// composite constituent written comp.c, `comp.c` or `comp`.`c` is comp.c, the
+// name SHOW ALIASES lists it under — and anyAlias = true when any alias on the
+// DBMS may matter:
+//   - a `*` target. It is stored as `*` (the same recording), but it is the one
+//     target every alias falls under, so it is kept on the whole layout;
+//   - a statement this cannot read: no ON clause, an ON it does not recognise,
+//     or a name it cannot take apart (a constituent whose parts need their
+//     quotes, `my-comp`.`x`). Unknown is answered with the safe default.
+//
+// A statement that canonicalises to nothing stores nothing: (nil, false).
+func PrivilegeAliasDependence(stmt string) (names []string, anyAlias bool) {
+	if CanonicalisePrivilegeStatement(stmt) == "" {
+		return nil, false
+	}
+	s := scanPrivilegeScopes(stmt, map[string]bool{
+		"DATABASE": true, "DATABASES": true, "GRAPH": true, "GRAPHS": true,
+	})
+	if s.wildcard || s.unreadable {
+		return nil, true
+	}
+	return s.names, false
+}
+
+// privilegeScope is what a statement's ON clauses say.
+type privilegeScope struct {
+	names      []string // under the scopes asked for, backticks removed
+	wildcard   bool     // a `*` under one of those scopes
+	unreadable bool     // no ON, an unrecognised ON, or a name not taken apart
+}
+
+// scanPrivilegeScopes reads the ON clauses of a statement for the given
+// scopes (DATABASE, GRAPH, ...).
+func scanPrivilegeScopes(stmt string, scopes map[string]bool) privilegeScope {
 	tokens := privilegeTokens(CanonicalisePrivilegeStatement(stmt))
 
-	var out []string
+	var out privilegeScope
+	sawOn := false
 	for i := 0; i < len(tokens); i++ {
 		if tokens[i] != "ON" {
 			continue
 		}
+		sawOn = true
 		j := i + 1
-		// ON DEFAULT DATABASE / ON HOME GRAPH name nothing.
-		if j < len(tokens) && (tokens[j] == "DEFAULT" || tokens[j] == "HOME") {
+		if j >= len(tokens) {
+			out.unreadable = true
 			continue
 		}
-		if j >= len(tokens) {
+		switch tokens[j] {
+		case "DEFAULT", "HOME", "DBMS":
+			// ON DEFAULT DATABASE / ON HOME GRAPH / ON DBMS name nothing.
+			continue
+		case "DATABASE", "DATABASES", "GRAPH", "GRAPHS":
+		default:
+			out.unreadable = true
 			continue
 		}
 		if !scopes[tokens[j]] {
-			// A scope we were not asked about, ON DBMS, or something we do
-			// not recognise.
-			continue
+			continue // a scope we were not asked about
 		}
 		// Everything up to the next keyword is the comma-separated name list.
 		for k := j + 1; k < len(tokens); k++ {
@@ -599,14 +649,34 @@ func privilegeTargets(stmt string, scopes map[string]bool) []string {
 				break
 			}
 			if t == "*" {
+				out.wildcard = true
 				continue
 			}
+			if !wholeName(t) {
+				out.unreadable = true
+			}
 			if name := strings.Trim(t, "`"); name != "" {
-				out = append(out, name)
+				out.names = append(out.names, name)
 			}
 		}
 	}
+	if !sawOn {
+		out.unreadable = true
+	}
 	return out
+}
+
+// wholeName reports whether a name token is one name: unquoted, or quoted
+// once around the whole of it. `my-comp`.`x` arrives as two tokens, `my-comp`
+// and .`x`, and neither is the constituent's name.
+func wholeName(t string) bool {
+	switch strings.Count(t, "`") {
+	case 0:
+		return !strings.HasPrefix(t, ".")
+	case 2:
+		return strings.HasPrefix(t, "`") && strings.HasSuffix(t, "`")
+	}
+	return false
 }
 
 // privilegeTokens splits a canonicalised privilege statement into words,

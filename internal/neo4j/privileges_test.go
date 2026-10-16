@@ -471,6 +471,56 @@ func TestPrivilegeGraphTargets_OnlyGraphScope(t *testing.T) {
 	}
 }
 
+// Which aliases a statement's stored form can depend on. A role re-learns its
+// renderings when one of these changes, so a name missed here is a re-point
+// the role never notices, and anyAlias where a name would do is a role that
+// re-sends every grant on every alias change on the cluster.
+func TestPrivilegeAliasDependence(t *testing.T) {
+	cases := []struct {
+		name     string
+		stmt     string
+		names    []string
+		anyAlias bool
+	}{
+		{"a database", "GRANT ACCESS ON DATABASE orders TO r", []string{"orders"}, false},
+		{"a list", "GRANT ACCESS ON DATABASES orders, `sales-v2` TO r", []string{"orders", "sales-v2"}, false},
+		{"a graph with a segment", "GRANT MATCH {*} ON GRAPH orders NODES Person TO r", []string{"orders"}, false},
+		{"a property rule stops at FOR", "GRANT MATCH {*} ON GRAPH sales FOR (n:Secret) WHERE n.level < 3 TO r",
+			[]string{"sales"}, false},
+		{"a constituent, unquoted", "GRANT ACCESS ON DATABASE cineasts.latest TO r", []string{"cineasts.latest"}, false},
+		{"a constituent, quoted whole", "GRANT ACCESS ON DATABASE `cineasts.latest` TO r",
+			[]string{"cineasts.latest"}, false},
+		// Canonicalisation drops the parts' redundant quotes.
+		{"a constituent, simple parts quoted apart", "GRANT ACCESS ON DATABASE `cineasts`.`latest` TO r",
+			[]string{"cineasts.latest"}, false},
+
+		// Stored as the keyword, never as a database.
+		{"DBMS", "GRANT ROLE MANAGEMENT ON DBMS TO r", nil, false},
+		{"HOME", "GRANT ACCESS ON HOME DATABASE TO r", nil, false},
+		{"DEFAULT", "GRANT MATCH {*} ON DEFAULT GRAPH NODES * TO r", nil, false},
+		{"a procedure list on DBMS", "GRANT EXECUTE PROCEDURE db.labels, db.schema.* ON DBMS TO r", nil, false},
+
+		// Every alias may matter.
+		{"the database wildcard", "GRANT ACCESS ON DATABASES * TO r", nil, true},
+		{"the graph wildcard", "GRANT MATCH {*} ON GRAPH * NODES * TO r", nil, true},
+		{"a wildcard after the transaction list", "GRANT SHOW TRANSACTION (alice, bob) ON DATABASES * TO r", nil, true},
+		{"a constituent whose parts need their quotes is not taken apart",
+			"GRANT ACCESS ON DATABASE `my-comp`.`la test` TO r", nil, true},
+		{"nor one with only one such part", "GRANT ACCESS ON DATABASE `my-comp`.latest TO r", nil, true},
+		{"an ON this does not know", "GRANT LOAD ON ALL DATA TO r", nil, true},
+		{"no ON at all", "GRANT ROLE reader TO r", nil, true},
+
+		{"an empty statement stores nothing", "  ", nil, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			names, anyAlias := PrivilegeAliasDependence(tc.stmt)
+			require.Equal(t, tc.names, names)
+			require.Equal(t, tc.anyAlias, anyAlias)
+		})
+	}
+}
+
 // The database-scope extractor must keep seeing BOTH scopes: its job is the
 // does-this-database-exist check, and a graph privilege names a database too.
 func TestPrivilegeDatabaseTargets_StillSeesBothScopes(t *testing.T) {

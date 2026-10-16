@@ -2069,7 +2069,7 @@
     "name": "Normalise Role Privileges",
     "serverUnitId": "su-neo4jrole",
     "operation": "business_action",
-    "description": "normaliseDesired() maps each spec.privileges statement to the rows Neo4j actually stores for it (lists expanded, plurals singularised, default segments filled, verbs renamed, database names lower-cased, aliases resolved), using a probe of the statement on a throwaway role, cached per target UID, image and alias map with a 1h TTL. Statements naming a missing database, or whose probe fails, fall back to textual canonicalisation (internal/controller/neo4jrole_normalise.go).",
+    "description": "normaliseDesired() maps each spec.privileges statement to the rows Neo4j actually stores for it (lists expanded, plurals singularised, default segments filled, verbs renamed, database names lower-cased, aliases resolved), using a probe of the statement on a throwaway role, cached per target UID, image and the targets of the aliases the role's statements name (every alias for a role with a statement on *) with a 1h TTL; with the alias layout unreadable it probes without the cache. Statements naming a missing database, or whose probe fails, fall back to textual canonicalisation (internal/controller/neo4jrole_normalise.go).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -2097,7 +2097,7 @@
     "name": "Learn Role Privileges",
     "serverUnitId": "su-neo4jrole",
     "operation": "business_action",
-    "description": "Learn mode (--privilege-normalisation=learn, the default; the probe is opt-in): reconcileLearned()/learnDesired() learn each spec statement's stored rows from the operator's own grant (before/after diff), persist them in status.privilegeRenderings BEFORE any revoke, never revoke status.unattributedPrivileges, and re-learn on scope change, a vanished unattributed row, or revocation of a removed statement's rows. Fails loudly when the installed CRD prunes these status fields (internal/controller/neo4jrole_learn.go). Only grants that created a row count toward PrivilegesApplied: the rendering scope fingerprints every alias on the cluster, so any alias-layout change re-grants every statement of every role once, and those no-op grants are not reported.",
+    "description": "Learn mode (--privilege-normalisation=learn, the default; the probe is opt-in): reconcileLearned()/learnDesired() learn each spec statement's stored rows from the operator's own grant (before/after diff), persist them in status.privilegeRenderings BEFORE any revoke, never revoke status.unattributedPrivileges, and re-learn on scope change, a vanished unattributed row, or revocation of a removed statement's rows. Fails loudly when the installed CRD prunes these status fields (internal/controller/neo4jrole_learn.go). The rendering scope (roleRenderingScope) covers the target UID, its image and only the aliases the role's statements name, so an alias change elsewhere on the cluster re-learns nothing; a role with a statement on *, or one whose targets cannot be read, stays on every alias. A pass that cannot list databases or aliases keeps the learned scope instead of re-learning. Only grants that created a row count toward PrivilegesApplied, so a re-learn's no-op grants are not reported (knowledge operations.md ids 136, 142).",
     "readsFieldIds": [
       "f-neo4jrole-privileges",
       "f-neo4jrole-status-privilege-renderings",
