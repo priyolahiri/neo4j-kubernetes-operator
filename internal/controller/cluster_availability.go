@@ -317,7 +317,10 @@ func statefulSetRolloutInFlight(sts *appsv1.StatefulSet) bool {
 
 // serverRolloutInFlight is statefulSetRolloutInFlight for the cluster's
 // server StatefulSet. A StatefulSet it cannot read counts as in flight, which
-// keeps the cluster Forming.
+// keeps the cluster Forming. The servers a Paused or Failed upgrade holds below
+// its partition are not a rollout in flight (heldRolloutPending): a server
+// that is down then is a server short, Degraded after the grace period like
+// any other, and dependents keep working (operations.md id 149).
 func (r *Neo4jEnterpriseClusterReconciler) serverRolloutInFlight(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
@@ -325,6 +328,10 @@ func (r *Neo4jEnterpriseClusterReconciler) serverRolloutInFlight(ctx context.Con
 		Namespace: cluster.Namespace,
 	}, sts); err != nil {
 		return true
+	}
+	if partition := keptUpgradePartition(cluster, sts); partition > 0 {
+		pending, _ := heldRolloutPending(sts, partition)
+		return pending
 	}
 	return statefulSetRolloutInFlight(sts)
 }

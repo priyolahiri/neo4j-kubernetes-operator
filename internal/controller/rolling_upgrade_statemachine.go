@@ -85,6 +85,8 @@ const upgradeTransitionRequeue = 5 * time.Second
 // path, which would otherwise stomp the partition freeze and re-apply
 // replicas). Terminal phases (Completed/Failed/Paused) are NOT active: the
 // normal path takes over and isUpgradeRequired decides whether to re-enter.
+// After Failed or Paused the normal path keeps the partition the machine left
+// (upgradeHeld in upgrade_hold.go, operations.md id 149).
 func upgradeStateMachineActive(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	if cluster.Status.UpgradeStatus == nil {
 		return false
@@ -231,9 +233,23 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 
 	orch := NewRollingUpgradeOrchestrator(r.Client, cluster.Name, cluster.Namespace)
 
+	servers := cluster.Spec.Topology.Servers
+	previousVersion := cluster.Status.Version
+	targetVersion := cluster.Spec.Image.Tag
+	// The record this attempt writes, also when a gate below refuses it: a
+	// Paused or Failed record names the target it stopped on, which is what
+	// the user changes to resume a Paused one (upgradeWaitsForUser). An
+	// attempt that takes up a held upgrade keeps that upgrade's progress
+	// (newUpgradeRecord, operations.md id 149).
+	held := cluster.Status.UpgradeStatus.DeepCopy()
+	resumed := sameHeldUpgrade(held, previousVersion)
+	record := func(us *neo4jv1beta1.UpgradeStatus) {
+		*us = newUpgradeRecord(held, previousVersion, targetVersion, servers, metav1.Now())
+	}
+
 	// Version-compatibility and StatefulSet readiness gates (no Neo4j I/O).
 	if err := orch.validateVersionCompatibility(cluster.Status.Version, cluster.Spec.Image.Tag); err != nil {
-		return r.failUpgrade(ctx, cluster, fmt.Errorf("version compatibility check failed: %w", err))
+		return r.failUpgrade(ctx, cluster, fmt.Errorf("version compatibility check failed: %w", err), record)
 	}
 	if err := orch.validateStatefulSetsReady(ctx, cluster); err != nil {
 		// Not an upgrade failure — the cluster isn't quiescent yet. Retry.
@@ -245,36 +261,25 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 	if cluster.Spec.UpgradeStrategy == nil || cluster.Spec.UpgradeStrategy.PreUpgradeHealthCheck {
 		neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 		if err != nil {
-			return r.failUpgrade(ctx, cluster, fmt.Errorf("failed to create Neo4j client: %w", err))
+			return r.failUpgrade(ctx, cluster, fmt.Errorf("failed to create Neo4j client: %w", err), record)
 		}
 		defer func() { _ = neo4jClient.Close() }()
 		if err := neo4jClient.ValidateUpgradeSafety(ctx, cluster.Spec.Image.Tag); err != nil {
-			return r.failUpgrade(ctx, cluster, fmt.Errorf("upgrade safety validation failed: %w", err))
+			return r.failUpgrade(ctx, cluster, fmt.Errorf("upgrade safety validation failed: %w", err), record)
 		}
 	}
 
-	now := metav1.Now()
-	servers := cluster.Spec.Topology.Servers
-	previousVersion := cluster.Status.Version
-	targetVersion := cluster.Spec.Image.Tag
-	if err := r.patchUpgradeStatus(ctx, cluster, func(us *neo4jv1beta1.UpgradeStatus) {
-		*us = neo4jv1beta1.UpgradeStatus{
-			Phase:           upgradePhaseStaging,
-			StartTime:       &now,
-			StepStartTime:   &now,
-			CurrentStep:     "Staging target pod template",
-			PreviousVersion: previousVersion,
-			TargetVersion:   targetVersion,
-			Progress: &neo4jv1beta1.UpgradeProgress{
-				Total:   servers,
-				Pending: servers,
-			},
-		}
-	}); err != nil {
+	if err := r.patchUpgradeStatus(ctx, cluster, record); err != nil {
 		logger.Error(err, "Failed to initialize upgrade status")
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 	}
 
+	if resumed {
+		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeStarted,
+			"Rolling upgrade resumed after it was %s: %s -> %s", held.Phase, previousVersion, targetVersion)
+		logger.Info("Rolling upgrade resumed", "after", held.Phase, "from", previousVersion, "to", targetVersion)
+		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+	}
 	r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeStarted,
 		"Rolling upgrade started: %s -> %s", previousVersion, targetVersion)
 	logger.Info("Rolling upgrade started", "from", previousVersion, "to", targetVersion)
@@ -639,11 +644,16 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeVerifying(
 // failUpgrade routes a step failure: Paused when autoPauseOnFailure is set
 // (manual intervention required, never auto-resumed), Failed otherwise (the
 // normal path takes over; isUpgradeRequired re-enters once the cluster is
-// Ready again and image drift persists).
+// Ready again). Either way the StatefulSet keeps the partition the step left,
+// so no server the upgrade has not rolled restarts onto the target before the
+// upgrade goes on (upgradeHeld, operations.md id 149). prepare runs first in
+// the same status write: startRollingUpgrade passes the record of the attempt
+// a gate refused.
 func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	cause error,
+	prepare ...func(*neo4jv1beta1.UpgradeStatus),
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade")
 	logger.Error(cause, "Rolling upgrade failed")
@@ -657,8 +667,15 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 	// failed persist retries this whole routing and would double-count.
 	recordFailureMetric := func() { orch.upgradeMetrics.RecordUpgrade(ctx, false, time.Since(startTime)) }
 
-	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.AutoPauseOnFailure {
+	prepared := func(s *neo4jv1beta1.UpgradeStatus) {
+		for _, p := range prepare {
+			p(s)
+		}
+	}
+
+	if autoPauseOnFailure(cluster) {
 		if err := r.patchUpgradeStatus(ctx, cluster, func(s *neo4jv1beta1.UpgradeStatus) {
+			prepared(s)
 			s.Phase = upgradePhasePaused
 			s.LastError = cause.Error()
 			s.CurrentStep = "Upgrade paused due to failure - manual intervention required"
@@ -679,6 +696,7 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 	}
 
 	if err := r.patchUpgradeStatus(ctx, cluster, func(s *neo4jv1beta1.UpgradeStatus) {
+		prepared(s)
 		s.Phase = upgradePhaseFailed
 		s.LastError = cause.Error()
 		s.CurrentStep = "Rolling upgrade failed"
