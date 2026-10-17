@@ -87,7 +87,7 @@ What it adds is everything that lives in the operator's validators *beyond* the 
 - `spec.config` values Neo4j would refuse at startup, for the settings whose type the operator knows — `db.tx_log.buffer.size: "1MiB"` (a long), `server.memory.heap.max_size: "2Gi"` (a Kubernetes suffix, not a Neo4j unit), `db.transaction.timeout: "30 sec"`; see [Value types](../configuration.md#value-types-checked-before-apply)
 - TLS strictness and issuer-capability rules
 - storage, image, and licence-acceptance requirements
-- `spec.upgradeStrategy` timeouts (`upgradeTimeout`, `healthCheckTimeout`, `stabilizationTimeout`), which must be Go durations such as `30m`, `1h30m` or `90s` — `"5 minutes"` is refused, as the operator refuses it
+- `spec.upgradeStrategy` timeouts (`upgradeTimeout`, `healthCheckTimeout`, `stabilizationTimeout`), which must be Go durations above zero such as `30m`, `1h30m` or `90s` — `"5 minutes"`, `"0s"` and `"-5m"` are refused, as the operator refuses them
 - advisory topology warnings — even server counts, two-server clusters with
   limited fault tolerance, all-PRIMARY or all-SECONDARY mode constraints
 
@@ -108,7 +108,7 @@ The operator has **27 CRD kinds, but only 13 have operator-side validators**. Th
 - Neo4jRestore/restore-1 (restore.yaml): skipped — no operator-side validator for Neo4jRestore; its CRD schema still applies (kubectl apply --dry-run=server)
 ```
 
-**Checked offline does not mean every rule ran.** One cluster rule compares the manifest with the cluster already running under its name: `spec.image.tag` against the version its servers run (`status.version`), which refuses a downgrade. A manifest carries no such state — a `status` in the file is ignored, as `kubectl apply` ignores it — so offline the summary says what was not checked:
+**Checked offline does not mean every rule ran.** One rule of a cluster, and the same rule of a standalone, compares the manifest with the deployment already running under its name: `spec.image.tag` against the version its servers run (`status.version`), which refuses a downgrade. A manifest carries no such state — a `status` in the file is ignored, as `kubectl apply` ignores it — so offline the summary says what was not checked:
 
 ```
 ✓ Neo4jEnterpriseCluster/prod (cluster.yaml): ok
@@ -130,14 +130,14 @@ kubectl neo4j validate -f manifests/ --connect -n team-a    # namespace for mani
 
 Connecting is **opt-in**. Defaulting to the current context would make a command documented as offline fail in CI, where there is usually no kubeconfig at all.
 
-With a connection, the command resolves `clusterRef`s, password Secrets and role references, and checks a cluster manifest against the cluster of the same name that already runs, as the operator will once it is applied:
+With a connection, the command resolves `clusterRef`s, password Secrets and role references, checks the admin password's shape in its Secret, and checks a cluster or standalone manifest against the deployment of the same name that already runs, as the operator will once it is applied:
 
 ```
 Neo4jEnterpriseCluster/prod (cluster.yaml):
   ✗ spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
 ```
 
-A cluster that does not exist yet has nothing to compare with. One the command cannot read (no `get` permission) is a warning saying the tag was not checked, rather than a silent pass.
+For a standalone the message says `the standalone runs`. A deployment that does not exist yet has nothing to compare with. One the command cannot read (no `get` permission) is a warning saying the tag was not checked, rather than a silent pass.
 
 The connection also adds a third finding type:
 
@@ -161,15 +161,17 @@ It is advisory and silent when it cannot tell — the operator may be in a names
 
 ### Required permissions
 
-`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster` (for a cluster manifest, the running cluster's status; for the other kinds, their `clusterRef`), `Neo4jEnterpriseStandalone`, `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, and `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
+`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster` (for a cluster manifest, the running cluster's status; for the other kinds, their `clusterRef`), `Neo4jEnterpriseStandalone` (likewise, for a standalone manifest the running standalone's status), `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, and `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
 
-### A clean run may not be the last word
+### One run lists every error
 
-The operator stops validating a resource after certain critical errors — an invalid image, for example — because later checks are not meaningful once the image is wrong. `validate` reproduces that faithfully rather than inventing its own behaviour, so:
+A validator reports every error it finds, not just the first: an invalid image does not hide a bad `spec.config` key or storage size behind it, so you can fix the whole list before you re-run. The one exception is `Neo4jShardedDatabase`: when its `clusterRef` cannot be read, that is the error it reports, and its other rules wait until the cluster can be read.
 
-> Fixing everything reported and re-running may surface **further** errors.
+A clean run covers the rules that ran. Offline, the ones that compare a manifest with what already runs did not, and the summary names them (see [above](#what-gets-checked-and-what-doesnt)).
 
-A clean run means nothing further is reachable, not that nothing was ever wrong. Re-run until two consecutive runs agree.
+### The operator's defaults are applied first
+
+The operator fills in a few fields a cluster manifest may leave out before it validates one — `spec.tls.mode: disabled`, `native` authentication and authorization providers, a `ClusterIP` Service, `spec.storage.retentionPolicy: Delete`, `spec.image.pullPolicy: IfNotPresent` — and `validate` does the same, so a manifest is judged as the operator will judge it. The defaults go only into the copy that is validated: nothing is printed or written back, and a finding names a field you wrote, or one that is missing. A standalone gets no defaults from the operator, so none from `validate` either.
 
 ### Version skew
 

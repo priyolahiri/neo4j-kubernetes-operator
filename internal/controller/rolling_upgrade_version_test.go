@@ -84,6 +84,24 @@ func TestGetUpgradeTimeout(t *testing.T) {
 	})
 }
 
+// A timeout of zero or less parses, so it used to be returned as is and put
+// every step's deadline at or before the step's start. Validation refuses it
+// now (TestValidateUpgradeStrategy); the getters fall back to the default for
+// one that gets past it anyway.
+func TestUpgradeTimeouts_NotAboveZeroUseTheDefault(t *testing.T) {
+	r := newOrchestrator()
+	for _, value := range []string{"0s", "0", "-5m"} {
+		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+			UpgradeStrategy: &neo4jv1beta1.UpgradeStrategySpec{
+				UpgradeTimeout: value, HealthCheckTimeout: value, StabilizationTimeout: value,
+			},
+		}}
+		assert.Equal(t, 30*time.Minute, r.getUpgradeTimeout(cluster), "upgradeTimeout %q", value)
+		assert.Equal(t, 5*time.Minute, r.getHealthCheckTimeout(cluster), "healthCheckTimeout %q", value)
+		assert.Equal(t, 3*time.Minute, r.getStabilizationTimeout(cluster), "stabilizationTimeout %q", value)
+	}
+}
+
 func TestGetHealthCheckTimeout(t *testing.T) {
 	r := newOrchestrator()
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}

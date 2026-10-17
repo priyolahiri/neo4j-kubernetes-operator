@@ -53,7 +53,6 @@ import (
 
 	certmanagerv1 "github.com/cert-manager/cert-manager/pkg/apis/certmanager/v1"
 	cmmeta "github.com/cert-manager/cert-manager/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -179,19 +178,15 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{}, nil
 	}
 
-	// Validate the standalone configuration.
-	//
-	// The admin-password shape check is appended here rather than inside
-	// StandaloneValidator because it must read the Secret, and ValidateCreate has
-	// neither a client nor a ctx — plumbing both through would churn every call
-	// site and test for one check. The reconciler has both, and inline validation
-	// from the reconciler is the project's convention anyway (invariant 1).
-	validationErrs := r.Validator.ValidateCreate(standalone)
+	// Validate the standalone configuration: one entry point on every pass, the
+	// one `kubectl neo4j validate` runs too — the spec rules, the admin
+	// password's shape (read from its Secret), and spec.image.tag against
+	// status.version, the version the standalone runs. There is no webhook and
+	// so no previous spec: the update-only method that compared an old spec
+	// with a new one was never called (operations.md id 144).
+	validationErrs := r.Validator.Validate(ctx, r.Client, standalone)
 	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
 	r.advisoryWarnings.record(r.Recorder, standalone, EventReasonValidationWarning, r.Validator.NoEffectWarnings(standalone))
-	validationErrs = append(validationErrs, validation.ValidateAdminSecretPassword(
-		ctx, r.Client, standalone.Namespace, standaloneAdminSecretName(standalone),
-		field.NewPath("spec", "auth", "adminSecret"))...)
 	if len(validationErrs) > 0 {
 		logger.Error(fmt.Errorf("validation failed: %v", validationErrs), "Validation failed")
 		msg := fmt.Sprintf("Validation failed: %v", validationErrs)
@@ -305,7 +300,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	}
 
 	// Pre-upgrade health check if image tag is changing
-	if r.isStandaloneUpgradeRequired(standalone) {
+	if r.isStandaloneUpgradeRequired(ctx, standalone) {
 		if blocked := r.preUpgradeHealthCheck(ctx, standalone); blocked {
 			logger.Info("Upgrade blocked by pre-upgrade health check, requeueing")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -1982,12 +1977,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createStatefulSet(ctx context.Cont
 		})
 	}
 
-	// Determine StatefulSet update strategy from spec
+	// RollingUpdate for both upgrade strategies. With one replica it is what
+	// Recreate promises: the StatefulSet deletes the pod and creates it again
+	// on the new template. Recreate used to select OnDelete, under which only
+	// a restore (which scales the StatefulSet to zero) replaced the pod, so an
+	// image, config or plugin change did not reach the running server while
+	// status.version already named the new tag (operations.md id 144).
 	updateStrategy := appsv1.StatefulSetUpdateStrategy{
 		Type: appsv1.RollingUpdateStatefulSetStrategyType,
-	}
-	if standalone.Spec.UpgradeStrategy != nil && standalone.Spec.UpgradeStrategy.Strategy == "Recreate" {
-		updateStrategy.Type = appsv1.OnDeleteStatefulSetStrategyType
 	}
 
 	sts := &appsv1.StatefulSet{
@@ -2148,15 +2145,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) setFailedStatus(ctx context.Contex
 	return transitioned
 }
 
-// updateStatus updates the status of the standalone deployment
+// updateStatus updates the status of the standalone deployment. The write is
+// applied to a copy re-read inside retry.RetryOnConflict, so a conflict with
+// another status write (diagnostics, the plugin controller) is read again and
+// retried rather than failing the pass.
 func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
-
-	// Get the latest version of the resource to avoid conflicts
-	latestStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
-	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, latestStandalone); err != nil {
-		return fmt.Errorf("failed to get latest standalone resource: %w", err)
-	}
 
 	// Get the StatefulSet to check its status
 	statefulSet := &appsv1.StatefulSet{}
@@ -2187,34 +2181,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 		ready = false
 	}
 
-	// Check if status actually needs to be updated. The endpoints check
-	// compares the canonical Bolt URL, not just non-nil-ness (#228 review):
-	// after the #215 rename, an already-Ready standalone would otherwise keep
-	// its pre-rename {name}-service URLs in status forever, because nothing
-	// else in this condition changes on an operator upgrade.
-	expectedBoltHost := fmt.Sprintf("%s-client.%s.svc.cluster.local:7687", standalone.Name, standalone.Namespace)
-	endpointsCurrent := latestStandalone.Status.Endpoints != nil &&
-		strings.HasSuffix(latestStandalone.Status.Endpoints.Bolt, expectedBoltHost)
-	if latestStandalone.Status.Phase == phase &&
-		latestStandalone.Status.Message == message &&
-		latestStandalone.Status.Ready == ready &&
-		latestStandalone.Status.Version == standalone.Spec.Image.Tag &&
-		latestStandalone.Status.ObservedGeneration == latestStandalone.Generation &&
-		endpointsCurrent {
-		logger.V(1).Info("Status unchanged, skipping update")
-		return nil
-	}
-
-	// Update status on the latest version
-	latestStandalone.Status.Phase = phase
-	latestStandalone.Status.Message = message
-	latestStandalone.Status.Ready = ready
-	latestStandalone.Status.Version = standalone.Spec.Image.Tag
-	latestStandalone.Status.ObservedGeneration = latestStandalone.Generation
-
-	// Update Ready condition using standard helper
-	condStatus, condReason := PhaseToConditionStatus(phase)
-	SetReadyCondition(&latestStandalone.Status.Conditions, latestStandalone.Generation, condStatus, condReason, message)
+	// status.version is the version the standalone runs: the image tag of a
+	// StatefulSet whose pod is ready on the current template. It used to be
+	// spec.image.tag, written on every pass, so it named a new tag while the
+	// old pod still ran, and kept naming an image that never started; the
+	// version rule compares an edit with it (operations.md id 144). Until the
+	// pod is ready on the template, it stays as it was.
+	running := rolledImageTag(statefulSet)
 
 	// Update endpoints — use bolt+s:// when TLS is enabled
 	boltScheme := "bolt"
@@ -2233,20 +2206,65 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	}
 	externalIP := standaloneServiceExternalIP(ctx, r.Client, standalone)
 
-	latestStandalone.Status.Endpoints = &neo4jv1beta1.EndpointStatus{
-		Bolt:               fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", boltScheme, standalone.Name, standalone.Namespace),
-		HTTP:               fmt.Sprintf("http://%s-client.%s.svc.cluster.local:7474", standalone.Name, standalone.Namespace),
-		HTTPS:              fmt.Sprintf("https://%s-client.%s.svc.cluster.local:7473", standalone.Name, standalone.Namespace),
-		ConnectionExamples: GenerateStandaloneConnectionExamples(standalone.Name, standalone.Namespace, serviceType, externalIP, hasTLS),
-	}
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		// Get the latest version of the resource to avoid conflicts
+		latestStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+		if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, latestStandalone); err != nil {
+			return fmt.Errorf("failed to get latest standalone resource: %w", err)
+		}
 
-	// Update the status
-	if err := r.Status().Update(ctx, latestStandalone); err != nil {
+		version := latestStandalone.Status.Version
+		if running != "" {
+			version = running
+		}
+
+		// Check if status actually needs to be updated. The endpoints check
+		// compares the canonical Bolt URL, not just non-nil-ness (#228 review):
+		// after the #215 rename, an already-Ready standalone would otherwise keep
+		// its pre-rename {name}-service URLs in status forever, because nothing
+		// else in this condition changes on an operator upgrade.
+		expectedBoltHost := fmt.Sprintf("%s-client.%s.svc.cluster.local:7687", standalone.Name, standalone.Namespace)
+		endpointsCurrent := latestStandalone.Status.Endpoints != nil &&
+			strings.HasSuffix(latestStandalone.Status.Endpoints.Bolt, expectedBoltHost)
+		if latestStandalone.Status.Phase == phase &&
+			latestStandalone.Status.Message == message &&
+			latestStandalone.Status.Ready == ready &&
+			latestStandalone.Status.Version == version &&
+			latestStandalone.Status.ObservedGeneration == latestStandalone.Generation &&
+			endpointsCurrent {
+			logger.V(1).Info("Status unchanged, skipping update")
+			return nil
+		}
+
+		// Update status on the latest version
+		latestStandalone.Status.Phase = phase
+		latestStandalone.Status.Message = message
+		latestStandalone.Status.Ready = ready
+		latestStandalone.Status.Version = version
+		latestStandalone.Status.ObservedGeneration = latestStandalone.Generation
+
+		// Update Ready condition using standard helper
+		condStatus, condReason := PhaseToConditionStatus(phase)
+		SetReadyCondition(&latestStandalone.Status.Conditions, latestStandalone.Generation, condStatus, condReason, message)
+
+		latestStandalone.Status.Endpoints = &neo4jv1beta1.EndpointStatus{
+			Bolt:               fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", boltScheme, standalone.Name, standalone.Namespace),
+			HTTP:               fmt.Sprintf("http://%s-client.%s.svc.cluster.local:7474", standalone.Name, standalone.Namespace),
+			HTTPS:              fmt.Sprintf("https://%s-client.%s.svc.cluster.local:7473", standalone.Name, standalone.Namespace),
+			ConnectionExamples: GenerateStandaloneConnectionExamples(standalone.Name, standalone.Namespace, serviceType, externalIP, hasTLS),
+		}
+
+		// Update the status
+		if err := r.Status().Update(ctx, latestStandalone); err != nil {
+			return err
+		}
+		logger.V(1).Info("Status updated successfully", "phase", phase, "ready", ready, "version", version)
+		return nil
+	})
+	if err != nil {
 		logger.Error(err, "Failed to update status")
 		return err
 	}
-
-	logger.V(1).Info("Status updated successfully", "phase", phase, "ready", ready)
 	return nil
 }
 
@@ -2313,9 +2331,26 @@ func standaloneDiagnosticsWriteNeeded(before, after *neo4jv1beta1.StandaloneDiag
 	return !equality.Semantic.DeepEqual(b, a) || diagnosticsStale(before.LastCollected, now)
 }
 
-// isStandaloneUpgradeRequired returns true if the Neo4j image tag is changing.
-func (r *Neo4jEnterpriseStandaloneReconciler) isStandaloneUpgradeRequired(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) bool {
-	return standalone.Status.Version != "" && standalone.Status.Version != standalone.Spec.Image.Tag
+// isStandaloneUpgradeRequired reports whether this pass is the one that applies
+// a new image: the spec names a tag other than the one the standalone runs
+// (status.version), and the StatefulSet's template does not carry the spec's
+// image yet. Once it does, the pod is being replaced and status.version
+// follows when the new pod is ready. status.version used to be written from
+// the spec on every pass, so this was true for one pass; now that it follows
+// the running pod, the template check keeps the pre-upgrade check and the
+// UpgradeStarted event to that one pass (operations.md ids 136 and 144).
+func (r *Neo4jEnterpriseStandaloneReconciler) isStandaloneUpgradeRequired(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) bool {
+	if standalone.Status.Version == "" || standalone.Status.Version == standalone.Spec.Image.Tag {
+		return false
+	}
+	sts := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, sts); err != nil {
+		return false // not created yet, or unreadable: nothing to check against
+	}
+	if len(sts.Spec.Template.Spec.Containers) == 0 {
+		return false
+	}
+	return sts.Spec.Template.Spec.Containers[0].Image != fmt.Sprintf("%s:%s", standalone.Spec.Image.Repo, standalone.Spec.Image.Tag)
 }
 
 // preUpgradeHealthCheck runs a health check before allowing an image upgrade.

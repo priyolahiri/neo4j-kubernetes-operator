@@ -66,6 +66,14 @@ type VersionInfo struct {
 // verified yet) and one that does not parse are not checked, and a patch number
 // is compared only when both tags name one.
 func (v *UpgradeValidator) ValidateVersionUpgrade(currentVersion, targetVersion string) field.ErrorList {
+	return v.validateVersionMove(currentVersion, targetVersion, "the servers run")
+}
+
+// validateVersionMove is ValidateVersionUpgrade for any deployment; runs names
+// what runs currentVersion in a refusal ("the servers run", "the standalone
+// runs"). Neo4j's upgrade rules are the same for a cluster and a standalone
+// server.
+func (v *UpgradeValidator) validateVersionMove(currentVersion, targetVersion, runs string) field.ErrorList {
 	var allErrs field.ErrorList
 	if currentVersion == "" || currentVersion == targetVersion {
 		return allErrs
@@ -83,9 +91,9 @@ func (v *UpgradeValidator) ValidateVersionUpgrade(currentVersion, targetVersion 
 
 	if v.isDowngrade(current, target) {
 		return append(allErrs, field.Invalid(tagPath, targetVersion, fmt.Sprintf(
-			"downgrades are not supported: the servers run %s (status.version), and Neo4j cannot go back to an "+
+			"downgrades are not supported: %s %s (status.version), and Neo4j cannot go back to an "+
 				"earlier version. Set the tag to %s or later; running an earlier version means restoring a backup "+
-				"taken before the upgrade", currentVersion, currentVersion)))
+				"taken before the upgrade", runs, currentVersion, currentVersion)))
 	}
 
 	var err error
@@ -111,7 +119,8 @@ func (v *UpgradeValidator) ValidateVersionUpgrade(currentVersion, targetVersion 
 // ValidateUpgradeStrategy validates spec.upgradeStrategy. It is a spec rule,
 // run for every cluster: the CRD's enum guards strategy, but the timeouts are
 // free-form strings the schema cannot check, and the upgrade state machine
-// would quietly use its default for one that does not parse.
+// would quietly use its default for one that does not parse. Recreate passes:
+// the enum admits it, and NoEffectWarnings says what a cluster does with it.
 func (v *UpgradeValidator) ValidateUpgradeStrategy(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
 	var allErrs field.ErrorList
 	strategyPath := field.NewPath("spec", "upgradeStrategy")
@@ -141,36 +150,10 @@ func (v *UpgradeValidator) ValidateUpgradeStrategy(cluster *neo4jv1beta1.Neo4jEn
 		}
 	}
 
-	// Validate timeout durations
-	if strategy.UpgradeTimeout != "" {
-		if _, err := time.ParseDuration(strategy.UpgradeTimeout); err != nil {
-			allErrs = append(allErrs, field.Invalid(
-				strategyPath.Child("upgradeTimeout"),
-				strategy.UpgradeTimeout,
-				"invalid duration format",
-			))
-		}
-	}
-
-	if strategy.HealthCheckTimeout != "" {
-		if _, err := time.ParseDuration(strategy.HealthCheckTimeout); err != nil {
-			allErrs = append(allErrs, field.Invalid(
-				strategyPath.Child("healthCheckTimeout"),
-				strategy.HealthCheckTimeout,
-				"invalid duration format",
-			))
-		}
-	}
-
-	if strategy.StabilizationTimeout != "" {
-		if _, err := time.ParseDuration(strategy.StabilizationTimeout); err != nil {
-			allErrs = append(allErrs, field.Invalid(
-				strategyPath.Child("stabilizationTimeout"),
-				strategy.StabilizationTimeout,
-				"invalid duration format",
-			))
-		}
-	}
+	// The three timeouts each bound a step of the upgrade state machine.
+	allErrs = append(allErrs, validateUpgradeTimeout(strategyPath.Child("upgradeTimeout"), strategy.UpgradeTimeout)...)
+	allErrs = append(allErrs, validateUpgradeTimeout(strategyPath.Child("healthCheckTimeout"), strategy.HealthCheckTimeout)...)
+	allErrs = append(allErrs, validateUpgradeTimeout(strategyPath.Child("stabilizationTimeout"), strategy.StabilizationTimeout)...)
 
 	// Validate maxUnavailableDuringUpgrade
 	if strategy.MaxUnavailableDuringUpgrade != nil {
@@ -184,6 +167,28 @@ func (v *UpgradeValidator) ValidateUpgradeStrategy(cluster *neo4jv1beta1.Neo4jEn
 	}
 
 	return allErrs
+}
+
+// validateUpgradeTimeout checks one spec.upgradeStrategy timeout. Empty uses
+// the default. The value is read with time.ParseDuration, as the state machine
+// reads it, and must be above zero: a step's deadline is its start time plus
+// the timeout, so "0s" or "-5m" put the deadline at or before the step's
+// start. Staging checks its deadline before it does anything, so every
+// upgrade failed there; the other steps failed at their first check that did
+// not already pass.
+func validateUpgradeTimeout(path *field.Path, value string) field.ErrorList {
+	if value == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(value)
+	switch {
+	case err != nil:
+		return field.ErrorList{field.Invalid(path, value, "invalid duration format")}
+	case d <= 0:
+		return field.ErrorList{field.Invalid(path, value,
+			"must be greater than zero, such as 30m or 1h30m: an upgrade step fails once this long has passed since it started, so zero or less fails it at its first check")}
+	}
+	return nil
 }
 
 // isDowngrade reports whether target is earlier than current. CalVer

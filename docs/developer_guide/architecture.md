@@ -341,7 +341,7 @@ Standalone targets are auto-detected: `getClusterRef` accepts a standalone name 
 - **TopologyValidator** (`topology_validator.go`): Cluster topology and server count validation
 - **ClusterValidator** (`cluster_validator.go`): Cluster-specific configuration validation
 - **MemoryValidator** (`memory_validator.go`): Neo4j memory settings vs container limits
-- **UpgradeValidator** (`upgrade_validator.go`): `spec.upgradeStrategy` (a spec rule), and the image-tag upgrade path against `status.version`, the version the servers run — the one rule that needs the running cluster (`ClusterValidator.ValidateWithWarnings`; there is no previous spec without a webhook, `docs/knowledge/operations.md` id 139)
+- **UpgradeValidator** (`upgrade_validator.go`): `spec.upgradeStrategy` (a spec rule; timeouts are Go durations above zero), and the image-tag upgrade path against `status.version`, the version the servers run — the one rule that needs the running deployment (`ClusterValidator.ValidateWithWarnings`, `StandaloneValidator.Validate`; there is no previous spec without a webhook, `docs/knowledge/operations.md` ids 139 and 144)
 - **TLSValidator** (`tls_validator.go`): TLS/SSL configuration validation
 - **TruststoreValidator** (`truststore_validator.go`): unique Secret names in `spec.trustedCASecrets` (the name doubles as the keytool alias) plus reserved-mount-path collision check for `spec.extraVolumeMounts` (`/data`, `/logs`, `/conf`, `/ssl`, `/plugins`, `/truststore`, `/truststore-ca`, `/var/lib/neo4j/...`)
 - **DatabaseValidator** (`database_validator.go`): Database creation and topology validation

@@ -128,6 +128,43 @@ func TestValidateUpgradeStrategy(t *testing.T) {
 			name:     "invalid stabilizationTimeout",
 			strategy: &neo4jv1beta1.UpgradeStrategySpec{StabilizationTimeout: "not-a-duration"}, wantErrs: 1,
 		},
+		// Each parses, and each put every step's deadline at or before its
+		// start: the upgrade failed at its first check.
+		{
+			name:     "upgradeTimeout of zero",
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{UpgradeTimeout: "0s"}, wantErrs: 1,
+		},
+		{
+			name:     "upgradeTimeout of a bare 0",
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{UpgradeTimeout: "0"}, wantErrs: 1,
+		},
+		{
+			name:     "negative healthCheckTimeout",
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{HealthCheckTimeout: "-5m"}, wantErrs: 1,
+		},
+		{
+			name:     "negative stabilizationTimeout",
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{StabilizationTimeout: "-1h30m"}, wantErrs: 1,
+		},
+		{
+			name: "all three at zero",
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{
+				UpgradeTimeout: "0s", HealthCheckTimeout: "0m", StabilizationTimeout: "0h",
+			},
+			wantErrs: 3,
+		},
+		// What time.ParseDuration accepts above zero still passes.
+		{
+			name: "positive durations in other spellings",
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{
+				UpgradeTimeout: "1h30m", HealthCheckTimeout: "+90s", StabilizationTimeout: "1.5m",
+			},
+			wantErrs: 0,
+		},
+		{
+			name:     "a nanosecond is above zero",
+			strategy: &neo4jv1beta1.UpgradeStrategySpec{UpgradeTimeout: "1ns"}, wantErrs: 0,
+		},
 		{
 			name: "maxUnavailableDuringUpgrade = -1",
 			strategy: &neo4jv1beta1.UpgradeStrategySpec{

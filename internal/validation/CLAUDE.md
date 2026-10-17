@@ -10,7 +10,7 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 | File | What it does |
 |---|---|
 | `cluster_validator.go` | `ClusterValidator` — composes edition/topology/image/storage/tls/auth/upgrade/memory/config sub-validators; entry points `ValidateWithWarnings` (what the reconciler and `kubectl neo4j validate` run: the spec rules plus `validateAgainstRunning`), `ValidateCreateWithWarnings`/`ValidateCreate` (spec rules only), `ApplyDefaults`. |
-| `standalone_validator.go` | `StandaloneValidator` — single-node equivalent (`ValidateCreate`/`ValidateUpdate`). |
+| `standalone_validator.go` | `StandaloneValidator` — single-node equivalent: `Validate` (what the reconciler and `kubectl neo4j validate` run: `ValidateCreate`'s spec rules, the admin password's shape, and `validateAgainstRunning`, the tag against `status.version`); no update-only method (operations.md id 144). |
 | `database_validator.go` | `DatabaseValidator` for `Neo4jDatabase` — tries cluster lookup first, then standalone. |
 | `image_validator.go` | Rejects `-community` tags (`isCommunityTag`) + Neo4j version support check. |
 | `edition_validator.go` | Intentional no-op (edition field removed; enterprise-only). |
@@ -66,8 +66,13 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 - **There is no "old" object** (`docs/knowledge/operations.md` id 139). Without a webhook the
   reconciler sees only the current object, so a rule that needs the previous state reads what the
   operator recorded in status (`validateAgainstRunning`: `spec.image.tag` vs `status.version`). The
-  update path used to fetch the cluster again and compare it with itself, so its rules never fired.
-  A rule that needs only the spec goes in `validateCluster`, where the CLI also runs it.
+  update path used to fetch the cluster again and compare it with itself, so its rules never fired;
+  the standalone's `ValidateUpdate` was never called at all (id 144). A rule that needs only the spec
+  goes in `validateCluster`, where the CLI also runs it. `status.version` is what the servers run,
+  read from a rolled StatefulSet (`rolledImageTag` in `internal/controller/running_version.go`).
+- **`ApplyDefaults` adds no field an error can be reported on.** The CLI applies it before validating,
+  as the reconciler does, and a finding must name a field the user wrote or one that is missing (the
+  nameless `spec.tls.issuerRef` default was removed for that, id 144).
 - **Every published manifest is validated in CI** by `TestPublishedManifestsPassOurOwnValidators`,
   which walks `examples/` and `config/samples/`. Three shipped examples were unappliable before
   it existed, and `kubectl apply --dry-run=server` accepted all of them — the CRD schema cannot

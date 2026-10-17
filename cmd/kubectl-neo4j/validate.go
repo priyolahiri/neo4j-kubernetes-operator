@@ -88,15 +88,18 @@ type kindValidator struct {
 //
 // needsClient:false is a claim that the validator tolerates a nil client,
 // established per kind and pinned by TestOfflineValidatorsAreNilClientSafe:
-//   - Standalone, Backup, Plugin — constructor takes no client.
+//   - Backup, Plugin — constructor takes no client.
 //   - DatabaseAlias, ReplicaDatabase — accept a client and never dereference it.
 //   - CompositeDatabase — its one client call (the CalVer gate on
 //     defaultCypherLanguage) returns early on nil.
-//   - EnterpriseCluster — its client calls (the admin Secret, the live
-//     cluster's status) are skipped on nil.
+//   - EnterpriseCluster, EnterpriseStandalone — their client calls (the admin
+//     Secret, the live deployment's status) are skipped on nil.
 var validators = map[string]kindValidator{
-	// The same entry point the operator runs on every pass, so a manifest is
-	// held to the same rules here as when it is applied.
+	// The same entry point the operator runs on every pass, after the same
+	// defaults, so a manifest is held to the same rules here as when it is
+	// applied. The defaults go on the decoded copy that is validated; nothing
+	// prints that copy, and ApplyDefaults adds no field an error can then be
+	// reported on (operations.md id 144).
 	"Neo4jEnterpriseCluster": {
 		connectedChecks: "a Neo4jEnterpriseCluster's spec.image.tag against the version the cluster already runs",
 		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
@@ -106,19 +109,28 @@ var validators = map[string]kindValidator{
 			}
 			ctx := context.Background()
 			notChecked := withLiveClusterStatus(ctx, c, &obj)
-			out := validation.NewClusterValidator(c).ValidateWithWarnings(ctx, &obj)
+			v := validation.NewClusterValidator(c)
+			v.ApplyDefaults(ctx, &obj)
+			out := v.ValidateWithWarnings(ctx, &obj)
 			warnings := append(out.Warnings, out.NoEffectWarnings...)
 			return out.Errors, append(warnings, notChecked...), nil, nil
 		},
 	},
-	"Neo4jEnterpriseStandalone": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
-		var obj neo4jv1beta1.Neo4jEnterpriseStandalone
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			return nil, nil, nil, err
-		}
-		v := validation.NewStandaloneValidator()
-		return v.ValidateCreate(&obj), v.NoEffectWarnings(&obj), nil, nil
-	}},
+	// The operator applies no defaults to a standalone before it validates
+	// one, so neither does this.
+	"Neo4jEnterpriseStandalone": {
+		connectedChecks: "a Neo4jEnterpriseStandalone's spec.image.tag against the version it already runs",
+		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+			var obj neo4jv1beta1.Neo4jEnterpriseStandalone
+			if err := yaml.Unmarshal(doc, &obj); err != nil {
+				return nil, nil, nil, err
+			}
+			ctx := context.Background()
+			notChecked := withLiveStandaloneStatus(ctx, c, &obj)
+			v := validation.NewStandaloneValidator()
+			return v.Validate(ctx, c, &obj), append(v.NoEffectWarnings(&obj), notChecked...), nil, nil
+		},
+	},
 	"Neo4jBackup": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jBackup
 		if err := yaml.Unmarshal(doc, &obj); err != nil {
@@ -243,6 +255,28 @@ func withLiveClusterStatus(ctx context.Context, c client.Client, obj *neo4jv1bet
 	return nil
 }
 
+// withLiveStandaloneStatus is withLiveClusterStatus for a standalone: the
+// version it runs is read from the status of the standalone already in the API
+// server under its name, which is what the operator reads.
+func withLiveStandaloneStatus(ctx context.Context, c client.Client, obj *neo4jv1beta1.Neo4jEnterpriseStandalone) []string {
+	obj.Status = neo4jv1beta1.Neo4jEnterpriseStandaloneStatus{}
+	if c == nil {
+		return nil
+	}
+	live := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	err := c.Get(ctx, client.ObjectKeyFromObject(obj), live)
+	switch {
+	case err == nil:
+		obj.Status = live.Status
+	case apierrors.IsNotFound(err):
+	default:
+		return []string{fmt.Sprintf(
+			"could not read Neo4jEnterpriseStandalone %s/%s, so spec.image.tag was not checked against the version it runs: %v",
+			obj.Namespace, obj.Name, err)}
+	}
+	return nil
+}
+
 // newObjectForKind returns an empty instance of a Neo4j CRD kind, or nil when
 // the kind is not one of ours.
 //
@@ -332,12 +366,14 @@ Usage:
 Runs OFFLINE by default: no cluster connection is made, and kinds whose
 validators resolve cross-references (clusterRef, Secrets, roles) are reported
 as skipped. Pass --connect (or --context/--kubeconfig) to check those too, and
-to check a cluster's spec.image.tag against the version the cluster already
-runs (a downgrade is refused).
+to check a cluster's or a standalone's spec.image.tag against the version it
+already runs (a downgrade is refused).
 
-Note: the operator stops validating a resource after certain critical errors,
-so fixing the reported errors and re-running may surface further ones. A clean
-run means nothing further is reachable, not that nothing was ever wrong.
+A validator reports every error it finds, not just the first, so one run lists
+them all. The exception is Neo4jShardedDatabase: when its clusterRef cannot be
+read, that is the error reported, and its other rules wait for the cluster. A
+clean run covers the rules that ran: offline, the summary names the ones that
+compare a manifest with what already runs.
 
 Not every kind has an operator-side validator. Those that do not are governed
 by their CRD schema alone — use kubectl apply --dry-run=server for that.

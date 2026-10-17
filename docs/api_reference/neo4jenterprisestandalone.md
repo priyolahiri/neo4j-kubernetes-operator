@@ -54,7 +54,7 @@ Specifies the Neo4j Docker image to use.
 | Field | Type | Description |
 |---|---|---|
 | `repo` | `string` | **Required**. Docker repository (no schema default; typically `"neo4j"`) |
-| `tag` | `string` | **Required**. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward) |
+| `tag` | `string` | **Required**. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward). A change is checked against `status.version` on every reconcile: a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)) |
 | `pullPolicy` | `string` | Image pull policy: `"Always"`, `"IfNotPresent"` (default), `"Never"` |
 | `pullSecrets` | `[]string` | Image pull secrets for private registries |
 
@@ -260,10 +260,12 @@ Configures how the operator handles Neo4j version upgrades for standalone deploy
 
 ```yaml
 upgradeStrategy:
-  strategy: RollingUpgrade       # RollingUpgrade (default) or Recreate
+  strategy: RollingUpgrade       # RollingUpgrade (default) or Recreate: the one pod is replaced either way
   preUpgradeHealthCheck: true    # Verify Neo4j health before upgrading
   autoPauseOnFailure: true       # Block upgrade if health check fails
 ```
+
+With either strategy the StatefulSet deletes the standalone's pod and creates it again on the new image. `Recreate` used to give the StatefulSet the `OnDelete` strategy, under which a new image, a configuration change or a plugin never reached the running server, while `status.version` already named the new tag.
 
 For the full type definition see [`UpgradeStrategySpec`](neo4jenterprisecluster.md#upgradestrategyspec).
 
@@ -545,7 +547,7 @@ endpoints:
 ```
 
 #### `version` (string)
-Current Neo4j version running.
+The image tag the standalone runs, recorded once its pod is ready on the current image: it does not move while the pod is being replaced, nor for an image that never starts. `spec.image.tag` is checked against it on every reconcile, and a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)). It used to be `spec.image.tag`, written on every reconcile whether or not the pod ran it.
 
 #### `podStatus` (StandalonePodStatus)
 **Reserved — never populated today** (the schema is shown for reference; use `kubectl get pod <name>-0` for pod state). Intended: information about the Neo4j pod.

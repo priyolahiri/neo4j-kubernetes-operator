@@ -26,7 +26,7 @@
   {
     "id": "ev-validation-failed",
     "name": "ValidationFailed",
-    "description": "Fires when an inline spec validator (cluster, standalone, database, sharded database, composite database, alias, replica, plugin, user, role, role binding, auth rule) rejects the CR's spec with hard errors; reconciliation halts until the spec is fixed. Emitted after the status write that records the failure, and only when that write changed the phase, the message or the Ready condition's status or reason — when the failure starts or its message changes — not on every retry while the spec stays invalid, nor after an operator restart (knowledge operations.md id 136). For a cluster this includes a spec.image.tag below status.version (a downgrade), checked on every pass; the message says \"Validation failed\" until a pass has accepted the cluster, then \"Update validation failed\".",
+    "description": "Fires when an inline spec validator (cluster, standalone, database, sharded database, composite database, alias, replica, plugin, user, role, role binding, auth rule) rejects the CR's spec with hard errors; reconciliation halts until the spec is fixed. Emitted after the status write that records the failure, and only when that write changed the phase, the message or the Ready condition's status or reason — when the failure starts or its message changes — not on every retry while the spec stays invalid, nor after an operator restart (knowledge operations.md id 136). For a cluster and a standalone this includes a spec.image.tag below status.version (a downgrade), checked on every pass; for a cluster the message says \"Validation failed\" until a pass has accepted the cluster, then \"Update validation failed\".",
     "moduleId": "mod-platform"
   },
   {
@@ -86,7 +86,7 @@
   {
     "id": "ev-upgrade-started",
     "name": "UpgradeStarted",
-    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster), or when the standalone begins its own pre-upgrade check on image-tag drift.",
+    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster, whatever its upgradeStrategy), or when the standalone begins its own pre-upgrade check on the pass that applies a new image (once per image: not again while the pod is being replaced).",
     "moduleId": "mod-cluster"
   },
   {
@@ -188,7 +188,7 @@
   {
     "id": "ev-validation-warning",
     "name": "ValidationWarning",
-    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set (Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore, AuraInstance). Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
+    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set, or a value that has no effect (upgradeStrategy.strategy Recreate on a cluster) (Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore, AuraInstance). Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
     "moduleId": "mod-database"
   },
   {

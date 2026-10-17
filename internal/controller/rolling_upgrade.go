@@ -379,30 +379,34 @@ func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool
 	return true
 }
 
-// Configuration helpers
+// Configuration helpers. Validation refuses a timeout that does not parse or
+// is not above zero (validation.ValidateUpgradeStrategy), and it runs before
+// every step; a value that reaches here anyway gets the default rather than a
+// deadline at or before the step's start.
+func upgradeTimeoutOrDefault(value string, def time.Duration) time.Duration {
+	if timeout, err := time.ParseDuration(value); err == nil && timeout > 0 {
+		return timeout
+	}
+	return def
+}
+
 func (r *RollingUpgradeOrchestrator) getUpgradeTimeout(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) time.Duration {
-	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.UpgradeTimeout != "" {
-		if timeout, err := time.ParseDuration(cluster.Spec.UpgradeStrategy.UpgradeTimeout); err == nil {
-			return timeout
-		}
+	if cluster.Spec.UpgradeStrategy != nil {
+		return upgradeTimeoutOrDefault(cluster.Spec.UpgradeStrategy.UpgradeTimeout, 30*time.Minute)
 	}
 	return 30 * time.Minute // Default
 }
 
 func (r *RollingUpgradeOrchestrator) getHealthCheckTimeout(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) time.Duration {
-	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.HealthCheckTimeout != "" {
-		if timeout, err := time.ParseDuration(cluster.Spec.UpgradeStrategy.HealthCheckTimeout); err == nil {
-			return timeout
-		}
+	if cluster.Spec.UpgradeStrategy != nil {
+		return upgradeTimeoutOrDefault(cluster.Spec.UpgradeStrategy.HealthCheckTimeout, 5*time.Minute)
 	}
 	return 5 * time.Minute // Default
 }
 
 func (r *RollingUpgradeOrchestrator) getStabilizationTimeout(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) time.Duration {
-	if cluster.Spec.UpgradeStrategy != nil && cluster.Spec.UpgradeStrategy.StabilizationTimeout != "" {
-		if timeout, err := time.ParseDuration(cluster.Spec.UpgradeStrategy.StabilizationTimeout); err == nil {
-			return timeout
-		}
+	if cluster.Spec.UpgradeStrategy != nil {
+		return upgradeTimeoutOrDefault(cluster.Spec.UpgradeStrategy.StabilizationTimeout, 3*time.Minute)
 	}
 	return 3 * time.Minute // Default
 }

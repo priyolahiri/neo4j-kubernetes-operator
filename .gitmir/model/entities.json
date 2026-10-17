@@ -158,7 +158,7 @@
         "name": "upgradeStrategy.strategy",
         "type": "enum",
         "isNullable": true,
-        "note": "RollingUpgrade|Recreate; default RollingUpgrade"
+        "note": "RollingUpgrade|Recreate; default RollingUpgrade. A cluster is upgraded one server at a time with either; Recreate raises a ValidationWarning."
       },
       {
         "id": "f-neo4jenterprisecluster-status-phase",
@@ -185,7 +185,7 @@
         "name": "status.version",
         "type": "string",
         "isNullable": true,
-        "note": "The image tag every server was verified to run: stamped at the first Ready and after each verified upgrade, unchanged while an upgrade is in flight or after one fails. spec.image.tag is validated against it on every pass (no downgrades)."
+        "note": "The image tag every server runs, read from the rolled server StatefulSet: stamped at the first Ready, after each verified upgrade, and at a Ready on an image that reached the servers while none was ready; unchanged while an upgrade is in flight or after one fails. spec.image.tag is validated against it on every pass (no downgrades)."
       },
       {
         "id": "f-neo4jenterprisecluster-cross-cluster-replication-enabled",
@@ -278,7 +278,8 @@
         "id": "f-neo4jenterprisestandalone-image-tag",
         "name": "image.tag",
         "type": "string",
-        "isNullable": false
+        "isNullable": false,
+        "note": "Neo4j version tag (5.26.x or 2025.01+); a change is checked against status.version on every pass, and a downgrade is refused."
       },
       {
         "id": "f-neo4jenterprisestandalone-storage-size",
@@ -369,7 +370,7 @@
         "name": "upgradeStrategy.strategy",
         "type": "enum",
         "isNullable": true,
-        "note": "RollingUpgrade|Recreate; default RollingUpgrade"
+        "note": "RollingUpgrade|Recreate; default RollingUpgrade. Either replaces the one pod (StatefulSet RollingUpdate)."
       },
       {
         "id": "f-neo4jenterprisestandalone-trusted-ca-secrets",
@@ -396,7 +397,7 @@
         "name": "status.version",
         "type": "string",
         "isNullable": true,
-        "note": "Current observed Neo4j version"
+        "note": "The image tag the standalone runs: recorded from its StatefulSet once the pod is ready on the current template, never from spec.image.tag. spec.image.tag is validated against it on every pass (no downgrades)."
       },
       {
         "id": "f-neo4jenterprisestandalone-status-pod-status-pod-name",

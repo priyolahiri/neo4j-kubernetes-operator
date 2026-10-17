@@ -1468,7 +1468,10 @@ type ConnectionExamples struct {
 
 // UpgradeStrategySpec defines upgrade strategy configuration
 type UpgradeStrategySpec struct {
-	// Strategy specifies the upgrade strategy
+	// Strategy specifies the upgrade strategy. A Neo4jEnterpriseCluster is
+	// upgraded one server at a time with either value, the only way Neo4j
+	// documents for upgrading a cluster; Recreate raises a ValidationWarning
+	// there. A Neo4jEnterpriseStandalone's one pod is replaced with either.
 	// +kubebuilder:validation:Enum=RollingUpgrade;Recreate
 	// +kubebuilder:default=RollingUpgrade
 	Strategy string `json:"strategy,omitempty"`
@@ -1485,7 +1488,9 @@ type UpgradeStrategySpec struct {
 	// +kubebuilder:default=1
 	MaxUnavailableDuringUpgrade *int32 `json:"maxUnavailableDuringUpgrade,omitempty"`
 
-	// UpgradeTimeout specifies timeout for the entire upgrade process
+	// UpgradeTimeout bounds each step of a cluster's rolling upgrade: staging
+	// the new template, and each server's restart until its databases have
+	// caught up. A Go duration above zero ("30m", "1h30m").
 	// +kubebuilder:default="30m"
 	UpgradeTimeout string `json:"upgradeTimeout,omitempty"`
 
@@ -1493,11 +1498,13 @@ type UpgradeStrategySpec struct {
 	// +kubebuilder:default=true
 	PostUpgradeHealthCheck bool `json:"postUpgradeHealthCheck,omitempty"`
 
-	// HealthCheckTimeout specifies timeout for health checks
+	// HealthCheckTimeout bounds the check, after a cluster's upgrade, that every
+	// server runs the new version. A Go duration above zero ("5m").
 	// +kubebuilder:default="5m"
 	HealthCheckTimeout string `json:"healthCheckTimeout,omitempty"`
 
 	// StabilizationTimeout specifies how long to wait for cluster stabilization
+	// after its upgrade. A Go duration above zero ("3m").
 	// +kubebuilder:default="3m"
 	StabilizationTimeout string `json:"stabilizationTimeout,omitempty"`
 

@@ -71,6 +71,33 @@ func TestReconcileStatefulSet_ImageUpgradeApplies(t *testing.T) {
 	}
 }
 
+// Recreate used to give the standalone's StatefulSet the OnDelete strategy, and
+// only a restore replaces a standalone's pod, so an image change reached the
+// template and never the server. With one replica, the RollingUpdate strategy
+// is what Recreate promises: the pod is deleted and created again on the new
+// template (operations.md id 144).
+func TestReconcileStatefulSet_RecreateReplacesThePod(t *testing.T) {
+	r, _ := standaloneCMTestReconciler(t)
+	ctx := context.Background()
+
+	sa := standaloneForSTS("2026.08.1-enterprise")
+	sa.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{Strategy: "Recreate"}
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := getSTS(t, r).Spec.UpdateStrategy.Type; got != appsv1.RollingUpdateStatefulSetStrategyType {
+		t.Errorf("Recreate: update strategy = %q, want RollingUpdate (OnDelete never replaces the pod)", got)
+	}
+
+	sa.Spec.UpgradeStrategy.Strategy = "RollingUpgrade"
+	if err := r.reconcileStatefulSet(ctx, sa); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := getSTS(t, r).Spec.UpdateStrategy.Type; got != appsv1.RollingUpdateStatefulSetStrategyType {
+		t.Errorf("RollingUpgrade: update strategy = %q, want RollingUpdate", got)
+	}
+}
+
 // TestReconcileStatefulSet_ResourcesChangeApplies: a resources edit must reach a
 // running standalone (another field the empty mutate silently dropped).
 func TestReconcileStatefulSet_ResourcesChangeApplies(t *testing.T) {
