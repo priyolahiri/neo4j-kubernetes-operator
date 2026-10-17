@@ -3225,6 +3225,14 @@ func LegacyDiscoveryName(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	return fmt.Sprintf("%s-discovery", cluster.Name)
 }
 
+// The Neo4j settings spec.auth's provider lists are written into. Neo4j
+// defaults each to native (configuration settings, Operations Manual /5/ and
+// /current/).
+const (
+	AuthenticationProvidersSetting = "dbms.security.authentication_providers"
+	AuthorizationProvidersSetting  = "dbms.security.authorization_providers"
+)
+
 // AuthConfigResult holds the generated neo4j.conf auth config and the list of keys it produced.
 type AuthConfigResult struct {
 	// Config is the generated neo4j.conf lines for authentication/authorization
@@ -3247,13 +3255,15 @@ func BuildAuthConfig(auth *neo4jv1beta1.AuthSpec) AuthConfigResult {
 	authnProviders := auth.AuthenticationProviders
 	authzProviders := auth.AuthorizationProviders
 
+	// A list is written only when it is not empty, and a list written here
+	// takes its setting from spec.config (GeneratedKeys).
 	if len(authnProviders) > 0 {
-		lines = append(lines, fmt.Sprintf("dbms.security.authentication_providers=%s", strings.Join(authnProviders, ",")))
-		keys = append(keys, "dbms.security.authentication_providers")
+		lines = append(lines, AuthenticationProvidersSetting+"="+strings.Join(authnProviders, ","))
+		keys = append(keys, AuthenticationProvidersSetting)
 	}
 	if len(authzProviders) > 0 {
-		lines = append(lines, fmt.Sprintf("dbms.security.authorization_providers=%s", strings.Join(authzProviders, ",")))
-		keys = append(keys, "dbms.security.authorization_providers")
+		lines = append(lines, AuthorizationProvidersSetting+"="+strings.Join(authzProviders, ","))
+		keys = append(keys, AuthorizationProvidersSetting)
 	}
 
 	// LDAP configuration

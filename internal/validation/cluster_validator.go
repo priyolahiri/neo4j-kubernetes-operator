@@ -77,22 +77,43 @@ func (v *ClusterValidator) ValidateCreate(ctx context.Context, cluster *neo4jv1b
 	return nil
 }
 
-// ApplyDefaults applies default values to the cluster
+// ApplyDefaults fills in, on one copy of a cluster, what the operator reads and
+// the user left unset. It never replaces a value the user set, and the copy is
+// never written back: the reconciler applies it to the copy its pass works on
+// and patches only what it changes on the object, so the stored spec stays the
+// one the user applied (operations.md id 150). `kubectl neo4j validate` applies
+// it to the manifest it decodes, so a manifest is judged as the operator
+// judges it.
+//
+// Three kinds of default live here:
+//   - the CRD schema's (image.pullPolicy, storage.retentionPolicy, the mode of
+//     a tls block, the type of a service block). The API server fills these in
+//     before the operator reads the object, so they matter to the CLI, which
+//     decodes a manifest the API server has not seen; they must say what the
+//     +kubebuilder:default markers say
+//     (TestClusterValidator_ApplyDefaults_AgreesWithTheCRDDefaults).
+//   - what the operator takes an absent block to mean: no tls block is TLS
+//     disabled, no service block a ClusterIP Service.
+//   - Neo4j's own default for the auth provider lists (applyAuthProviderDefaults).
 func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
 	// Edition field removed - operator only supports enterprise edition
 
-	// Default image pull policy
+	// The CRD's default.
 	if cluster.Spec.Image.PullPolicy == "" {
 		cluster.Spec.Image.PullPolicy = "IfNotPresent"
 	}
 
-	// Default TLS configuration - disable TLS by default for simplicity
+	// No tls block is TLS disabled. A tls block without a mode is the CRD's
+	// default, cert-manager: what the API server stores for it. This said
+	// disabled, which the operator never saw (the API server had filled the
+	// mode in) and `kubectl neo4j validate` did, so the CLI skipped every TLS
+	// rule for a block the cluster runs as cert-manager.
 	if cluster.Spec.TLS == nil {
 		cluster.Spec.TLS = &neo4jv1beta1.TLSSpec{
 			Mode: "disabled",
 		}
 	} else if cluster.Spec.TLS.Mode == "" {
-		cluster.Spec.TLS.Mode = "disabled"
+		cluster.Spec.TLS.Mode = resources.CertManagerMode
 	}
 
 	// No default for a missing spec.tls.issuerRef. One used to be made here,
@@ -103,31 +124,66 @@ func (v *ClusterValidator) ApplyDefaults(ctx context.Context, cluster *neo4jv1be
 	// spec.tls.issuerRef. No cluster ran on the default: a nameless issuerRef
 	// is refused.
 
-	// Default auth configuration
-	if cluster.Spec.Auth == nil {
-		cluster.Spec.Auth = &neo4jv1beta1.AuthSpec{
-			AuthenticationProviders: []string{"native"},
-			AuthorizationProviders:  []string{"native"},
-		}
-	} else if len(cluster.Spec.Auth.AuthenticationProviders) == 0 {
-		cluster.Spec.Auth.AuthenticationProviders = []string{"native"}
-		cluster.Spec.Auth.AuthorizationProviders = []string{"native"}
-	}
+	applyAuthProviderDefaults(cluster)
 
-	// Default service configuration
+	// No service block is a ClusterIP Service, and ClusterIP is the CRD's
+	// default for the type of a service block.
 	if cluster.Spec.Service == nil {
 		cluster.Spec.Service = &neo4jv1beta1.ServiceSpec{
 			Type: "ClusterIP",
 		}
+	} else if cluster.Spec.Service.Type == "" {
+		cluster.Spec.Service.Type = "ClusterIP"
 	}
 
-	// Default storage retention policy to Delete
+	// The CRD's default.
 	if cluster.Spec.Storage.RetentionPolicy == "" {
 		cluster.Spec.Storage.RetentionPolicy = "Delete"
 	}
 
 	// Note: We no longer auto-adjust topology values
 	// Topology warnings will be generated during validation instead
+}
+
+// applyAuthProviderDefaults gives a cluster that names no authentication
+// provider Neo4j's default for both provider lists, native, which the operator
+// then writes into neo4j.conf, as it always has. Neo4j defaults
+// dbms.security.authentication_providers and
+// dbms.security.authorization_providers to native, each on its own
+// (configuration settings, Operations Manual /5/ and /current/).
+//
+// It fills in only a list the user set nowhere. A list the operator writes
+// takes its setting from spec.config (resources.BuildAuthConfig), so a setting
+// the user wrote there counts as set. It used to replace authorizationProviders
+// whenever authenticationProviders was empty: a cluster that named only its
+// authorization providers (an LDAP or OIDC group mapping over native sign-in)
+// ran on native authorization, and a provider list in spec.config lost to the
+// defaults.
+//
+// A cluster that names its authentication providers and no authorization
+// providers keeps no authorization line: Neo4j's default applies, as it did.
+// Writing native there would change neo4j.conf, and so restart the servers of
+// every such cluster on an operator upgrade, for the value Neo4j uses anyway.
+func applyAuthProviderDefaults(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	auth := cluster.Spec.Auth
+	sets := func(list []string, setting string) bool {
+		_, inConfig := cluster.Spec.Config[setting]
+		return len(list) > 0 || inConfig
+	}
+	var authn, authz []string
+	if auth != nil {
+		authn, authz = auth.AuthenticationProviders, auth.AuthorizationProviders
+	}
+	if sets(authn, resources.AuthenticationProvidersSetting) {
+		return
+	}
+	if cluster.Spec.Auth == nil {
+		cluster.Spec.Auth = &neo4jv1beta1.AuthSpec{}
+	}
+	cluster.Spec.Auth.AuthenticationProviders = []string{"native"}
+	if !sets(authz, resources.AuthorizationProvidersSetting) {
+		cluster.Spec.Auth.AuthorizationProviders = []string{"native"}
+	}
 }
 
 // validateCluster performs comprehensive validation of the cluster
