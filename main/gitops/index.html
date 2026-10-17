@@ -3774,6 +3774,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#the-operator-does-not-rewrite-your-spec" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The operator does not rewrite your spec
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#prometheus-servicemonitor" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3886,6 +3897,96 @@ Flux configuration is needed once the operator surfaces that condition.</p>
 (the grace period above); a <code>Degraded</code> one reports <code>Ready=False</code> with reason
 <code>ClusterDegraded</code>, so a Kustomization health-checking it fails until the
 missing server is back.</p>
+<h2 id="the-operator-does-not-rewrite-your-spec">The operator does not rewrite your spec<a class="headerlink" href="#the-operator-does-not-rewrite-your-spec" title="Anchor link to this section">&para;</a></h2>
+<p>The stored spec of every custom resource of the operator is the one you
+applied, with the CRD's own defaults the API server fills in, so a GitOps diff
+shows only what you changed. The operator's defaults for a cluster (Neo4j's
+<code>native</code> auth providers, TLS disabled when there is no <code>tls</code> block, a ClusterIP
+Service when there is no <code>service</code> block) go on its copy of the object for each
+reconcile and are never written back. What it does write to one of its custom
+resources is a merge patch of what it changes:</p>
+<table>
+<thead>
+<tr>
+<th>Written</th>
+<th>On</th>
+<th>When</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>metadata.finalizers</code> (its own entry)</td>
+<td>Every kind it cleans up after</td>
+<td>First reconcile; removed on deletion</td>
+</tr>
+<tr>
+<td><code>neo4j.com/scale-down-draining-servers</code> annotation</td>
+<td><code>Neo4jEnterpriseCluster</code></td>
+<td>While a scale-down drains servers</td>
+</tr>
+<tr>
+<td><code>neo4j.com/external-fleet-deployment-id</code> annotation</td>
+<td>Cluster or standalone</td>
+<td>When Aura Fleet Management provisions the deployment</td>
+</tr>
+<tr>
+<td><code>neo4j.com/restore-in-progress</code> annotation</td>
+<td><code>Neo4jEnterpriseStandalone</code></td>
+<td>While an offline restore holds it stopped</td>
+</tr>
+<tr>
+<td><code>neo4j.com/cypher-restore-issued</code>, <code>cypher-restore-observed-offline</code>, <code>restore-pre-hooks-ran</code>, <code>point-in-time-path</code>, <code>seed-proxy-wait-started</code> annotations</td>
+<td><code>Neo4jRestore</code></td>
+<td>While the restore runs</td>
+</tr>
+<tr>
+<td><code>neo4j.com/external-*-id</code>, <code>neo4j.com/multi-database-probed</code> annotations</td>
+<td>Aura kinds</td>
+<td>When the Aura object is created, adopted or probed</td>
+</tr>
+<tr>
+<td><code>spec.extraEnvFrom</code> entry and <code>neo4j.com/seed-creds-auto-inherited-from</code> annotation</td>
+<td>Cluster or standalone</td>
+<td>A database seed needs a credentials Secret the CR does not project, and the CR carries <code>neo4j.com/auto-inherit-seed-creds: "true"</code></td>
+</tr>
+<tr>
+<td><code>spec.env</code> / <code>spec.extraEnvFrom</code> entries and the same annotation</td>
+<td>Cluster or standalone</td>
+<td>A <code>Neo4jRestore</code> from cloud storage needs credentials or an endpoint its target lacks, and the target carries that annotation</td>
+</tr>
+</tbody>
+</table>
+<p>The last two are spec changes you opted into with the annotation, and a GitOps
+tool reports them: add them to your manifests, or tell the tool to ignore those
+fields.</p>
+<p>Releases before this one sent the whole object back with every one of these
+writes, so an object they created may carry fields you did not write:</p>
+<ul>
+<li>On a cluster, the defaults above: <code>spec.auth.authenticationProviders</code> and
+  <code>authorizationProviders: [native]</code>, <code>spec.tls: {mode: disabled,
+  strictPeerValidation: true}</code>, <code>spec.service: {type: ClusterIP}</code>.</li>
+<li><code>true</code> where you had set a field the CRD defaults to <code>true</code> to <code>false</code>:
+  <code>spec.monitoring.enabled</code>, <code>spec.upgradeStrategy.preUpgradeHealthCheck</code>,
+  <code>postUpgradeHealthCheck</code>, <code>autoPauseOnFailure</code> and <code>spec.mcp.readOnly</code> (cluster
+  and standalone); <code>Neo4jRole</code> <code>spec.enforcePrivileges</code>; <code>Neo4jAuthRule</code>
+  <code>spec.enforceRoles</code>; <code>Neo4jPlugin</code> <code>spec.enabled</code>; <code>Neo4jDatabase</code>
+  <code>spec.ifNotExists</code> and <code>spec.wait</code>; a backup's or restore's cloud
+  <code>identity.autoCreate.enabled</code>.</li>
+<li>No field at all where you had set a field with no default to <code>false</code> (an
+  <code>AuraInstance</code>'s <code>deletionProtection: false</code>).</li>
+<li>Quantities in their canonical spelling (<code>cpu: "0.5"</code> stored as <code>500m</code>).</li>
+</ul>
+<p>An operator upgrade leaves them as they are, and every object goes on doing
+what its stored spec says, as it did before the upgrade: nothing restarts. Your
+next apply puts back each field your manifest sets (with
+<code>kubectl apply --server-side</code>, a field the operator wrote is a conflict until
+you pass <code>--force-conflicts</code>); remove the others with <code>kubectl patch --type
+json</code>. Removing a default changes nothing. Putting back a value of yours does
+what that edit always does: <code>monitoring.enabled: false</code>, or your own
+<code>authorizationProviders</code> on a cluster that named no <code>authenticationProviders</code>,
+changes what the servers run and restarts them; a role's
+<code>enforcePrivileges: false</code> stops it revoking privileges added outside its
+spec.</p>
 <h2 id="prometheus-servicemonitor">Prometheus ServiceMonitor<a class="headerlink" href="#prometheus-servicemonitor" title="Anchor link to this section">&para;</a></h2>
 <p>The Helm chart includes a <code>ServiceMonitor</code> for the Prometheus Operator. By default
 (<code>metrics.secure: true</code>) the operator serves <code>/metrics</code> over <strong>HTTPS</strong> with
