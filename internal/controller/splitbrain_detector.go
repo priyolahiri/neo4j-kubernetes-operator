@@ -258,13 +258,12 @@ func (d *SplitBrainDetector) createPodSpecificNeo4jClient(ctx context.Context, c
 	podURL := fmt.Sprintf("%s://%s.%s-headless.%s.svc.cluster.local:7687",
 		scheme, podName, cluster.Name, cluster.Namespace)
 
-	// Defensive check for auth configuration
-	if cluster.Spec.Auth == nil || cluster.Spec.Auth.AdminSecret == "" {
-		return nil, fmt.Errorf("cluster %s has no auth configuration or admin secret specified", cluster.Name)
-	}
-
-	// Create client with pod-specific URL and cluster credentials
-	return neo4jclient.NewClientForPod(cluster, d.Client, cluster.Spec.Auth.AdminSecret, podURL)
+	// The admin Secret the servers were given: spec.auth.adminSecret, or the
+	// default neo4j-admin-secret when it is unset, as every other client of
+	// the cluster resolves it. This used to refuse a cluster without
+	// spec.auth.adminSecret, so neither the split-brain check nor the
+	// upgrade's per-server database gate could reach its servers.
+	return neo4jclient.NewClientForPod(cluster, d.Client, getClusterAdminSecretName(cluster), podURL)
 }
 
 // analyzeClusterViews analyzes all cluster views to determine if there's a split-brain
