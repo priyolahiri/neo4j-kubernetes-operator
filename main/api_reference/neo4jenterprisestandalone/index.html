@@ -5890,6 +5890,10 @@ matching what cert-manager-issued Secrets contain). The operator runs an
 init container that copies the JDK's default <code>cacerts</code> to a writable JKS,
 imports each supplied CA with the Secret name as the keytool alias, and sets
 <code>-Djavax.net.ssl.trustStore=/truststore/truststore.jks</code> on the JVM.</p>
+<p>A <code>VerifiedDownload</code> <a href="../neo4jplugin/"><code>Neo4jPlugin</code></a> of the standalone
+trusts the same list for its JAR download and follows changes to it — one
+more restart, after the standalone's own (see the plugin reference,
+<strong>Internal CAs</strong>).</p>
 <p>The legacy singular <code>spec.auth.trustStore</code> is also folded
 into the same JKS at reconcile time. See the
 <a href="../neo4jenterprisecluster/#trustedcasecret">shared TrustedCASecret reference</a>

@@ -5731,7 +5731,8 @@ ones it renders in the StatefulSet annotations
 <code>neo4j.com/cluster-controller-volumes</code>. A <code>Ready</code> plugin whose init
 container or volumes were removed anyway puts them back (<code>PluginMissing</code>
 event). Uninstalling the last VerifiedDownload plugin also removes
-<code>plugin-ca</code>.</p>
+<code>plugin-ca</code>. The plugin controller is the only writer of <code>plugin-ca</code>; its
+content follows the target's <code>spec.trustedCASecrets</code> (see <strong>Internal CAs</strong>).</p>
 <p><strong>Authenticated mirrors</strong> are supported via <code>spec.source.authSecret</code>.
 The named Secret should carry either a <code>token</code> key (used as
 <code>Authorization: Bearer &lt;token&gt;</code>) or a <code>header</code> key (used verbatim as the
@@ -5742,6 +5743,21 @@ consumed by the init script.</p>
 <code>Key</code> override) is mounted under <code>/etc/plugin-ca</code>; the init script
 concatenates the certificates into a single CA bundle and points curl at
 it via <code>--cacert</code>.</p>
+<p>The <code>plugin-ca</code> volume follows the list: when you add, remove or replace a
+Secret in <code>spec.trustedCASecrets</code>, a <code>Ready</code> plugin updates the volume (and
+its init container's mount of it, when the list becomes empty or stops being
+empty) without a <code>PluginMissing</code> event — phase <code>Installing</code>, message
+"Updating the plugin's trusted CAs: …". That write restarts the servers, so it
+waits like an install until the target is <code>Ready</code> with every server available:
+the target's own truststore roll comes first, then the plugin's. A list that
+is only reordered changes nothing. The volume's projections are optional and
+the init script uses the default CAs when <code>/etc/plugin-ca</code> holds no
+certificate, so a Secret you delete right after removing it from the list
+does not stop a restarting server; the JAR is still checked against
+<code>spec.source.checksum</code>. A volume an earlier operator version wrote keeps
+required projections until the list next changes, so on the first change
+after upgrading, delete a removed CA's Secret only once the plugin is <code>Ready</code>
+again.</p>
 <p><strong>Init container image</strong> defaults to <code>curlimages/curl:8.5.0</code>. Override
 via the Helm chart's <code>pluginInitContainer.image</code> value when installing
 into air-gapped clusters that need a mirrored image.</p>
@@ -6131,7 +6147,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <ul>
 <li><strong>Pending</strong>: Plugin resource created, waiting for processing</li>
 <li><strong>Waiting</strong>: Waiting for the deployment to be functional, or — when the plugin has something to write to its StatefulSet, which restarts every server — for it to be <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), nor while it is forming, rolling its servers or upgrading. A <code>PluginInstallDeferred</code> event (or, for a <code>Ready</code> plugin that lost something, a <code>PluginMissing</code> one) marks the start of the wait; the plugin checks again every 30 seconds</li>
-<li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, and while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event)</li>
+<li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event), and while a <code>VerifiedDownload</code> plugin brings its trusted CAs in line with the target's changed <code>spec.trustedCASecrets</code> ("Updating the plugin's trusted CAs: …")</li>
 <li><strong>Ready</strong>: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets, a <code>VerifiedDownload</code> init container or volume), the plugin goes back to <code>Installing</code> and restores it — or <code>Waiting</code>, while the target is not <code>Ready</code> with every server available; if nothing is missing, the check writes nothing and the phase stays <code>Ready</code>, whatever state the target is in</li>
 <li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
 <li><strong>Invalid</strong>: The spec failed validation (for example an unsupported <code>securityPolicy</code>, a missing <code>source.url</code>/<code>checksum</code>, or a non-https URL); the controller does not requeue until the CR is edited</li>

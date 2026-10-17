@@ -6593,6 +6593,13 @@ JVM truststore. Used by <code>spec.trustedCASecrets</code>.</p>
 init container, then sets <code>-Djavax.net.ssl.trustStore</code> on the JVM. The JDK's
 default <code>cacerts</code> is used as the seed, so adding internal CAs does not
 remove trust in public CAs.</p>
+<p>A <code>VerifiedDownload</code> <a href="../neo4jplugin/"><code>Neo4jPlugin</code></a> of the cluster trusts
+the same list when it fetches its JAR (its <code>plugin-ca</code> volume). A change to
+the list restarts the servers for the truststore, and then once more when a
+<code>Ready</code> plugin brings its volume in line, once the cluster is <code>Ready</code> with
+every server available again. Removing a CA is safe to follow with deleting
+its Secret: the plugin's projections are optional (except, on the first change
+after upgrading the operator, a volume an earlier version wrote).</p>
 <p>Example with cert-manager:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">cert-manager.io/v1</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Certificate</span>

@@ -4510,6 +4510,7 @@ defaults.</p>
 <li><code>spec.dependencies</code> are <strong>rejected</strong> — each dependency must be its own <code>Neo4jPlugin</code> CR with its own <code>source.url</code> + <code>checksum</code>, so the entire chain is verified.</li>
 </ul>
 <p><strong>Internal CAs</strong>: the owning cluster's (or standalone's) <code>spec.trustedCASecrets</code> certificates are mounted under <code>/etc/plugin-ca</code> and passed to the downloader, so an internal https mirror signed by your own CA works.</p>
+<p>The CAs the downloader trusts follow that list. When you add, remove or replace a Secret in <code>spec.trustedCASecrets</code>, the cluster (or standalone) first restarts its servers for its own truststore; a <code>Ready</code> plugin then updates its <code>plugin-ca</code> volume to the new list — phase <code>Installing</code> ("Updating the plugin's trusted CAs: …"), no <code>PluginMissing</code> event — which restarts the servers once more. Like an install, that waits until the target is <code>Ready</code> with every server available (<code>Waiting</code>, one <code>PluginInstallDeferred</code> event). Reordering the list changes nothing. A Secret you delete as soon as it leaves the list does not stop a restarting server: the volume's projections are optional, and with no certificate left in <code>/etc/plugin-ca</code> the downloader uses its default CAs (the JAR is still checked against <code>spec.source.checksum</code>). The one exception is the first list change after upgrading the operator: a volume an earlier version wrote still requires its Secrets, so delete a removed CA's Secret only once the plugin is <code>Ready</code> again.</p>
 <p><strong>Air-gapped clusters</strong>: the init container image defaults to <code>curlimages/curl:8.5.0</code>, pulled from a public registry. Point it at an internal mirror via the operator Helm chart value:</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># values.yaml for the neo4j-operator chart</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">pluginInitContainer</span><span class="p">:</span>
@@ -4617,7 +4618,7 @@ defaults.</p>
 <tr>
 <td><code>PluginInstallDeferred</code></td>
 <td>Normal</td>
-<td>The install would restart the servers of a target that is not <code>Ready</code> with every server available (<code>Degraded</code>, or still forming, rolling or upgrading); the plugin is <code>Waiting</code> and installs once the target is. Emitted once per wait</td>
+<td>The install — or a <code>VerifiedDownload</code> plugin's update of its trusted CAs after <code>spec.trustedCASecrets</code> changed — would restart the servers of a target that is not <code>Ready</code> with every server available (<code>Degraded</code>, or still forming, rolling or upgrading); the plugin is <code>Waiting</code> and writes once the target is. Emitted once per wait</td>
 </tr>
 <tr>
 <td><code>PluginDuplicate</code></td>

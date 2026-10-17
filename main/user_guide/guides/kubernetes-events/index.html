@@ -4645,7 +4645,7 @@ and alerting systems.</p>
 <tr>
 <td><code>PluginInstallDeferred</code></td>
 <td>Normal</td>
-<td>Installing the plugin would restart the servers of a target that is not <code>Ready</code> with every server available (a cluster <code>Degraded</code>, or forming, rolling or upgrading); the plugin is <code>Waiting</code> and installs once the target is. Once per wait</td>
+<td>Installing the plugin — or a <code>VerifiedDownload</code> plugin's update of its trusted CAs after the target's <code>spec.trustedCASecrets</code> changed — would restart the servers of a target that is not <code>Ready</code> with every server available (a cluster <code>Degraded</code>, or forming, rolling or upgrading); the plugin is <code>Waiting</code> and writes once the target is. Once per wait</td>
 </tr>
 <tr>
 <td><code>PluginDuplicate</code></td>
