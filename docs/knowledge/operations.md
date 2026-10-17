@@ -994,6 +994,13 @@
 - **pinned-by:** `TestBuiltRoutes_DeepCopy`, `TestBuiltRoutes_ReadThroughTheAccessors`, `TestBuildExternalSecret_ContentIsJSON`, `TestBuiltRoutes_RenderTheSameJSON` (the JSON the old builders rendered, so the fix changes no field) (`internal/resources/unstructured_content_test.go`); `TestReconcileRoute_Cluster`, `TestReconcileRoute_Standalone`, `TestReconcileRoute_NoRouteAPI`, `TestClusterReconcile_WithRoutesWritesTheStatefulSet`, `TestStandaloneReconcile_WithRoutesWritesTheStatefulSet`, `TestHandBuiltObjects_ContentIsJSON` (`internal/controller/unstructured_content_test.go`), with the Route GVK registered as unstructured in a fake client. All but `TestBuiltRoutes_RenderTheSameJSON` — which guards the other way — fail with the previous builders.
 - **enforcement:** unit test; not walked live on OpenShift.
 
+### id 151 — Every ExternalSecrets block the operator builds from is validated like the TLS one
+- **scope:** `ValidateExternalSecretsConfig` (`internal/validation/external_secrets_validator.go`), its callers in `tls_validator.go` and `AuthValidator.Validate` (`internal/validation/auth_validator.go`); the `SecretStoreRef == nil` guard in `BuildExternalSecretForTLS` / `BuildExternalSecretForAuth` (`internal/resources/cluster.go`).
+- **rule:** A cluster builds an ExternalSecret from `spec.tls.externalSecrets` and from `spec.auth.externalSecrets`, and the builder dereferences `secretStoreRef`. Both blocks, when enabled, go through `ValidateExternalSecretsConfig`: a `secretStoreRef` with a name and a supported kind, a parseable refresh interval, and at least one complete `data` mapping. The builders also refuse to build without a store, so an unvalidated path cannot panic. The standalone never builds from `spec.auth.externalSecrets`, so it is not judged there.
+- **why:** only the TLS block was validated. `spec.auth.externalSecrets.enabled: true` without `secretStoreRef` reached `buildExternalSecret` and panicked with a nil dereference on every reconcile pass (found while fixing the Route panic, rule 148).
+- **pinned-by:** `TestAuthValidator_ChecksTheAuthExternalSecretsLikeTLS` (`internal/validation/external_secrets_validator_test.go`); `TestBuildExternalSecret_WithoutAStoreBuildsNothing` (`internal/resources/external_secret_store_test.go`) — both fail without the fix.
+- **enforcement:** unit test.
+
 ## Cross-cutting helpers referenced above
 
 - **Condition helpers** (`internal/controller/conditions.go`): `SetReadyCondition` (~L65) is ONLY for the `Ready` condition type; use `SetNamedCondition` (~L88) for `ServersHealthy`/`DatabasesHealthy`/`PendingDependencies`. Pinned by `TestSetNamedCondition_Idempotent`.

@@ -858,7 +858,10 @@ func BuildCertificateForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster)
 
 // BuildExternalSecretForTLS creates an ExternalSecret for TLS certificates
 func BuildExternalSecretForTLS(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]any {
-	if cluster.Spec.TLS == nil || cluster.Spec.TLS.ExternalSecrets == nil || !cluster.Spec.TLS.ExternalSecrets.Enabled {
+	// No store, no ExternalSecret: validation refuses the spec, and building
+	// one would dereference a nil secretStoreRef.
+	if cluster.Spec.TLS == nil || cluster.Spec.TLS.ExternalSecrets == nil || !cluster.Spec.TLS.ExternalSecrets.Enabled ||
+		cluster.Spec.TLS.ExternalSecrets.SecretStoreRef == nil {
 		return nil
 	}
 	return buildExternalSecret(cluster, cluster.Spec.TLS.ExternalSecrets, "tls")
@@ -866,7 +869,10 @@ func BuildExternalSecretForTLS(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map
 
 // BuildExternalSecretForAuth creates an ExternalSecret for authentication secrets
 func BuildExternalSecretForAuth(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]any {
-	if cluster.Spec.Auth == nil || cluster.Spec.Auth.ExternalSecrets == nil || !cluster.Spec.Auth.ExternalSecrets.Enabled {
+	// No store, no ExternalSecret: validation refuses the spec, and building
+	// one would dereference a nil secretStoreRef.
+	if cluster.Spec.Auth == nil || cluster.Spec.Auth.ExternalSecrets == nil || !cluster.Spec.Auth.ExternalSecrets.Enabled ||
+		cluster.Spec.Auth.ExternalSecrets.SecretStoreRef == nil {
 		return nil
 	}
 	return buildExternalSecret(cluster, cluster.Spec.Auth.ExternalSecrets, "auth")
