@@ -19,7 +19,6 @@ package controller
 import (
 	"context"
 	"fmt"
-	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -194,18 +193,14 @@ func (r *RollingUpgradeOrchestrator) parseVersion(version string) *VersionInfo {
 		return nil
 	}
 
-	patch := 0
+	info := &VersionInfo{Major: major, Minor: minor}
 	if len(parts) > 2 {
 		if p, err := strconv.Atoi(parts[2]); err == nil {
-			patch = p
+			info.Patch = p
+			info.HasPatch = true
 		}
 	}
-
-	return &VersionInfo{
-		Major: major,
-		Minor: minor,
-		Patch: patch,
-	}
+	return info
 }
 
 // VersionInfo represents parsed version information
@@ -213,6 +208,9 @@ type VersionInfo struct {
 	Major int
 	Minor int
 	Patch int
+	// HasPatch is false for a tag that names no patch ("5.26-enterprise",
+	// "2026.08-enterprise"), which floats to the newest patch of its line.
+	HasPatch bool
 }
 
 func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
@@ -323,12 +321,20 @@ func (r *RollingUpgradeOrchestrator) versionMismatchesFromServers(
 // and a SUCCESSFUL upgrade is declared Failed (found live on Kind, #174).
 func normalizeKernelAlias(v *VersionInfo) *VersionInfo {
 	if v != nil && v.Major == 2025 && v.Minor == 1 {
-		return &VersionInfo{Major: 5, Minor: 27, Patch: v.Patch}
+		return &VersionInfo{Major: 5, Minor: 27, Patch: v.Patch, HasPatch: v.HasPatch}
 	}
 	return v
 }
 
-// versionsMatch compares two version strings for equality, handling various formats
+// versionsMatch reports whether a server's SHOW SERVERS version (actual) is
+// the version the image tag (expected) names. Major and minor — year and
+// month for CalVer — must be equal, after normalizeKernelAlias. The patch is
+// compared only when the tag names one: "5.26-enterprise" and
+// "2026.08-enterprise" float to the newest patch of their line, so a server on
+// any patch of it runs what the tag names, the same reading the version rule
+// gives a patch-less tag (validation.UpgradeValidator, operations.md ids 139
+// and 149). Without that, an upgrade to a floating tag failed Verifying unless
+// the servers happened to run .0. A server reporting no patch is read as .0.
 func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool {
 	// Normalize versions by removing quotes and whitespace
 	actual = strings.TrimSpace(strings.Trim(actual, `"'`))
@@ -339,44 +345,17 @@ func (r *RollingUpgradeOrchestrator) versionsMatch(actual, expected string) bool
 		return true
 	}
 
-	// Kernel-alias comparison: parseVersion strips the "-enterprise" suffix,
-	// normalizeKernelAlias maps 2025.01.x <-> 5.27.x (see above).
-	if a, e := r.parseVersion(actual), r.parseVersion(expected); a != nil && e != nil {
-		na, ne := normalizeKernelAlias(a), normalizeKernelAlias(e)
-		if na.Major == ne.Major && na.Minor == ne.Minor && na.Patch == ne.Patch {
-			return true
-		}
+	// parseVersion strips the "-enterprise" suffix; normalizeKernelAlias maps
+	// 2025.01.x <-> 5.27.x (see above).
+	a, e := r.parseVersion(actual), r.parseVersion(expected)
+	if a == nil || e == nil {
+		return false
 	}
-
-	// Try semantic version comparison (handle cases like "5.26" vs "5.26.0")
-	actualParts := strings.Split(actual, ".")
-	expectedParts := strings.Split(expected, ".")
-
-	// Pad shorter version with zeros
-	maxLen := int(math.Max(float64(len(actualParts)), float64(len(expectedParts))))
-	for len(actualParts) < maxLen {
-		actualParts = append(actualParts, "0")
+	na, ne := normalizeKernelAlias(a), normalizeKernelAlias(e)
+	if na.Major != ne.Major || na.Minor != ne.Minor {
+		return false
 	}
-	for len(expectedParts) < maxLen {
-		expectedParts = append(expectedParts, "0")
-	}
-
-	// Compare each part
-	for i := 0; i < maxLen; i++ {
-		actualNum, err1 := strconv.Atoi(strings.Split(actualParts[i], "-")[0]) // Remove pre-release
-		expectedNum, err2 := strconv.Atoi(strings.Split(expectedParts[i], "-")[0])
-
-		if err1 != nil || err2 != nil {
-			// If we can't parse as numbers, fall back to string comparison
-			if actualParts[i] != expectedParts[i] {
-				return false
-			}
-		} else if actualNum != expectedNum {
-			return false
-		}
-	}
-
-	return true
+	return !ne.HasPatch || na.Patch == ne.Patch
 }
 
 // Configuration helpers. Validation refuses a timeout that does not parse or

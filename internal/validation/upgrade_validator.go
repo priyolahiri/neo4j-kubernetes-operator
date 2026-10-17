@@ -116,6 +116,46 @@ func (v *UpgradeValidator) validateVersionMove(currentVersion, targetVersion, ru
 	return allErrs
 }
 
+// validateTagAgainstUpgrade checks spec.image.tag against an upgrade that has
+// restarted a server on its target and has not completed: in flight, Paused or
+// Failed. status.version stays at the version the servers ran before the
+// upgrade until the upgrade verifies the new one, but the servers it rolled
+// run its target, so a tag below the target would roll them back — a
+// downgrade, which Neo4j does not support. A tag at or above the target, or
+// one the upgrade has not restarted a server for yet, is not refused here
+// (the tag may then go back to status.version). The patch is ordered only
+// when both tags name one, as in ValidateVersionUpgrade.
+func (v *UpgradeValidator) validateTagAgainstUpgrade(us *neo4jv1beta1.UpgradeStatus, tag string) field.ErrorList {
+	if !upgradeRestartedAServer(us) || us.TargetVersion == tag {
+		return nil
+	}
+	target, current := v.parseVersion(tag), v.parseVersion(us.TargetVersion)
+	if target == nil || current == nil || !v.isDowngrade(current, target) {
+		return nil
+	}
+	return field.ErrorList{field.Invalid(field.NewPath("spec", "image", "tag"), tag, fmt.Sprintf(
+		"downgrades are not supported: the upgrade to %s (status.upgradeStatus.targetVersion) has already restarted "+
+			"servers on it, and Neo4j cannot go back to an earlier version. Set the tag to %s or later; running an "+
+			"earlier version means restoring a backup taken before the upgrade", us.TargetVersion, us.TargetVersion))}
+}
+
+// upgradeRestartedAServer reports whether an upgrade that has not completed —
+// in flight, Paused or Failed — has restarted a server on its target. The
+// walk records it in status.upgradeStatus.progress when it lowers the
+// partition for the first server (inProgress, then upgraded), and an attempt
+// that takes up a held upgrade keeps that progress, so a retarget does not
+// forget servers an earlier target restarted.
+func upgradeRestartedAServer(us *neo4jv1beta1.UpgradeStatus) bool {
+	if us == nil || us.TargetVersion == "" || us.Progress == nil {
+		return false
+	}
+	switch us.Phase {
+	case "", "Completed", "Pending":
+		return false
+	}
+	return us.Progress.Upgraded > 0 || us.Progress.InProgress > 0
+}
+
 // ValidateUpgradeStrategy validates spec.upgradeStrategy. It is a spec rule,
 // run for every cluster: the CRD's enum guards strategy, but the timeouts are
 // free-form strings the schema cannot check, and the upgrade state machine

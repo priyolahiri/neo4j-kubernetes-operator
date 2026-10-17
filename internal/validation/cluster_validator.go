@@ -305,12 +305,24 @@ func (v *ClusterValidator) ValidateWithWarnings(ctx context.Context, cluster *ne
 // (internal/controller/scale_down.go), and whether added servers fit on the
 // nodes is the scheduler's call: `kubectl neo4j preflight` estimates it before
 // an apply, and a server that does not fit stays Pending.
+//
+// An upgrade that has restarted a server on its target is checked as well,
+// while it is in flight and once it is Paused or Failed: status.version still
+// names the version the servers ran before, but the servers the upgrade rolled
+// run the target, so a tag below the target is a downgrade of those servers
+// (validateTagAgainstUpgrade). Before any server has restarted, the tag may go
+// back to status.version (operations.md id 149).
 func (v *ClusterValidator) validateAgainstRunning(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
-	if cluster.Status.Version == "" || v.upgradeValidator.parseVersion(cluster.Spec.Image.Tag) == nil {
-		// Nothing verified yet, or a tag the image rule already refuses.
+	if v.upgradeValidator.parseVersion(cluster.Spec.Image.Tag) == nil {
+		// A tag the image rule already refuses.
 		return nil
 	}
-	return v.upgradeValidator.ValidateVersionUpgrade(cluster.Status.Version, cluster.Spec.Image.Tag)
+	if cluster.Status.Version != "" {
+		if errs := v.upgradeValidator.ValidateVersionUpgrade(cluster.Status.Version, cluster.Spec.Image.Tag); len(errs) > 0 {
+			return errs
+		}
+	}
+	return v.upgradeValidator.validateTagAgainstUpgrade(cluster.Status.UpgradeStatus, cluster.Spec.Image.Tag)
 }
 
 // validatePropertySharding validates property sharding configuration and version requirements.

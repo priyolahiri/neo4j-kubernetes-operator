@@ -25,7 +25,7 @@
       {
         "key": "Ready",
         "name": "Ready",
-        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period. Plugin installs and anything else that rolls the servers wait while Degraded is True."
+        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period. Plugin installs and anything else that rolls the servers wait while Degraded is True. A cluster whose upgrade is Paused or Failed half-way, its servers on two versions, is Ready once every server is available: the servers below the partition the upgrade kept are not a rollout in flight, and status.message names the held upgrade (operations.md id 149)."
       },
       {
         "key": "Degraded",
@@ -35,12 +35,12 @@
       {
         "key": "Paused",
         "name": "Paused",
-        "description": "A rolling-upgrade step failed with upgradeStrategy.autoPauseOnFailure set; the operator stops driving the upgrade until a human intervenes."
+        "description": "A rolling-upgrade step failed with upgradeStrategy.autoPauseOnFailure set. It lasts one pass: the next runs the normal path again, which keeps the StatefulSet partition the upgrade left (the servers it has not rolled keep the version they run) and reports Ready, Forming or a server short as for any cluster. status.upgradeStatus.phase stays Paused until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149)."
       },
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "A validation, resource-creation, storage-expansion, or rolling-upgrade error occurred; status.message and a Warning event carry the cause, and the next reconcile retries."
+        "description": "A validation, resource-creation, storage-expansion, or rolling-upgrade error occurred; status.message and a Warning event carry the cause, and the next reconcile retries. After a rolling-upgrade failure the next pass keeps the partition the upgrade left, so the servers it has not rolled restart only when the upgrade state machine retries (operations.md id 149)."
       }
     ],
     "transitions": [
@@ -106,7 +106,7 @@
         "from": "Ready",
         "to": "Failed",
         "label": "validation, storage shrink, or property-sharding validation failed on a later reconcile",
-        "condition": "ValidateWithWarnings errors (including a spec.image.tag below status.version), a shrink is detected, or property-sharding validation fails"
+        "condition": "ValidateWithWarnings errors (including a spec.image.tag below status.version, or below status.upgradeStatus.targetVersion once an unfinished upgrade has restarted a server on it), a shrink is detected, or property-sharding validation fails"
       },
       {
         "from": "Ready",
@@ -163,6 +163,18 @@
         "to": "Degraded",
         "label": "a majority back on a formed cluster, still short past the grace period",
         "condition": "ClusterFormed True, no rollout, more than half the servers available, and the Degraded condition True for at least the grace period"
+      },
+      {
+        "from": "Paused",
+        "to": "Ready",
+        "label": "normal pass after an upgrade paused, every server available",
+        "condition": "formation verified and serverStatefulSetFullyRolled true: the servers at or above the partition the upgrade kept are on the template and every server is ready; the partition is not moved"
+      },
+      {
+        "from": "Failed",
+        "to": "Ready",
+        "label": "normal pass after an upgrade failed, every server available",
+        "condition": "formation verified and serverStatefulSetFullyRolled true with the upgrade's partition kept; isUpgradeRequired then retries the upgrade through the state machine"
       }
     ]
   },
@@ -177,7 +189,7 @@
       {
         "key": "None",
         "name": "No Upgrade Active",
-        "description": "status.upgradeStatus is nil or its phase is a terminal Completed/Failed/Paused; the normal reconcile path runs and isUpgradeRequired watches for image drift."
+        "description": "status.upgradeStatus is nil or its phase is a terminal Completed/Failed/Paused; the normal reconcile path runs and isUpgradeRequired watches for image drift. After Failed or Paused the normal path keeps the StatefulSet partition the upgrade left (operations.md id 149)."
       },
       {
         "key": "Staging",
@@ -197,7 +209,7 @@
       {
         "key": "Verifying",
         "name": "Verifying",
-        "description": "Confirms every Enabled server reports the target version via SHOW SERVERS before declaring the upgrade complete."
+        "description": "Confirms every Enabled server reports the target version via SHOW SERVERS before declaring the upgrade complete. Major and minor (year and month) must match after the 2025.01/5.27 kernel alias, the patch only when the tag names one, so a server on any patch of the line passes for a patch-less tag such as 2026.08-enterprise (operations.md id 149)."
       },
       {
         "key": "Completed",
@@ -207,12 +219,12 @@
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "Terminal failure state after a step's deadline or gate is exceeded; isUpgradeRequired can re-enter automatically from image drift if the target and status.version still disagree."
+        "description": "Terminal failure state after a step's deadline or gate is exceeded. The StatefulSet keeps the partition the step left, so the servers not yet rolled stay on status.version; isUpgradeRequired re-enters once the cluster is Ready with every server available and the target and status.version still disagree, and the retry keeps the record's start time and progress (operations.md id 149)."
       },
       {
         "key": "Paused",
         "name": "Paused",
-        "description": "Terminal failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed, requires manual intervention."
+        "description": "Failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed. The StatefulSet keeps the partition the step left. It goes on when the user changes spec.image.tag (towards the new tag) or turns autoPauseOnFailure off (retried like Failed); a tag below the target is refused once the upgrade has restarted a server on it (operations.md id 149)."
       },
       {
         "key": "InProgress",
@@ -231,7 +243,7 @@
             "kind": "update",
             "entityId": "ent-neo4jenterprisecluster",
             "fieldName": "status.upgradeStatus",
-            "description": "Initializes upgradeStatus with StartTime, PreviousVersion, TargetVersion, and Progress totals."
+            "description": "Initializes upgradeStatus with StartTime, PreviousVersion, TargetVersion, and Progress totals; an attempt a pre-flight gate refuses writes the same record, so a Paused or Failed record names its target. An attempt that takes up a held upgrade from the same status.version keeps its StartTime and Progress."
           }
         ]
       },
@@ -309,7 +321,7 @@
         "from": "Failed",
         "to": "Staging",
         "label": "image drift persists against an unchanged target",
-        "condition": "status.upgradeStatus.targetVersion still equals spec.image.tag and status.version still doesn't match — isUpgradeRequired re-enters"
+        "condition": "the cluster is Ready with every server available, status.upgradeStatus.targetVersion still equals spec.image.tag and status.version still doesn't match — isUpgradeRequired re-enters through startRollingUpgrade, whose gates run again; the walk re-verifies the servers already on the target"
       },
       {
         "from": "InProgress",
@@ -326,19 +338,25 @@
         "from": "Rolling",
         "to": "Staging",
         "label": "upgrade target changed mid-flight",
-        "condition": "spec.image.tag was edited again during Rolling"
+        "condition": "spec.image.tag was edited again during Rolling; a new target below the current one is refused by validation once the upgrade has restarted a server on it"
       },
       {
         "from": "Stabilizing",
         "to": "Staging",
         "label": "upgrade target changed mid-flight",
-        "condition": "spec.image.tag was edited again during Stabilizing"
+        "condition": "spec.image.tag was edited again during Stabilizing; a new target below the current one is refused by validation once the upgrade has restarted a server on it"
       },
       {
         "from": "Verifying",
         "to": "Staging",
         "label": "upgrade target changed mid-flight",
-        "condition": "spec.image.tag was edited again during Verifying"
+        "condition": "spec.image.tag was edited again during Verifying; a new target below the current one is refused by validation once the upgrade has restarted a server on it"
+      },
+      {
+        "from": "Paused",
+        "to": "Staging",
+        "label": "the user changed spec.image.tag or turned autoPauseOnFailure off",
+        "condition": "the cluster is Ready with every server available and upgradeWaitsForUser is false; startRollingUpgrade runs its gates and keeps the held record's StartTime and Progress"
       }
     ]
   },

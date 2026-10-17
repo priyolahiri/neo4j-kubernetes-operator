@@ -22,11 +22,13 @@ func TestParseVersion(t *testing.T) {
 		input string
 		want  *VersionInfo
 	}{
-		{"5.26.1", &VersionInfo{5, 26, 1}},
-		{"v5.26.1", &VersionInfo{5, 26, 1}},
-		{"5.26.1-enterprise", &VersionInfo{5, 26, 1}},
-		{"2025.1.0", &VersionInfo{2025, 1, 0}},
-		{"5.26", &VersionInfo{5, 26, 0}},
+		{"5.26.1", &VersionInfo{Major: 5, Minor: 26, Patch: 1, HasPatch: true}},
+		{"v5.26.1", &VersionInfo{Major: 5, Minor: 26, Patch: 1, HasPatch: true}},
+		{"5.26.1-enterprise", &VersionInfo{Major: 5, Minor: 26, Patch: 1, HasPatch: true}},
+		{"2025.1.0", &VersionInfo{Major: 2025, Minor: 1, Patch: 0, HasPatch: true}},
+		{"5.26", &VersionInfo{Major: 5, Minor: 26}},
+		{"5.26-enterprise", &VersionInfo{Major: 5, Minor: 26}},
+		{"2026.08-enterprise", &VersionInfo{Major: 2026, Minor: 8}},
 		{"invalid", nil},
 		{"5", nil},
 		{"", nil},
@@ -41,9 +43,66 @@ func TestParseVersion(t *testing.T) {
 				assert.Equal(t, tt.want.Major, got.Major)
 				assert.Equal(t, tt.want.Minor, got.Minor)
 				assert.Equal(t, tt.want.Patch, got.Patch)
+				assert.Equal(t, tt.want.HasPatch, got.HasPatch)
 			}
 		})
 	}
+}
+
+// A tag that names no patch floats to the newest patch of its line, so
+// Verifying must accept a server on any patch of it: an upgrade to
+// 2026.08-enterprise or 5.26-enterprise failed verification unless the
+// servers happened to run .0. A tag that names a patch must match it, and the
+// line itself must always match (operations.md id 149).
+func TestVersionsMatch_FloatingTags(t *testing.T) {
+	r := newOrchestrator()
+
+	tests := []struct {
+		actual, expected string
+		want             bool
+	}{
+		// patch-less tags match any patch of their line
+		{"2026.08.1", "2026.08-enterprise", true},
+		{"2026.08.0", "2026.08-enterprise", true},
+		{"5.26.12", "5.26-enterprise", true},
+		{"5.26.0", "5.26-enterprise", true},
+		{"5.26.31", "5.26", true},
+		// ...and only of their line
+		{"2026.09.0", "2026.08-enterprise", false},
+		{"2026.07.3", "2026.08-enterprise", false},
+		{"5.25.1", "5.26-enterprise", false},
+		{"2025.01.0", "5.26-enterprise", false},
+		// the CalVer kernel alias holds for a patch-less 2025.01 tag
+		{"5.27.3", "2025.01-enterprise", true},
+		{"2025.01.2", "2025.01-enterprise", true},
+		{"5.27.3", "2025.02-enterprise", false},
+		// a tag with a patch must match it exactly
+		{"2026.08.1", "2026.08.1-enterprise", true},
+		{"2026.08.1", "2026.08.0-enterprise", false},
+		{"2026.08.0", "2026.08.1-enterprise", false},
+		{"5.26.12", "5.26.11-enterprise", false},
+		{"5.27.1", "2025.01.0-enterprise", false},
+		// a server reporting no patch is read as .0
+		{"5.26", "5.26.0-enterprise", true},
+		// nothing to compare
+		{"", "5.26-enterprise", false},
+		{"unknown", "5.26-enterprise", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.actual+" vs "+tt.expected, func(t *testing.T) {
+			assert.Equal(t, tt.want, r.versionsMatch(tt.actual, tt.expected))
+		})
+	}
+
+	t.Run("Verifying passes a floating tag on servers that run a later patch", func(t *testing.T) {
+		mismatches, verified := r.versionMismatchesFromServers([]neo4jclient.ServerInfo{
+			{Name: "s0", State: "Enabled", Version: "2026.08.1"},
+			{Name: "s1", State: "Enabled", Version: "2026.08.1"},
+			{Name: "s2", State: "Enabled", Version: "2026.08.1"},
+		}, "2026.08-enterprise")
+		assert.Empty(t, mismatches)
+		assert.Equal(t, 3, verified)
+	})
 }
 
 // The upgrade-path rules (downgrades, SemVer/CalVer paths) live in one place,

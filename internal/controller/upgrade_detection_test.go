@@ -254,6 +254,10 @@ func TestIsUpgradeRequired_InProgressResumable(t *testing.T) {
 
 	t.Run("Paused is an explicit hold", func(t *testing.T) {
 		c := newCluster("Paused")
+		// What paused it. A record with no target (as an older operator wrote
+		// when the pre-upgrade check paused) waits until it is turned off
+		// (operations.md id 149, TestIsUpgradeRequired_HeldUpgrade).
+		c.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{AutoPauseOnFailure: true}
 		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(c, newSTS("neo4j:5.26.0-enterprise")).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: fc}
 		if r.isUpgradeRequired(context.Background(), c) {

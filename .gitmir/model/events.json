@@ -86,7 +86,7 @@
   {
     "id": "ev-upgrade-started",
     "name": "UpgradeStarted",
-    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster, whatever its upgradeStrategy), or when the standalone begins its own pre-upgrade check on the pass that applies a new image (once per image: not again while the pod is being replaced).",
+    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster, whatever its upgradeStrategy), or when the standalone begins its own pre-upgrade check on the pass that applies a new image (once per image: not again while the pod is being replaced). A Paused or Failed upgrade taken up again is announced as resumed (\"Rolling upgrade resumed after it was Paused\").",
     "moduleId": "mod-cluster"
   },
   {
@@ -98,7 +98,7 @@
   {
     "id": "ev-upgrade-paused",
     "name": "UpgradePaused",
-    "description": "Fires when a rolling-upgrade step fails and upgradeStrategy.autoPauseOnFailure is set, halting the state machine for manual intervention.",
+    "description": "A Warning that fires when a rolling-upgrade step fails and upgradeStrategy.autoPauseOnFailure is set, halting the state machine for manual intervention; the servers stay where it stopped until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149).",
     "moduleId": "mod-cluster"
   },
   {

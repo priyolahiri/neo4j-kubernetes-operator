@@ -434,7 +434,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// (upgradeStateMachineActive) keeps driving regardless of image drift or
 	// cluster phase: the normal path below would stomp the partition freeze
 	// (line ~838 applies the builder's UpdateStrategy) and unfreeze a staged
-	// roll. isUpgradeRequired starts a NEW upgrade on image drift.
+	// roll. isUpgradeRequired starts a NEW upgrade on image drift, and takes
+	// a Paused or Failed one up again; until then the normal path below runs
+	// with the partition that upgrade left (upgradeHeld, operations.md id 149).
 	if upgradeStateMachineActive(cluster) || r.isUpgradeRequired(ctx, cluster) {
 		res, err := r.handleRollingUpgrade(ctx, cluster)
 		// Only the read-only half of the normal pass keeps running (id 131).
@@ -1060,18 +1062,22 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				if !replicasReconciliationPaused(owner) && !scaleDownDrainInProgress(owner) {
 					sts.Spec.Replicas = desiredSpec.Replicas
 				}
-				// While the rolling-upgrade state machine is mid-flight it owns
-				// RollingUpdate.Partition (#174); preserve the live partition so
-				// a concurrent normal-path apply can't unfreeze a staged roll.
-				// Defense-in-depth: the upgrade branch returns before this path
-				// during active phases, but races on stale reads happen.
+				// The rolling-upgrade state machine owns RollingUpdate.Partition
+				// (#174) while it is mid-flight and while its upgrade is Paused
+				// or Failed: preserve the live partition, so a normal-path apply
+				// can neither unfreeze a staged roll nor restart the servers a
+				// stopped upgrade has not rolled (operations.md id 149). While
+				// the machine is active this is defense-in-depth (the upgrade
+				// branch returns before this path, but races on stale reads
+				// happen); once it has stopped, the normal path runs and this is
+				// what holds the servers.
 				livePartition := (*int32)(nil)
 				if sts.Spec.UpdateStrategy.RollingUpdate != nil {
 					livePartition = sts.Spec.UpdateStrategy.RollingUpdate.Partition
 				}
 				sts.Spec.UpdateStrategy = desiredSpec.UpdateStrategy
 				if ownerCluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok &&
-					upgradeStateMachineActive(ownerCluster) && livePartition != nil &&
+					(upgradeStateMachineActive(ownerCluster) || upgradeHeld(ownerCluster)) && livePartition != nil &&
 					sts.Spec.UpdateStrategy.RollingUpdate != nil &&
 					sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
 					sts.Spec.UpdateStrategy.RollingUpdate.Partition = livePartition
@@ -1176,6 +1182,14 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					"statefulSet", sts.Name,
 					"namespace", sts.Namespace)
 				sts.Spec = desiredSpec
+				// Created again while an upgrade is held (a storage expansion
+				// deletes the StatefulSet and orphans its pods): start with the
+				// upgrade's partition, or the new StatefulSet would restart
+				// every server below it onto its template (operations.md id 149).
+				if ownerCluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok &&
+					sts.Spec.UpdateStrategy.RollingUpdate != nil && sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
+					sts.Spec.UpdateStrategy.RollingUpdate.Partition = partitionForNewServerStatefulSet(ownerCluster, sts.Spec.Replicas)
+				}
 				writeOwnedTemplateItems(sts, desiredSpec.Template)
 				// Stamp on create as well as on update. The stamp is what lets a
 				// cluster that never finishes forming still accept a corrected
@@ -2109,8 +2123,12 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 		return false
 	}
 
-	// "Paused" is an explicit manual hold (autoPauseOnFailure) — never auto-resume.
-	if cluster.Status.UpgradeStatus != nil && cluster.Status.UpgradeStatus.Phase == "Paused" {
+	// "Paused" is an explicit manual hold (autoPauseOnFailure) — never
+	// auto-resumed. It goes on when the user changes spec.image.tag (the drift
+	// below) or turns autoPauseOnFailure off (the retry at the end); until
+	// then the servers it has not rolled stay where they are (upgradeHeld,
+	// operations.md id 149).
+	if upgradeWaitsForUser(cluster) {
 		return false
 	}
 	// Mid-flight phases (Staging/Rolling/Stabilizing/Verifying and the legacy
@@ -2143,10 +2161,13 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	// Failed forever with status.version never stamped. Re-enter while the
 	// spec still wants the same target the failed attempt was driving toward
 	// and the version was never verified. Level-based retry; users opt out via
-	// upgradeStrategy.autoPauseOnFailure (Paused is checked above and never
-	// auto-resumes).
+	// upgradeStrategy.autoPauseOnFailure (a Paused upgrade that still waits
+	// for the user returned above; one whose autoPauseOnFailure has since
+	// been turned off is retried here like a Failed one). The partition the
+	// failed attempt left has held the servers it had not rolled, so the
+	// retry rolls them through the machine's gates (operations.md id 149).
 	us := cluster.Status.UpgradeStatus
-	return us != nil && us.Phase == upgradePhaseFailed &&
+	return upgradeHeld(cluster) &&
 		us.TargetVersion == cluster.Spec.Image.Tag &&
 		cluster.Status.Version != cluster.Spec.Image.Tag
 }
@@ -3584,7 +3605,7 @@ func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Contex
 		log.FromContext(ctx).Info("Recording the version the servers now run",
 			"previous", cluster.Status.Version, "running", version)
 	}
-	return r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Neo4j cluster is fully formed and ready", version, conditions...)
+	return r.updateClusterStatusWithVersion(ctx, cluster, "Ready", clusterReadyMessage(cluster), version, conditions...)
 }
 
 // runningServerImageTag returns the image tag every server runs, read from the
@@ -3616,6 +3637,19 @@ func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx cont
 	replicas := int32(1)
 	if serverSts.Spec.Replicas != nil {
 		replicas = *serverSts.Spec.Replicas
+	}
+	// A Paused or Failed upgrade keeps its partition: the servers below it run
+	// the version they ran until the upgrade goes on, which is not a rollout
+	// in flight. The servers it rolled must be on the template and every
+	// server ready (operations.md id 149).
+	if partition := keptUpgradePartition(cluster, serverSts); partition > 0 {
+		if pending, detail := heldRolloutPending(serverSts, partition); pending {
+			return false, detail
+		}
+		if serverSts.Status.ReadyReplicas < replicas {
+			return false, fmt.Sprintf("%d/%d pods ready", serverSts.Status.ReadyReplicas, replicas)
+		}
+		return true, ""
 	}
 	if serverSts.Status.UpdateRevision != "" && serverSts.Status.CurrentRevision != serverSts.Status.UpdateRevision {
 		return false, fmt.Sprintf("revision rollout in progress (%d/%d pods updated)", serverSts.Status.UpdatedReplicas, replicas)

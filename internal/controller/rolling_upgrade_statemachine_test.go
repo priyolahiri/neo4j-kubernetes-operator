@@ -405,6 +405,9 @@ func TestIsUpgradeRequired_FailedRetry(t *testing.T) {
 
 	t.Run("paused never auto-resumes", func(t *testing.T) {
 		c := mk(upgradePhasePaused, "")
+		// What paused it; turning it off is the user's way to resume
+		// (operations.md id 149, TestIsUpgradeRequired_HeldUpgrade).
+		c.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{AutoPauseOnFailure: true}
 		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(c, sts.DeepCopy()).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: fc}
 		assert.False(t, r.isUpgradeRequired(context.Background(), c))

@@ -25,7 +25,7 @@
 | `owned_keys.go` | Owned env-var/annotation tracking (`neo4j.com/cluster-controller-env-vars`). |
 | `splitbrain_detector.go` | `SplitBrainDetector` — compares per-pod cluster views, restarts orphans. |
 | `topology_scheduler.go` | `TopologyScheduler` — spread constraints / anti-affinity / placement. |
-| `rolling_upgrade.go` / `rolling_upgrade_statemachine.go` / `scale_down.go` / `storage_expansion.go` | In-place upgrade, drain, and PVC-expansion flows. |
+| `rolling_upgrade.go` / `rolling_upgrade_statemachine.go` / `scale_down.go` / `storage_expansion.go` | In-place upgrade, drain, and PVC-expansion flows. `upgrade_hold.go`: a `Paused` or `Failed` upgrade keeps its StatefulSet partition until the state machine takes it up again (knowledge `operations.md` id 149). |
 | `configmap_manager.go` / `cache_manager.go` / `connection_helper.go` / `backup_resolver.go` / `cluster_seed_creds.go` / `finalizer_deletion.go` | Supporting managers/helpers. |
 | `suite_test.go` | envtest harness (`TestControllers` → `RunSpecs`). |
 
