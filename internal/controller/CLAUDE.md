@@ -18,7 +18,7 @@
 | `neo4juser_controller.go` / `neo4jrole_controller.go` / `neo4jrolebinding_controller.go` / `neo4jauthrule_controller.go` | Auth-model reconcilers. |
 | `neo4jcompositedatabase_controller.go` / `neo4jdatabasealias_controller.go` / `neo4jreplicadatabase_controller.go` / `neo4jreplicapromotion_controller.go` | Composite DB, alias and cross-cluster replication reconcilers. |
 | `aura*_controller.go`, `aura_fleet_provision.go` | Aura (cloud) reconcilers on the Aura REST API (`internal/aura/`); no Bolt. Refusals must not reach an `aura.IsTransient` branch unmarked (knowledge `operations.md` id 88). |
-| `plugin_controller.go` | `Neo4jPlugin` reconciler; home of `MergeNeo4jPluginList`. Watches target StatefulSets so a `Ready` plugin restores what something removed, and nothing else (knowledge `operations.md` id 135); a write to the servers waits until the target is `Ready` with every server available (id 141). |
+| `plugin_controller.go` | `Neo4jPlugin` reconciler; home of `MergeNeo4jPluginList`. Watches target StatefulSets so a `Ready` plugin restores what something removed, and nothing else (knowledge `operations.md` id 135); a write to the servers waits until the target is `Ready` with every server available (id 141); it is the only writer of a `VerifiedDownload` plugin's `plugin-ca` volume, which follows the target's `spec.trustedCASecrets` (id 147). |
 | `events.go` | All `EventReason*` string constants — emit these, never raw strings. |
 | `conditions.go` | Most `Condition{Type,Reason}*` constants (the rest are in `events.go`) + `SetReadyCondition` / `SetNamedCondition` / `PhaseToConditionStatus`. |
 | `cluster_resolver.go` | `ResolveClusterRef`, `ResolvedTarget`, `EnqueueDependentsForClusterChange`. |

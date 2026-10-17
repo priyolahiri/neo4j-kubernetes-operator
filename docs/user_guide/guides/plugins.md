@@ -215,6 +215,8 @@ The validator enforces additional gates for this mode:
 
 **Internal CAs**: the owning cluster's (or standalone's) `spec.trustedCASecrets` certificates are mounted under `/etc/plugin-ca` and passed to the downloader, so an internal https mirror signed by your own CA works.
 
+The CAs the downloader trusts follow that list. When you add, remove or replace a Secret in `spec.trustedCASecrets`, the cluster (or standalone) first restarts its servers for its own truststore; a `Ready` plugin then updates its `plugin-ca` volume to the new list — phase `Installing` ("Updating the plugin's trusted CAs: …"), no `PluginMissing` event — which restarts the servers once more. Like an install, that waits until the target is `Ready` with every server available (`Waiting`, one `PluginInstallDeferred` event). Reordering the list changes nothing. A Secret you delete as soon as it leaves the list does not stop a restarting server: the volume's projections are optional, and with no certificate left in `/etc/plugin-ca` the downloader uses its default CAs (the JAR is still checked against `spec.source.checksum`). The one exception is the first list change after upgrading the operator: a volume an earlier version wrote still requires its Secrets, so delete a removed CA's Secret only once the plugin is `Ready` again.
+
 **Air-gapped clusters**: the init container image defaults to `curlimages/curl:8.5.0`, pulled from a public registry. Point it at an internal mirror via the operator Helm chart value:
 
 ```yaml
@@ -294,7 +296,7 @@ kubectl exec <pod-name> -c neo4j -- \
 | `PluginInstalled` | Normal | Plugin installed and verified |
 | `PluginInstallFailed` | Warning | Installation failed — see the event message. Emitted once per failure; the controller retries every 30 seconds without repeating it. A server that is restarting or briefly unreachable is not a failure: the plugin stays `Installing` |
 | `PluginMissing` | Warning | A `Ready` plugin's target StatefulSet no longer carries what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or its volumes); the plugin goes back to `Installing` and restores it, which restarts the servers. If the target is not `Ready` with every server available, the event says so and the plugin is `Waiting` until it is |
-| `PluginInstallDeferred` | Normal | The install would restart the servers of a target that is not `Ready` with every server available (`Degraded`, or still forming, rolling or upgrading); the plugin is `Waiting` and installs once the target is. Emitted once per wait |
+| `PluginInstallDeferred` | Normal | The install — or a `VerifiedDownload` plugin's update of its trusted CAs after `spec.trustedCASecrets` changed — would restart the servers of a target that is not `Ready` with every server available (`Degraded`, or still forming, rolling or upgrading); the plugin is `Waiting` and writes once the target is. Emitted once per wait |
 | `PluginDuplicate` | Warning | Another CR already owns this `(clusterRef, name)` pair — delete one |
 | `ValidationFailed` | Warning | Spec rejected by the validator (hard error, no requeue) |
 | `ValidationWarning` | Warning | Advisory compatibility note, or a set field that nothing reads — does not block install |

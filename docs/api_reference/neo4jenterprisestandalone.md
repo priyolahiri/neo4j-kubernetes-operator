@@ -382,6 +382,11 @@ init container that copies the JDK's default `cacerts` to a writable JKS,
 imports each supplied CA with the Secret name as the keytool alias, and sets
 `-Djavax.net.ssl.trustStore=/truststore/truststore.jks` on the JVM.
 
+A `VerifiedDownload` [`Neo4jPlugin`](neo4jplugin.md) of the standalone
+trusts the same list for its JAR download and follows changes to it — one
+more restart, after the standalone's own (see the plugin reference,
+**Internal CAs**).
+
 The legacy singular `spec.auth.trustStore` is also folded
 into the same JKS at reconcile time. See the
 [shared TrustedCASecret reference](neo4jenterprisecluster.md#trustedcasecret)

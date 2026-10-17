@@ -376,7 +376,7 @@
         "name": "trustedCASecrets",
         "type": "json",
         "isNullable": true,
-        "note": "List of {name,key} Secret references imported into the JVM truststore for outgoing TLS (OIDC, LDAPS, Aura Fleet Management, plugin mirrors); Secrets not modeled here"
+        "note": "List of {name,key} Secret references imported into the JVM truststore for outgoing TLS (OIDC, LDAPS, Aura Fleet Management, plugin mirrors); a VerifiedDownload Neo4jPlugin's plugin-ca volume follows the same list; Secrets not modeled here"
       },
       {
         "id": "f-neo4jenterprisestandalone-status-phase",

@@ -276,7 +276,8 @@ ones it renders in the StatefulSet annotations
 `neo4j.com/cluster-controller-volumes`. A `Ready` plugin whose init
 container or volumes were removed anyway puts them back (`PluginMissing`
 event). Uninstalling the last VerifiedDownload plugin also removes
-`plugin-ca`.
+`plugin-ca`. The plugin controller is the only writer of `plugin-ca`; its
+content follows the target's `spec.trustedCASecrets` (see **Internal CAs**).
 
 **Authenticated mirrors** are supported via `spec.source.authSecret`.
 The named Secret should carry either a `token` key (used as
@@ -289,6 +290,22 @@ consumed by the init script.
 `Key` override) is mounted under `/etc/plugin-ca`; the init script
 concatenates the certificates into a single CA bundle and points curl at
 it via `--cacert`.
+
+The `plugin-ca` volume follows the list: when you add, remove or replace a
+Secret in `spec.trustedCASecrets`, a `Ready` plugin updates the volume (and
+its init container's mount of it, when the list becomes empty or stops being
+empty) without a `PluginMissing` event — phase `Installing`, message
+"Updating the plugin's trusted CAs: …". That write restarts the servers, so it
+waits like an install until the target is `Ready` with every server available:
+the target's own truststore roll comes first, then the plugin's. A list that
+is only reordered changes nothing. The volume's projections are optional and
+the init script uses the default CAs when `/etc/plugin-ca` holds no
+certificate, so a Secret you delete right after removing it from the list
+does not stop a restarting server; the JAR is still checked against
+`spec.source.checksum`. A volume an earlier operator version wrote keeps
+required projections until the list next changes, so on the first change
+after upgrading, delete a removed CA's Secret only once the plugin is `Ready`
+again.
 
 **Init container image** defaults to `curlimages/curl:8.5.0`. Override
 via the Helm chart's `pluginInitContainer.image` value when installing
@@ -615,7 +632,7 @@ config:
 
 - **Pending**: Plugin resource created, waiting for processing
 - **Waiting**: Waiting for the deployment to be functional, or — when the plugin has something to write to its StatefulSet, which restarts every server — for it to be `Ready` with every server available: not while a cluster has a server down (`Degraded` condition `True`, or phase `Degraded`), nor while it is forming, rolling its servers or upgrading. A `PluginInstallDeferred` event (or, for a `Ready` plugin that lost something, a `PluginMissing` one) marks the start of the wait; the plugin checks again every 30 seconds
-- **Installing**: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, and while a `Ready` plugin restores what was removed from its target (`PluginMissing` event)
+- **Installing**: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, while a `Ready` plugin restores what was removed from its target (`PluginMissing` event), and while a `VerifiedDownload` plugin brings its trusted CAs in line with the target's changed `spec.trustedCASecrets` ("Updating the plugin's trusted CAs: …")
 - **Ready**: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or volume), the plugin goes back to `Installing` and restores it — or `Waiting`, while the target is not `Ready` with every server available; if nothing is missing, the check writes nothing and the phase stays `Ready`, whatever state the target is in
 - **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its `PluginInstallFailed` Warning is emitted once, not on each retry
 - **Invalid**: The spec failed validation (for example an unsupported `securityPolicy`, a missing `source.url`/`checksum`, or a non-https URL); the controller does not requeue until the CR is edited

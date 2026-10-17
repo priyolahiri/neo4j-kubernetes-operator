@@ -175,6 +175,13 @@ func BuildPluginAuthVolume(plugin *neo4jv1beta1.Neo4jPlugin) *corev1.Volume {
 // cluster's TrustedCASecrets into /etc/plugin-ca/<secret>.crt. nil if
 // no secrets are configured. Shared across all VerifiedDownload
 // plugins on the same cluster — only one volume per pod.
+//
+// Every projection is optional. The plugin controller brings this volume
+// in line with spec.trustedCASecrets one write after the target's own
+// controller, which drops its own volume of a removed CA in the write that
+// removes it; and that write waits until the target is Ready. A Secret the
+// user deletes as soon as it leaves the list must not keep the servers that
+// restart in between from starting: a missing required Secret does.
 func BuildPluginCAVolume(caSecrets []neo4jv1beta1.TrustedCASecret) *corev1.Volume {
 	if len(caSecrets) == 0 {
 		return nil
@@ -185,10 +192,12 @@ func BuildPluginCAVolume(caSecrets []neo4jv1beta1.TrustedCASecret) *corev1.Volum
 		if key == "" {
 			key = "ca.crt"
 		}
+		optional := true
 		sources = append(sources, corev1.VolumeProjection{
 			Secret: &corev1.SecretProjection{
 				LocalObjectReference: corev1.LocalObjectReference{Name: s.Name},
 				Items:                []corev1.KeyToPath{{Key: key, Path: s.Name + ".crt"}},
+				Optional:             &optional,
 			},
 		})
 	}
@@ -224,10 +233,23 @@ echo "[plugin-init] starting download for plugin=${PLUGIN_NAME} target=${PLUGIN_
 		// Concatenate every certificate file in /etc/plugin-ca into a
 		// single bundle; curl accepts only one --cacert path. The
 		// projected volume drops files as <secret-name>.crt.
+		//
+		// Its projections are optional (BuildPluginCAVolume), so the
+		// directory can be empty: every CA Secret the volume still names
+		// was deleted after it left spec.trustedCASecrets, before the
+		// plugin controller updated the volume. Then there is no CA to add
+		// and curl keeps its default ones — what it uses once the volume is
+		// updated — rather than failing the pod on an unmatched glob. The
+		// checksum check below is what vouches for the JAR either way.
 		b.WriteString(`mkdir -p /tmp/plugin-init
-cat /etc/plugin-ca/*.crt > /tmp/plugin-init/ca-bundle.crt
-CURL_ARGS="${CURL_ARGS} --cacert /tmp/plugin-init/ca-bundle.crt"
-echo "[plugin-init] using custom CA bundle"
+set -- /etc/plugin-ca/*.crt
+if [ -e "$1" ]; then
+    cat "$@" > /tmp/plugin-init/ca-bundle.crt
+    CURL_ARGS="${CURL_ARGS} --cacert /tmp/plugin-init/ca-bundle.crt"
+    echo "[plugin-init] using custom CA bundle"
+else
+    echo "[plugin-init] no CA certificate in /etc/plugin-ca; using the default CAs"
+fi
 `)
 	}
 
@@ -287,8 +309,9 @@ const (
 )
 
 // PluginCAVolumeName is the CA volume every VerifiedDownload init container on
-// a StatefulSet shares (BuildPluginCAVolume). The plugin controller removes it
-// on uninstall once no container mounts it.
+// a StatefulSet shares (BuildPluginCAVolume). The plugin controller is its only
+// writer: it keeps it in line with the target's spec.trustedCASecrets, and
+// removes it once no container mounts it.
 const PluginCAVolumeName = pluginCAVolumeName
 
 func pluginAuthVolumeName(pluginName string) string {
