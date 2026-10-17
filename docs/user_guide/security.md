@@ -127,7 +127,9 @@ For OIDC providers, reference them as `oidc-<name>` where `<name>` matches a key
       - native
 ```
 
-If you omit `authenticationProviders`, the operator defaults to `["native"]`.
+Neo4j defaults both settings to `native`, each on its own, and a list you set is kept as written: an authorization list without an authentication list (an LDAP or OIDC group mapping over native sign-in, for example) is used as you wrote it. When a cluster names no authentication provider, in `spec.auth` or as `dbms.security.authentication_providers` in `spec.config`, the operator writes Neo4j's default out: `authentication_providers=native`, and `authorization_providers=native` unless you set that one yourself. Otherwise, and on a standalone, nothing is written for a list you leave unset, and Neo4j's default applies. A list in `spec.auth` takes precedence over the same setting in `spec.config`.
+
+These defaults are applied on every reconcile and never written into your stored spec: `kubectl get -o yaml` shows what you applied, plus the CRD's own defaults the API server fills in (see [GitOps](../gitops/README.md#the-operator-does-not-rewrite-your-spec)).
 
 Both lists are written as given into `dbms.security.authentication_providers` and `dbms.security.authorization_providers`. The values Neo4j documents for them, on the 5.26 LTS and on CalVer alike, are `native`, `ldap`, `oidc-<name>`, and `plugin-<name>` for an auth plugin or add-on such as [Kerberos](#kerberos-authentication). Any other name is refused. The names `oidc` (without a provider name), `kerberos`, `jwt`, `saml` and `custom` are deprecated: they still validate but raise a `ValidationWarning` event naming what to use instead.
 

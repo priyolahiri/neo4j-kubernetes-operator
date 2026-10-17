@@ -142,8 +142,10 @@ func (r *Neo4jRestoreReconciler) targetClient(t restoreTarget) (*neo4j.Client, e
 
 // updateTargetSpec refetches the target's CR and applies mutate to its
 // spec.env, spec.extraEnvFrom and annotations, writing only when mutate
-// reports a change. Refetch-inside-RetryOnConflict is mandatory: the owning
-// controller rewrites its CR every reconcile.
+// reports a change, and then only what it changed: a patch, never an Update,
+// which wrote the rest of the user's spec back as the Go types encode it
+// (operations.md id 150). Refetch-inside-RetryOnConflict is mandatory: the
+// owning controller rewrites its CR every reconcile.
 func (r *Neo4jRestoreReconciler) updateTargetSpec(
 	ctx context.Context,
 	t restoreTarget,
@@ -164,6 +166,10 @@ func (r *Neo4jRestoreReconciler) updateTargetSpec(
 		if err := r.Get(ctx, client.ObjectKeyFromObject(t.object()), latest); err != nil {
 			return err
 		}
+		base, ok := latest.DeepCopyObject().(client.Object)
+		if !ok {
+			return fmt.Errorf("cannot copy %T to patch it", latest)
+		}
 		annotations := latest.GetAnnotations()
 		if annotations == nil {
 			annotations = map[string]string{}
@@ -173,7 +179,7 @@ func (r *Neo4jRestoreReconciler) updateTargetSpec(
 			return nil
 		}
 		latest.SetAnnotations(annotations)
-		return r.Update(ctx, latest)
+		return r.Patch(ctx, latest, mergePatchSince(base))
 	})
 	return changed, err
 }

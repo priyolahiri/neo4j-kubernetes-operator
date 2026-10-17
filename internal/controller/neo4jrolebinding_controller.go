@@ -95,11 +95,10 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 
 	if !controllerutil.ContainsFinalizer(rb, Neo4jRoleBindingFinalizer) {
-		controllerutil.AddFinalizer(rb, Neo4jRoleBindingFinalizer)
-		if err := r.Update(ctx, rb); err != nil {
+		if err := addFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -256,8 +255,7 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 	requeue := r.requeueAfter()
 
 	if strings.EqualFold(rb.Spec.DeletionPolicy, "Retain") {
-		controllerutil.RemoveFinalizer(rb, Neo4jRoleBindingFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rb)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, rb.Namespace, rb.Spec.ClusterRef)
@@ -265,8 +263,7 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
-		controllerutil.RemoveFinalizer(rb, Neo4jRoleBindingFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rb)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
 	}
 	if !target.IsReady() {
 		return ctrl.Result{RequeueAfter: requeue}, nil
@@ -275,8 +272,7 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		logger.Error(err, "cannot connect during binding deletion; releasing finalizer")
-		controllerutil.RemoveFinalizer(rb, Neo4jRoleBindingFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rb)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
 	}
 	defer func() { _ = nc.Close() }()
 
@@ -304,14 +300,12 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 		// the same way, so release the finalizer rather than wedge deletion.
 		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonBindingFailed,
 			"revoke %q from %q failed; releasing finalizer to avoid wedging deletion: %v", role, rb.Spec.Username, err)
-		controllerutil.RemoveFinalizer(rb, Neo4jRoleBindingFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rb)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
 	}
 	r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingDeleted,
 		"revoked %d role(s) from user %q", len(rb.Status.GrantedRoles), rb.Spec.Username)
 
-	controllerutil.RemoveFinalizer(rb, Neo4jRoleBindingFinalizer)
-	return ctrl.Result{}, r.Update(ctx, rb)
+	return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
 }
 
 // diffRoles returns the role grants to add and revoke. When EnforceExclusive

@@ -90,8 +90,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	if !controllerutil.ContainsFinalizer(cd, Neo4jCompositeDatabaseFinalizer) {
-		controllerutil.AddFinalizer(cd, Neo4jCompositeDatabaseFinalizer)
-		if err := r.Update(ctx, cd); err != nil {
+		if err := addFinalizer(ctx, r.Client, cd, Neo4jCompositeDatabaseFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
 		return ctrl.Result{}, nil
@@ -518,8 +517,7 @@ func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 		}
 	}
 
-	controllerutil.RemoveFinalizer(cd, Neo4jCompositeDatabaseFinalizer)
-	if err := r.Update(ctx, cd); err != nil {
+	if err := removeFinalizer(ctx, r.Client, cd, Neo4jCompositeDatabaseFinalizer); err != nil {
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil

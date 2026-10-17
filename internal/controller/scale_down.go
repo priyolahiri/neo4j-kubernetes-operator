@@ -472,7 +472,8 @@ func (r *Neo4jEnterpriseClusterReconciler) clearScaleDownState(ctx context.Conte
 
 // setDrainServers sets (or clears, when ids is empty) the draining-servers
 // annotation on the cluster CR — both in memory (so THIS reconcile's
-// StatefulSet apply holds replicas) and persisted (refetch + RetryOnConflict).
+// StatefulSet apply holds replicas) and persisted (refetch + RetryOnConflict),
+// as a patch of the annotation alone (operations.md id 150).
 func (r *Neo4jEnterpriseClusterReconciler) setDrainServers(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ids []string) error {
 	val := strings.Join(ids, ",")
 	if cluster.GetAnnotations()[ScaleDownDrainingServersAnnotation] == val {
@@ -491,15 +492,16 @@ func (r *Neo4jEnterpriseClusterReconciler) setDrainServers(ctx context.Context, 
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
-		if val == "" {
-			delete(latest.Annotations, ScaleDownDrainingServersAnnotation)
-		} else {
-			latest.Annotations[ScaleDownDrainingServersAnnotation] = val
-		}
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			if latest.Annotations == nil {
+				latest.Annotations = map[string]string{}
+			}
+			if val == "" {
+				delete(latest.Annotations, ScaleDownDrainingServersAnnotation)
+			} else {
+				latest.Annotations[ScaleDownDrainingServersAnnotation] = val
+			}
+		})
 	})
 }
 

@@ -103,11 +103,10 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 
 	// Add finalizer
 	if !controllerutil.ContainsFinalizer(role, Neo4jRoleFinalizer) {
-		controllerutil.AddFinalizer(role, Neo4jRoleFinalizer)
-		if err := r.Update(ctx, role); err != nil {
+		if err := addFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -366,13 +365,11 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 
 	// Built-in roles are never dropped; just release the finalizer.
 	if validation.IsBuiltInRole(roleName) {
-		controllerutil.RemoveFinalizer(role, Neo4jRoleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, role)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
 	}
 
 	if strings.EqualFold(role.Spec.DeletionPolicy, "Retain") {
-		controllerutil.RemoveFinalizer(role, Neo4jRoleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, role)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
@@ -381,8 +378,7 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 	}
 	if !target.Found {
 		// Cluster gone — release the finalizer.
-		controllerutil.RemoveFinalizer(role, Neo4jRoleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, role)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
 	}
 
 	if !target.IsReady() {
@@ -395,8 +391,7 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 		// If we cannot connect, surface the error but do not block deletion
 		// indefinitely.
 		logger.Error(err, "cannot connect during role deletion; releasing finalizer")
-		controllerutil.RemoveFinalizer(role, Neo4jRoleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, role)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
 	}
 	defer func() { _ = nc.Close() }()
 
@@ -408,13 +403,11 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 		}
 		r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonRoleDeletionFailed,
 			"DROP ROLE %q failed; releasing finalizer to avoid wedging deletion: %v", roleName, err)
-		controllerutil.RemoveFinalizer(role, Neo4jRoleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, role)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
 	}
 
 	r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleDeleted, "Role %q dropped", roleName)
-	controllerutil.RemoveFinalizer(role, Neo4jRoleFinalizer)
-	return ctrl.Result{}, r.Update(ctx, role)
+	return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
 }
 
 // reportUnresolvedPrivilegeDatabases warns when spec.privileges name a

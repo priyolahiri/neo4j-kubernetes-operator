@@ -168,8 +168,8 @@ Specifies role constraints for individual servers.
 
 | Field | Type | Description |
 |---|---|---|
-| `authenticationProviders` | `[]string` | Ordered list of authentication providers (e.g., `["ldap", "native"]`), written into `dbms.security.authentication_providers`. Values: `native`, `ldap`, `oidc-<name>`, `plugin-<name>`; the older `oidc`, `kerberos`, `jwt`, `saml`, `custom` validate with a warning. Default: `["native"]` |
-| `authorizationProviders` | `[]string` | Ordered list of authorization providers, written into `dbms.security.authorization_providers`. Same values. Default: `["native"]` |
+| `authenticationProviders` | `[]string` | Ordered list of authentication providers (e.g., `["ldap", "native"]`), written into `dbms.security.authentication_providers`. Values: `native`, `ldap`, `oidc-<name>`, `plugin-<name>`; the older `oidc`, `kerberos`, `jwt`, `saml`, `custom` validate with a warning. A list set here takes precedence over the same setting in `spec.config`. Default: Neo4j's, `native`, which the operator writes out when neither this list nor `spec.config` sets the setting; it is never written into the stored spec |
+| `authorizationProviders` | `[]string` | Ordered list of authorization providers, written into `dbms.security.authorization_providers`. Same values. Kept as written, with or without `authenticationProviders`. Default: Neo4j's, `native`. Unset here and in `spec.config`, the operator writes it out when `authenticationProviders` is unset too, and writes nothing for it otherwise |
 | `adminSecret` | `string` | Secret containing admin username and password (keys: `username`, `password`) |
 | `externalSecrets` | [`*ExternalSecretsConfig`](#externalsecretsconfig) | External secrets configuration |
 | `ldap` | [`*Neo4jLDAPSpec`](#neo4jldapspec) | LDAP authentication and authorization configuration |

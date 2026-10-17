@@ -56,10 +56,11 @@ func cliErrors(t *testing.T, doc string) []string {
 }
 
 // The operator applies its defaults to a cluster before it validates one, and
-// validate never did, so a manifest could pass one and fail the other. A
-// cluster that names authorizationProviders and no authenticationProviders is
-// one: the operator's defaults replace both lists, so it never reports the
-// authorization provider that validate refused (operations.md id 144).
+// validate never did, so a manifest could pass one and fail the other
+// (operations.md id 144). A cluster that names authorizationProviders and no
+// authenticationProviders was one: the operator's defaults replaced both lists,
+// so it never reported the authorization provider validate refused. The
+// defaults now keep a list the user wrote (id 150), and both refuse it.
 func TestValidate_JudgesAClusterAfterTheOperatorsDefaults(t *testing.T) {
 	manifests := map[string]string{
 		"a clean cluster": validCluster,
@@ -87,6 +88,29 @@ func TestValidate_ReportsNoFieldTheUserDidNotWrite(t *testing.T) {
 `)
 	require.Len(t, errs, 1)
 	assert.True(t, strings.HasPrefix(errs[0], "spec.tls.issuerRef: Required value"), errs[0])
+}
+
+// The operator reads a cluster the API server has stored, with the CRD's
+// defaults in it: a tls block without a mode is cert-manager there. validate
+// decodes the manifest itself, and its defaults said disabled, so it skipped
+// every TLS rule for a cluster that runs with cert-manager TLS (operations.md
+// id 150).
+func TestValidate_ATLSBlockWithoutAModeIsCertManager(t *testing.T) {
+	errs := cliErrors(t, validCluster+`  tls:
+    duration: "2160h"
+`)
+	require.Len(t, errs, 1)
+	assert.True(t, strings.HasPrefix(errs[0], "spec.tls.issuerRef: Required value"), errs[0])
+}
+
+// An authorization provider list the user wrote is judged as written, by the
+// operator and by validate: the defaults no longer replace it (id 150).
+func TestValidate_JudgesTheAuthorizationProvidersAsWritten(t *testing.T) {
+	errs := cliErrors(t, validCluster+`  auth:
+    authorizationProviders: [kerberos-x]
+`)
+	require.Len(t, errs, 1)
+	assert.True(t, strings.HasPrefix(errs[0], "spec.auth.authorizationProviders[0]: Unsupported value"), errs[0])
 }
 
 const runningStandaloneManifest = `

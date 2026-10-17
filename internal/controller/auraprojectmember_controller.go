@@ -262,14 +262,16 @@ func (r *AuraProjectMemberReconciler) setStatusChanged(ctx context.Context, req 
 	return changed, err
 }
 
+// patch applies a mutation to the latest object with conflict retry, and
+// writes only what it changed: a merge patch, never an Update (operations.md
+// id 150).
 func (r *AuraProjectMemberReconciler) patch(ctx context.Context, req ctrl.Request, mutate func(*neo4jv1beta1.AuraProjectMember)) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.AuraProjectMember{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
-		mutate(latest)
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() { mutate(latest) })
 	})
 }
 

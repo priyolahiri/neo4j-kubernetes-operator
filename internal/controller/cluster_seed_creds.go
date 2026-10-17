@@ -60,7 +60,7 @@ type SeedCredsTarget interface {
 	GetExtraEnvFrom() []corev1.EnvFromSource
 	// SetExtraEnvFrom replaces the spec.extraEnvFrom slice on the CR.
 	// Implementations should not deep-copy; the caller wants to mutate the
-	// passed CR in place for the subsequent Update.
+	// passed CR in place for the patch that follows.
 	SetExtraEnvFrom([]corev1.EnvFromSource)
 	// TargetKindLabel is a human-readable identifier used in error
 	// messages — e.g. "cluster" or "standalone" — so the actionable error
@@ -143,13 +143,12 @@ func EnsureSeedCredsProjected(
 		)
 	}
 
-	// Opt-in confirmed. Append the entry and Update. The owning controller
-	// will pick up the spec change on its next reconcile and roll out the
-	// StatefulSet. Refetch-inside-RetryOnConflict is mandatory here (#218):
-	// the owning controller rewrites its CR every reconcile (env-var
-	// ownership annotation), so an Update from the reconcile-start object
-	// conflicts routinely — and the caller previously pinned that retryable
-	// conflict as terminal Failed.
+	// Opt-in confirmed. Append the entry and patch it in. The owning
+	// controller will pick up the spec change on its next reconcile and roll
+	// out the StatefulSet. Refetch-inside-RetryOnConflict is mandatory here
+	// (#218): the owning controller writes its CR's status on many passes, so
+	// a write from the reconcile-start object conflicts routinely — and the
+	// caller previously pinned that retryable conflict as terminal Failed.
 	patched := false
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		if err := c.Get(ctx, client.ObjectKeyFromObject(target), target); err != nil {
@@ -166,19 +165,23 @@ func EnsureSeedCredsProjected(
 				return nil
 			}
 		}
-		target.SetExtraEnvFrom(append(target.GetExtraEnvFrom(), corev1.EnvFromSource{
-			SecretRef: &corev1.SecretEnvSource{
-				LocalObjectReference: corev1.LocalObjectReference{Name: credsSecretName},
-			},
-		}))
-		annotations := target.GetAnnotations()
-		if annotations == nil {
-			annotations = map[string]string{}
-		}
-		annotations[AutoInheritedFromAnnotation] = credsSecretName
-		target.SetAnnotations(annotations)
+		// A patch of the entry and the annotation, never an Update, which
+		// wrote the rest of the user's spec back as the Go types encode it
+		// (operations.md id 150).
 		patched = true
-		return c.Update(ctx, target)
+		return patchObject(ctx, c, target, func() {
+			target.SetExtraEnvFrom(append(target.GetExtraEnvFrom(), corev1.EnvFromSource{
+				SecretRef: &corev1.SecretEnvSource{
+					LocalObjectReference: corev1.LocalObjectReference{Name: credsSecretName},
+				},
+			}))
+			annotations := target.GetAnnotations()
+			if annotations == nil {
+				annotations = map[string]string{}
+			}
+			annotations[AutoInheritedFromAnnotation] = credsSecretName
+			target.SetAnnotations(annotations)
+		})
 	}); err != nil {
 		return false, fmt.Errorf("auto-inherit seed credentials Secret %q onto %s %q: %w", credsSecretName, target.TargetKindLabel(), target.GetName(), err)
 	}

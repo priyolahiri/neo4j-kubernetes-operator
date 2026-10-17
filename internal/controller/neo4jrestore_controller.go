@@ -247,12 +247,11 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(restore, RestoreFinalizer) {
-		controllerutil.AddFinalizer(restore, RestoreFinalizer)
-		if err := r.Update(ctx, restore); err != nil {
+		if err := addFinalizer(ctx, r.Client, restore, RestoreFinalizer); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -359,8 +358,7 @@ func (r *Neo4jRestoreReconciler) handleDeletion(ctx context.Context, restore *ne
 	}
 
 	// Remove finalizer
-	controllerutil.RemoveFinalizer(restore, RestoreFinalizer)
-	return ctrl.Result{}, r.Update(ctx, restore)
+	return ctrl.Result{}, removeFinalizer(ctx, r.Client, restore, RestoreFinalizer)
 }
 
 func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
@@ -2605,14 +2603,17 @@ func (r *Neo4jRestoreReconciler) setRestoreInProgressAnnotation(ctx context.Cont
 		if existing, ok := latest.Annotations[RestoreInProgressAnnotation]; ok && existing != restore.Name {
 			return fmt.Errorf("standalone %q already has a restore in progress by Neo4jRestore %q; cannot start %q", cluster.Name, existing, restore.Name)
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
 		if latest.Annotations[RestoreInProgressAnnotation] == restore.Name {
 			return nil
 		}
-		latest.Annotations[RestoreInProgressAnnotation] = restore.Name
-		return r.Update(ctx, latest)
+		// A patch of the annotation alone: an Update wrote the standalone's
+		// spec back as the Go types encode it (operations.md id 150).
+		return patchObject(ctx, r.Client, latest, func() {
+			if latest.Annotations == nil {
+				latest.Annotations = map[string]string{}
+			}
+			latest.Annotations[RestoreInProgressAnnotation] = restore.Name
+		})
 	})
 }
 
@@ -2637,8 +2638,9 @@ func (r *Neo4jRestoreReconciler) clearRestoreInProgressAnnotation(ctx context.Co
 		if !ok || owner != restore.Name {
 			return nil // not our annotation to clear
 		}
-		delete(latest.Annotations, RestoreInProgressAnnotation)
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			delete(latest.Annotations, RestoreInProgressAnnotation)
+		})
 	})
 }
 
@@ -3430,14 +3432,15 @@ func (r *Neo4jRestoreReconciler) markCypherRestoreIssued(ctx context.Context, re
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
 		if _, ok := latest.Annotations[AnnotationCypherRestoreIssued]; ok {
 			return nil // already stamped — preserve the original timestamp
 		}
-		latest.Annotations[AnnotationCypherRestoreIssued] = stamp
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			if latest.Annotations == nil {
+				latest.Annotations = map[string]string{}
+			}
+			latest.Annotations[AnnotationCypherRestoreIssued] = stamp
+		})
 	})
 	if err != nil {
 		return err
@@ -3486,11 +3489,12 @@ func (r *Neo4jRestoreReconciler) markRestorePreHooksRan(ctx context.Context, res
 		if latest.Annotations[AnnotationRestorePreHooksRan] == "true" {
 			return nil
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
-		latest.Annotations[AnnotationRestorePreHooksRan] = "true"
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			if latest.Annotations == nil {
+				latest.Annotations = map[string]string{}
+			}
+			latest.Annotations[AnnotationRestorePreHooksRan] = "true"
+		})
 	})
 	if err != nil {
 		return err
@@ -3514,14 +3518,15 @@ func (r *Neo4jRestoreReconciler) markCypherRestoreObservedOffline(ctx context.Co
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
 		if latest.Annotations[AnnotationCypherRestoreObservedOffline] == "true" {
 			return nil
 		}
-		latest.Annotations[AnnotationCypherRestoreObservedOffline] = "true"
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			if latest.Annotations == nil {
+				latest.Annotations = map[string]string{}
+			}
+			latest.Annotations[AnnotationCypherRestoreObservedOffline] = "true"
+		})
 	})
 	if err != nil {
 		return err
@@ -3550,11 +3555,12 @@ func (r *Neo4jRestoreReconciler) clearCypherRestoreIssued(ctx context.Context, r
 		if !hasIssued && !hasOffline && !hasHooks && !hasPath {
 			return nil
 		}
-		delete(latest.Annotations, AnnotationCypherRestoreIssued)
-		delete(latest.Annotations, AnnotationCypherRestoreObservedOffline)
-		delete(latest.Annotations, AnnotationRestorePreHooksRan)
-		delete(latest.Annotations, AnnotationPointInTimePath)
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			delete(latest.Annotations, AnnotationCypherRestoreIssued)
+			delete(latest.Annotations, AnnotationCypherRestoreObservedOffline)
+			delete(latest.Annotations, AnnotationRestorePreHooksRan)
+			delete(latest.Annotations, AnnotationPointInTimePath)
+		})
 	})
 	if err != nil {
 		return err
@@ -3892,15 +3898,16 @@ func (r *Neo4jRestoreReconciler) markSeedProxyWaitStarted(ctx context.Context, r
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
 		if raw, ok := latest.Annotations[AnnotationSeedProxyWaitStarted]; ok {
 			stamp = raw // preserve the original anchor
 			return nil
 		}
-		latest.Annotations[AnnotationSeedProxyWaitStarted] = stamp
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			if latest.Annotations == nil {
+				latest.Annotations = map[string]string{}
+			}
+			latest.Annotations[AnnotationSeedProxyWaitStarted] = stamp
+		})
 	})
 	if err != nil {
 		return time.Time{}, err
@@ -3928,8 +3935,9 @@ func (r *Neo4jRestoreReconciler) clearSeedProxyWaitStarted(ctx context.Context, 
 		if _, ok := latest.Annotations[AnnotationSeedProxyWaitStarted]; !ok {
 			return nil
 		}
-		delete(latest.Annotations, AnnotationSeedProxyWaitStarted)
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			delete(latest.Annotations, AnnotationSeedProxyWaitStarted)
+		})
 	})
 	if err != nil {
 		return err

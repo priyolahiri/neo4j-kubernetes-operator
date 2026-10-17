@@ -101,11 +101,10 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if !controllerutil.ContainsFinalizer(rule, Neo4jAuthRuleFinalizer) {
-		controllerutil.AddFinalizer(rule, Neo4jAuthRuleFinalizer)
-		if err := r.Update(ctx, rule); err != nil {
+		if err := addFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -295,8 +294,7 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 	requeue := r.requeueAfter()
 
 	if strings.EqualFold(rule.Spec.DeletionPolicy, "Retain") {
-		controllerutil.RemoveFinalizer(rule, Neo4jAuthRuleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rule)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, rule.Namespace, rule.Spec.ClusterRef)
@@ -306,15 +304,13 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 	if !target.Found || !target.IsReady() || !targetSupportsAuthRules(target) {
 		// Cluster gone, not ready, or too old to host auth rules — nothing
 		// for us to drop. Release the finalizer.
-		controllerutil.RemoveFinalizer(rule, Neo4jAuthRuleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rule)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
 	}
 
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		logger.Error(err, "cannot connect during auth rule deletion; releasing finalizer")
-		controllerutil.RemoveFinalizer(rule, Neo4jAuthRuleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rule)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
 	}
 	defer func() { _ = nc.Close() }()
 
@@ -330,13 +326,11 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 		}
 		r.Recorder.Eventf(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed,
 			"DROP AUTH RULE %q failed; releasing finalizer to avoid wedging deletion: %v", ruleName, err)
-		controllerutil.RemoveFinalizer(rule, Neo4jAuthRuleFinalizer)
-		return ctrl.Result{}, r.Update(ctx, rule)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
 	}
 	r.Recorder.Eventf(rule, corev1.EventTypeNormal, EventReasonAuthRuleDeleted, "auth rule %q dropped", ruleName)
 
-	controllerutil.RemoveFinalizer(rule, Neo4jAuthRuleFinalizer)
-	return ctrl.Result{}, r.Update(ctx, rule)
+	return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
 }
 
 // findMissingRoles returns the subset of desired role names that exist
