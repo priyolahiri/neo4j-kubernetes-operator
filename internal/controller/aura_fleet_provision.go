@@ -676,7 +676,8 @@ func (fp *fleetProvisioner) writeTokenSecret(ctx context.Context, obj fleetProvi
 	})
 }
 
-// setDeploymentAnnotation persists the Aura deployment ID onto the CR.
+// setDeploymentAnnotation persists the Aura deployment ID onto the CR, as a
+// patch of the annotation alone (operations.md id 150).
 func (fp *fleetProvisioner) setDeploymentAnnotation(ctx context.Context, obj fleetProvisionTarget, id string) error {
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest, ok := obj.DeepCopyObject().(fleetProvisionTarget)
@@ -687,16 +688,17 @@ func (fp *fleetProvisioner) setDeploymentAnnotation(ctx context.Context, obj fle
 		if err := fp.Client.Get(ctx, key, latest); err != nil {
 			return err
 		}
-		ann := latest.GetAnnotations()
-		if ann == nil {
-			ann = map[string]string{}
-		}
-		if ann[AuraFleetDeploymentAnnotation] == id {
+		if latest.GetAnnotations()[AuraFleetDeploymentAnnotation] == id {
 			return nil
 		}
-		ann[AuraFleetDeploymentAnnotation] = id
-		latest.SetAnnotations(ann)
-		if err := fp.Client.Update(ctx, latest); err != nil {
+		if err := patchObject(ctx, fp.Client, latest, func() {
+			ann := latest.GetAnnotations()
+			if ann == nil {
+				ann = map[string]string{}
+			}
+			ann[AuraFleetDeploymentAnnotation] = id
+			latest.SetAnnotations(ann)
+		}); err != nil {
 			return err
 		}
 		// Keep the in-memory object consistent so callers see the annotation.

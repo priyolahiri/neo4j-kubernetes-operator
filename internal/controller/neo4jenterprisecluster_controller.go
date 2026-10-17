@@ -338,7 +338,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 	// Apply defaults and validate the cluster
 	if r.Validator != nil {
-		// Apply defaults to the cluster
+		// The defaults go on this pass's copy of the cluster only. Nothing
+		// writes this copy back: the operator patches what it changes on the
+		// object and never Updates it, so the stored spec stays the one the
+		// user applied (operations.md id 150).
 		r.Validator.ApplyDefaults(ctx, cluster)
 
 		// One set of rules on every pass. There is no webhook, so there is no
@@ -419,14 +422,16 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Add finalizer if not present
+	// Add finalizer if not present. A patch of metadata.finalizers alone:
+	// this copy of the cluster carries ApplyDefaults' defaults, and an Update
+	// wrote them, and the rest of the spec as the Go types encode it, into the
+	// stored object (operations.md id 150).
 	if !controllerutil.ContainsFinalizer(cluster, ClusterFinalizer) {
-		controllerutil.AddFinalizer(cluster, ClusterFinalizer)
-		if err := r.Update(ctx, cluster); err != nil {
+		if err := addFinalizer(ctx, r.Client, cluster, ClusterFinalizer); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -878,8 +883,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	}
 
 	logger.Info("Removing finalizer from cluster", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
-	controllerutil.RemoveFinalizer(cluster, ClusterFinalizer)
-	err := r.Update(ctx, cluster)
+	err := removeFinalizer(ctx, r.Client, cluster, ClusterFinalizer)
 	if err != nil {
 		logger.Error(err, "Failed to update cluster after removing finalizer", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
 		return ctrl.Result{}, err

@@ -167,14 +167,15 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 		return r.handleDeletion(ctx, standalone)
 	}
 
-	// Add finalizer if not present
+	// Add finalizer if not present. A patch of metadata.finalizers alone: an
+	// Update wrote the spec back as the Go types encode it, and a false the
+	// CRD defaults to true came back true (operations.md id 150).
 	if !controllerutil.ContainsFinalizer(standalone, StandaloneFinalizer) {
-		controllerutil.AddFinalizer(standalone, StandaloneFinalizer)
-		if err := r.Update(ctx, standalone); err != nil {
+		if err := addFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -272,8 +273,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	neo4jclient.ForgetStandalone(standalone.Namespace, standalone.Name)
 
 	// Remove finalizer
-	controllerutil.RemoveFinalizer(standalone, StandaloneFinalizer)
-	if err := r.Update(ctx, standalone); err != nil {
+	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); err != nil {
 		logger.Error(err, "Failed to remove finalizer")
 		return ctrl.Result{}, err
 	}
