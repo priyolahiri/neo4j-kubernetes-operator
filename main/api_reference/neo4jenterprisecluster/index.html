@@ -8317,7 +8317,7 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Upgrade state-machine phase (schema enum <code>Pending</code>, <code>Staging</code>, <code>InProgress</code>, <code>Rolling</code>, <code>Stabilizing</code>, <code>Verifying</code>, <code>Paused</code>, <code>Completed</code>, <code>Failed</code>): <code>Staging</code> (target pod template applied, pod restarts frozen) → <code>Rolling</code> (servers restarted one at a time, highest ordinal first) → <code>Stabilizing</code> (health, consensus and replication gate) → <code>Verifying</code> (per-server version check) → <code>Completed</code>. <code>Paused</code> and <code>Failed</code> are terminal until operator/user action. <code>InProgress</code> is resumed as <code>Staging</code>; <code>Pending</code> is reserved</td>
+<td>Upgrade state-machine phase (schema enum <code>Pending</code>, <code>Staging</code>, <code>InProgress</code>, <code>Rolling</code>, <code>Stabilizing</code>, <code>Verifying</code>, <code>Paused</code>, <code>Completed</code>, <code>Failed</code>): <code>Staging</code> (target pod template applied, pod restarts frozen) → <code>Rolling</code> (servers restarted one at a time, highest ordinal first) → <code>Stabilizing</code> (health, consensus and replication gate) → <code>Verifying</code> (per-server version check) → <code>Completed</code>. <code>Paused</code> and <code>Failed</code> stop the upgrade with the StatefulSet partition kept where it was, so the servers it has not rolled keep the version they run: <code>Failed</code> is retried by the operator once every server is available, <code>Paused</code> waits for <code>spec.image.tag</code> to change or <code>spec.upgradeStrategy.autoPauseOnFailure</code> to be turned off (see <a href="../../user_guide/guides/upgrades/#when-an-upgrade-stops-paused-and-failed">Upgrades</a>). <code>InProgress</code> is resumed as <code>Staging</code>; <code>Pending</code> is reserved</td>
 </tr>
 <tr>
 <td><code>startTime</code></td>
@@ -8362,7 +8362,7 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>progress</code></td>
 <td><a href="#upgradeprogress"><code>*UpgradeProgress</code></a></td>
-<td>Upgrade progress statistics</td>
+<td>Upgrade progress statistics. Once <code>inProgress</code> or <code>upgraded</code> is above zero the upgrade has restarted a server on its target, and until it completes a <code>spec.image.tag</code> below <code>targetVersion</code> is refused</td>
 </tr>
 <tr>
 <td><code>message</code></td>

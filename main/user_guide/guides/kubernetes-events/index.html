@@ -4444,7 +4444,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UpgradeStarted</code></td>
 <td>Normal</td>
-<td>Rolling upgrade initiated</td>
+<td>Rolling upgrade initiated, or a <code>Paused</code> or <code>Failed</code> one resumed ("Rolling upgrade resumed after it was …")</td>
 </tr>
 <tr>
 <td><code>UpgradeCompleted</code></td>
@@ -4453,8 +4453,8 @@ is met on many passes. It is announced once:</p>
 </tr>
 <tr>
 <td><code>UpgradePaused</code></td>
-<td>Normal</td>
-<td>Upgrade paused (e.g., due to unhealthy pods)</td>
+<td>Warning</td>
+<td>Upgrade paused after a failed check or step (<code>autoPauseOnFailure</code>); the servers stay where it stopped until you change <code>spec.image.tag</code> or turn <code>autoPauseOnFailure</code> off</td>
 </tr>
 <tr>
 <td><code>UpgradeFailed</code></td>
