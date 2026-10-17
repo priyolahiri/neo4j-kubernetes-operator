@@ -74,9 +74,9 @@ is met on many passes. It is announced once:
 
 | Reason | Type | Description |
 |---|---|---|
-| `UpgradeStarted` | Normal | Rolling upgrade initiated |
+| `UpgradeStarted` | Normal | Rolling upgrade initiated, or a `Paused` or `Failed` one resumed ("Rolling upgrade resumed after it was …") |
 | `UpgradeCompleted` | Normal | Rolling upgrade finished successfully |
-| `UpgradePaused` | Normal | Upgrade paused (e.g., due to unhealthy pods) |
+| `UpgradePaused` | Warning | Upgrade paused after a failed check or step (`autoPauseOnFailure`); the servers stay where it stopped until you change `spec.image.tag` or turn `autoPauseOnFailure` off |
 | `UpgradeFailed` | Warning | Upgrade failed. On a `Neo4jEnterpriseStandalone` with `upgradeStrategy.preUpgradeHealthCheck` and `autoPauseOnFailure`, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked |
 | `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready`, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards |
 

@@ -4,7 +4,7 @@
     "name": "Reconcile Cluster",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Top-level Reconcile loop: validates the spec and the image tag against the version the servers run (status.version) on every pass, refusing with phase Failed and a ValidationFailed event, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified (recording status.version from the rolled server StatefulSet when it differs: at the first Ready, and after an image the zero-ready escape hatch let through, but not while a Failed or Paused upgrade targets that tag — operations.md id 144), requeueing a Ready cluster after --ready-poll-interval (default 30s; every other path keeps RequeueAfter) — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series. The server pods run under the {cluster}-discovery ServiceAccount, bound to no Role (LIST discovery never calls the Kubernetes API); a {cluster}-discovery Role, RoleBinding or Service (V1 port 5000) the cluster controls, created by releases up to v1.20, is deleted. A failed pass is retried on its own 5–30s backoff, with a shared 10/s storm guard.",
+    "description": "Top-level Reconcile loop: validates the spec and the image tag against the version the servers run (status.version) on every pass, refusing with phase Failed and a ValidationFailed event, provisions TLS/RBAC/Services/ConfigMap, applies the server StatefulSet (holding replicas during a scale-down drain, and keeping the partition a Paused or Failed upgrade left, also when a storage expansion creates the StatefulSet again), collects diagnostics once the cluster has formed, and marks the cluster Ready once formation and rollout are both verified (the servers a held upgrade keeps below its partition are not a rollout in flight, and status.message then names the held upgrade, operations.md id 149) (recording status.version from the rolled server StatefulSet when it differs: at the first Ready, and after an image the zero-ready escape hatch let through, but not while a Failed or Paused upgrade targets that tag — operations.md id 144), requeueing a Ready cluster after --ready-poll-interval (default 30s; every other path keeps RequeueAfter) — or hands a cluster that is short of servers to the shortfall assessment. On deletion, it deletes the {name}-tls-secret cert-manager issued for its {name}-tls Certificate (#479), and releasing the finalizer withdraws the cluster's metric series. The server pods run under the {cluster}-discovery ServiceAccount, bound to no Role (LIST discovery never calls the Kubernetes API); a {cluster}-discovery Role, RoleBinding or Service (V1 port 5000) the cluster controls, created by releases up to v1.20, is deleted. A failed pass is retried on its own 5–30s backoff, with a shared 10/s storm guard.",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -30,7 +30,8 @@
       "sf-merge-template-items",
       "sf-reconcile-ccdr-proxy",
       "sf-reconcile-server-shortfall",
-      "sf-reload-renewed-tls"
+      "sf-reload-renewed-tls",
+      "sf-hold-stopped-upgrade"
     ],
     "emitsEventIds": [
       "ev-topology-warning",
@@ -205,7 +206,7 @@
     "name": "Advance Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight (a new target below status.version is refused by the validation that runs before it), so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime. In Rolling it lowers the partition only after the server it just restarted is Available and every database copy on it has caught up (statusCheck APPLYING, SHOW DATABASES at requested status), naming the lagging databases in status.upgradeStatus.message (#488). After each step, the pass collects the cluster's diagnostics (SHOW SERVERS, SHOW DATABASES → status.diagnostics, ServersHealthy, DatabasesHealthy, server_health) at most once per --ready-poll-interval, so they follow the servers through the upgrade; nothing else of the normal pass runs while an upgrade is active. Before an upgrade starts it checks the upgrade path with the same rule the validation runs (ValidateVersionUpgrade against status.version). Every image change on a Ready cluster goes through it, whatever spec.upgradeStrategy.strategy says: Recreate is accepted with a ValidationWarning and does what RollingUpgrade does (it used to return before the machine started, so a Ready cluster kept its old image and no other spec change was applied while the tag differed), and the server StatefulSet is always RollingUpdate, never OnDelete. A step's timeout is a Go duration above zero; one at or below zero is refused by validation, and the getters fall back to the default (operations.md id 144).",
+    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight (a new target below status.version, or below the current target once a server runs it, is refused by the validation that runs before it), so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime. In Rolling it lowers the partition only after the server it just restarted is Available and every database copy on it has caught up (statusCheck APPLYING, SHOW DATABASES at requested status), naming the lagging databases in status.upgradeStatus.message (#488). After each step, the pass collects the cluster's diagnostics (SHOW SERVERS, SHOW DATABASES → status.diagnostics, ServersHealthy, DatabasesHealthy, server_health) at most once per --ready-poll-interval, so they follow the servers through the upgrade; nothing else of the normal pass runs while an upgrade is active. Before an upgrade starts it checks the upgrade path with the same rule the validation runs (ValidateVersionUpgrade against status.version). Every image change on a Ready cluster goes through it, whatever spec.upgradeStrategy.strategy says: Recreate is accepted with a ValidationWarning and does what RollingUpgrade does (it used to return before the machine started, so a Ready cluster kept its old image and no other spec change was applied while the tag differed), and the server StatefulSet is always RollingUpdate, never OnDelete. A step's timeout is a Go duration above zero; one at or below zero is refused by validation, and the getters fall back to the default (operations.md id 144). A Paused or Failed upgrade taken up again keeps its start time and progress (operations.md id 149).",
     "readsFieldIds": [
       "status.upgradeStatus.phase",
       "status.upgradeStatus.phaseStartTime"
@@ -233,7 +234,7 @@
     "name": "Pause Or Fail Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Routes a failed upgrade step to a terminal Paused state (manual intervention required, never auto-resumed) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so image drift can retry the upgrade automatically once the underlying problem is resolved. The phase that was active when the step failed is recorded in neo4j_operator_upgrade_duration_seconds.",
+    "description": "Routes a failed upgrade step to Paused (manual intervention required, never auto-resumed: the user changes spec.image.tag or turns autoPauseOnFailure off) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so the operator retries the upgrade once the cluster is Ready with every server available. Either way the StatefulSet keeps the partition the step left, so no server the upgrade has not rolled restarts onto the target outside the state machine. An attempt refused before Staging records the target it was for. The phase that was active when the step failed is recorded in neo4j_operator_upgrade_duration_seconds (operations.md id 149).",
     "readsFieldIds": [],
     "writesFieldIds": [
       "status.upgradeStatus.phase",
@@ -248,11 +249,28 @@
     "moduleId": "mod-cluster"
   },
   {
+    "id": "sf-hold-stopped-upgrade",
+    "name": "Hold A Stopped Upgrade",
+    "serverUnitId": "su-rolling-upgrade",
+    "operation": "business_action",
+    "description": "While an upgrade is Paused or Failed (upgradeHeld), keeps the server StatefulSet's RollingUpdate partition where the state machine left it: every normal-path apply keeps the live partition, and a StatefulSet created again (storage expansion) starts at status.upgradeStatus.currentPartition, or frozen at replicas if nothing was staged. The servers below it are not a rollout in flight, so the cluster can be Ready (or a server short) while its servers run two versions, and users, roles, databases and backups keep working. Only the state machine moves the partition: a Failed upgrade is retried once every server is available; a Paused one waits while upgradeWaitsForUser (autoPauseOnFailure set and spec.image.tag the record's target) (internal/controller/upgrade_hold.go, operations.md id 149).",
+    "readsFieldIds": [
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.currentPartition",
+      "status.upgradeStatus.targetVersion"
+    ],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
     "id": "sf-verify-version-upgrade",
     "name": "Verify Version Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Confirms every Enabled server in SHOW SERVERS reports the target image version, applying a kernel-alias normalization for the one CalVer release (2025.01.x) that self-reports as kernel 5.27.x, before the upgrade is allowed to complete.",
+    "description": "Confirms every Enabled server in SHOW SERVERS reports the target image version, applying a kernel-alias normalization for the one CalVer release (2025.01.x) that self-reports as kernel 5.27.x, before the upgrade is allowed to complete. The patch is compared only when the tag names one: a patch-less tag (5.26-enterprise, 2026.08-enterprise) floats to the newest patch of its line, so any patch of that line passes (operations.md id 149).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -442,7 +460,7 @@
     "name": "Is Upgrade Required",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Detects image drift on the server StatefulSet (or a stalled Failed-phase retry whose target and status.version still disagree) to decide whether a new rolling upgrade should start; never fires while Paused, already mid-flight, or while a server is unavailable (Degraded condition True), since rolling the others could cost the cluster its majority.",
+    "description": "Detects image drift on the server StatefulSet (or a Failed upgrade, or a Paused one whose autoPauseOnFailure has been turned off, whose target is still spec.image.tag while status.version disagrees) to decide whether a rolling upgrade should start or be taken up again; never fires while a Paused upgrade still waits for the user (autoPauseOnFailure set and the tag unchanged), already mid-flight, or while a server is unavailable (Degraded condition True), since rolling the others could cost the cluster its majority (operations.md id 149).",
     "readsFieldIds": [
       "status.phase",
       "status.upgradeStatus.phase"
@@ -1797,10 +1815,11 @@
     "name": "Validate Neo4jEnterpriseCluster spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "ClusterValidator.ValidateWithWarnings, called on every reconcile pass and by `kubectl neo4j validate`: the spec rules (topology, image, storage, TLS, auth, spec.config keys and values, memory, spec.upgradeStrategy timeouts as Go durations above zero, MCP, Aura Fleet Management, network policy, CCDR, admin password shape) plus the one rule that needs the running cluster: spec.image.tag against status.version, the version every server runs. It refuses a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26, and 4.x, following Neo4j's upgrade guide; it does not judge an empty or unparseable status.version or a patch-less (floating) tag's patch. There is no webhook and so no previous spec: the old update path read the cluster again and compared it with itself, so its rules never fired (operations.md id 139). The server count has no running-state rule: at least 2 servers is a spec rule, a scale-down is the drain's, and capacity for a scale-up is the scheduler's. The rolling-upgrade state machine calls the same version rule (ValidateVersionUpgrade) before it starts an upgrade (internal/validation/cluster_validator.go, upgrade_validator.go). The reconciler and the CLI apply ApplyDefaults first, and ApplyDefaults adds no field an error can be reported on (no nameless spec.tls.issuerRef). NoEffectWarnings says that Recreate on a cluster does what RollingUpgrade does (operations.md id 144).",
+    "description": "ClusterValidator.ValidateWithWarnings, called on every reconcile pass and by `kubectl neo4j validate`: the spec rules (topology, image, storage, TLS, auth, spec.config keys and values, memory, spec.upgradeStrategy timeouts as Go durations above zero, MCP, Aura Fleet Management, network policy, CCDR, admin password shape) plus the rules that need the running cluster: spec.image.tag against status.version, the version every server runs, and, once an unfinished upgrade (in flight, Paused or Failed) has restarted a server on its target (status.upgradeStatus.progress), against status.upgradeStatus.targetVersion, so no tag rolls such a server back (operations.md id 149). It refuses a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26, and 4.x, following Neo4j's upgrade guide; it does not judge an empty or unparseable status.version or a patch-less (floating) tag's patch. There is no webhook and so no previous spec: the old update path read the cluster again and compared it with itself, so its rules never fired (operations.md id 139). The server count has no running-state rule: at least 2 servers is a spec rule, a scale-down is the drain's, and capacity for a scale-up is the scheduler's. The rolling-upgrade state machine calls the same version rule (ValidateVersionUpgrade) before it starts an upgrade (internal/validation/cluster_validator.go, upgrade_validator.go). The reconciler and the CLI apply ApplyDefaults first, and ApplyDefaults adds no field an error can be reported on (no nameless spec.tls.issuerRef). NoEffectWarnings says that Recreate on a cluster does what RollingUpgrade does (operations.md id 144).",
     "readsFieldIds": [
       "f-neo4jenterprisecluster-image-tag",
-      "f-neo4jenterprisecluster-status-version"
+      "f-neo4jenterprisecluster-status-version",
+      "status.upgradeStatus.targetVersion"
     ],
     "writesFieldIds": [],
     "callsFunctionIds": [],

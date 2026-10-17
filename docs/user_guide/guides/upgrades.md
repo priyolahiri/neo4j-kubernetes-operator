@@ -53,7 +53,8 @@ operator restarts:
 | `Rolling` | Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (`SHOW SERVERS`) **and** that pod's databases (`dbms.cluster.statusCheck`, `SHOW DATABASES`) are verified before the partition is lowered |
 | `Stabilizing` | All pods updated; the operator waits for consistently stable cluster health and consensus |
 | `Verifying` | Every server's reported version is checked against the target before the upgrade is declared done |
-| `Completed` / `Failed` / `Paused` | Terminal. `Paused` means a health check failed with `autoPauseOnFailure: true` — the cluster is left as-is for you to investigate |
+| `Completed` | Every server verified on the target; `status.version` is the target |
+| `Failed` / `Paused` | A check or a step's timeout failed: `Paused` with `autoPauseOnFailure: true`, `Failed` otherwise. The servers stay where the upgrade left them — see [When an upgrade stops](#when-an-upgrade-stops-paused-and-failed) |
 
 Two status fields drive the machine and are useful when watching a long
 upgrade: `currentPartition` (which StatefulSet partition step the rollout is
@@ -69,12 +70,19 @@ an upgrade is running, the state machine retargets to the new image: pods not
 yet rolled go straight to the new version, and pods already rolled to the
 intermediate version are rolled again. You don't need to wait for the first
 upgrade to finish. A new target below the version the cluster ran before the
-upgrade (`status.version`) is refused instead (see [Version checks](#version-checks)).
+upgrade (`status.version`) is refused instead, and so is one below the current
+target once the upgrade has restarted a server on it: that server would be
+rolled back (see [Version checks](#version-checks)).
 
 **Version verification across SemVer/CalVer.** The `Verifying` phase compares
 each server's `SHOW SERVERS` version against the image tag, normalizing
 Neo4j's kernel alias (the `2025.01.x` CalVer releases report kernel `5.27.x` —
-both are accepted as the same version).
+both are accepted as the same version). A tag that names a patch must match
+it exactly. A tag without one, such as `2026.08-enterprise` or
+`5.26-enterprise`, is the newest patch of its line (on Docker Hub,
+`2026.08-enterprise` is the same image as `2026.08.1-enterprise`), so servers on
+any patch of that line pass: `2026.08.1` passes for `2026.08-enterprise`,
+`2026.09.0` does not.
 
 **Image changes while the cluster is not Ready are deferred.** Changing
 `spec.image` while the cluster is `Forming`, `Degraded`, mid-restore, or
@@ -95,9 +103,63 @@ recreate the cluster. The tag is still checked against `status.version` first
 (see [Version checks](#version-checks)), and once every server is ready on the
 new image the operator records it as `status.version`.
 
+### When an upgrade stops: Paused and Failed
+
+When a check fails or a step runs past its timeout, the upgrade stops: `Paused`
+when `autoPauseOnFailure` is `true`, `Failed` otherwise.
+`status.upgradeStatus.lastError` says why, and an `UpgradePaused` or
+`UpgradeFailed` Warning event is emitted.
+
+In both, **the servers stay where the upgrade left them.** The StatefulSet keeps
+the partition the upgrade had reached: the servers it rolled run the target, and
+the ones it had not reached keep the version they run (`status.version`). No
+server restarts onto the target except through the upgrade's own per-server
+checks (rejoin and database catch-up), so a cluster stopped half-way runs two
+versions until the upgrade goes on, as it does at every step of a rolling
+upgrade. The
+rest of the cluster's reconciliation keeps running: configuration, services,
+diagnostics, and the cluster's `Ready` status, which users, roles, databases and
+backups wait for. Once every server is available the cluster is `Ready`, and
+`status.message` says the upgrade is paused or failed. A server that is down is
+reported as for any cluster: `Ready` with the `Degraded` condition, then
+`Degraded` after the grace period.
+
+What happens next:
+
+- **Failed:** the operator retries the upgrade itself once the cluster is
+  `Ready` with every server available. The retry starts from where it stopped:
+  the servers already on the target are checked again without a restart, and
+  the rest are rolled one at a time through the same checks.
+- **Paused:** the upgrade waits for you. Investigate with `lastError`, then
+  either:
+  - set `spec.image.tag` to another target (a later version, or the same line
+    once you have a fixed image): the upgrade resumes towards it; or
+  - set `spec.upgradeStrategy.autoPauseOnFailure` to `false`: the operator
+    retries the upgrade as it retries a `Failed` one. Set it back to `true`
+    afterwards if you want the next failure to pause again.
+
+  Either way the upgrade resumes once the cluster is `Ready` with every server
+  available, and the `UpgradeStarted` event says it resumed. A server that
+  cannot start on the target image keeps the cluster short of a server, so the
+  upgrade does not resume, towards any tag, while it is down.
+- **Going back:** you can set the tag back to `status.version` only while the
+  upgrade has not restarted any server (it stopped while staging, or before its
+  first server restarted); the upgrade then runs to that version, which every
+  server still runs. Once a server runs the target, a tag below the target is
+  refused (see [Version checks](#version-checks)): Neo4j does not support
+  downgrades, and going back means restoring a backup taken before the upgrade.
+
 ### Version checks
 
-Every reconcile checks `spec.image.tag` against `status.version`, the version every server runs. It is recorded when the cluster first becomes `Ready`, after each verified upgrade, and when the cluster becomes `Ready` with every server on an image that reached them without the upgrade state machine (the no-ready-server exception above). It does not move while an upgrade is in flight or after one fails — so setting the tag back to it, or on to a later target, is always allowed.
+Every reconcile checks `spec.image.tag` against `status.version`, the version every server runs. It is recorded when the cluster first becomes `Ready`, after each verified upgrade, and when the cluster becomes `Ready` with every server on an image that reached them without the upgrade state machine (the no-ready-server exception above). It does not move while an upgrade is in flight or after one is `Paused` or `Failed`.
+
+So while an upgrade is unfinished, `status.version` is the version of the servers it has not rolled. The servers it has rolled run its target (`status.upgradeStatus.targetVersion`), so once it has restarted a server, the tag is also checked against the target: a later target, or the target itself, is allowed; anything below it, `status.version` included, is refused, because it would roll those servers back:
+
+```
+Update validation failed: validation failed: spec.image.tag: Invalid value: "2026.08.1-enterprise": downgrades are not supported: the upgrade to 2026.09.0-enterprise (status.upgradeStatus.targetVersion) has already restarted servers on it, and Neo4j cannot go back to an earlier version. Set the tag to 2026.09.0-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
+```
+
+Before the upgrade has restarted a server (it stopped while staging, or before its first server restarted), setting the tag back to `status.version` is allowed.
 
 A `Neo4jEnterpriseStandalone` is held to the same rule. Its `status.version` is recorded once its pod is ready on the current image, so it does not move while the pod is being replaced, nor for an image that never starts: setting the tag back to the version the server runs is always allowed. A downgrade is refused the same way (the standalone turns `Failed` with a `ValidationFailed` event saying `the standalone runs …`), and the server keeps the version it runs.
 
@@ -107,14 +169,14 @@ A tag the cluster cannot move to (see [Supported Upgrade Paths](#supported-upgra
 Update validation failed: validation failed: spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
 ```
 
-The servers keep running the version they ran; nothing else in the spec is applied until the tag is fixed. Set it back and the next reconcile carries on. The check applies mid-upgrade too: a new target below the version the servers ran before the upgrade is refused rather than rolled, and the upgrade waits where it was until the tag is fixed.
+The servers keep running the version they ran; nothing else in the spec is applied until the tag is fixed. Set it back and the next reconcile carries on. The check applies mid-upgrade too: a new target below the version the servers ran before the upgrade, or below the current target once a server runs it, is refused rather than rolled, and the upgrade waits where it was until the tag is fixed.
 
 `kubectl neo4j validate --connect` runs the same check against the running cluster before you apply (see [`validate`](../cli/validate.md#checking-cross-references-with-connect)). Offline it cannot: a manifest does not say what the cluster runs.
 
 Not checked:
 
 - **No `status.version` yet** — a cluster that has not been `Ready` since the operator was installed. There is nothing verified to compare with; the operator records the version at the next `Ready`, for a cluster created by an older release too.
-- **A tag without a patch number.** `5.26-enterprise` and `2026.08-enterprise` float to the newest patch, so moving between `5.26.12-enterprise` and `5.26-enterprise` is not treated as a downgrade.
+- **The patch, when either tag names none.** `5.26-enterprise` and `2026.08-enterprise` float to the newest patch, so moving between `5.26.12-enterprise` and `5.26-enterprise` is not treated as a downgrade, and the `Verifying` phase accepts any patch of the line for such a tag (see [Version verification](#upgrade-phases-and-resumability)).
 
 ## Upgrade Strategy
 
@@ -143,7 +205,7 @@ The three timeouts are Go durations above zero: `30m`, `1h30m`, `90s`. A value t
 
 Servers always restart one at a time, as Neo4j's rolling upgrade requires. `maxUnavailableDuringUpgrade` is accepted for compatibility but has no effect; a value other than `1` raises a `ValidationWarning` event.
 
-When `preUpgradeHealthCheck` is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and `autoPauseOnFailure` is `true`, the upgrade is blocked until you intervene rather than proceeding against an unhealthy deployment.
+When `preUpgradeHealthCheck` is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and `autoPauseOnFailure` is `true`, the upgrade is `Paused` before anything changes, rather than proceeding against an unhealthy deployment; resume it as described in [When an upgrade stops](#when-an-upgrade-stops-paused-and-failed). Without `autoPauseOnFailure` it is `Failed`, and retried once the cluster is `Ready` with every server available.
 
 For the full field reference see the [API Reference](../../api_reference/neo4jenterprisecluster.md).
 
