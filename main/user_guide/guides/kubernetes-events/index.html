@@ -2157,6 +2157,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#users-roles-and-role-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users, Roles and Role Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#auth-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4138,6 +4149,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#users-roles-and-role-bindings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Users, Roles and Role Bindings
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#auth-rules" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4252,6 +4274,19 @@ and alerting systems.</p>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>-A<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.apiVersion<span class="o">=</span>neo4j.neo4j.com/v1beta1
 </span></code></pre></div>
 <h2 id="event-reasons-reference">Event Reasons Reference<a class="headerlink" href="#event-reasons-reference" title="Anchor link to this section">&para;</a></h2>
+<p><strong>How often a Warning repeats.</strong> The operator retries a resource on a timer, on
+error backoff and whenever something it watches changes, so a condition that lasts
+is met on many passes. It is announced once:</p>
+<ul>
+<li><em>Once per failure</em> (or <em>once per wait</em>): the Warning is emitted when the
+  condition starts or its message changes — read from what the operator recorded
+  in the resource's status — and not on the retries in between, nor after an
+  operator restart. The current state is always in <code>status.message</code> and the
+  <code>Ready</code> condition.</li>
+<li><em>Advisory</em>: a Warning that stays true while the resource otherwise works is
+  emitted when it starts to apply and again every 30 minutes while it still does
+  (inside the default one-hour event TTL), and forgotten when it stops applying.</li>
+</ul>
 <h3 id="cluster-lifecycle">Cluster Lifecycle<a class="headerlink" href="#cluster-lifecycle" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>
@@ -4300,32 +4335,32 @@ and alerting systems.</p>
 <tr>
 <td><code>TopologyPlacementFailed</code></td>
 <td>Warning</td>
-<td>Topology placement constraint calculation failed</td>
+<td>Topology placement constraint calculation failed; the cluster is <code>Failed</code> and retried with backoff. Once per failure</td>
 </tr>
 <tr>
 <td><code>TopologyZoneDiscoveryDegraded</code></td>
 <td>Warning</td>
-<td>Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set <code>spec.topology.availabilityZones</code> to enumerate zones explicitly</td>
+<td>Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set <code>spec.topology.availabilityZones</code> to enumerate zones explicitly. Advisory</td>
 </tr>
 <tr>
 <td><code>PropertyShardingValidationFailed</code></td>
 <td>Warning</td>
-<td>Property sharding configuration validation failed</td>
+<td>Property sharding configuration validation failed; the cluster is <code>Failed</code>. Once per failure</td>
 </tr>
 <tr>
 <td><code>ServerRoleValidationFailed</code></td>
 <td>Warning</td>
-<td>Server role hint validation failed</td>
+<td>Server role hint validation failed, one event per invalid hint; the cluster is <code>Failed</code>. Once per failure</td>
 </tr>
 <tr>
 <td><code>RouteAPINotFound</code></td>
 <td>Warning</td>
-<td>OpenShift Route API not available in cluster</td>
+<td>OpenShift Route API not available in cluster, for the Route or the MCP Route. Advisory. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
 </tr>
 <tr>
 <td><code>MCPApocMissing</code></td>
 <td>Warning</td>
-<td>MCP server requires APOC plugin which is not installed</td>
+<td>MCP server requires APOC plugin which is not installed. Advisory. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
 </tr>
 <tr>
 <td><code>ClusterDegraded</code></td>
@@ -4345,7 +4380,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ReconcileFailed</code></td>
 <td>Warning</td>
-<td>Reconciliation loop encountered an unrecoverable error</td>
+<td>A reconcile pass of a <code>Neo4jEnterpriseStandalone</code> or <code>Neo4jShardedDatabase</code> failed; the resource is <code>Failed</code> and retried with backoff. Once per failure</td>
 </tr>
 <tr>
 <td><code>ConfigAppliedLive</code></td>
@@ -4424,7 +4459,7 @@ and alerting systems.</p>
 <tr>
 <td><code>UpgradeFailed</code></td>
 <td>Warning</td>
-<td>Upgrade failed</td>
+<td>Upgrade failed. On a <code>Neo4jEnterpriseStandalone</code> with <code>upgradeStrategy.preUpgradeHealthCheck</code> and <code>autoPauseOnFailure</code>, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked</td>
 </tr>
 <tr>
 <td><code>UpgradeDeferred</code></td>
@@ -4461,7 +4496,7 @@ and alerting systems.</p>
 <tr>
 <td><code>BackupFailed</code></td>
 <td>Warning</td>
-<td>Backup job failed</td>
+<td>Backup job failed, or the spec is invalid (phase <code>Invalid</code>, once per refusal)</td>
 </tr>
 <tr>
 <td><code>RestoreStarted</code></td>
@@ -4481,7 +4516,7 @@ and alerting systems.</p>
 <tr>
 <td><code>RestoreFromChainParent</code></td>
 <td>Warning</td>
-<td><code>source.backupRef</code> points at a FULL+DIFF chain parent; the restore seeds from its latest full snapshot, not the latest chain state</td>
+<td><code>source.backupRef</code> points at a FULL+DIFF chain parent; the restore seeds from its latest full snapshot, not the latest chain state. Advisory, so a restore that waits (for seed credentials, a rollout, the seed proxy) does not repeat it on every check</td>
 </tr>
 <tr>
 <td><code>DatabaseCreateFailed</code></td>
@@ -4496,22 +4531,22 @@ and alerting systems.</p>
 <tr>
 <td><code>BackupShardedDatabasesExcluded</code></td>
 <td>Warning</td>
-<td>An all-databases backup captured property-sharded database(s) as per-shard artifacts; an all-databases restore does not recreate them — restore each from the same backup via its <code>Neo4jShardedDatabase</code> CR with <code>spec.seedBackupRef</code></td>
+<td>An all-databases backup captured property-sharded database(s) as per-shard artifacts; an all-databases restore does not recreate them — restore each from the same backup via its <code>Neo4jShardedDatabase</code> CR with <code>spec.seedBackupRef</code>. Once per run, when the run is recorded in <code>status.history</code></td>
 </tr>
 <tr>
 <td><code>BackupShardedDifferential</code></td>
 <td>Warning</td>
-<td>A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run. Comes from an all-databases backup; a <code>spec.shardedDatabase</code> backup takes full backups on a PVC</td>
+<td>A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run. Comes from an all-databases backup; a <code>spec.shardedDatabase</code> backup takes full backups on a PVC. Once per run, when the run is recorded in <code>status.history</code></td>
 </tr>
 <tr>
 <td><code>BackupValidateUnsupported</code></td>
 <td>Warning</td>
-<td><code>options.validate</code> has no effect: <code>neo4j-admin backup validate</code> needs a CalVer (2025.x+) image</td>
+<td><code>options.validate</code> has no effect: <code>neo4j-admin backup validate</code> needs a CalVer (2025.x+) image. Advisory</td>
 </tr>
 <tr>
 <td><code>ServiceAccountAnnotationConflict</code></td>
 <td>Warning</td>
-<td>A backup/restore CR overwrote different workload-identity annotations on the namespace's shared <code>neo4j-backup-sa</code> / <code>neo4j-restore-sa</code>; the last CR reconciled wins and the others' cloud access breaks</td>
+<td>A backup/restore CR overwrote different workload-identity annotations on the namespace's shared <code>neo4j-backup-sa</code> / <code>neo4j-restore-sa</code>; the last CR reconciled wins and the others' cloud access breaks. On a <code>Neo4jBackup</code> it is advisory: two backups that disagree overwrite each other on every pass, and each says so once</td>
 </tr>
 <tr>
 <td><code>SeedEndpointNotProjected</code></td>
@@ -4526,7 +4561,7 @@ and alerting systems.</p>
 <tr>
 <td><code>RestoreShardedDatabasesNotCovered</code></td>
 <td>Warning</td>
-<td>An all-databases restore's source backup recorded property-sharded databases it does not recreate; restore each via its <code>Neo4jShardedDatabase</code> CR</td>
+<td>An all-databases restore's source backup recorded property-sharded databases it does not recreate; restore each via its <code>Neo4jShardedDatabase</code> CR. Advisory</td>
 </tr>
 </tbody>
 </table>
@@ -4558,7 +4593,7 @@ and alerting systems.</p>
 <tr>
 <td><code>CreationFailed</code></td>
 <td>Warning</td>
-<td>Database creation failed</td>
+<td>Database creation failed; the database is <code>Failed</code> and retried with backoff. Once per failure</td>
 </tr>
 <tr>
 <td><code>DeletionFailed</code></td>
@@ -4573,7 +4608,7 @@ and alerting systems.</p>
 <tr>
 <td><code>DataImportFailed</code></td>
 <td>Warning</td>
-<td>Initial data import failed</td>
+<td>Initial data import failed; retried with backoff. Once per failure</td>
 </tr>
 <tr>
 <td><code>DataSeeded</code></td>
@@ -4583,12 +4618,12 @@ and alerting systems.</p>
 <tr>
 <td><code>SeedCredsMissing</code></td>
 <td>Warning</td>
-<td>The seed credentials Secret (<code>spec.seedCredentials.secretRef</code>) is not projected onto the hosting cluster/standalone's <code>spec.extraEnvFrom</code>; the message carries a copy-pasteable fix (also emitted for <code>Neo4jShardedDatabase</code>)</td>
+<td>The seed credentials Secret (<code>spec.seedCredentials.secretRef</code>) is not projected onto the hosting cluster/standalone's <code>spec.extraEnvFrom</code> (for a <code>Neo4jShardedDatabase</code>'s cloud <code>seedBackupRef</code>: the backup's credentials Secret or custom S3 endpoint on the cluster's server pods); the message carries a copy-pasteable fix. The database waits in phase <code>Pending</code> and is created by itself once the host has them — nothing is asked of Neo4j before. Once per wait. Also emitted for <code>Neo4jShardedDatabase</code></td>
 </tr>
 <tr>
 <td><code>SeedCredsAutoInherited</code></td>
 <td>Normal</td>
-<td>The hosting cluster/standalone carries <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, so the operator patched its <code>spec.extraEnvFrom</code> with the seed credentials Secret and is waiting for the rolling restart (also emitted for <code>Neo4jShardedDatabase</code>)</td>
+<td>The hosting cluster/standalone carries <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, so the operator patched its <code>spec.extraEnvFrom</code> with the seed credentials Secret and is waiting (phase <code>Pending</code>) for the rolling restart (also emitted for <code>Neo4jShardedDatabase</code>)</td>
 </tr>
 <tr>
 <td><code>ValidationWarning</code></td>
@@ -4598,22 +4633,22 @@ and alerting systems.</p>
 <tr>
 <td><code>ClusterNotFound</code></td>
 <td>Warning</td>
-<td>Referenced cluster or standalone not found</td>
+<td>Referenced cluster or standalone not found; the database waits in phase <code>Pending</code> and carries on once it exists. Once per wait. Also emitted by <code>Neo4jShardedDatabase</code> (for a cluster)</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
 <td>Warning</td>
-<td>Referenced cluster is not yet Ready</td>
+<td>On a <code>Neo4jShardedDatabase</code>: the referenced cluster cannot host it — property sharding needs Neo4j 2025.12+ and <code>spec.propertySharding.enabled</code> on the cluster; phase <code>Failed</code>. Once per failure. A cluster that is simply not Ready yet is phase <code>Waiting</code>, with no event</td>
 </tr>
 <tr>
 <td><code>ConnectionFailed</code></td>
 <td>Warning</td>
-<td>Could not connect to Neo4j via Bolt</td>
+<td>Could not connect to Neo4j via Bolt; retried with backoff. Once per failure. Emitted by <code>Neo4jReplicaDatabase</code>, <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jCompositeDatabase</code> and <code>Neo4jDatabaseAlias</code></td>
 </tr>
 <tr>
 <td><code>ClientCreationFailed</code></td>
 <td>Warning</td>
-<td>Failed to create Neo4j Bolt client for the cluster</td>
+<td>Failed to create Neo4j Bolt client for the cluster (<code>Neo4jShardedDatabase</code>); retried with backoff. Once per failure</td>
 </tr>
 </tbody>
 </table>
@@ -4650,7 +4685,7 @@ and alerting systems.</p>
 <tr>
 <td><code>PluginDuplicate</code></td>
 <td>Warning</td>
-<td>Another <code>Neo4jPlugin</code> already targets this name (only the first owner reconciles; duplicates sit in <code>Failed</code> until the conflict is resolved)</td>
+<td>Another <code>Neo4jPlugin</code> already targets this name (only the first owner reconciles; duplicates sit in <code>Failed</code> until the conflict is resolved). Once per conflict</td>
 </tr>
 </tbody>
 </table>
@@ -4756,12 +4791,12 @@ and alerting systems.</p>
 <tr>
 <td><code>StorageExpansionFailed</code></td>
 <td>Warning</td>
-<td>Expansion failed (non-expandable StorageClass, shrink attempt, or patch error)</td>
+<td>Expansion failed (non-expandable StorageClass, shrink attempt, or patch error); the deployment is <code>Failed</code> and retried with backoff. Once per failure — a retry of the same failed expansion does not announce <code>StorageExpansionStarted</code> again, and a cluster's phase no longer flips <code>Expanding</code>/<code>Failed</code> on every retry</td>
 </tr>
 <tr>
 <td><code>StorageClassNotFound</code></td>
 <td>Warning</td>
-<td><code>spec.storage.className</code> references a StorageClass that does not exist in the cluster</td>
+<td><code>spec.storage.className</code> references a StorageClass that does not exist in the cluster; the deployment is <code>Failed</code> until it exists. Once per failure</td>
 </tr>
 </tbody>
 </table>
@@ -4793,20 +4828,17 @@ and alerting systems.</p>
 <tr>
 <td><code>SeedBackupResolutionFailed</code></td>
 <td>Warning</td>
-<td><code>spec.seedBackupRef</code> could not be resolved into a concrete seed</td>
+<td><code>spec.seedBackupRef</code> could not be resolved into a concrete seed (the <code>Neo4jBackup</code> is missing, or its storage or run cannot seed a sharded database); phase <code>Failed</code>. Once per failure</td>
 </tr>
 <tr>
 <td><code>SeedProxyStarting</code></td>
 <td>Normal</td>
 <td>Waiting for the PVC <code>backup-seed-proxy</code> Deployment to become Ready before seeding. Emitted when the wait starts, not on every retry</td>
 </tr>
-<tr>
-<td>### Users, Roles and Role Bindings</td>
-<td></td>
-<td></td>
-</tr>
 </tbody>
 </table>
+<p>A <code>Neo4jShardedDatabase</code> also emits <code>ClusterNotFound</code> (the cluster does not exist yet: phase <code>Pending</code>), <code>ClusterNotReady</code>, <code>ClientCreationFailed</code>, <code>ReconcileFailed</code>, <code>SeedCredsMissing</code> (phase <code>Pending</code>) and <code>SeedCredsAutoInherited</code>, described above.</p>
+<h3 id="users-roles-and-role-bindings">Users, Roles and Role Bindings<a class="headerlink" href="#users-roles-and-role-bindings" title="Anchor link to this section">&para;</a></h3>
 <p>Emitted on <code>Neo4jUser</code>, <code>Neo4jRole</code> and <code>Neo4jRoleBinding</code> objects.</p>
 <table>
 <thead>
@@ -4845,7 +4877,7 @@ and alerting systems.</p>
 <tr>
 <td><code>UserSyncFailed</code></td>
 <td>Warning</td>
-<td>Reconciling the user against Neo4j failed</td>
+<td>Reconciling the user against Neo4j failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>PasswordRotated</code></td>
@@ -4865,7 +4897,7 @@ and alerting systems.</p>
 <tr>
 <td><code>RolePending</code></td>
 <td>Warning</td>
-<td>Waiting for referenced roles to exist</td>
+<td>Waiting for referenced roles to exist; names them (sorted), as the <code>PendingDependencies</code> condition does. Once per wait, and again when the set of missing roles changes. Emitted by <code>Neo4jUser</code>, <code>Neo4jRoleBinding</code> and <code>Neo4jAuthRule</code></td>
 </tr>
 <tr>
 <td><code>RoleCreated</code></td>
@@ -4890,7 +4922,7 @@ and alerting systems.</p>
 <tr>
 <td><code>RoleSyncFailed</code></td>
 <td>Warning</td>
-<td>Reconciling the role against Neo4j failed</td>
+<td>Reconciling the role against Neo4j failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>PrivilegesApplied</code></td>
@@ -4900,7 +4932,7 @@ and alerting systems.</p>
 <tr>
 <td><code>PrivilegesDriftKept</code></td>
 <td>Warning</td>
-<td>A drifting privilege was not revoked (it is immutable, or no <code>REVOKE</code> could be derived)</td>
+<td>A drifting privilege was not revoked (it is immutable, or no <code>REVOKE</code> could be derived). Advisory, one per kept privilege</td>
 </tr>
 <tr>
 <td><code>PrivilegeNamesUnknownDatabase</code></td>
@@ -4920,12 +4952,12 @@ and alerting systems.</p>
 <tr>
 <td><code>BindingFailed</code></td>
 <td>Warning</td>
-<td>A role binding grant or revoke failed</td>
+<td>A role binding grant or revoke failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>UserNotFound</code></td>
 <td>Warning</td>
-<td>The user a <code>Neo4jRoleBinding</code> names does not exist</td>
+<td>The user a <code>Neo4jRoleBinding</code> names does not exist; the binding waits in <code>Pending</code>. Once per wait</td>
 </tr>
 </tbody>
 </table>
@@ -4947,17 +4979,17 @@ and alerting systems.</p>
 <tr>
 <td><code>AuthRuleFailed</code></td>
 <td>Warning</td>
-<td>Creating, updating or dropping the auth rule failed</td>
+<td>Creating, updating or dropping the auth rule failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>AuthRuleVersionTooOld</code></td>
 <td>Warning</td>
-<td>Auth rules need Neo4j 2026.03 or later on the referenced cluster</td>
+<td>Auth rules need Neo4j 2026.03 or later on the referenced cluster. Once per failure</td>
 </tr>
 <tr>
 <td><code>OIDCProviderNotConfigured</code></td>
 <td>Warning</td>
-<td>The referenced cluster's <code>spec.config</code> lists no OIDC provider for attribute-based access control; the rule stays <code>Pending</code></td>
+<td>The referenced cluster's <code>spec.config</code> lists no OIDC provider for attribute-based access control; the rule stays <code>Pending</code>. Once per wait</td>
 </tr>
 </tbody>
 </table>
@@ -4974,7 +5006,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ReplicationSourceCaveat</code></td>
 <td>Normal / Warning</td>
-<td>On a <code>Neo4jBackup</code> with <code>mode: replication-source</code>: Normal when the pull URI is published (with the reminder that bucket lifecycle rules can break the chain); Warning when the storage type (e.g. <code>pvc</code>) has no cross-cluster URI form</td>
+<td>On a <code>Neo4jBackup</code> with <code>mode: replication-source</code>: Normal when the pull URI is published (with the reminder that bucket lifecycle rules can break the chain); Warning when the storage type (e.g. <code>pvc</code>) has no cross-cluster URI form (advisory)</td>
 </tr>
 <tr>
 <td><code>ReplicaCreated</code></td>
@@ -4989,7 +5021,12 @@ and alerting systems.</p>
 <tr>
 <td><code>ReplicaFailed</code></td>
 <td>Warning</td>
-<td>Creating the replica (or dropping it on deletion) failed</td>
+<td>Creating the replica (or dropping it on deletion) failed. Once per failure</td>
+</tr>
+<tr>
+<td><code>ReplicaObjectStoreEnvMissing</code></td>
+<td>Warning</td>
+<td>A backup-mode replica's downstream servers have no <code>AWS_REGION</code> (or <code>AWS_DEFAULT_REGION</code>) in any source of their environment, so Neo4j could not read the <code>s3://</code> seed or pulls. The replica waits in <code>Pending</code> — nothing is asked of Neo4j yet — and is created by itself, within two minutes, once the servers have it. Once per wait. (Before: <code>ReplicaFailed</code>, phase <code>Failed</code>)</td>
 </tr>
 <tr>
 <td><code>ReplicaDropped</code></td>
@@ -4999,7 +5036,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ReplicaVersionTooOld</code></td>
 <td>Warning</td>
-<td>The downstream cluster predates Neo4j 2026.08</td>
+<td>The downstream cluster predates Neo4j 2026.08; phase <code>Failed</code>. Once per failure</td>
 </tr>
 <tr>
 <td><code>ReplicaPromotionDetected</code></td>
@@ -5014,7 +5051,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ReplicaPromotionStarted</code></td>
 <td>Warning</td>
-<td>A <code>Neo4jReplicaPromotion</code> started; irreversible, and any outstanding lag becomes permanent data loss</td>
+<td>A <code>Neo4jReplicaPromotion</code> started; irreversible, and any outstanding lag becomes permanent data loss. Once per promotion, not on each retry of the <code>PROMOTE</code> call</td>
 </tr>
 <tr>
 <td><code>ReplicaPromotionCompleted</code></td>
@@ -5024,7 +5061,7 @@ and alerting systems.</p>
 <tr>
 <td><code>ReplicaPromotionFailed</code></td>
 <td>Warning</td>
-<td>Promotion failed</td>
+<td>Promotion failed, or a <code>PROMOTE</code> call failed and is retried (the promotion stays <code>Promoting</code>, with the failure in <code>status.message</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>CrossClusterProxyUnauthenticated</code></td>
@@ -5057,7 +5094,7 @@ and alerting systems.</p>
 <tr>
 <td><code>CompositeDatabaseFailed</code></td>
 <td>Warning</td>
-<td>Reconciling the composite database failed</td>
+<td>Reconciling the composite database failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>CompositeDatabaseDropped</code></td>
@@ -5082,7 +5119,7 @@ and alerting systems.</p>
 <tr>
 <td><code>CompositeDatabaseNameBlocked</code></td>
 <td>Warning</td>
-<td>A dotted alias already occupies the composite's namespace, so the composite cannot be created until that alias is dropped (<code>kubectl neo4j explain CompositeDatabaseNameBlocked</code>)</td>
+<td>A dotted alias already occupies the composite's namespace, so the composite cannot be created until that alias is dropped (<code>kubectl neo4j explain CompositeDatabaseNameBlocked</code>). Once per blocking alias</td>
 </tr>
 <tr>
 <td><code>AliasCreated</code></td>
@@ -5107,7 +5144,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AliasFailed</code></td>
 <td>Warning</td>
-<td>Reconciling or dropping the alias failed</td>
+<td>Reconciling or dropping the alias failed. Once per failure</td>
 </tr>
 </tbody>
 </table>
@@ -5125,7 +5162,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraCredentialsValidated</code> / <code>AuraCredentialsInvalid</code></td>
 <td>Normal / Warning</td>
-<td>The provider config's Aura API credentials were accepted / rejected</td>
+<td>The provider config's Aura API credentials were accepted / rejected (the Warning once per failure)</td>
 </tr>
 <tr>
 <td><code>AuraInstanceCreated</code>, <code>AuraInstanceAdopted</code>, <code>AuraInstanceUpdated</code>, <code>AuraInstancePaused</code>, <code>AuraInstanceResumed</code>, <code>AuraInstanceUpgraded</code>, <code>AuraInstanceDeleted</code>, <code>AuraInstanceOrphaned</code></td>
@@ -5135,7 +5172,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraInstanceFailed</code></td>
 <td>Warning</td>
-<td>Aura instance reconcile failed (also: deletion refused while <code>deletionProtection</code> is set)</td>
+<td>Aura instance reconcile failed (also: deletion refused while <code>deletionProtection</code> is set, recorded on the <code>Synced</code> condition, reason <code>DeletionProtected</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraSnapshotCreated</code></td>
@@ -5160,12 +5197,12 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraCustomerManagedKeyDeleteBlocked</code></td>
 <td>Warning</td>
-<td>The key cannot be deleted: still in use by one or more instances</td>
+<td>The key cannot be deleted: still in use by one or more instances. Once per refusal</td>
 </tr>
 <tr>
 <td><code>AuraCustomerManagedKeyFailed</code></td>
 <td>Warning</td>
-<td>Customer-managed key reconcile failed</td>
+<td>Customer-managed key reconcile failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraIPFilterCreated</code>, <code>AuraIPFilterAdopted</code>, <code>AuraIPFilterUpdated</code>, <code>AuraIPFilterReady</code>, <code>AuraIPFilterDeleted</code>, <code>AuraIPFilterOrphaned</code></td>
@@ -5175,7 +5212,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraIPFilterFailed</code></td>
 <td>Warning</td>
-<td>IP filter reconcile failed</td>
+<td>IP filter reconcile failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseCreated</code>, <code>AuraDatabaseAdopted</code>, <code>AuraDatabaseReady</code>, <code>AuraDatabaseDeleted</code>, <code>AuraDatabaseOrphaned</code></td>
@@ -5185,7 +5222,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraDatabaseFailed</code></td>
 <td>Warning</td>
-<td>Aura database reconcile failed</td>
+<td>Aura database reconcile failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseBackupCreated</code></td>
@@ -5195,7 +5232,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraDatabaseBackupFailed</code></td>
 <td>Warning</td>
-<td>Per-database backup failed</td>
+<td>Per-database backup failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseRestoreStarted</code>, <code>AuraDatabaseRestoreCompleted</code></td>
@@ -5205,7 +5242,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraDatabaseRestoreFailed</code></td>
 <td>Warning</td>
-<td>Per-database restore failed</td>
+<td>Per-database restore failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraMemberRoleUpdated</code>, <code>AuraMemberReady</code>, <code>AuraMemberRemoved</code></td>
@@ -5215,12 +5252,12 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraMemberNotFound</code></td>
 <td>Warning</td>
-<td>The person is not an organization member; invite them with an <code>AuraInvite</code></td>
+<td>The person is not an organization member; invite them with an <code>AuraInvite</code>. Once per wait</td>
 </tr>
 <tr>
 <td><code>AuraMemberFailed</code></td>
 <td>Warning</td>
-<td>Member reconcile failed</td>
+<td>Member reconcile failed. Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraInviteCreated</code>, <code>AuraInviteAdopted</code>, <code>AuraInviteReady</code>, <code>AuraInviteDeleted</code>, <code>AuraInviteOrphaned</code></td>
@@ -5230,7 +5267,7 @@ and alerting systems.</p>
 <tr>
 <td><code>AuraInviteFailed</code></td>
 <td>Warning</td>
-<td>Invite reconcile failed</td>
+<td>Invite reconcile failed. Once per failure</td>
 </tr>
 </tbody>
 </table>

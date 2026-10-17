@@ -159,6 +159,10 @@ data:
       hs.status = "Degraded"
       hs.message = obj.status.message or "Sharded database failed"
     else
+      -- "Pending" covers waits that end by themselves once something exists:
+      -- the cluster, the seed backup's first run, the PVC seed proxy, or the
+      -- seed credentials on the cluster's server pods. "Waiting" is a cluster
+      -- that is not Ready yet.
       hs.status = "Progressing"
       hs.message = obj.status.message or ("Sharded database is " .. phase)
     end
@@ -315,8 +319,9 @@ data:
       hs.status = "Degraded"
       hs.message = obj.status.message or "Replica reconciliation failed"
     else
-      -- "Pending"/"Seeding" — waiting for the cluster, or restoring the
-      -- initial full backup, which can take a while for a large database.
+      -- "Pending"/"Seeding" — waiting for the cluster (or, in backup mode,
+      -- for AWS_REGION on its servers), or restoring the initial full
+      -- backup, which can take a while for a large database.
       hs.status = "Progressing"
       hs.message = obj.status.message or ("Replica is " .. phase)
     end

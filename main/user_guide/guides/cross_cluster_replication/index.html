@@ -4786,8 +4786,9 @@ would rather manage it there:</p>
 <p>With routes 2 and 3 the operator checks before asking Neo4j: a backup-mode
 replica whose servers have no <code>AWS_REGION</code> (or <code>AWS_DEFAULT_REGION</code>) —
 whether from <code>spec.env</code> or a Secret or ConfigMap in <code>spec.extraEnvFrom</code> —
-fails immediately naming what is missing, rather than stalling in <code>Seeding</code> while
-the server refuses deep inside the AWS SDK. Two replicas naming different
+waits in <code>Pending</code> naming what is missing, rather than stalling in <code>Seeding</code> while
+the server refuses deep inside the AWS SDK, and carries on by itself once the
+servers have it. Two replicas naming different
 Secrets for one cluster are refused rather than fought over.</p>
 <p>See <a href="#security">Security</a> for how to scope whichever route you pick.</p>
 <p><strong>Network mode needs none of this</strong> — it reads from the upstream over the
@@ -5223,7 +5224,7 @@ alert on it the same way as the proxy condition above.</p>
 <td>downstream cluster predates replica support</td>
 </tr>
 <tr>
-<td><strong>Backup mode <code>Failed</code>, "the downstream servers cannot read s3://…: AWS_REGION is not set on …"</strong></td>
+<td><strong>Backup mode <code>Pending</code>, "the downstream servers cannot read s3://…: AWS_REGION is not set on …"</strong> (one <code>ReplicaObjectStoreEnvMissing</code> Warning)</td>
 <td>the downstream SERVERS have no bucket credentials. The operator checks for <code>AWS_REGION</code> (or <code>AWS_DEFAULT_REGION</code>) before asking Neo4j and names what is missing; under workload identity it skips that check, and a misconfigured role shows as <code>Failed</code>, "create replica database failed: …" with the server's own error in <code>status.message</code>. Set <code>AWS_REGION</code> / <code>AWS_ACCESS_KEY_ID</code> / <code>AWS_SECRET_ACCESS_KEY</code> (and <code>AWS_ENDPOINT_URL_S3</code> for S3-compatible stores) in the downstream cluster's <code>spec.env</code>, or in a Secret listed in its <code>spec.extraEnvFrom</code>, and the replica retries on its own within two minutes; <code>source.credentialsSecretRef</code> works too, but <code>spec.source</code> cannot be changed, so it means recreating the replica — see the warning in step 2. Each restarts the downstream servers</td>
 </tr>
 <tr>

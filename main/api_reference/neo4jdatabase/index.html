@@ -5009,7 +5009,7 @@
 </tr>
 </tbody>
 </table>
-<p><strong>The Secret must be projected onto the server pods.</strong> The Neo4j JVM reads the credentials from its environment, so the Secret has to appear in the target <code>Neo4jEnterpriseCluster</code>/<code>Neo4jEnterpriseStandalone</code> <code>spec.extraEnvFrom</code>. If it does not, the database stays blocked with reason <code>SeedCredsMissing</code> and a message showing what to add. If the target carries the annotation <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, the operator appends the entry to <code>spec.extraEnvFrom</code> itself (reason <code>SeedCredsAutoInherited</code>) — <strong>this triggers a rolling restart</strong> of the target. Omit <code>seedCredentials</code> entirely when you rely on IAM roles / workload identity.</p>
+<p><strong>The Secret must be projected onto the server pods.</strong> The Neo4j JVM reads the credentials from its environment, so the Secret has to appear in the target <code>Neo4jEnterpriseCluster</code>/<code>Neo4jEnterpriseStandalone</code> <code>spec.extraEnvFrom</code>. If it does not, the database waits in phase <code>Pending</code> with reason <code>SeedCredsMissing</code> and a message showing what to add, and is created by itself once the Secret is there. If the target carries the annotation <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, the operator appends the entry to <code>spec.extraEnvFrom</code> itself (reason <code>SeedCredsAutoInherited</code>) — <strong>this triggers a rolling restart</strong> of the target. Omit <code>seedCredentials</code> entirely when you rely on IAM roles / workload identity.</p>
 <h3 id="storagelocation">StorageLocation<a class="headerlink" href="#storagelocation" title="Anchor link to this section">&para;</a></h3>
 <blockquote>
 <p><code>StorageLocation</code> and the tables below are only reachable through <code>initialData.storage</code>, which is currently accepted but not acted on.</p>
@@ -5205,7 +5205,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found / not ready), <code>Failed</code> (connection, creation or data-import failure), <code>ValidationFailed</code>, or <code>Unknown</code> (any other blocked state, e.g. <code>SeedCredsMissing</code>)</td>
+<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found / not ready, or waiting for the seed credentials on the target — <code>SeedCredsMissing</code>, <code>SeedCredsAutoInherited</code>), <code>Failed</code> (connection, creation or data-import failure), <code>ValidationFailed</code>, or <code>Unknown</code> (any other blocked state)</td>
 </tr>
 <tr>
 <td><code>message</code></td>

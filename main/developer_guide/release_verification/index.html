@@ -4812,7 +4812,7 @@ cluster (~2Gi each):</p>
 </tr>
 <tr>
 <td>Sharded seed from MinIO</td>
-<td>Back the sharded database up to MinIO. On a sharding cluster with <strong>no</strong> MinIO credentials or endpoint in its spec but <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, a <code>seedBackupRef</code> to it: one <code>SeedCredsAutoInherited</code> event, the cluster gains the credentials in <code>extraEnvFrom</code> <strong>and</strong> <code>AWS_ENDPOINT_URL_S3</code> + <code>JAVA_TOOL_OPTIONS=-Daws.s3.forcePathStyle=true</code> in <code>spec.env</code> in <strong>one</strong> rolling restart, and the database seeds after it. Without the annotation → <code>Failed</code>, naming both the credentials and the endpoint</td>
+<td>Back the sharded database up to MinIO. On a sharding cluster with <strong>no</strong> MinIO credentials or endpoint in its spec but <code>neo4j.com/auto-inherit-seed-creds: "true"</code>, a <code>seedBackupRef</code> to it: one <code>SeedCredsAutoInherited</code> event, the cluster gains the credentials in <code>extraEnvFrom</code> <strong>and</strong> <code>AWS_ENDPOINT_URL_S3</code> + <code>JAVA_TOOL_OPTIONS=-Daws.s3.forcePathStyle=true</code> in <code>spec.env</code> in <strong>one</strong> rolling restart, and the database seeds after it. Without the annotation → <code>Pending</code>, naming both the credentials and the endpoint, with <strong>one</strong> <code>SeedCredsMissing</code> Warning however long it waits; adding the annotation then carries on by itself</td>
 </tr>
 <tr>
 <td>Shard language follows the parent</td>
