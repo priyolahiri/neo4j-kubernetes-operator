@@ -275,24 +275,35 @@ func (r *AuraDatabaseRestoreReconciler) markSubmitted(ctx context.Context, req c
 
 func (r *AuraDatabaseRestoreReconciler) fail(ctx context.Context, req ctrl.Request, rs *neo4jv1beta1.AuraDatabaseRestore, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraDatabaseRestore reconcile deferred", "reason", reason, "error", cause.Error())
-	r.Recorder.Event(rs, corev1.EventTypeWarning, EventReasonAuraDatabaseRestoreFailed, fmt.Sprintf("%s: %v", reason, cause))
 	terminal := reason == "RestoreFailed"
+	announce := false
 	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		announce = false
 		latest := &neo4jv1beta1.AuraDatabaseRestore{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
-		})
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		changed := auraConditionChanged(latest.Status.Conditions, want) ||
+			(terminal && latest.Status.Phase != auraRestorePhaseError)
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		if terminal {
 			latest.Status.Phase = auraRestorePhaseError
 			now := metav1.Now()
 			latest.Status.FinishedAt = &now
 		}
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = changed
+		return nil
 	})
+	// Announced when the failure starts or its message changes, not on every
+	// requeue while a reference stays unresolved (knowledge rule 145).
+	if announce {
+		r.Recorder.Event(rs, corev1.EventTypeWarning, EventReasonAuraDatabaseRestoreFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
 	if terminal {
 		return ctrl.Result{}, nil
 	}

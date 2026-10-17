@@ -21,6 +21,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -162,8 +163,11 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
-		r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, "", nil)
-		r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		// Retried with backoff; the same failure is announced once (knowledge
+		// rule 145).
+		if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, "", nil) {
+			r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
 		return ctrl.Result{}, err
 	}
 	defer func() {
@@ -289,14 +293,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	finalRoles = normaliseRoles(finalRoles)
 
 	// Conditions
-	if len(missing) > 0 {
-		r.setNamedCondition(ctx, user, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending,
-			fmt.Sprintf("waiting for roles to exist: %v", missing))
-		r.Recorder.Eventf(user, corev1.EventTypeWarning, EventReasonRolePending,
-			"waiting for roles to exist: %v", missing)
-	} else {
-		r.setNamedCondition(ctx, user, ConditionTypePendingDependencies, metav1.ConditionFalse, "AllDependenciesPresent", "")
-	}
+	r.reportPendingRoles(ctx, user, missing)
 
 	rolesEqual := stringSlicesEqualSorted(desiredRoles, finalRoles)
 	if rolesEqual {
@@ -581,8 +578,11 @@ func (r *Neo4jUserReconciler) fail(ctx context.Context, user *neo4jv1beta1.Neo4j
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
-	r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "", nil)
-	r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonUserSyncFailed, msg)
+	// Announced when the failure starts or its message changes, not on every
+	// retry of the same failure (knowledge rule 145).
+	if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "", nil) {
+		r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonUserSyncFailed, msg)
+	}
 	// A rejection the server will repeat (Neo.ClientError.*: a malformed
 	// statement, a missing role or user, an argument it refuses) cannot
 	// resolve without someone changing something, and error backoff would
@@ -648,19 +648,64 @@ func (r *Neo4jUserReconciler) setStatus(
 	return transitioned
 }
 
-func (r *Neo4jUserReconciler) setNamedCondition(ctx context.Context, user *neo4jv1beta1.Neo4jUser, condType string, status metav1.ConditionStatus, reason, message string) {
+// reportPendingRoles writes the PendingDependencies condition and announces
+// RolePending when the wait starts or its set of missing roles changes — not
+// on every pass while the same roles stay missing (knowledge rule 145).
+func (r *Neo4jUserReconciler) reportPendingRoles(ctx context.Context, user *neo4jv1beta1.Neo4jUser, missing []string) {
+	if len(missing) == 0 {
+		r.setNamedCondition(ctx, user, ConditionTypePendingDependencies, metav1.ConditionFalse, "AllDependenciesPresent", "")
+		return
+	}
+	msg := pendingRolesMessage(missing)
+	if r.setNamedCondition(ctx, user, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending, msg) {
+		r.Recorder.Eventf(user, corev1.EventTypeWarning, EventReasonRolePending, "%s", msg)
+	}
+}
+
+// setNamedCondition writes one named condition. It reports whether the write
+// changed the condition's status, reason or message, from the attempt whose
+// write succeeded, so a caller can announce the change once.
+func (r *Neo4jUserReconciler) setNamedCondition(ctx context.Context, user *neo4jv1beta1.Neo4jUser, condType string, status metav1.ConditionStatus, reason, message string) bool {
+	changed := false
 	update := func() error {
+		changed = false
 		latest := &neo4jv1beta1.Neo4jUser{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(user), latest); err != nil {
 			return err
 		}
-		SetNamedCondition(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
+		c := setNamedConditionChanged(&latest.Status.Conditions, condType, latest.Generation, status, reason, message)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = c
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to set condition on Neo4jUser", "condition", condType)
+		return false
 	}
+	return changed
+}
+
+// pendingRolesMessage is the PendingDependencies message, and the RolePending
+// event text, for a set of missing roles. Sorted, so the same set always reads
+// the same and only a different set is a new message.
+func pendingRolesMessage(missing []string) string {
+	return fmt.Sprintf("waiting for roles to exist: %v", slices.Sorted(slices.Values(missing)))
+}
+
+// setNamedConditionChanged is SetNamedCondition that also counts a changed
+// message as a change. SetNamedCondition reports only a new status or reason,
+// which keeps LastTransitionTime honest; a caller announcing what the message
+// names (the missing roles) needs to know when that changes too.
+func setNamedConditionChanged(conditions *[]metav1.Condition, condType string, generation int64, status metav1.ConditionStatus, reason, message string) bool {
+	prevMessage, had := "", false
+	if existing := findCondition(*conditions, condType); existing != nil {
+		prevMessage, had = existing.Message, true
+	}
+	changed := SetNamedCondition(conditions, condType, generation, status, reason, message)
+	return changed || !had || prevMessage != message
 }
 
 // SetupWithManager registers the controller and wires up watches:

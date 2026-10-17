@@ -315,8 +315,11 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			"duplicate Neo4jPlugin: %q (older) already targets cluster %q with plugin name %q; delete one CR before this one can reconcile",
 			winner, plugin.Spec.ClusterRef, plugin.Spec.Name,
 		)
-		r.updatePluginStatus(ctx, plugin, "Failed", msg)
-		r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginDuplicate, msg)
+		// Announced when the conflict starts, not again on the pass its own
+		// status write starts, nor on every resync (knowledge rule 145).
+		if r.updatePluginStatus(ctx, plugin, "Failed", msg) {
+			r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginDuplicate, msg)
+		}
 		return ctrl.Result{}, nil
 	}
 

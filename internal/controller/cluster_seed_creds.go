@@ -96,9 +96,10 @@ type SeedCredsTarget interface {
 //  1. Set the sharded/standard DB's status.phase to a transient value
 //     (Pending / Waiting) when autoInherited=true and requeue, because
 //     the server pods need time to restart with the new envFrom.
-//  2. Set the DB's status.phase to Failed when an actionable error is
-//     returned. The user must update the hosting CR before the seed
-//     can be reattempted.
+//  2. Set the DB's status.phase to Pending, with the error as the message,
+//     when an actionable error is returned, and requeue. Nothing has
+//     touched a database yet; the seed proceeds by itself once the user
+//     updates the hosting CR (knowledge operations.md id 145).
 func EnsureSeedCredsProjected(
 	ctx context.Context,
 	c client.Client,

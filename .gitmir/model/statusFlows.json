@@ -532,12 +532,12 @@
       {
         "key": "Pending",
         "name": "Pending",
-        "description": "Waiting on seedBackupRef's Neo4jBackup to produce a Succeeded run, or on the PVC seed-proxy Deployment to become Ready."
+        "description": "Waiting on something that does not exist yet and is created by itself once it does: the referenced cluster, seedBackupRef's first Succeeded run, the PVC seed-proxy Deployment, or the seed credentials/endpoint on the cluster's server pods (projected and rolled out) (knowledge operations.md id 145)."
       },
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "The cluster doesn't support property sharding, seed resolution failed permanently, or CREATE DATABASE itself failed."
+        "description": "The spec was refused, the cluster doesn't support property sharding, seed resolution failed (a missing or unusable seedBackupRef backup), or a reconcile step against Neo4j failed (retried with backoff)."
       },
       {
         "key": "Ready",
@@ -564,7 +564,7 @@
       {
         "from": "Creating",
         "to": "Pending",
-        "label": "seedBackupRef's Neo4jBackup has no Succeeded run yet, or the PVC seed proxy isn't Ready"
+        "label": "Referenced cluster does not exist yet, seedBackupRef's Neo4jBackup has no Succeeded run yet, the PVC seed proxy isn't Ready, or the cluster lacks the seed credentials/endpoint"
       },
       {
         "from": "Creating",

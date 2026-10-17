@@ -164,11 +164,7 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 	lagTaken := before.ReplicationLag
 	lastTxn := before.LastCommittedTxn
 
-	r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhasePromoting, metav1.ConditionFalse,
-		"Promoting", fmt.Sprintf("promoting replica %q (lag %d)", dbName, lagTaken), nil)
-	r.Recorder.Eventf(promo, corev1.EventTypeWarning, EventReasonPromotionStarted,
-		"Promoting replica %q. THIS IS IRREVERSIBLE: the database cannot be re-attached to its upstream, "+
-			"and the %d transactions it is currently behind become permanent data loss.", dbName, lagTaken)
+	r.startPromoting(ctx, promo, dbName, lagTaken)
 
 	// PROMOTE.
 	var primaries, secondaries int32
@@ -179,10 +175,7 @@ func (r *Neo4jReplicaPromotionReconciler) Reconcile(ctx context.Context, req ctr
 	if err := nc.PromoteReplicaDatabase(ctx, dbName, primaries, secondaries); err != nil {
 		// Do NOT go terminal on a call failure — re-check on the next pass.
 		// The call may have succeeded and the response been lost.
-		msg := fmt.Sprintf("promote call failed for %q: %v", dbName, err)
-		r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhasePromoting, metav1.ConditionFalse,
-			EventReasonPromotionFailed, msg, nil)
-		r.Recorder.Event(promo, corev1.EventTypeWarning, EventReasonPromotionFailed, msg)
+		r.promoteCallFailed(ctx, promo, fmt.Sprintf("promote call failed for %q: %v", dbName, err))
 		return ctrl.Result{}, err
 	}
 
@@ -296,13 +289,53 @@ func (r *Neo4jReplicaPromotionReconciler) complete(
 // fail records the terminal Failed phase. clusterName is the downstream
 // cluster hosting the replica, for the promotions metric.
 func (r *Neo4jReplicaPromotionReconciler) fail(ctx context.Context, promo *neo4jv1beta1.Neo4jReplicaPromotion, clusterName, msg string) {
-	r.Recorder.Event(promo, corev1.EventTypeWarning, EventReasonPromotionFailed, msg)
-	// setStatus reports true only when this call moved the persisted phase, so
-	// a repeated fail() counts once.
-	if r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhaseFailed, metav1.ConditionFalse,
-		EventReasonPromotionFailed, msg, nil) {
+	// setStatus reports entered only when this call moved the persisted phase
+	// into Failed, so a repeated fail() — a stale-cache pass past the terminal
+	// guard — neither counts nor announces twice (knowledge rule 145).
+	if _, entered := r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhaseFailed, metav1.ConditionFalse,
+		EventReasonPromotionFailed, msg, nil); entered {
+		r.Recorder.Event(promo, corev1.EventTypeWarning, EventReasonPromotionFailed, msg)
 		metrics.RecordReplicaPromotion(promo.Namespace, clusterName, false)
 	}
+}
+
+// startPromoting records the Promoting phase before the PROMOTE call and
+// announces PromotionStarted when the promotion enters it — not on each retry
+// of the PROMOTE step, nor after an operator restart (knowledge rule 145). A
+// retry after a failed promote call leaves that failure in status, as the
+// replica's announceSeeding does: overwriting it with this optimistic message
+// made every retry two transitions, and announced the failure again each time.
+func (r *Neo4jReplicaPromotionReconciler) startPromoting(ctx context.Context, promo *neo4jv1beta1.Neo4jReplicaPromotion, dbName string, lag int64) {
+	if lastPromoteCallFailed(promo) {
+		return
+	}
+	if _, entered := r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhasePromoting, metav1.ConditionFalse,
+		"Promoting", fmt.Sprintf("promoting replica %q (lag %d)", dbName, lag), nil); entered {
+		r.Recorder.Eventf(promo, corev1.EventTypeWarning, EventReasonPromotionStarted,
+			"Promoting replica %q. THIS IS IRREVERSIBLE: the database cannot be re-attached to its upstream, "+
+				"and the %d transactions it is currently behind become permanent data loss.", dbName, lag)
+	}
+}
+
+// promoteCallFailed records a failed PROMOTE call. The promotion stays
+// Promoting — the call may have succeeded and its response been lost, so the
+// next pass re-checks — and the failure is announced once while it repeats
+// with backoff, not on every retry (knowledge rule 145).
+func (r *Neo4jReplicaPromotionReconciler) promoteCallFailed(ctx context.Context, promo *neo4jv1beta1.Neo4jReplicaPromotion, msg string) {
+	if changed, _ := r.setStatus(ctx, promo, neo4jv1beta1.PromotionPhasePromoting, metav1.ConditionFalse,
+		EventReasonPromotionFailed, msg, nil); changed {
+		r.Recorder.Event(promo, corev1.EventTypeWarning, EventReasonPromotionFailed, msg)
+	}
+}
+
+// lastPromoteCallFailed reports whether the last PROMOTE attempt failed: the
+// promotion is Promoting and its Ready reason is PromotionFailed.
+func lastPromoteCallFailed(promo *neo4jv1beta1.Neo4jReplicaPromotion) bool {
+	if promo.Status.Phase != neo4jv1beta1.PromotionPhasePromoting {
+		return false
+	}
+	ready := findCondition(promo.Status.Conditions, ConditionTypeReady)
+	return ready != nil && ready.Reason == EventReasonPromotionFailed
 }
 
 // isPromotionTerminal reports whether a promotion phase is final. Terminal
@@ -320,6 +353,12 @@ func (r *Neo4jReplicaPromotionReconciler) requeueAfter() time.Duration {
 	return 30 * time.Second
 }
 
+// setStatus writes the phase, message and Ready condition unless the
+// promotion is already terminal. It reports, from the attempt whose write
+// succeeded, whether the write changed the phase, the message or the Ready
+// condition's status or reason (changed), and whether it moved the persisted
+// phase into the one given (entered), so a caller can announce a transition
+// once.
 func (r *Neo4jReplicaPromotionReconciler) setStatus(
 	ctx context.Context,
 	promo *neo4jv1beta1.Neo4jReplicaPromotion,
@@ -327,10 +366,9 @@ func (r *Neo4jReplicaPromotionReconciler) setStatus(
 	readyStatus metav1.ConditionStatus,
 	readyReason, message string,
 	completionTime *metav1.Time,
-) bool {
-	written := false
+) (changed, entered bool) {
 	update := func() error {
-		written = false
+		changed, entered = false, false
 		latest := &neo4jv1beta1.Neo4jReplicaPromotion{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(promo), latest); err != nil {
 			return err
@@ -339,21 +377,28 @@ func (r *Neo4jReplicaPromotionReconciler) setStatus(
 		if isPromotionTerminal(latest.Status.Phase) {
 			return nil
 		}
-		written = true
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message)
+		phaseMoved := latest.Status.Phase != phase
+		c := phaseMoved || latest.Status.Message != message
+		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message) {
+			c = true
+		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
 		if completionTime != nil {
 			latest.Status.CompletionTime = completionTime
 		}
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed, entered = c, phaseMoved
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jReplicaPromotion status")
-		return false
+		return false, false
 	}
-	return written
+	return changed, entered
 }
 
 // SetupWithManager registers the controller and re-enqueues a promotion when

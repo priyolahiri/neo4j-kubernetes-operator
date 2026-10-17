@@ -503,7 +503,7 @@
     "name": "Reconcile Neo4jDatabase",
     "serverUnitId": "su-neo4jdatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec inline, resolves the target host, checks readiness, projects seed credentials if needed, and ensures the database exists.",
+    "description": "Main reconcile loop: validates the spec inline, resolves the target host, checks readiness, projects seed credentials if needed, and ensures the database exists. A host that is missing, or that lacks the seed credentials Secret, is phase Pending; ClusterNotFound, SeedCredsMissing, CreationFailed and DataImportFailed are emitted only when the status write that records them changed something (knowledge operations.md id 145).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -681,7 +681,7 @@
     "name": "Reconcile Neo4jShardedDatabase",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. shardCreateNeeded decides whether CREATE DATABASE is sent: always on the destructive replaceExisting pass and while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard); for a listed family only under ifNotExists: false when this CR did not create it (status.virtualDatabase does not name spec.name), so Neo4j's 'already exists' refusal surfaces instead of the family being adopted. ShardedDatabaseReady, SeedBackupPending, SeedProxyStarting and ValidationFailed are emitted only when the status write (transitionStatus) changes the phase or message.",
+    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. shardCreateNeeded decides whether CREATE DATABASE is sent: always on the destructive replaceExisting pass and while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard); for a listed family only under ifNotExists: false when this CR did not create it (status.virtualDatabase does not name spec.name), so Neo4j's 'already exists' refusal surfaces instead of the family being adopted. ShardedDatabaseReady, SeedBackupPending, SeedProxyStarting and ValidationFailed are emitted only when the status write (transitionStatus) changes the phase or message. A clusterRef that names no cluster is phase Pending (ev-cluster-not-found, once); any other read error is retried with backoff. Every Warning about a lasting condition (cluster without property sharding, client creation, seedBackupRef resolution, a failed reconcile) is emitted only when the status write that records it changed the phase or message (knowledge operations.md id 145).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -753,7 +753,7 @@
     "name": "Resolve And Serve Sharded Seed",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "business_action",
-    "description": "resolveShardedSeed()/resolvePVCShardedSeed() turn spec.seedBackupRef into either per-shard cloud seedURIs or an operator-managed PVC seed-proxy Deployment+Service serving each shard's .backup file over HTTP. A PVC run with a shard recorded as DIFF is refused before the proxy starts (Neo4j seeds a sharded database over HTTP only from full backups, and merging drops the sharding header); the requeue seeds once a full run lands. For a cloud seed, ensureClusterSeedConfig() projects the backup's credentials and custom endpoint onto the cluster under the auto-inherit annotation and waits for the rollout.",
+    "description": "resolveShardedSeed()/resolvePVCShardedSeed() turn spec.seedBackupRef into either per-shard cloud seedURIs or an operator-managed PVC seed-proxy Deployment+Service serving each shard's .backup file over HTTP. A PVC run with a shard recorded as DIFF is refused before the proxy starts (Neo4j seeds a sharded database over HTTP only from full backups, and merging drops the sharding header); the requeue seeds once a full run lands. For a cloud seed, ensureClusterSeedConfig() projects the backup's credentials and custom endpoint onto the cluster under the auto-inherit annotation and waits for the rollout. Without the annotation the database waits in phase Pending with one ev-seed-creds-missing, naming what is missing, and seeds once the cluster has it (knowledge operations.md id 145).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -814,13 +814,14 @@
     "name": "Create Replica Database From Backup",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "create",
-    "description": "Calls CreateReplicaDatabaseFromBackup with the upstream database, pull/seed URI, and optional topology when the target database does not yet exist (source.mode: backup). pullURI is either set directly or resolved by sf-resolve-upstream-backup-ref from source.upstreamBackupRef. Before an s3:// seed it checks that the downstream servers carry AWS_REGION or AWS_DEFAULT_REGION, read from spec.env, the live server container's env, and every variable an envFrom source supplies (spec.extraEnvFrom and the live container's envFrom, with the source's prefix); a source it cannot read, or a cloud workload identity, leaves the check to the server. A missing region fails the replica with ev-replica-failed.",
+    "description": "Calls CreateReplicaDatabaseFromBackup with the upstream database, pull/seed URI, and optional topology when the target database does not yet exist (source.mode: backup). pullURI is either set directly or resolved by sf-resolve-upstream-backup-ref from source.upstreamBackupRef. Before an s3:// seed it checks that the downstream servers carry AWS_REGION or AWS_DEFAULT_REGION, read from spec.env, the live server container's env, and every variable an envFrom source supplies (spec.extraEnvFrom and the live container's envFrom, with the source's prefix); a source it cannot read, or a cloud workload identity, leaves the check to the server. A missing region leaves the replica Pending with one ev-replica-object-store-env-missing, and it carries on by itself once the servers have the region (knowledge operations.md id 145).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
     "emitsEventIds": [
       "ev-replica-created",
-      "ev-replica-failed"
+      "ev-replica-failed",
+      "ev-replica-object-store-env-missing"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-database"

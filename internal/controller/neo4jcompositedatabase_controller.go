@@ -136,9 +136,12 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
-		r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
-			EventReasonConnectionFailed, msg, nil)
-		r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		// Retried with backoff; the same failure is announced once (knowledge
+		// rule 145).
+		if r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
+			EventReasonConnectionFailed, msg, nil) {
+			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
 		return ctrl.Result{}, err
 	}
 	defer func() {
@@ -164,14 +167,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 	}
 	if info == nil {
 		if blocker := r.namespaceBlocker(ctx, nc, name); blocker != "" {
-			msg := fmt.Sprintf(
-				"cannot create composite %q: the alias %q already occupies its namespace. "+
-					"Neo4j accepts an alias named `<composite>.<constituent>` even when no such "+
-					"composite exists, and that alias then blocks the composite permanently. "+
-					"Drop %q, then this will converge", name, blocker, blocker)
-			r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
-				EventReasonCompositeNameBlocked, msg, nil)
-			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonCompositeNameBlocked, msg)
+			r.reportNameBlocked(ctx, cd, name, blocker)
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 		r.setStatus(ctx, cd, neo4jv1beta1.PhaseCreating, metav1.ConditionFalse,
@@ -536,6 +532,24 @@ func (r *Neo4jCompositeDatabaseReconciler) requeueAfter() time.Duration {
 	return 30 * time.Second
 }
 
+// reportNameBlocked records that a dotted alias occupies the composite's
+// namespace and announces CompositeDatabaseNameBlocked when that starts (or
+// names a different alias), not on every pass until the alias is dropped
+// (knowledge rule 145).
+func (r *Neo4jCompositeDatabaseReconciler) reportNameBlocked(
+	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase, name, blocker string,
+) {
+	msg := fmt.Sprintf(
+		"cannot create composite %q: the alias %q already occupies its namespace. "+
+			"Neo4j accepts an alias named `<composite>.<constituent>` even when no such "+
+			"composite exists, and that alias then blocks the composite permanently. "+
+			"Drop %q, then this will converge", name, blocker, blocker)
+	if r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
+		EventReasonCompositeNameBlocked, msg, nil) {
+		r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonCompositeNameBlocked, msg)
+	}
+}
+
 func (r *Neo4jCompositeDatabaseReconciler) fail(
 	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase,
 	label string, err error, requeue time.Duration,
@@ -544,9 +558,12 @@ func (r *Neo4jCompositeDatabaseReconciler) fail(
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
-	r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
-		EventReasonCompositeFailed, msg, nil)
-	r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonCompositeFailed, msg)
+	// Announced when the failure starts or its message changes, not on every
+	// retry of the same failure (knowledge rule 145).
+	if r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse,
+		EventReasonCompositeFailed, msg, nil) {
+		r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonCompositeFailed, msg)
+	}
 	// A rejection the server will repeat (Neo.ClientError.*: a malformed
 	// statement, a missing role or user, an argument it refuses) cannot
 	// resolve without someone changing something, and error backoff would

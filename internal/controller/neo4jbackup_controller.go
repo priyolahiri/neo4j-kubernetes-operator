@@ -21,6 +21,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -177,8 +178,12 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if len(errs) > 0 {
 		msg := errs.ToAggregate().Error()
 		logger.Info("Invalid Neo4jBackup spec", "errors", msg)
-		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseInvalid, "Invalid backup spec: "+msg)
-		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
+		// Announced when the refusal starts or its message changes, not on
+		// every resync or owned-object event while the spec stays invalid
+		// (knowledge rule 145).
+		if r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseInvalid, "Invalid backup spec: "+msg) {
+			r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -188,10 +193,16 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// rules it can neither read nor validate — so a lifecycle rule expiring
 	// old objects will break the chain silently and force a replica rebuild.
 	// Say so rather than implying the mode confers protection it does not.
+	//
+	// The storage caveat stays true for as long as the spec does, so it is an
+	// advisory warning: announced when it starts to apply and refreshed every
+	// advisoryWarningRefresh, not repeated on every scheduled pass (knowledge
+	// rules 102 and 145).
+	var storageCaveat []string
 	if backup.Spec.Mode == validation.BackupModeReplicationSource && backup.Status.ReplicationPullURI == "" {
 		pullURI := validation.ReplicationPullURI(backup.Spec.Storage, chainRoot(backup))
 		if pullURI == "" {
-			r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonReplicationSourceCaveat,
+			storageCaveat = append(storageCaveat,
 				"storage type "+backup.Spec.Storage.Type+" has no cross-cluster URI form; a replica in "+
 					"another Kubernetes cluster cannot reach it. Use s3, gcs or azure storage for a "+
 					"replication source.")
@@ -204,6 +215,7 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 					"Exclude this path from lifecycle expiry.", pullURI)
 		}
 	}
+	r.advisoryWarnings.record(r.Recorder, backup, EventReasonReplicationSourceCaveat, storageCaveat)
 
 	// A one-time backup is terminal once Completed or Failed (#116). Decide
 	// that before looking at the target: a target that is restarting or gone
@@ -315,8 +327,10 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 func (r *Neo4jBackupReconciler) reportInvalidBackupSpec(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cause error) (ctrl.Result, error) {
 	msg := "Invalid backup spec: " + cause.Error()
 	log.FromContext(ctx).Info("Invalid Neo4jBackup spec", "error", cause.Error())
-	r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseInvalid, msg)
-	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
+	// Once per refusal, not on every pass that meets it (knowledge rule 145).
+	if r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseInvalid, msg) {
+		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -398,6 +412,13 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 	// status.history write commits — emitting before the commit would race
 	// against the same-CR resource-version churn.
 	var newSucceededRuns []neo4jv1beta1.BackupRun
+	// Warnings about the runs this pass records, emitted after the write
+	// commits and only for runs still in status.history after the cap: a
+	// conflict retry recomputes them, and a run the cap drops again (more
+	// than ten finished Jobs kept) is rediscovered on every pass and would
+	// repeat them for ever (knowledge rule 145).
+	var warnings runWarnings
+	var recorded []neo4jv1beta1.BackupRun
 
 	update := func() error {
 		latest := &neo4jv1beta1.Neo4jBackup{}
@@ -406,6 +427,7 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 		}
 
 		newSucceededRuns = nil // reset on every retry
+		warnings, recorded = nil, nil
 		changed := false
 		// Compute the expected sharded artifact list once per outer call (the
 		// answer doesn't depend on the Job; it depends on the sharded DB CR).
@@ -446,11 +468,11 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 			}
 			if isAllDatabases && jobLog != "" {
 				run.DatabaseArtifacts = parseAllDatabaseArtifactsFromLog(jobLog)
-				r.recordShardedExclusion(latest, &run, jobLog)
+				warnings.add(&run, EventReasonBackupShardedExcluded, recordShardedExclusion(latest, &run, jobLog))
 			}
 			if jobLog != "" {
 				recordArtifactTypes(&run, jobLog, latest.Spec.ScopedName())
-				r.warnShardedPVCDifferential(latest, &run)
+				warnings.add(&run, EventReasonBackupShardedDifferential, shardedPVCDifferentialWarning(latest, &run))
 			}
 			if jobLog != "" {
 				if validation := parseValidationFromLog(jobLog); validation != nil {
@@ -474,10 +496,17 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 			latest.Status.History = latest.Status.History[:10]
 		}
 
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		recorded = latest.Status.History
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		return err
+	}
+	if recorded != nil {
+		warnings.emit(r.Recorder, backup, recorded)
 	}
 
 	// Phase 3: reverse-lookup so the Neo4jShardedDatabase CR's
@@ -1137,17 +1166,22 @@ func (r *Neo4jBackupReconciler) waitForChainConcurrencyClear(ctx context.Context
 	return nil
 }
 
-// warnValidateUnsupported emits the one-time Warning that options.validate
-// has no effect on this Neo4j version. Called from Job/CronJob CREATION
-// paths only (never from buildBackupCommand, which runs every reconcile).
+// warnValidateUnsupported warns that options.validate has no effect on this
+// Neo4j version. It is an advisory warning that stays true for as long as the
+// spec and the image do, so it goes through advisoryWarnings: announced when it
+// starts to apply and refreshed every advisoryWarningRefresh, never on every
+// pass (knowledge rules 102 and 145). The CronJob path reaches it on every
+// scheduled pass: CreateOrUpdate reports Updated whenever the API server's
+// defaults differ from the rendered template, which is most passes, so gating
+// on the operation result did not keep it quiet.
 func (r *Neo4jBackupReconciler) warnValidateUnsupported(backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
-	if backup.Spec.Options == nil || backup.Spec.Options.Validate == nil || !*backup.Spec.Options.Validate {
-		return
+	var warnings []string
+	if backup.Spec.Options != nil && backup.Spec.Options.Validate != nil && *backup.Spec.Options.Validate {
+		if v, err := neo4j.ParseVersion(cluster.Spec.Image.Tag); err == nil && !v.IsCalver {
+			warnings = append(warnings, fmt.Sprintf("options.validate requires a CalVer (2025.x+) Neo4j image — `neo4j-admin backup validate` does not exist on %s; skipping validation", cluster.Spec.Image.Tag))
+		}
 	}
-	if v, err := neo4j.ParseVersion(cluster.Spec.Image.Tag); err == nil && !v.IsCalver {
-		r.Recorder.Event(backup, corev1.EventTypeWarning, "BackupValidateUnsupported",
-			fmt.Sprintf("options.validate requires a CalVer (2025.x+) Neo4j image — `neo4j-admin backup validate` does not exist on %s; skipping validation", cluster.Spec.Image.Tag))
-	}
+	r.advisoryWarnings.record(r.Recorder, backup, EventReasonBackupValidateUnsupported, warnings)
 }
 
 func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*batchv1.Job, error) {
@@ -1370,7 +1404,7 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		},
 	}
 
-	opResult, err := controllerutil.CreateOrUpdate(ctx, r.Client, cronJob, func() error {
+	_, err = controllerutil.CreateOrUpdate(ctx, r.Client, cronJob, func() error {
 		labels := backupLabels(backup, "backup-cron")
 		cronJob.Labels = labels
 		cronJob.Spec.Schedule = backup.Spec.Schedule
@@ -1423,16 +1457,12 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 		}
 		return controllerutil.SetControllerReference(backup, cronJob, r.Scheme)
 	})
-	if err == nil && (opResult == controllerutil.OperationResultCreated || opResult == controllerutil.OperationResultUpdated) {
-		// Warn when the CronJob is created OR actually changes (a user adding
-		// options.validate to an existing schedule lands here as Updated).
-		// CreateOrUpdate returns OperationResultNone for no-op passes, so
-		// steady-state reconciles stay silent.
-		r.warnValidateUnsupported(backup, cluster)
-	}
 	if err != nil {
 		return nil, err
 	}
+	// Every scheduled pass: advisoryWarnings announces it once and keeps
+	// quiet while it still applies (warnValidateUnsupported).
+	r.warnValidateUnsupported(backup, cluster)
 	return cronJob, nil
 }
 
@@ -2324,23 +2354,55 @@ func (r *Neo4jBackupReconciler) setReplicationPullURI(ctx context.Context, backu
 // string and BackupsPath consistently across both code paths.
 // recordShardedExclusion records, on an all-databases run, the logical
 // property-sharded databases whose shard physical databases the backup wrote to
-// disk but did NOT catalogue in DatabaseArtifacts, and emits a Warning so the
-// exclusion is not silent — an all-databases restore cannot recreate them. No-op
-// when the run's log shows no shard-shaped databases. Callers invoke this only
-// for newly-recorded runs (and Kubernetes aggregates the event), so it does not
-// spam. See Neo4jBackup BackupRun.ShardedDatabasesExcluded.
-func (r *Neo4jBackupReconciler) recordShardedExclusion(backup *neo4jv1beta1.Neo4jBackup, run *neo4jv1beta1.BackupRun, jobLog string) {
+// disk but did NOT catalogue in DatabaseArtifacts, and returns the
+// BackupShardedDatabasesExcluded warning that says so — an all-databases
+// restore cannot recreate them — or "" when the run's log shows no
+// shard-shaped databases. The caller emits it once the run is in
+// status.history (runWarnings), so a pass that does not record the run — a
+// conflict retry, a run deferred for its Pod log, a run trimmed from history —
+// does not repeat it (knowledge rule 145). See Neo4jBackup
+// BackupRun.ShardedDatabasesExcluded.
+func recordShardedExclusion(backup *neo4jv1beta1.Neo4jBackup, run *neo4jv1beta1.BackupRun, jobLog string) string {
 	families := parseShardedFamiliesExcludedFromLog(jobLog)
 	if len(families) == 0 {
-		return
+		return ""
 	}
 	run.ShardedDatabasesExcluded = families
 	// Catalogue each family's per-shard artifacts so the otherwise-excluded
 	// families ARE restorable from this single all-databases backup via their
 	// Neo4jShardedDatabase CR (spec.seedBackupRef).
 	run.ShardedFamilies = groupShardedFamiliesFromLog(jobLog)
-	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupShardedExcluded,
-		fmt.Sprintf("all-databases backup captured property-sharded database(s) %s as per-shard artifacts (status.shardedFamilies); they are NOT recreated by an all-databases restore — restore each from THIS backup via its Neo4jShardedDatabase CR with spec.seedBackupRef: %s", strings.Join(families, ", "), backup.Name))
+	return fmt.Sprintf("all-databases backup captured property-sharded database(s) %s as per-shard artifacts (status.shardedFamilies); they are NOT recreated by an all-databases restore — restore each from THIS backup via its Neo4jShardedDatabase CR with spec.seedBackupRef: %s", strings.Join(families, ", "), backup.Name)
+}
+
+// runWarnings holds the Warnings about backup runs that a pass collected, to
+// emit only for the runs the pass actually recorded in status.history.
+type runWarnings []runWarning
+
+type runWarning struct {
+	runID, reason, message string
+}
+
+// add collects message under reason for run; an empty message is nothing.
+func (w *runWarnings) add(run *neo4jv1beta1.BackupRun, reason, message string) {
+	if message != "" {
+		*w = append(*w, runWarning{runID: run.RunID, reason: reason, message: message})
+	}
+}
+
+// emit sends the warnings of the runs in recorded (nil: all of them).
+func (w runWarnings) emit(rec record.EventRecorder, backup *neo4jv1beta1.Neo4jBackup, recorded []neo4jv1beta1.BackupRun) {
+	if rec == nil {
+		return
+	}
+	for _, warning := range w {
+		if recorded != nil && !slices.ContainsFunc(recorded, func(run neo4jv1beta1.BackupRun) bool {
+			return run.RunID == warning.runID
+		}) {
+			continue
+		}
+		rec.Event(backup, corev1.EventTypeWarning, warning.reason, warning.message)
+	}
 }
 
 // effectiveBackupType is the --type a backup Job passes neo4j-admin: the
@@ -2364,23 +2426,24 @@ func effectiveBackupType(backup *neo4jv1beta1.Neo4jBackup) string {
 	return t
 }
 
-// warnShardedPVCDifferential warns when a run wrote differential shard
-// backups to a PVC: no sharded database can be seeded from them (rule 110),
-// which a DR plan otherwise finds out only when it needs the backup.
-func (r *Neo4jBackupReconciler) warnShardedPVCDifferential(backup *neo4jv1beta1.Neo4jBackup, run *neo4jv1beta1.BackupRun) {
+// shardedPVCDifferentialWarning returns the warning for a run that wrote
+// differential shard backups to a PVC: no sharded database can be seeded from
+// them (rule 110), which a DR plan otherwise finds out only when it needs the
+// backup. "" when the run did not. Emitted once the run is recorded
+// (runWarnings).
+func shardedPVCDifferentialWarning(backup *neo4jv1beta1.Neo4jBackup, run *neo4jv1beta1.BackupRun) string {
 	if backup.Spec.Storage.Type != "pvc" || run.Status != "Succeeded" {
-		return
+		return ""
 	}
 	diffs := runDifferentialShards(run)
 	if len(diffs) == 0 {
-		return
+		return ""
 	}
 	fix := "Later runs are full — AUTO and FULL take full backups of a sharded database on a PVC"
 	if backup.Spec.Scope() == neo4jv1beta1.BackupTargetKindCluster {
 		fix = "An all-databases backup's shards follow its backupType; back the sharded database up with its own Neo4jBackup (spec.shardedDatabase), which takes full backups on a PVC"
 	}
-	r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupShardedDifferential,
-		fmt.Sprintf("run %s wrote differential backups of %s to a PVC, which cannot seed a sharded database: over HTTP, Neo4j seeds one only from a full backup of every shard. %s, or keep them in cloud storage, where differentials seed directly", run.RunID, strings.Join(diffs, ", "), fix))
+	return fmt.Sprintf("run %s wrote differential backups of %s to a PVC, which cannot seed a sharded database: over HTTP, Neo4j seeds one only from a full backup of every shard. %s, or keep them in cloud storage, where differentials seed directly", run.RunID, strings.Join(diffs, ", "), fix)
 }
 
 // recordOneShotBackupRun records a terminal Job's run into status.history and
@@ -2430,17 +2493,22 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 	if isStandardDB && logContent != "" {
 		run.ArtifactFilename = parseStandardArtifactFromLog(logContent, backup.Spec.ScopedName())
 	}
+	// Warnings about this run, emitted only by the pass that records it: a
+	// pass that defers the record (below) or finds it already recorded says
+	// nothing (knowledge rule 145).
+	var warnings runWarnings
 	if isAllDatabases && logContent != "" {
 		run.DatabaseArtifacts = parseAllDatabaseArtifactsFromLog(logContent)
 		// Catalogue any property-sharded families captured by the "*" glob so
-		// one all-databases backup is a complete DR source (also emits the
-		// Warning + sets ShardedDatabasesExcluded). The scheduled-history path
-		// calls this too; the one-shot path previously did not.
-		r.recordShardedExclusion(backup, &run, logContent)
+		// one all-databases backup is a complete DR source (also sets
+		// ShardedDatabasesExcluded and returns the Warning). The
+		// scheduled-history path calls this too; the one-shot path
+		// previously did not.
+		warnings.add(&run, EventReasonBackupShardedExcluded, recordShardedExclusion(backup, &run, logContent))
 	}
 	if logContent != "" {
 		recordArtifactTypes(&run, logContent, backup.Spec.ScopedName())
-		r.warnShardedPVCDifferential(backup, &run)
+		warnings.add(&run, EventReasonBackupShardedDifferential, shardedPVCDifferentialWarning(backup, &run))
 	}
 	if logContent != "" {
 		if validation := parseValidationFromLog(logContent); validation != nil {
@@ -2485,7 +2553,9 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 		}
 	}
 
+	recorded := false
 	update := func() error {
+		recorded = false
 		latest := &neo4jv1beta1.Neo4jBackup{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(backup), latest); err != nil {
 			return err
@@ -2514,10 +2584,17 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 			latest.Status.History = latest.Status.History[:10]
 		}
 
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		recorded = true
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		logger.Error(err, "Failed to record one-shot backup run in history")
+	}
+	if recorded {
+		warnings.emit(r.Recorder, backup, nil)
 	}
 
 	// Phase 3: reverse-lookup so the Neo4jShardedDatabase CR's
@@ -2599,10 +2676,17 @@ func (r *Neo4jBackupReconciler) ensureBackupServiceAccount(ctx context.Context, 
 		}
 		return nil
 	})
-	if err == nil && len(conflicts) > 0 && r.Recorder != nil {
-		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonServiceAccountAnnotationConflict,
-			fmt.Sprintf("Overwrote workload-identity annotations on the SHARED ServiceAccount %s/%s: %s. Multiple backup/restore CRs in this namespace declare different identities; the last reconciled CR wins and the others' cloud access breaks. Use ONE identity per namespace (an IAM role/identity with access to all backup locations), or split the CRs across namespaces.",
+	if err == nil {
+		// Two CRs that disagree overwrite each other on every pass of each,
+		// so the conflict stays true until one of them changes: an advisory
+		// warning, announced when it starts, not on every pass (knowledge
+		// rules 102 and 145).
+		var warnings []string
+		if len(conflicts) > 0 {
+			warnings = append(warnings, fmt.Sprintf("Overwrote workload-identity annotations on the SHARED ServiceAccount %s/%s: %s. Multiple backup/restore CRs in this namespace declare different identities; the last reconciled CR wins and the others' cloud access breaks. Use ONE identity per namespace (an IAM role/identity with access to all backup locations), or split the CRs across namespaces.",
 				namespace, backupServiceAccountName, strings.Join(conflicts, "; ")))
+		}
+		r.advisoryWarnings.record(r.Recorder, backup, EventReasonServiceAccountAnnotationConflict, warnings)
 	}
 	return err
 }

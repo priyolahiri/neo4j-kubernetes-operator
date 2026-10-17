@@ -168,10 +168,13 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if !found {
 		ref := database.Spec.ClusterRef
-		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotFound,
-			fmt.Sprintf("Referenced host %s not found", ref))
-		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonClusterNotFound,
-			"Referenced host %s not found", ref)
+		// Announced when the wait starts, not on every RequeueAfter until the
+		// host exists (knowledge rule 145).
+		if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotFound,
+			fmt.Sprintf("Referenced host %s not found", ref)) {
+			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonClusterNotFound,
+				"Referenced host %s not found", ref)
+		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -238,17 +241,20 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		autoInherited, credsErr := EnsureSeedCredsProjected(ctx, r.Client, target, database.Spec.SeedCredentials.SecretRef)
 		if credsErr != nil {
 			logger.Error(credsErr, "Host missing seed credentials projection")
-			r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, "SeedCredsMissing", credsErr.Error())
-			r.Recorder.Event(database, corev1.EventTypeWarning, "SeedCredsMissing", credsErr.Error())
+			// Pending, not Failed: nothing has touched a database yet, and
+			// the next pass carries on once the host has the Secret
+			// (knowledge rule 145). Announced when the wait starts.
+			if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonSeedCredsMissing, credsErr.Error()) {
+				r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonSeedCredsMissing, credsErr.Error())
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		if autoInherited {
 			logger.Info("Auto-inherited seed credentials onto host; waiting for rolling restart",
 				"host", targetName, "credentialsSecret", database.Spec.SeedCredentials.SecretRef)
-			r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, "SeedCredsAutoInherited",
-				fmt.Sprintf("Patched %q spec.extraEnvFrom with %q; waiting for rolling restart", targetName, database.Spec.SeedCredentials.SecretRef))
-			r.Recorder.Event(database, corev1.EventTypeNormal, "SeedCredsAutoInherited",
-				fmt.Sprintf("Patched %q spec.extraEnvFrom with %q; waiting for rolling restart", targetName, database.Spec.SeedCredentials.SecretRef))
+			msg := fmt.Sprintf("Patched %q spec.extraEnvFrom with %q; waiting for rolling restart", targetName, database.Spec.SeedCredentials.SecretRef)
+			r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonSeedCredsAutoInherited, msg)
+			r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonSeedCredsAutoInherited, msg)
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -260,10 +266,12 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if err != nil {
 		duration := time.Since(dbCreateStart)
 		logger.Error(err, "Failed to ensure database", "database", database.Spec.Name, "duration", duration)
-		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonCreationFailed,
-			fmt.Sprintf("Failed to create database: %v", err))
-		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonCreationFailed,
-			"Failed to create database: %v", err)
+		// Retried with backoff; the same failure is announced once (rule 145).
+		if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonCreationFailed,
+			fmt.Sprintf("Failed to create database: %v", err)) {
+			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonCreationFailed,
+				"Failed to create database: %v", err)
+		}
 		return ctrl.Result{}, err
 	}
 	duration := time.Since(dbCreateStart)
@@ -273,10 +281,11 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if database.Spec.InitialData != nil && database.Spec.SeedURI == "" && database.Status.DataImported == nil {
 		if err := r.importInitialData(ctx, neo4jClient, database); err != nil {
 			logger.Error(err, "Failed to import initial data")
-			r.updateDatabaseStatusObserved(ctx, database, metav1.ConditionFalse, EventReasonDataImportFailed,
-				fmt.Sprintf("Failed to import initial data: %v", err), observed)
-			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDataImportFailed,
-				"Failed to import initial data: %v", err)
+			if r.updateDatabaseStatusObserved(ctx, database, metav1.ConditionFalse, EventReasonDataImportFailed,
+				fmt.Sprintf("Failed to import initial data: %v", err), observed) {
+				r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDataImportFailed,
+					"Failed to import initial data: %v", err)
+			}
 			return ctrl.Result{}, err
 		}
 
@@ -747,7 +756,10 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatusObserved(ctx context.Conte
 			switch reason {
 			case EventReasonValidationFailed:
 				latest.Status.Phase = EventReasonValidationFailed
-			case EventReasonClusterNotFound, EventReasonClusterNotReady:
+			case EventReasonClusterNotFound, EventReasonClusterNotReady,
+				EventReasonSeedCredsMissing, EventReasonSeedCredsAutoInherited:
+				// Waiting on something the user (or the operator) puts in
+				// place; the next pass carries on (knowledge rule 145).
 				latest.Status.Phase = "Pending"
 			case EventReasonConnectionFailed, EventReasonCreationFailed, EventReasonDataImportFailed:
 				latest.Status.Phase = "Failed"

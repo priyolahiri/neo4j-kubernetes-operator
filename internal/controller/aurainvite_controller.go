@@ -308,11 +308,24 @@ func (r *AuraInviteReconciler) setExternalID(ctx context.Context, req ctrl.Reque
 }
 
 func (r *AuraInviteReconciler) setStatus(ctx context.Context, req ctrl.Request, inviteID, phase string, condStatus metav1.ConditionStatus, reason, msg string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	_, err := r.setStatusChanged(ctx, req, inviteID, phase, condStatus, reason, msg)
+	return err
+}
+
+// setStatusChanged is setStatus that also reports whether the write changed the
+// phase or the Ready condition's status, reason or message (LastSyncedTime is
+// bookkeeping), from the attempt whose write succeeded, so a caller can announce
+// a state once (knowledge rule 145).
+func (r *AuraInviteReconciler) setStatusChanged(ctx context.Context, req ctrl.Request, inviteID, phase string, condStatus metav1.ConditionStatus, reason, msg string) (bool, error) {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraInvite{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
+		want := metav1.Condition{Type: "Ready", Status: condStatus, Reason: reason, Message: msg}
+		wouldChange := latest.Status.Phase != phase || auraConditionChanged(latest.Status.Conditions, want)
 		if inviteID != "" {
 			latest.Status.InviteID = inviteID
 		}
@@ -320,11 +333,14 @@ func (r *AuraInviteReconciler) setStatus(ctx context.Context, req ctrl.Request, 
 		now := metav1.Now()
 		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: condStatus, Reason: reason, Message: msg,
-		})
-		return r.Status().Update(ctx, latest)
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	})
+	return changed, err
 }
 
 func (r *AuraInviteReconciler) patch(ctx context.Context, req ctrl.Request, mutate func(*neo4jv1beta1.AuraInvite)) error {
@@ -340,8 +356,11 @@ func (r *AuraInviteReconciler) patch(ctx context.Context, req ctrl.Request, muta
 
 func (r *AuraInviteReconciler) fail(ctx context.Context, req ctrl.Request, inv *neo4jv1beta1.AuraInvite, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraInvite reconcile deferred", "reason", reason, "error", cause.Error())
-	r.Recorder.Event(inv, corev1.EventTypeWarning, EventReasonAuraInviteFailed, fmt.Sprintf("%s: %v", reason, cause))
-	_ = r.setStatus(ctx, req, "", "Error", metav1.ConditionFalse, reason, cause.Error())
+	// Announced when the failure starts or its message changes, not on every
+	// requeue while it stays (knowledge rule 145).
+	if changed, _ := r.setStatusChanged(ctx, req, "", "Error", metav1.ConditionFalse, reason, cause.Error()); changed {
+		r.Recorder.Event(inv, corev1.EventTypeWarning, EventReasonAuraInviteFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 

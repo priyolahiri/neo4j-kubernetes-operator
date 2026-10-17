@@ -59,11 +59,14 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context
 		return false, err
 	}
 
-	// Reject storage shrink — PVCs cannot be reduced in size
+	// Reject storage shrink — PVCs cannot be reduced in size. Announced when
+	// the refusal starts, not on every retry while the spec asks for it
+	// (knowledge rule 145).
 	if result.shrinkDetected {
-		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonStorageExpansionFailed,
-			"Storage shrink rejected: %s", result.shrinkMessage)
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Storage shrink not supported: %s", result.shrinkMessage))
+		if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Storage shrink not supported: %s", result.shrinkMessage)) {
+			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonStorageExpansionFailed,
+				"Storage shrink rejected: %s", result.shrinkMessage)
+		}
 		return false, fmt.Errorf("storage shrink not supported: %s", result.shrinkMessage)
 	}
 
@@ -74,24 +77,32 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context
 	logger.Info("Storage expansion required",
 		"dataExpansion", result.dataExpansion)
 
-	// Phase: Expanding
-	_ = r.updateClusterStatus(ctx, cluster, "Expanding", "Expanding storage volumes")
-	r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonStorageExpansionStarted,
-		"Storage expansion started")
+	// Phase: Expanding — unless this generation's expansion already failed.
+	// A retry keeps the failure in status until it succeeds: writing
+	// Expanding and then Failed again flipped the phase twice on every pass,
+	// each write a watch event that ran the next pass at once, with a
+	// StorageExpansionStarted and a StorageExpansionFailed every time
+	// (knowledge rule 145; announceSeeding does the same for a replica).
+	if !storageExpansionRetry(cluster) {
+		_ = r.updateClusterStatus(ctx, cluster, "Expanding", "Expanding storage volumes")
+		r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonStorageExpansionStarted,
+			"Storage expansion started")
+	}
 
 	// Expand data volumes
 	if result.dataExpansion {
 		desiredSize, err := parseUserQuantity("spec.storage.size", cluster.Spec.Storage.Size)
 		if err != nil {
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Storage expansion failed: %v", err))
+			_ = r.updateClusterStatus(ctx, cluster, "Failed", storageExpansionFailedPrefix+err.Error())
 			return false, err
 		}
 		stsName := fmt.Sprintf("%s-server", cluster.Name)
 
 		if err := r.expandVolumes(ctx, cluster, stsName, "data", desiredSize); err != nil {
-			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonStorageExpansionFailed,
-				"Failed to expand data storage: %v", err)
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Storage expansion failed: %v", err))
+			if r.updateClusterStatus(ctx, cluster, "Failed", storageExpansionFailedPrefix+err.Error()) {
+				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonStorageExpansionFailed,
+					"Failed to expand data storage: %v", err)
+			}
 			return false, err
 		}
 	}
@@ -101,6 +112,20 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context
 
 	// Requeue so the next reconcile recreates the StatefulSet(s) with updated VolumeClaimTemplates
 	return true, nil
+}
+
+// storageExpansionFailedPrefix starts the status message of a cluster whose
+// storage expansion failed.
+const storageExpansionFailedPrefix = "Storage expansion failed: "
+
+// storageExpansionRetry reports whether the cluster's persisted status, as read
+// at the start of this pass, is a failed storage expansion of the current
+// generation: the pass retries it, and is not a new expansion to announce. An
+// edit of the spec (a new generation) starts a new one.
+func storageExpansionRetry(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	return cluster.Status.Phase == "Failed" &&
+		cluster.Status.ObservedGeneration == cluster.Generation &&
+		strings.HasPrefix(cluster.Status.Message, storageExpansionFailedPrefix)
 }
 
 // checkStorageExpansionNeeded compares desired storage sizes against existing PVCs.

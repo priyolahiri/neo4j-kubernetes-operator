@@ -109,10 +109,13 @@ func (r *AuraOrganizationMemberReconciler) Reconcile(ctx context.Context, req ct
 		return r.fail(ctx, req, m, "LookupFailed", err)
 	}
 	if member == nil {
-		r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberNotFound,
-			fmt.Sprintf("%q is not an organization member; invite them with an AuraInvite", m.Spec.Email))
-		_ = r.setStatus(ctx, req, "", "NotAMember", metav1.ConditionFalse, "NotAMember",
-			fmt.Sprintf("%q is not an organization member yet", m.Spec.Email))
+		// Announced when the wait starts, not on every requeue until the person
+		// accepts an invite (knowledge rule 145).
+		if changed, _ := r.setStatusChanged(ctx, req, "", "NotAMember", metav1.ConditionFalse, "NotAMember",
+			fmt.Sprintf("%q is not an organization member yet", m.Spec.Email)); changed {
+			r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberNotFound,
+				fmt.Sprintf("%q is not an organization member; invite them with an AuraInvite", m.Spec.Email))
+		}
 		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 	}
 
@@ -175,11 +178,24 @@ func (r *AuraOrganizationMemberReconciler) releaseFinalizer(ctx context.Context,
 }
 
 func (r *AuraOrganizationMemberReconciler) setStatus(ctx context.Context, req ctrl.Request, userID, phase string, condStatus metav1.ConditionStatus, reason, msg string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	_, err := r.setStatusChanged(ctx, req, userID, phase, condStatus, reason, msg)
+	return err
+}
+
+// setStatusChanged is setStatus that also reports whether the write changed the
+// phase or the Ready condition's status, reason or message (LastSyncedTime is
+// bookkeeping), from the attempt whose write succeeded, so a caller can announce
+// a state once (knowledge rule 145).
+func (r *AuraOrganizationMemberReconciler) setStatusChanged(ctx context.Context, req ctrl.Request, userID, phase string, condStatus metav1.ConditionStatus, reason, msg string) (bool, error) {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraOrganizationMember{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
+		want := metav1.Condition{Type: "Ready", Status: condStatus, Reason: reason, Message: msg}
+		wouldChange := latest.Status.Phase != phase || auraConditionChanged(latest.Status.Conditions, want)
 		if userID != "" {
 			latest.Status.UserID = userID
 		}
@@ -187,11 +203,14 @@ func (r *AuraOrganizationMemberReconciler) setStatus(ctx context.Context, req ct
 		now := metav1.Now()
 		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: condStatus, Reason: reason, Message: msg,
-		})
-		return r.Status().Update(ctx, latest)
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	})
+	return changed, err
 }
 
 func (r *AuraOrganizationMemberReconciler) patch(ctx context.Context, req ctrl.Request, mutate func(*neo4jv1beta1.AuraOrganizationMember)) error {
@@ -207,8 +226,11 @@ func (r *AuraOrganizationMemberReconciler) patch(ctx context.Context, req ctrl.R
 
 func (r *AuraOrganizationMemberReconciler) fail(ctx context.Context, req ctrl.Request, m *neo4jv1beta1.AuraOrganizationMember, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraOrganizationMember reconcile deferred", "reason", reason, "error", cause.Error())
-	r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberFailed, fmt.Sprintf("%s: %v", reason, cause))
-	_ = r.setStatus(ctx, req, "", "Error", metav1.ConditionFalse, reason, cause.Error())
+	// Announced when the failure starts or its message changes, not on every
+	// requeue while it stays (knowledge rule 145).
+	if changed, _ := r.setStatusChanged(ctx, req, "", "Error", metav1.ConditionFalse, reason, cause.Error()); changed {
+		r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 

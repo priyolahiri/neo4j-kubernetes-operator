@@ -194,9 +194,12 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("Neo4jReplicaDatabase requires Neo4j %s or later on the downstream cluster; %s runs %s",
 			neo4jclient.MinCCDRReplicaVersion, replica.Spec.ClusterRef, targetVersionString(target))
-		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
-			EventReasonReplicaVersionTooOld, msg, nil)
-		r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaVersionTooOld, msg)
+		// Announced when the refusal starts, not on every pass while the
+		// cluster stays on the older version (knowledge rule 145).
+		if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
+			EventReasonReplicaVersionTooOld, msg, nil) {
+			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaVersionTooOld, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 
@@ -204,9 +207,11 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	if err != nil {
 		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
-		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
-			EventReasonConnectionFailed, msg, nil)
-		r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		// Retried with backoff; the same failure is announced once (rule 145).
+		if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
+			EventReasonConnectionFailed, msg, nil) {
+			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
 		return ctrl.Result{}, err
 	}
 	defer func() {
@@ -318,6 +323,11 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				// spec.source is immutable, so the fixes that leave this CR
 				// alone come first: a replica told to set credentialsSecretRef
 				// has to be deleted and recreated to do it.
+				//
+				// Pending, not Failed: nothing has been asked of Neo4j yet,
+				// and the replica carries on by itself once the servers have
+				// the variable (knowledge rule 145). Announced when the wait
+				// starts.
 				msg := fmt.Sprintf(
 					"the downstream servers cannot read %s: %s is not set on %s. "+
 						"The seed and every pull run on the SERVER, so the object-store "+
@@ -331,9 +341,9 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 						"keys onto the servers, but spec.source cannot be changed, so it means "+
 						"recreating this Neo4jReplicaDatabase",
 					pullURI, strings.Join(missing, ", "), replica.Spec.ClusterRef)
-				if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
-					EventReasonReplicaFailed, msg, nil) {
-					r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaFailed, msg)
+				if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
+					EventReasonReplicaObjectStoreEnvMissing, msg, nil) {
+					r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaObjectStoreEnvMissing, msg)
 				}
 				return ctrl.Result{RequeueAfter: permanentRejectionRequeue}, nil
 			}

@@ -127,8 +127,11 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
-		r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, "")
-		r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		// Retried with backoff; the same failure is announced once (knowledge
+		// rule 145).
+		if r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, "") {
+			r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
 		return ctrl.Result{}, err
 	}
 	defer func() {
@@ -251,8 +254,11 @@ func (r *Neo4jDatabaseAliasReconciler) fail(ctx context.Context, alias *neo4jv1b
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
-	r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonAliasFailed, msg, "")
-	r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonAliasFailed, msg)
+	// Announced when the failure starts or its message changes, not on every
+	// retry of the same failure (knowledge rule 145).
+	if r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonAliasFailed, msg, "") {
+		r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonAliasFailed, msg)
+	}
 	// A rejection the server will repeat (Neo.ClientError.*: a malformed
 	// statement, a missing role or user, an argument it refuses) cannot
 	// resolve without someone changing something, and error backoff would

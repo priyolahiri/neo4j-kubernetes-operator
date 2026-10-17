@@ -484,8 +484,14 @@ func (r *AuraInstanceReconciler) handleDeletion(
 	switch {
 	case deleteCloud && inst.Spec.DeletionProtection:
 		logger.Info("deletionProtection is set; refusing to delete the Aura instance", "instanceId", externalID)
-		r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceFailed,
-			"deletionProtection is set: clear it to allow deletion of the cloud instance")
+		// The refusal is recorded on Synced, and announced when it starts, not
+		// on every requeue while deletionProtection stays set (knowledge rule
+		// 145).
+		const msg = "deletionProtection is set: clear it to allow deletion of the cloud instance"
+		req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(inst)}
+		if changed, _ := r.setConditionChanged(ctx, req, "Synced", metav1.ConditionFalse, "DeletionProtected", msg); changed {
+			r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceFailed, msg)
+		}
 		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 	case deleteCloud:
 		if externalID != "" {
@@ -548,22 +554,35 @@ func (r *AuraInstanceReconciler) patchInstance(ctx context.Context, req ctrl.Req
 // setCondition sets a status condition, writing only when it actually changes,
 // so a steady terminal state (e.g. Paused) doesn't self-trigger a reconcile loop.
 func (r *AuraInstanceReconciler) setCondition(ctx context.Context, req ctrl.Request, condType string, status metav1.ConditionStatus, reason, msg string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	_, err := r.setConditionChanged(ctx, req, condType, status, reason, msg)
+	return err
+}
+
+// setConditionChanged is setCondition that also reports whether the write
+// changed the condition's status, reason or message, from the attempt whose
+// write succeeded, so a caller can announce the state once (knowledge rule 145).
+func (r *AuraInstanceReconciler) setConditionChanged(ctx context.Context, req ctrl.Request, condType string, status metav1.ConditionStatus, reason, msg string) (bool, error) {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraInstance{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
-		existing := meta.FindStatusCondition(latest.Status.Conditions, condType)
-		if existing != nil && existing.Status == status && existing.Reason == reason &&
-			existing.Message == msg && latest.Status.ObservedGeneration == latest.Generation {
+		want := metav1.Condition{Type: condType, Status: status, Reason: reason, Message: msg}
+		wouldChange := auraConditionChanged(latest.Status.Conditions, want)
+		if !wouldChange && latest.Status.ObservedGeneration == latest.Generation {
 			return nil
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: condType, Status: status, Reason: reason, Message: msg,
-		})
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	})
+	return changed, err
 }
 
 // syncStatus writes observed state + conditions.
@@ -645,18 +664,28 @@ func (r *AuraInstanceReconciler) failTerminal(ctx context.Context, req ctrl.Requ
 // cause is external (missing creds/config), so we don't hot-loop on user error.
 func (r *AuraInstanceReconciler) fail(ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraInstance reconcile deferred", "reason", reason, "error", cause.Error())
-	r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceFailed, fmt.Sprintf("%s: %v", reason, cause))
+	announce := false
 	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		announce = false
 		latest := &neo4jv1beta1.AuraInstance{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
-		})
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		changed := auraConditionChanged(latest.Status.Conditions, want)
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = changed
+		return nil
 	})
+	// Announced when the failure starts or its message changes, not on every
+	// requeue while it stays (knowledge rule 145).
+	if announce {
+		r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 

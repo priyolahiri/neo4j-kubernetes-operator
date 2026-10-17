@@ -25,6 +25,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -437,4 +438,18 @@ func auraCondStatus(ok bool) metav1.ConditionStatus {
 		return metav1.ConditionTrue
 	}
 	return metav1.ConditionFalse
+}
+
+// auraConditionChanged reports whether setting want on conditions changes what a
+// user reads there: the condition is absent, or its status, reason or message
+// differs. LastTransitionTime and ObservedGeneration are bookkeeping, not state.
+//
+// An Aura reconciler retries a failure every 30s, so a failure's Warning event
+// is emitted only when the status write that records it changes this (or the
+// phase): once when it starts or its message changes, and not at all after an
+// operator restart, which reads the condition back from status (knowledge rule
+// 145).
+func auraConditionChanged(conditions []metav1.Condition, want metav1.Condition) bool {
+	have := meta.FindStatusCondition(conditions, want.Type)
+	return have == nil || have.Status != want.Status || have.Reason != want.Reason || have.Message != want.Message
 }

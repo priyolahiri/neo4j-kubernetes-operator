@@ -256,10 +256,13 @@ func (r *AuraCustomerManagedKeyReconciler) handleDeletion(
 	if deleteCloud && externalID != "" {
 		if err := apiClient.DeleteCustomerManagedKey(ctx, externalID); err != nil {
 			if aura.IsCMKActive(err) {
-				r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKDeleteBlocked,
-					fmt.Sprintf("Cannot delete customer-managed key %s: still in use by one or more instances", externalID))
-				_ = r.setCondition(ctx, req, "Synced", metav1.ConditionFalse, "KeyInUse",
-					"the customer-managed key is still bound to at least one instance; detach or delete those instances first")
+				// Announced when the deletion starts being blocked, not on every
+				// requeue while the key stays in use (knowledge rule 145).
+				if changed, _ := r.setConditionChanged(ctx, req, "Synced", metav1.ConditionFalse, "KeyInUse",
+					"the customer-managed key is still bound to at least one instance; detach or delete those instances first"); changed {
+					r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKDeleteBlocked,
+						fmt.Sprintf("Cannot delete customer-managed key %s: still in use by one or more instances", externalID))
+				}
 				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
 			if aura.IsConflict(err) || aura.IsTransient(err) {
@@ -318,22 +321,35 @@ func (r *AuraCustomerManagedKeyReconciler) patchCMK(ctx context.Context, req ctr
 // setCondition sets a status condition, writing only when it actually changes,
 // so a steady terminal state (e.g. Paused) doesn't self-trigger a reconcile loop.
 func (r *AuraCustomerManagedKeyReconciler) setCondition(ctx context.Context, req ctrl.Request, condType string, status metav1.ConditionStatus, reason, msg string) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	_, err := r.setConditionChanged(ctx, req, condType, status, reason, msg)
+	return err
+}
+
+// setConditionChanged is setCondition that also reports whether the write
+// changed the condition's status, reason or message, from the attempt whose
+// write succeeded, so a caller can announce the state once (knowledge rule 145).
+func (r *AuraCustomerManagedKeyReconciler) setConditionChanged(ctx context.Context, req ctrl.Request, condType string, status metav1.ConditionStatus, reason, msg string) (bool, error) {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraCustomerManagedKey{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
-		existing := meta.FindStatusCondition(latest.Status.Conditions, condType)
-		if existing != nil && existing.Status == status && existing.Reason == reason &&
-			existing.Message == msg && latest.Status.ObservedGeneration == latest.Generation {
+		want := metav1.Condition{Type: condType, Status: status, Reason: reason, Message: msg}
+		wouldChange := auraConditionChanged(latest.Status.Conditions, want)
+		if !wouldChange && latest.Status.ObservedGeneration == latest.Generation {
 			return nil
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: condType, Status: status, Reason: reason, Message: msg,
-		})
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	})
+	return changed, err
 }
 
 // syncStatus writes observed key state + conditions.
@@ -377,18 +393,28 @@ func cmkReadyReason(status string) string {
 // cause is external (missing creds/config), so we don't hot-loop on user error.
 func (r *AuraCustomerManagedKeyReconciler) fail(ctx context.Context, req ctrl.Request, cmk *neo4jv1beta1.AuraCustomerManagedKey, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraCustomerManagedKey reconcile deferred", "reason", reason, "error", cause.Error())
-	r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKFailed, fmt.Sprintf("%s: %v", reason, cause))
+	announce := false
 	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		announce = false
 		latest := &neo4jv1beta1.AuraCustomerManagedKey{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
-			Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error(),
-		})
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		changed := auraConditionChanged(latest.Status.Conditions, want)
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.ObservedGeneration = latest.Generation
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = changed
+		return nil
 	})
+	// Announced when the failure starts or its message changes, not on every
+	// requeue while it stays (knowledge rule 145).
+	if announce {
+		r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 

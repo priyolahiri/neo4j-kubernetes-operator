@@ -280,6 +280,21 @@ func (r *Neo4jEnterpriseClusterReconciler) recordValidationWarnings(cluster *neo
 	r.advisoryWarnings.record(r.Recorder, cluster, EventReasonValidationWarning, result.NoEffectWarnings)
 }
 
+// recordZoneDiscovery surfaces a degraded zone discovery so it's visible via
+// `kubectl describe`, not just operator logs. Spread still applies via the zone
+// label key; only AZ enumeration was skipped (#202). It stays true for as long
+// as the install is namespace-scoped, so it is an advisory warning: announced
+// when it starts to apply and refreshed every advisoryWarningRefresh, not on
+// every pass (knowledge rules 102 and 145).
+func (r *Neo4jEnterpriseClusterReconciler) recordZoneDiscovery(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, placement *TopologyPlacement) {
+	var warnings []string
+	if placement.ZoneDiscoveryDegraded {
+		warnings = append(warnings,
+			"Availability-zone auto-discovery unavailable (cannot list cluster-scoped nodes; expected in namespace-scoped installs). Applying best-effort zone spread via the topology key — set spec.topology.availabilityZones to enumerate zones explicitly.")
+	}
+	r.advisoryWarnings.record(r.Recorder, cluster, EventReasonTopologyZoneDiscoveryDegraded, warnings)
+}
+
 // clusterEverAccepted reports whether a reconcile of this cluster has ever got
 // past spec validation. Reconcile adds the finalizer only once validation and
 // the StorageClass check have passed, and it stays until deletion. No status
@@ -365,9 +380,14 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		if len(roleHintErrors) > 0 {
 			for _, roleError := range roleHintErrors {
 				logger.Error(fmt.Errorf("server role validation error"), roleError)
-				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonServerRoleFailed, "Server role hint validation failed: %s", roleError)
 			}
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors))
+			// Announced when the failure starts or its message changes, not
+			// on every RequeueAfter while it stays (knowledge rule 145).
+			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors)) {
+				for _, roleError := range roleHintErrors {
+					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonServerRoleFailed, "Server role hint validation failed: %s", roleError)
+				}
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -376,8 +396,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	if cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Enabled {
 		if err := r.validatePropertyShardingConfiguration(ctx, cluster); err != nil {
 			logger.Error(err, "Property sharding validation failed")
-			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonPropertyShardingFailed, "Property sharding validation failed: %v", err)
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err))
+			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err)) {
+				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonPropertyShardingFailed, "Property sharding validation failed: %v", err)
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -392,8 +413,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", cluster.Spec.Storage.ClassName)
 		logger.Error(fmt.Errorf("storage class not found"), msg)
-		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", msg)
+		if r.updateClusterStatus(ctx, cluster, "Failed", msg) {
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -635,8 +657,11 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		placement, err := r.TopologyScheduler.CalculateTopologyPlacement(ctx, cluster)
 		if err != nil {
 			logger.Error(err, "Failed to calculate topology placement")
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to calculate topology placement: %v", err))
-			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyPlacementFailed, fmt.Sprintf("Failed to calculate topology placement: %v", err))
+			// Retried with backoff; the same failure is announced once
+			// (knowledge rule 145).
+			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to calculate topology placement: %v", err)) {
+				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyPlacementFailed, fmt.Sprintf("Failed to calculate topology placement: %v", err))
+			}
 			return ctrl.Result{}, err
 		}
 		topologyPlacement = placement
@@ -650,13 +675,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonTopologyPlacementCalc,
 				fmt.Sprintf("Calculated topology placement across %d zones", len(placement.AvailabilityZones)))
 		}
-		if placement.ZoneDiscoveryDegraded {
-			// Surface the degraded path so it's visible via `kubectl describe`,
-			// not just operator logs. Spread still applies via the zone label
-			// key; only AZ enumeration was skipped (#202).
-			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonTopologyZoneDiscoveryDegraded,
-				"Availability-zone auto-discovery unavailable (cannot list cluster-scoped nodes; expected in namespace-scoped installs). Applying best-effort zone spread via the topology key — set spec.topology.availabilityZones to enumerate zones explicitly.")
-		}
+		r.recordZoneDiscovery(cluster, placement)
 	}
 
 	// Check if PVC storage expansion is needed before creating/updating StatefulSets.
@@ -3089,12 +3108,17 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, c
 		route.Object["spec"] = desired.Object["spec"]
 		return nil
 	})
+	// A cluster without the Route API stays without it: an advisory warning,
+	// announced when it starts to apply, not on every pass (knowledge rules
+	// 102 and 145).
+	var noRouteAPI []string
+	if err != nil && meta.IsNoMatchError(err) {
+		noRouteAPI = append(noRouteAPI, "route.openshift.io/v1 not available; skipping Route reconciliation")
+	}
+	r.advisoryWarnings.recordScoped(r.Recorder, cluster, EventReasonRouteAPINotFound, "route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping Route reconciliation")
-			if r.Recorder != nil {
-				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping Route reconciliation")
-			}
 			return nil
 		}
 		return fmt.Errorf("failed to create or update Route: %w", err)
@@ -3158,12 +3182,14 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context
 		})
 		return err
 	})
+	var noRouteAPI []string
+	if err != nil && meta.IsNoMatchError(err) {
+		noRouteAPI = append(noRouteAPI, "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
+	}
+	r.advisoryWarnings.recordScoped(r.Recorder, cluster, EventReasonRouteAPINotFound, "mcp-route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
 			logger.Info("Route API not available; skipping MCP Route reconciliation")
-			if r.Recorder != nil {
-				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonRouteAPINotFound, "route.openshift.io/v1 not available; skipping MCP Route reconciliation")
-			}
 			return nil
 		}
 		return fmt.Errorf("failed to create or update MCP Route: %w", err)
@@ -3184,17 +3210,23 @@ func (r *Neo4jEnterpriseClusterReconciler) warnIfMCPMissingAPOC(ctx context.Cont
 		return
 	}
 
-	for _, plugin := range plugins.Items {
-		if plugin.Spec.ClusterRef != cluster.Name || !plugin.Spec.Enabled {
+	// Advisory: announced when it starts to apply and refreshed every
+	// advisoryWarningRefresh, not on every pass (knowledge rules 102, 145).
+	r.advisoryWarnings.record(r.Recorder, cluster, EventReasonMCPApocMissing, mcpMissingAPOCWarnings(plugins.Items, cluster.Name))
+}
+
+// mcpMissingAPOCWarnings returns the MCPApocMissing warning when no enabled
+// APOC Neo4jPlugin targets the deployment named target, and nothing otherwise.
+func mcpMissingAPOCWarnings(plugins []neo4jv1beta1.Neo4jPlugin, target string) []string {
+	for _, plugin := range plugins {
+		if plugin.Spec.ClusterRef != target || !plugin.Spec.Enabled {
 			continue
 		}
 		if isAPOCPluginName(plugin.Spec.Name) {
-			return
+			return nil
 		}
 	}
-
-	r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonMCPApocMissing,
-		"MCP is enabled but APOC is not configured via Neo4jPlugin; MCP may fail in stdio mode and some tools may be unavailable.")
+	return []string{"MCP is enabled but APOC is not configured via Neo4jPlugin; MCP may fail in stdio mode and some tools may be unavailable."}
 }
 
 func isAPOCPluginName(name string) bool {
@@ -3525,7 +3557,7 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	// dedupe: an operator restart re-emits a single event, which is fine.
 	key := cluster.Namespace + "/" + cluster.Name
 	if prev, _ := r.deferredUpgradeTargets.Load(key); prev != desiredImage {
-		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, "UpgradeDeferred",
+		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeDeferred,
 			"Image change to %s deferred until the cluster is Ready with every server available; the rolling-upgrade state machine will perform it", desiredImage)
 		r.deferredUpgradeTargets.Store(key, desiredImage)
 	}
