@@ -81,7 +81,7 @@
   {
     "id": "rx-plugin-install-waits-for-target",
     "name": "Plugin Install Waits For A Fully Available Target",
-    "description": "While a Neo4jPlugin's target is not Ready with every server available — a cluster with a server down (Degraded condition True inside the grace period, or phase Degraded), or still forming, rolling or upgrading; a standalone not Ready — a plugin pass whose edits would change the target's StatefulSet does not write it, because the write restarts every server and a cluster short of one could lose its majority. The plugin is Waiting, looks again after RequeueAfter, and installs once the target is fully available. A pass with nothing to write, and a settled plugin with nothing missing, are not held.",
+    "description": "While a Neo4jPlugin's target is not Ready with every server available — a cluster with a server down (Degraded condition True inside the grace period, or phase Degraded), or still forming, rolling or upgrading; a standalone not Ready — or has not rolled out its latest spec (status.observedGeneration behind its generation, or its StatefulSet still rolling its template out), a plugin pass whose edits would change the target's StatefulSet does not write it, because the write restarts every server and a cluster short of one could lose its majority. The plugin is Waiting, looks again after RequeueAfter, and installs once the target is fully available; it is Ready only once the roll its own write caused has reached every pod. A pass with nothing to write, a settled plugin with nothing missing, and a write that repairs the plugin's own failing init container (rx-plugin-repairs-own-init-container) are not held.",
     "moduleId": "mod-plugins",
     "trigger": {
       "entityId": "ent-neo4jenterprisecluster",
@@ -123,12 +123,42 @@
         "kind": "recalculate",
         "entityId": "ent-neo4jplugin",
         "fieldName": "status.phase",
-        "description": "Installing (\"Updating the plugin's trusted CAs: spec.trustedCASecrets of … changed (…)\") until the restarted servers are ready, then Ready; Waiting first while the target is not Ready with every server available."
+        "description": "Installing (\"Updating the plugin's trusted CAs: spec.trustedCASecrets of … changed (…)\") until its own roll has reached every pod, then Ready; Waiting first (\"… updating the plugin's trusted CAs restarts every server\") while the target rolls its own truststore or is not Ready with every server available. The download trusts the custom CAs in addition to the init image's default ones."
       },
       {
         "kind": "notify",
         "entityId": "ent-neo4jplugin",
         "description": "No PluginMissing Warning — the user changed the list. One PluginInstallDeferred Normal event if the update has to wait for the target."
+      }
+    ]
+  },
+  {
+    "id": "rx-plugin-repairs-own-init-container",
+    "name": "Plugin Repairs Its Own Failing Init Container",
+    "description": "When a VerifiedDownload Neo4jPlugin's own init container keeps server pods from starting (a wrong checksum or URL, a CA the mirror needs, Init:CrashLoopBackOff) and a change to the plugin or to its target's spec.trustedCASecrets would change that init container or a volume it mounts, the plugin writes the change although the target is not Ready — but only when every server pod that is down is failing in that container, those pods are the highest ordinals at or above the partition, no pod is missing or terminating, and Neo4j's last diagnostics report no other server unavailable. The StatefulSet's rolling update then replaces the failing pods first and the rest one at a time, so no server that is up is taken down while one is short. On a standalone, whose OrderedReady StatefulSet does not replace a pod that is not Ready, the plugin deletes the stuck pod once the StatefulSet has seen the new template.",
+    "moduleId": "mod-plugins",
+    "trigger": {
+      "entityId": "ent-neo4jplugin",
+      "fieldName": "spec.source (or the target's spec.trustedCASecrets), while a server pod fails in plugin-init-<name>",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet.spec.template (the plugin's init container and its volumes)",
+        "description": "Writes the plugin's change to a target that is not Ready; a standalone's stuck pod is deleted so it is created again from the new template."
+      },
+      {
+        "kind": "recalculate",
+        "entityId": "ent-neo4jplugin",
+        "fieldName": "status.phase",
+        "description": "Installing (\"Writing the plugin to … although it is not Ready: its init container keeps … from starting …\"), then Ready once the roll reaches every pod."
+      },
+      {
+        "kind": "notify",
+        "entityId": "ent-neo4jplugin",
+        "description": "One PluginInitContainerFailing Warning, from the status write that records the repair; Waiting with PluginInstallDeferred instead when any other server is down."
       }
     ]
   }

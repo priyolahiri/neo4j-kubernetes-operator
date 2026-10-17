@@ -263,8 +263,15 @@ spec:
 
 **Failure mode**: on checksum mismatch the init container exits non-zero,
 the pod stays Pending, and `kubectl describe pod` shows the failure on
-the init container's `state.terminated.message`. Fix the URL or checksum
-and reconcile — the next pod spawn re-runs the init container.
+the init container's `state.terminated.message`; the plugin stays
+`Installing` with a message naming the pod and the exit code. Fix the URL
+or checksum (or the target's `spec.trustedCASecrets`): the plugin writes the
+fix even though its target is not `Ready`, with one
+`PluginInitContainerFailing` Warning, when every server that is down is
+failing in this plugin's init container, those are the highest-numbered
+servers, and Neo4j reports no other server unavailable. Otherwise the fix
+waits like any install. On a standalone the plugin then deletes the stuck
+pod, which its StatefulSet would not replace.
 
 **Coexistence with the cluster controller**: the init container is named
 `plugin-init-<name>`, its volumes `plugin-auth-<name>` and `plugin-ca`
@@ -287,17 +294,24 @@ consumed by the init script.
 
 **Internal CAs** are supported via the owning cluster's (or standalone's)
 `spec.trustedCASecrets` list. Each Secret's `ca.crt` (or the per-Secret
-`Key` override) is mounted under `/etc/plugin-ca`; the init script
-concatenates the certificates into a single CA bundle and points curl at
-it via `--cacert`.
+`Key` override) is mounted under `/etc/plugin-ca`; the init script appends
+the certificates to the init image's default CA bundle and points curl at
+the result via `--cacert`, so public URLs keep working. The default bundle
+is `$CURL_CA_BUNDLE` when it names a file (as in `curlimages/curl`), else
+the first of `/etc/ssl/certs/ca-certificates.crt`,
+`/etc/pki/tls/certs/ca-bundle.crt`, `/etc/ssl/cert.pem` and `/cacert.pem`
+that exists; an image with none trusts only the listed CAs and logs a
+`WARNING`.
 
 The `plugin-ca` volume follows the list: when you add, remove or replace a
 Secret in `spec.trustedCASecrets`, a `Ready` plugin updates the volume (and
 its init container's mount of it, when the list becomes empty or stops being
 empty) without a `PluginMissing` event — phase `Installing`, message
 "Updating the plugin's trusted CAs: …". That write restarts the servers, so it
-waits like an install until the target is `Ready` with every server available:
-the target's own truststore roll comes first, then the plugin's. A list that
+waits like an install until the target is `Ready` with every server available
+and has rolled out its own change (`Waiting`, one `PluginInstallDeferred`):
+the target's own truststore roll comes first, then the plugin's, and the
+plugin is `Ready` once its roll has reached every server. A list that
 is only reordered changes nothing. The volume's projections are optional and
 the init script uses the default CAs when `/etc/plugin-ca` holds no
 certificate, so a Secret you delete right after removing it from the list

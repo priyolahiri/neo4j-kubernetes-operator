@@ -305,9 +305,10 @@ default `cacerts` is used as the seed, so adding internal CAs does not
 remove trust in public CAs.
 
 A `VerifiedDownload` [`Neo4jPlugin`](neo4jplugin.md) of the cluster trusts
-the same list when it fetches its JAR (its `plugin-ca` volume). A change to
-the list restarts the servers for the truststore, and then once more when a
-`Ready` plugin brings its volume in line, once the cluster is `Ready` with
+the same list, in addition to its init image's default CAs, when it fetches
+its JAR (its `plugin-ca` volume). A change to the list restarts the servers
+for the truststore, and then once more when a `Ready` plugin brings its
+volume in line, once the cluster has finished that roll and is `Ready` with
 every server available again. Removing a CA is safe to follow with deleting
 its Secret: the plugin's projections are optional (except, on the first change
 after upgrading the operator, a volume an earlier version wrote).

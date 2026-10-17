@@ -61,7 +61,8 @@
     "description": "Neo4jPlugin: installs and configures APOC, Graph Data Science, Bloom, GenAI, n10s, and GraphQL plugins with automatic security configuration.",
     "paths": [
       "api/v1beta1/neo4jplugin_types.go",
-      "internal/controller/plugin_controller.go"
+      "internal/controller/plugin_controller.go",
+      "internal/controller/plugin_target_gate.go"
     ]
   },
   {
