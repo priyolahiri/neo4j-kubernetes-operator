@@ -8036,7 +8036,7 @@ for details.</p>
 <tr>
 <td><code>strategy</code></td>
 <td><code>string</code></td>
-<td>Upgrade strategy: <code>"RollingUpgrade"</code> (default) or <code>"Recreate"</code></td>
+<td><code>"RollingUpgrade"</code> (default) or <code>"Recreate"</code>. A cluster is upgraded one server at a time with either, the only way Neo4j documents for upgrading a cluster; <code>Recreate</code> raises a <code>ValidationWarning</code> (see <a href="../../user_guide/guides/upgrades/#upgrade-strategy">Upgrade Strategy</a>). A standalone's one pod is replaced with either</td>
 </tr>
 <tr>
 <td><code>preUpgradeHealthCheck</code></td>
@@ -8051,7 +8051,7 @@ for details.</p>
 <tr>
 <td><code>upgradeTimeout</code></td>
 <td><code>string</code></td>
-<td>Budget for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: <code>"30m"</code>). A Go duration (<code>30m</code>, <code>1h30m</code>, <code>90s</code>); one that does not parse is refused</td>
+<td>Budget for staging and for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: <code>"30m"</code>). A Go duration above zero (<code>30m</code>, <code>1h30m</code>, <code>90s</code>); one that does not parse, or is zero or less, is refused</td>
 </tr>
 <tr>
 <td><code>postUpgradeHealthCheck</code></td>
@@ -8061,12 +8061,12 @@ for details.</p>
 <tr>
 <td><code>healthCheckTimeout</code></td>
 <td><code>string</code></td>
-<td>Timeout for post-upgrade version verification (default: <code>"5m"</code>). A Go duration; one that does not parse is refused</td>
+<td>Timeout for post-upgrade version verification (default: <code>"5m"</code>). A Go duration above zero; one that does not parse, or is zero or less, is refused</td>
 </tr>
 <tr>
 <td><code>stabilizationTimeout</code></td>
 <td><code>string</code></td>
-<td>Wait time for cluster stabilization (default: <code>"3m"</code>). A Go duration; one that does not parse is refused</td>
+<td>Wait time for cluster stabilization (default: <code>"3m"</code>). A Go duration above zero; one that does not parse, or is zero or less, is refused</td>
 </tr>
 <tr>
 <td><code>autoPauseOnFailure</code></td>
@@ -8119,7 +8119,7 @@ for details.</p>
 <tr>
 <td><code>version</code></td>
 <td><code>string</code></td>
-<td>The image tag every server was verified to run: recorded at the first <code>Ready</code> and after each verified upgrade, unchanged while an upgrade is in flight or after one fails. <code>spec.image.tag</code> is checked against it on every reconcile, and a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>)</td>
+<td>The image tag every server runs: recorded at the first <code>Ready</code>, after each verified upgrade, and at a <code>Ready</code> with every server on an image that reached them while no server was ready; unchanged while an upgrade is in flight or after one fails. <code>spec.image.tag</code> is checked against it on every reconcile, and a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>)</td>
 </tr>
 <tr>
 <td><code>upgradeStatus</code></td>

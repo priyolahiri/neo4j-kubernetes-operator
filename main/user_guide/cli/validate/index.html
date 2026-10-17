@@ -1469,10 +1469,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#a-clean-run-may-not-be-the-last-word" class="md-nav__link">
+  <a href="#one-run-lists-every-error" class="md-nav__link">
     <span class="md-ellipsis">
       
-        A clean run may not be the last word
+        One run lists every error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-operators-defaults-are-applied-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The operator's defaults are applied first
       
     </span>
   </a>
@@ -4026,10 +4037,21 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#a-clean-run-may-not-be-the-last-word" class="md-nav__link">
+  <a href="#one-run-lists-every-error" class="md-nav__link">
     <span class="md-ellipsis">
       
-        A clean run may not be the last word
+        One run lists every error
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#the-operators-defaults-are-applied-first" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        The operator's defaults are applied first
       
     </span>
   </a>
@@ -4207,7 +4229,7 @@
 <li><code>spec.config</code> values Neo4j would refuse at startup, for the settings whose type the operator knows — <code>db.tx_log.buffer.size: "1MiB"</code> (a long), <code>server.memory.heap.max_size: "2Gi"</code> (a Kubernetes suffix, not a Neo4j unit), <code>db.transaction.timeout: "30 sec"</code>; see <a href="../../configuration/#value-types-checked-before-apply">Value types</a></li>
 <li>TLS strictness and issuer-capability rules</li>
 <li>storage, image, and licence-acceptance requirements</li>
-<li><code>spec.upgradeStrategy</code> timeouts (<code>upgradeTimeout</code>, <code>healthCheckTimeout</code>, <code>stabilizationTimeout</code>), which must be Go durations such as <code>30m</code>, <code>1h30m</code> or <code>90s</code> — <code>"5 minutes"</code> is refused, as the operator refuses it</li>
+<li><code>spec.upgradeStrategy</code> timeouts (<code>upgradeTimeout</code>, <code>healthCheckTimeout</code>, <code>stabilizationTimeout</code>), which must be Go durations above zero such as <code>30m</code>, <code>1h30m</code> or <code>90s</code> — <code>"5 minutes"</code>, <code>"0s"</code> and <code>"-5m"</code> are refused, as the operator refuses them</li>
 <li>advisory topology warnings — even server counts, two-server clusters with
   limited fault tolerance, all-PRIMARY or all-SECONDARY mode constraints</li>
 </ul>
@@ -4243,7 +4265,7 @@
 <div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>- Neo4jUser/analytics (users.yaml): skipped — Neo4jUser validation resolves cross-references; re-run with --connect to check it
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>- Neo4jRestore/restore-1 (restore.yaml): skipped — no operator-side validator for Neo4jRestore; its CRD schema still applies (kubectl apply --dry-run=server)
 </span></code></pre></div>
-<p><strong>Checked offline does not mean every rule ran.</strong> One cluster rule compares the manifest with the cluster already running under its name: <code>spec.image.tag</code> against the version its servers run (<code>status.version</code>), which refuses a downgrade. A manifest carries no such state — a <code>status</code> in the file is ignored, as <code>kubectl apply</code> ignores it — so offline the summary says what was not checked:</p>
+<p><strong>Checked offline does not mean every rule ran.</strong> One rule of a cluster, and the same rule of a standalone, compares the manifest with the deployment already running under its name: <code>spec.image.tag</code> against the version its servers run (<code>status.version</code>), which refuses a downgrade. A manifest carries no such state — a <code>status</code> in the file is ignored, as <code>kubectl apply</code> ignores it — so offline the summary says what was not checked:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>✓ Neo4jEnterpriseCluster/prod (cluster.yaml): ok
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>1 validated, 0 skipped — 0 error(s), 0 warning(s)
@@ -4257,11 +4279,11 @@
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>validate<span class="w"> </span>-f<span class="w"> </span>manifests/<span class="w"> </span>--connect<span class="w"> </span>-n<span class="w"> </span>team-a<span class="w">    </span><span class="c1"># namespace for manifests that omit one</span>
 </span></code></pre></div>
 <p>Connecting is <strong>opt-in</strong>. Defaulting to the current context would make a command documented as offline fail in CI, where there is usually no kubeconfig at all.</p>
-<p>With a connection, the command resolves <code>clusterRef</code>s, password Secrets and role references, and checks a cluster manifest against the cluster of the same name that already runs, as the operator will once it is applied:</p>
+<p>With a connection, the command resolves <code>clusterRef</code>s, password Secrets and role references, checks the admin password's shape in its Secret, and checks a cluster or standalone manifest against the deployment of the same name that already runs, as the operator will once it is applied:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>Neo4jEnterpriseCluster/prod (cluster.yaml):
 </span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>  ✗ spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
 </span></code></pre></div>
-<p>A cluster that does not exist yet has nothing to compare with. One the command cannot read (no <code>get</code> permission) is a warning saying the tag was not checked, rather than a silent pass.</p>
+<p>For a standalone the message says <code>the standalone runs</code>. A deployment that does not exist yet has nothing to compare with. One the command cannot read (no <code>get</code> permission) is a warning saying the tag was not checked, rather than a silent pass.</p>
 <p>The connection also adds a third finding type:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>Neo4jUser/analytics (users.yaml):
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>  … waiting for password Secret "analytics-password" in namespace "neo4j"
@@ -4275,13 +4297,12 @@
 </span></code></pre></div>
 <p>It is advisory and silent when it cannot tell — the operator may be in a namespace you cannot list, which is not worth failing over.</p>
 <h3 id="required-permissions">Required permissions<a class="headerlink" href="#required-permissions" title="Anchor link to this section">&para;</a></h3>
-<p><code>--connect</code> reads only. It needs <code>get</code> on <code>Neo4jEnterpriseCluster</code> (for a cluster manifest, the running cluster's status; for the other kinds, their <code>clusterRef</code>), <code>Neo4jEnterpriseStandalone</code>, <code>Neo4jRole</code> and <code>Secret</code> in the namespaces you are validating (plus <code>list</code> on <code>Neo4jUser</code> when validating a <code>Neo4jRoleBinding</code>, and <code>get</code> on <code>Neo4jShardedDatabase</code> when validating a <code>Neo4jRole</code>), plus <code>list</code> on <code>Deployment</code> for the version check (which degrades silently without it). It never writes anything.</p>
-<h3 id="a-clean-run-may-not-be-the-last-word">A clean run may not be the last word<a class="headerlink" href="#a-clean-run-may-not-be-the-last-word" title="Anchor link to this section">&para;</a></h3>
-<p>The operator stops validating a resource after certain critical errors — an invalid image, for example — because later checks are not meaningful once the image is wrong. <code>validate</code> reproduces that faithfully rather than inventing its own behaviour, so:</p>
-<blockquote>
-<p>Fixing everything reported and re-running may surface <strong>further</strong> errors.</p>
-</blockquote>
-<p>A clean run means nothing further is reachable, not that nothing was ever wrong. Re-run until two consecutive runs agree.</p>
+<p><code>--connect</code> reads only. It needs <code>get</code> on <code>Neo4jEnterpriseCluster</code> (for a cluster manifest, the running cluster's status; for the other kinds, their <code>clusterRef</code>), <code>Neo4jEnterpriseStandalone</code> (likewise, for a standalone manifest the running standalone's status), <code>Neo4jRole</code> and <code>Secret</code> in the namespaces you are validating (plus <code>list</code> on <code>Neo4jUser</code> when validating a <code>Neo4jRoleBinding</code>, and <code>get</code> on <code>Neo4jShardedDatabase</code> when validating a <code>Neo4jRole</code>), plus <code>list</code> on <code>Deployment</code> for the version check (which degrades silently without it). It never writes anything.</p>
+<h3 id="one-run-lists-every-error">One run lists every error<a class="headerlink" href="#one-run-lists-every-error" title="Anchor link to this section">&para;</a></h3>
+<p>A validator reports every error it finds, not just the first: an invalid image does not hide a bad <code>spec.config</code> key or storage size behind it, so you can fix the whole list before you re-run. The one exception is <code>Neo4jShardedDatabase</code>: when its <code>clusterRef</code> cannot be read, that is the error it reports, and its other rules wait until the cluster can be read.</p>
+<p>A clean run covers the rules that ran. Offline, the ones that compare a manifest with what already runs did not, and the summary names them (see <a href="#what-gets-checked-and-what-doesnt">above</a>).</p>
+<h3 id="the-operators-defaults-are-applied-first">The operator's defaults are applied first<a class="headerlink" href="#the-operators-defaults-are-applied-first" title="Anchor link to this section">&para;</a></h3>
+<p>The operator fills in a few fields a cluster manifest may leave out before it validates one — <code>spec.tls.mode: disabled</code>, <code>native</code> authentication and authorization providers, a <code>ClusterIP</code> Service, <code>spec.storage.retentionPolicy: Delete</code>, <code>spec.image.pullPolicy: IfNotPresent</code> — and <code>validate</code> does the same, so a manifest is judged as the operator will judge it. The defaults go only into the copy that is validated: nothing is printed or written back, and a finding names a field you wrote, or one that is missing. A standalone gets no defaults from the operator, so none from <code>validate</code> either.</p>
 <h3 id="version-skew">Version skew<a class="headerlink" href="#version-skew" title="Anchor link to this section">&para;</a></h3>
 <p>The output always names the ruleset it used:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>validated against operator rules v1.17.0

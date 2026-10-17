@@ -4037,13 +4037,17 @@ rolling-upgrade state machine performs it once the cluster is <code>Ready</code>
 server available — a version change must never sneak in as an ungated restart
 while quorum is still forming, and rolling the other servers while one is down
 could cost the cluster its majority.</p>
-<p>One deliberate exception: if <strong>no server pod has ever become ready</strong> — the
-typical case being a first deploy stuck in <code>ImagePullBackOff</code> on a mistyped
-tag — there is no formed quorum to protect, so a corrected <code>spec.image</code>
-applies immediately. Fix the tag and the pods re-pull; you do not need to
-delete and recreate the cluster.</p>
+<p>One deliberate exception: if <strong>no server pod is ready</strong> — the typical case
+being a first deploy stuck in <code>ImagePullBackOff</code> on a mistyped tag, but also a
+cluster that has lost every server — there is no formed quorum to protect, so
+a corrected <code>spec.image</code> applies immediately, without the upgrade state
+machine. Fix the tag and the pods re-pull; you do not need to delete and
+recreate the cluster. The tag is still checked against <code>status.version</code> first
+(see <a href="#version-checks">Version checks</a>), and once every server is ready on the
+new image the operator records it as <code>status.version</code>.</p>
 <h3 id="version-checks">Version checks<a class="headerlink" href="#version-checks" title="Anchor link to this section">&para;</a></h3>
-<p>Every reconcile checks <code>spec.image.tag</code> against <code>status.version</code>, the version the operator verified every server runs. It is recorded when the cluster first becomes <code>Ready</code> and after each verified upgrade, and it does not move while an upgrade is in flight or after one fails — so setting the tag back to it, or on to a later target, is always allowed.</p>
+<p>Every reconcile checks <code>spec.image.tag</code> against <code>status.version</code>, the version every server runs. It is recorded when the cluster first becomes <code>Ready</code>, after each verified upgrade, and when the cluster becomes <code>Ready</code> with every server on an image that reached them without the upgrade state machine (the no-ready-server exception above). It does not move while an upgrade is in flight or after one fails — so setting the tag back to it, or on to a later target, is always allowed.</p>
+<p>A <code>Neo4jEnterpriseStandalone</code> is held to the same rule. Its <code>status.version</code> is recorded once its pod is ready on the current image, so it does not move while the pod is being replaced, nor for an image that never starts: setting the tag back to the version the server runs is always allowed. A downgrade is refused the same way (the standalone turns <code>Failed</code> with a <code>ValidationFailed</code> event saying <code>the standalone runs …</code>), and the server keeps the version it runs.</p>
 <p>A tag the cluster cannot move to (see <a href="#supported-upgrade-paths">Supported Upgrade Paths</a>) is refused before anything changes: the cluster turns <code>Failed</code>, with a <code>ValidationFailed</code> event and a message that names the field and what the servers run:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Update validation failed: validation failed: spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
 </span></code></pre></div>
@@ -4070,10 +4074,11 @@ delete and recreate the cluster.</p>
 </tr>
 <tr>
 <td><code>Recreate</code></td>
-<td>Deletes and recreates all pods; faster but causes downtime</td>
+<td>On a cluster, does what <code>RollingUpgrade</code> does, and raises a <code>ValidationWarning</code> (see below). On a standalone, its one pod is deleted and created again on the new image, as with <code>RollingUpgrade</code></td>
 </tr>
 </tbody>
 </table>
+<p>Neo4j documents only rolling upgrades for a cluster — one server at a time, or by adding new servers — on 5.x and on the 2025–2026 series (<a href="https://neo4j.com/docs/upgrade-migration-guide/current/">Upgrade and Migration Guide</a>). Stopping every server at once and starting them on a new version is not a path it describes, so the operator does not take it: a cluster is always upgraded by the rolling-upgrade state machine above. <code>Recreate</code> used to stop the operator from starting that machine, so a <code>Ready</code> cluster kept its old image and no other change to its spec was applied while the tag differed; it also stopped every other change to the server pod template (configuration, plugins, TLS) from reaching a running server.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span><span class="nt">upgradeStrategy</span><span class="p">:</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RollingUpgrade</span>
@@ -4084,7 +4089,7 @@ delete and recreate the cluster.</p>
 </span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">    </span><span class="nt">stabilizationTimeout</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">3m</span><span class="w">      </span><span class="c1"># post-upgrade cluster-stabilization wait (default 3m)</span>
 </span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">    </span><span class="nt">postUpgradeHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># validate cluster health after upgrade (default true)</span>
 </span></code></pre></div>
-<p>The three timeouts are Go durations: <code>30m</code>, <code>1h30m</code>, <code>90s</code>. A value that does not parse, such as <code>"5 minutes"</code>, is refused (the cluster turns <code>Failed</code> with a <code>ValidationFailed</code> event), and <code>kubectl neo4j validate</code> reports it before you apply.</p>
+<p>The three timeouts are Go durations above zero: <code>30m</code>, <code>1h30m</code>, <code>90s</code>. A value that does not parse, such as <code>"5 minutes"</code>, or one of zero or less, such as <code>"0s"</code> or <code>"-5m"</code>, is refused (the cluster turns <code>Failed</code> with a <code>ValidationFailed</code> event), and <code>kubectl neo4j validate</code> reports it before you apply. A step fails once its timeout has passed since it started, so at zero or less a step failed at its first check unless it was already done; an <code>upgradeTimeout</code> of zero or less failed every upgrade while staging.</p>
 <p>Servers always restart one at a time, as Neo4j's rolling upgrade requires. <code>maxUnavailableDuringUpgrade</code> is accepted for compatibility but has no effect; a value other than <code>1</code> raises a <code>ValidationWarning</code> event.</p>
 <p>When <code>preUpgradeHealthCheck</code> is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and <code>autoPauseOnFailure</code> is <code>true</code>, the upgrade is blocked until you intervene rather than proceeding against an unhealthy deployment.</p>
 <p>For the full field reference see the <a href="../../../api_reference/neo4jenterprisecluster/">API Reference</a>.</p>

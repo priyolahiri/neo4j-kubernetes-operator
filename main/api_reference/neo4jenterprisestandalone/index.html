@@ -5595,7 +5595,7 @@
 <tr>
 <td><code>tag</code></td>
 <td><code>string</code></td>
-<td><strong>Required</strong>. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward)</td>
+<td><strong>Required</strong>. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward). A change is checked against <code>status.version</code> on every reconcile: a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>)</td>
 </tr>
 <tr>
 <td><code>pullPolicy</code></td>
@@ -5800,10 +5800,11 @@ For the full type definition — including the optional <code>provision</code> b
 <h4 id="upgradestrategy-upgradestrategyspec"><code>upgradeStrategy</code> (UpgradeStrategySpec)<a class="headerlink" href="#upgradestrategy-upgradestrategyspec" title="Anchor link to this section">&para;</a></h4>
 <p>Configures how the operator handles Neo4j version upgrades for standalone deployments. When an image tag change is detected, the operator runs a pre-upgrade health check (if enabled) before allowing the StatefulSet to update.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="nt">upgradeStrategy</span><span class="p">:</span>
-</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RollingUpgrade</span><span class="w">       </span><span class="c1"># RollingUpgrade (default) or Recreate</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">  </span><span class="nt">strategy</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">RollingUpgrade</span><span class="w">       </span><span class="c1"># RollingUpgrade (default) or Recreate: the one pod is replaced either way</span>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">  </span><span class="nt">preUpgradeHealthCheck</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">    </span><span class="c1"># Verify Neo4j health before upgrading</span>
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">autoPauseOnFailure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">       </span><span class="c1"># Block upgrade if health check fails</span>
 </span></code></pre></div>
+<p>With either strategy the StatefulSet deletes the standalone's pod and creates it again on the new image. <code>Recreate</code> used to give the StatefulSet the <code>OnDelete</code> strategy, under which a new image, a configuration change or a plugin never reached the running server, while <code>status.version</code> already named the new tag.</p>
 <p>For the full type definition see <a href="../neo4jenterprisecluster/#upgradestrategyspec"><code>UpgradeStrategySpec</code></a>.</p>
 <h4 id="plugin-management">Plugin management<a class="headerlink" href="#plugin-management" title="Anchor link to this section">&para;</a></h4>
 <p>There is <strong>no</strong> <code>spec.plugins</code> field on <code>Neo4jEnterpriseStandalone</code>. Use
@@ -6049,7 +6050,7 @@ changes meaning under a running deployment.</p>
 </span><span id="__span-23-28"><a id="__codelineno-23-28" name="__codelineno-23-28" href="#__codelineno-23-28"></a><span class="w">    </span><span class="nt">neo4jURI</span><span class="p">:</span><span class="w"> </span><span class="s">"neo4j+ssc://localhost:7687"</span>
 </span></code></pre></div>
 <h4 id="version-string"><code>version</code> (string)<a class="headerlink" href="#version-string" title="Anchor link to this section">&para;</a></h4>
-<p>Current Neo4j version running.</p>
+<p>The image tag the standalone runs, recorded once its pod is ready on the current image: it does not move while the pod is being replaced, nor for an image that never starts. <code>spec.image.tag</code> is checked against it on every reconcile, and a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>). It used to be <code>spec.image.tag</code>, written on every reconcile whether or not the pod ran it.</p>
 <h4 id="podstatus-standalonepodstatus"><code>podStatus</code> (StandalonePodStatus)<a class="headerlink" href="#podstatus-standalonepodstatus" title="Anchor link to this section">&para;</a></h4>
 <p><strong>Reserved — never populated today</strong> (the schema is shown for reference; use <code>kubectl get pod &lt;name&gt;-0</code> for pod state). Intended: information about the Neo4j pod.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nt">podStatus</span><span class="p">:</span>
