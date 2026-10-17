@@ -163,6 +163,14 @@ const (
 	// install restarts every server, which a cluster short of one could lose
 	// its majority to (operations.md id 141).
 	EventReasonPluginInstallDeferred = "PluginInstallDeferred"
+	// EventReasonPluginInitContainerFailing is emitted on a VerifiedDownload
+	// Neo4jPlugin whose own init container keeps server pods from starting:
+	// a Warning, once, when the plugin writes the change that repairs it to a
+	// target that is not Ready — every server that is down is failing in that
+	// container, and the roll replaces those pods first (operations.md id
+	// 152); and a Normal event when it deletes a standalone's pod stuck on an
+	// older revision, which an OrderedReady StatefulSet does not replace.
+	EventReasonPluginInitContainerFailing = "PluginInitContainerFailing"
 )
 
 // Split-brain events

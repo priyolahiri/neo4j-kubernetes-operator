@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -57,7 +58,8 @@ func newPluginTestReconciler(t *testing.T, objs ...runtime.Object) *Neo4jPluginR
 
 // pluginTestSTS returns a minimal cluster StatefulSet shaped like what the
 // cluster controller emits — name "<cluster>-server", a single "neo4j"
-// container, no pre-existing NEO4J_PLUGINS env var.
+// container, no pre-existing NEO4J_PLUGINS env var — with its template rolled
+// out to its one replica, as its StatefulSet controller reports it.
 func pluginTestSTS(clusterName, namespace string) *appsv1.StatefulSet {
 	return &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
@@ -73,6 +75,17 @@ func pluginTestSTS(clusterName, namespace string) *appsv1.StatefulSet {
 				},
 			},
 		},
+		Status: rolledOutStatus(1, 0),
+	}
+}
+
+// rolledOutStatus is what a StatefulSet controller reports once it has rolled
+// the template of generation out to all replicas and they are ready.
+func rolledOutStatus(replicas int32, generation int64) appsv1.StatefulSetStatus {
+	return appsv1.StatefulSetStatus{
+		ObservedGeneration: generation,
+		Replicas:           replicas, ReadyReplicas: replicas, UpdatedReplicas: replicas, CurrentReplicas: replicas,
+		CurrentRevision: fmt.Sprintf("rev-%d", generation), UpdateRevision: fmt.Sprintf("rev-%d", generation),
 	}
 }
 

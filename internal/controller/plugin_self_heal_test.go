@@ -81,6 +81,16 @@ func selfHealSTS(env ...corev1.EnvVar) *appsv1.StatefulSet {
 	return sts
 }
 
+// installedSelfHealSTS is selfHealSTS with the APOC plugin of selfHealPlugin
+// already written and rolled out: a pass has nothing to write and goes on to
+// configure the plugin.
+func installedSelfHealSTS() *appsv1.StatefulSet {
+	return selfHealSTS(
+		corev1.EnvVar{Name: "NEO4J_PLUGINS", Value: `["apoc"]`},
+		corev1.EnvVar{Name: "NEO4J_apoc_export_file_enabled", Value: "true"},
+	)
+}
+
 // readyCluster is cluster "c" Ready with every server available: what a write
 // of the plugin to the servers waits for (operations.md id 141).
 func readyCluster() *neo4jv1beta1.Neo4jEnterpriseCluster {
@@ -440,11 +450,13 @@ func TestInstallPluginViaEnvironment_LeavesClusterOwnedVariablesAlone(t *testing
 }
 
 // The install write is what restarts the servers, and the old pods still
-// report Ready until they stop, so the configuration step can run while they
-// go down. With spec.security set (the documented APOC example) it opens a
-// Bolt client — on a standalone one that verifies connectivity — which then
-// cannot connect. That reported Failed with a PluginInstallFailed Warning,
-// though the install went on to succeed (v1.21.0 journey).
+// report Ready until they stop, so the configuration step used to run while
+// they went down. With spec.security set (the documented APOC example) it
+// opens a Bolt client — on a standalone one that verifies connectivity —
+// which then cannot connect. That reported Failed with a PluginInstallFailed
+// Warning, though the install went on to succeed (v1.21.0 journey). The step
+// now runs only once the roll is done (operations.md id 141); a server that
+// cannot be reached then, one restarting for another reason, is still a wait.
 func TestReconcile_ConfigureWhileTheServersRestartIsNotAFailure(t *testing.T) {
 	plugin := selfHealPlugin("apoc", "c", neo4jv1beta1.PhaseInstalling, "Installing plugin")
 	unreachable := fmt.Errorf("failed to create Neo4j client for security configuration: %w",
@@ -454,7 +466,7 @@ func TestReconcile_ConfigureWhileTheServersRestartIsNotAFailure(t *testing.T) {
 		functional: func(context.Context, *DeploymentInfo) bool { return true },
 		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return unreachable },
 	}
-	objs := append([]client.Object{plugin, readyCluster(), selfHealSTS()}, readyClusterPods()...)
+	objs := append([]client.Object{plugin, readyCluster(), installedSelfHealSTS()}, readyClusterPods()...)
 	r, rec, _ := selfHealReconciler(t, bolt, nil, objs...)
 
 	res := reconcilePlugin(t, r, "apoc")
@@ -498,7 +510,7 @@ func TestReconcile_ARealFailureIsAnnouncedOnceAndRetried(t *testing.T) {
 		functional: func(context.Context, *DeploymentInfo) bool { return true },
 		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return rejected },
 	}
-	objs := append([]client.Object{plugin, readyCluster(), selfHealSTS()}, readyClusterPods()...)
+	objs := append([]client.Object{plugin, readyCluster(), installedSelfHealSTS()}, readyClusterPods()...)
 	r, rec, _ := selfHealReconciler(t, bolt, nil, objs...)
 
 	res := reconcilePlugin(t, r, "apoc")
@@ -589,6 +601,9 @@ func TestPluginController_ReAddsARemovedNeo4jPlugins(t *testing.T) {
 		bolt: &pluginBolt{functional: func(context.Context, *DeploymentInfo) bool { return true }},
 	}
 	require.NoError(t, r.SetupWithManager(mgr))
+	// envtest runs no StatefulSet controller; a plugin is Ready only once its
+	// write has rolled out.
+	simulateStatefulSetController(t, mgr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = mgr.Start(ctx) }()
@@ -607,6 +622,7 @@ func TestPluginController_ReAddsARemovedNeo4jPlugins(t *testing.T) {
 	}
 	require.NoError(t, c.Create(ctx, standalone))
 	standalone.Status.Phase = neo4jv1beta1.PhaseReady
+	standalone.Status.ObservedGeneration = standalone.Generation
 	require.NoError(t, c.Status().Update(ctx, standalone))
 	labels := map[string]string{"app": "sa"}
 	container := corev1.Container{Name: "neo4j", Image: "neo4j:5.26-enterprise"}
