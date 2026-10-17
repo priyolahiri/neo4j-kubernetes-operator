@@ -217,11 +217,10 @@ func TestAdvisoryEmitters_AnnounceOnceWhileTheyApply(t *testing.T) {
 	ctx := context.Background()
 
 	// The Route and the MCP Route both report RouteAPINotFound, each on every
-	// pass. reconcileRoute itself cannot be driven here: route.DeepCopy()
-	// panics on the builder's map[string]string labels before the API is
-	// called (reported separately), so this pins the scoping the two call
-	// sites rely on — with one shared set, each check's pass would make the
-	// other's warning look new, and both would repeat on every pass.
+	// pass. This pins the scoping the two call sites rely on — with one shared
+	// set, each check's pass would make the other's warning look new, and both
+	// would repeat on every pass. TestReconcileRoute_NoRouteAPI drives the call
+	// sites themselves.
 	t.Run("RouteAPINotFound, the Route and the MCP Route kept apart", func(t *testing.T) {
 		rec := record.NewFakeRecorder(20)
 		var w advisoryWarnings

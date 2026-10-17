@@ -12,6 +12,12 @@ import (
 // buildRoute constructs an OpenShift Route as an unstructured object.
 // It is used by both cluster and standalone controllers to avoid a hard dependency
 // on the OpenShift API types while still reconciling Route resources when available.
+//
+// The content holds JSON types only — map[string]interface{}, string, int64 —
+// never map[string]string or int32: Unstructured.DeepCopy panics on anything
+// else, and the accessors (GetLabels, NestedInt64, ...) read such a value as
+// absent. Labels and annotations therefore go through the setters, and numbers
+// are int64 (knowledge operations.md id 148).
 func buildRoute(name, namespace, serviceName string, labels map[string]string, annotations map[string]string, host, path string, targetPort int32, tls *neo4jv1beta1.RouteTLSSpec) *unstructured.Unstructured {
 	if path == "" {
 		path = "/"
@@ -22,27 +28,28 @@ func buildRoute(name, namespace, serviceName string, labels map[string]string, a
 
 	route := &unstructured.Unstructured{
 		Object: map[string]interface{}{
-			"apiVersion": "route.openshift.io/v1",
-			"kind":       "Route",
-			"metadata": map[string]interface{}{
-				"name":        name,
-				"namespace":   namespace,
-				"labels":      labels,
-				"annotations": annotations,
-			},
 			"spec": map[string]interface{}{
 				"to": map[string]interface{}{
 					"kind":   "Service",
 					"name":   serviceName,
-					"weight": 100,
+					"weight": int64(100),
 				},
 				"port": map[string]interface{}{
-					"targetPort": targetPort,
+					"targetPort": int64(targetPort),
 				},
 				"path": path,
 			},
 		},
 	}
+	route.SetGroupVersionKind(schema.GroupVersionKind{
+		Group:   "route.openshift.io",
+		Version: "v1",
+		Kind:    "Route",
+	})
+	route.SetName(name)
+	route.SetNamespace(namespace)
+	route.SetLabels(labels)
+	route.SetAnnotations(annotations)
 
 	if host != "" {
 		_ = unstructured.SetNestedField(route.Object, host, "spec", "host")
@@ -61,11 +68,6 @@ func buildRoute(name, namespace, serviceName string, labels map[string]string, a
 		}
 	}
 
-	route.SetGroupVersionKind(schema.GroupVersionKind{
-		Group:   "route.openshift.io",
-		Version: "v1",
-		Kind:    "Route",
-	})
 	return route
 }
 

@@ -156,6 +156,8 @@ spec:
         insecureEdgeTerminationPolicy: Redirect
 ```
 
+The Route is `<name>-client-route` on a cluster and `<name>-route` on a standalone; both send traffic to the `<name>-client` Service and carry `spec.service.annotations` together with the Route's own `annotations`. An MCP server on the `http` transport exposed with `spec.mcp.http.service.route` gets `<name>-mcp-route`, at path `/mcp` unless `path` is set. On a cluster without the Route API the operator skips both and says so in a `RouteAPINotFound` Warning; the rest of the deployment is reconciled as usual.
+
 ### Public DNS via external-dns
 
 When you expose Neo4j via `LoadBalancer` or `Ingress`, the cloud provider assigns a hostname like `a1b2c3.elb.us-east-1.amazonaws.com`. To map your real domain (`neo4j.example.com`) to that endpoint you typically install [external-dns](https://github.com/kubernetes-sigs/external-dns) — a Kubernetes controller that watches Services/Ingresses for an annotation and creates the matching record in your cloud DNS provider (Route 53, Cloud DNS, Azure DNS, Cloudflare, etc.).
