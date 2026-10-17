@@ -76,42 +76,57 @@ missing server is back.
 
 ## The operator does not rewrite your spec
 
-The stored spec of a `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` is
-the one you applied, with the CRD's own defaults the API server fills in, so a
-GitOps diff shows only what you changed. The operator's defaults (Neo4j's
+The stored spec of every custom resource of the operator is the one you
+applied, with the CRD's own defaults the API server fills in, so a GitOps diff
+shows only what you changed. The operator's defaults for a cluster (Neo4j's
 `native` auth providers, TLS disabled when there is no `tls` block, a ClusterIP
 Service when there is no `service` block) go on its copy of the object for each
-reconcile and are never written back. What it does write to the object is a
-merge patch of what it changes:
+reconcile and are never written back. What it does write to one of its custom
+resources is a merge patch of what it changes:
 
-| Written | When |
-|---------|------|
-| `metadata.finalizers` (its own entry) | First reconcile; removed on deletion |
-| `neo4j.com/scale-down-draining-servers` annotation | While a scale-down drains servers (cluster) |
-| `neo4j.com/external-fleet-deployment-id` annotation | When Aura Fleet Management provisions the deployment |
-| `spec.extraEnvFrom` entry and `neo4j.com/seed-creds-auto-inherited-from` annotation | A database seed needs a credentials Secret the CR does not project, and the CR carries `neo4j.com/auto-inherit-seed-creds: "true"` |
-| `spec.env` / `spec.extraEnvFrom` entries and the same annotation | A `Neo4jRestore` from cloud storage needs credentials or an endpoint its target lacks, and the target carries that annotation |
+| Written | On | When |
+|---------|----|------|
+| `metadata.finalizers` (its own entry) | Every kind it cleans up after | First reconcile; removed on deletion |
+| `neo4j.com/scale-down-draining-servers` annotation | `Neo4jEnterpriseCluster` | While a scale-down drains servers |
+| `neo4j.com/external-fleet-deployment-id` annotation | Cluster or standalone | When Aura Fleet Management provisions the deployment |
+| `neo4j.com/restore-in-progress` annotation | `Neo4jEnterpriseStandalone` | While an offline restore holds it stopped |
+| `neo4j.com/cypher-restore-issued`, `cypher-restore-observed-offline`, `restore-pre-hooks-ran`, `point-in-time-path`, `seed-proxy-wait-started` annotations | `Neo4jRestore` | While the restore runs |
+| `neo4j.com/external-*-id`, `neo4j.com/multi-database-probed` annotations | Aura kinds | When the Aura object is created, adopted or probed |
+| `spec.extraEnvFrom` entry and `neo4j.com/seed-creds-auto-inherited-from` annotation | Cluster or standalone | A database seed needs a credentials Secret the CR does not project, and the CR carries `neo4j.com/auto-inherit-seed-creds: "true"` |
+| `spec.env` / `spec.extraEnvFrom` entries and the same annotation | Cluster or standalone | A `Neo4jRestore` from cloud storage needs credentials or an endpoint its target lacks, and the target carries that annotation |
 
 The last two are spec changes you opted into with the annotation, and a GitOps
 tool reports them: add them to your manifests, or tell the tool to ignore those
 fields.
 
-Releases before this one sent the whole object back with the finalizer, so an
-object they created may carry fields you did not write: the defaults above
-(`spec.auth.authenticationProviders` and `authorizationProviders: [native]`,
-`spec.tls: {mode: disabled, strictPeerValidation: true}`,
-`spec.service: {type: ClusterIP}`, on a cluster), `true` where you had set a
-field the CRD defaults to `true` to `false` (`spec.monitoring.enabled`,
-`spec.upgradeStrategy.preUpgradeHealthCheck`, `postUpgradeHealthCheck`,
-`autoPauseOnFailure`, `spec.mcp.readOnly`), and quantities in their canonical
-spelling (`cpu: "0.5"` stored as `500m`). An operator upgrade leaves them as
-they are and restarts nothing. Your next apply puts back each field your
-manifest sets (with `kubectl apply --server-side`, a field the operator wrote is
-a conflict until you pass `--force-conflicts`); remove the others with
-`kubectl patch --type json`. Removing a default restarts nothing. Putting back a
-value of yours does what that edit always does: `monitoring.enabled: false`, or
-your own `authorizationProviders` on a cluster that named no
-`authenticationProviders`, changes what the servers run and restarts them.
+Releases before this one sent the whole object back with every one of these
+writes, so an object they created may carry fields you did not write:
+
+- On a cluster, the defaults above: `spec.auth.authenticationProviders` and
+  `authorizationProviders: [native]`, `spec.tls: {mode: disabled,
+  strictPeerValidation: true}`, `spec.service: {type: ClusterIP}`.
+- `true` where you had set a field the CRD defaults to `true` to `false`:
+  `spec.monitoring.enabled`, `spec.upgradeStrategy.preUpgradeHealthCheck`,
+  `postUpgradeHealthCheck`, `autoPauseOnFailure` and `spec.mcp.readOnly` (cluster
+  and standalone); `Neo4jRole` `spec.enforcePrivileges`; `Neo4jAuthRule`
+  `spec.enforceRoles`; `Neo4jPlugin` `spec.enabled`; `Neo4jDatabase`
+  `spec.ifNotExists` and `spec.wait`; a backup's or restore's cloud
+  `identity.autoCreate.enabled`.
+- No field at all where you had set a field with no default to `false` (an
+  `AuraInstance`'s `deletionProtection: false`).
+- Quantities in their canonical spelling (`cpu: "0.5"` stored as `500m`).
+
+An operator upgrade leaves them as they are, and every object goes on doing
+what its stored spec says, as it did before the upgrade: nothing restarts. Your
+next apply puts back each field your manifest sets (with
+`kubectl apply --server-side`, a field the operator wrote is a conflict until
+you pass `--force-conflicts`); remove the others with `kubectl patch --type
+json`. Removing a default changes nothing. Putting back a value of yours does
+what that edit always does: `monitoring.enabled: false`, or your own
+`authorizationProviders` on a cluster that named no `authenticationProviders`,
+changes what the servers run and restarts them; a role's
+`enforcePrivileges: false` stops it revoking privileges added outside its
+spec.
 
 ## Prometheus ServiceMonitor
 

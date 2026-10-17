@@ -501,7 +501,7 @@
         "name": "enabled",
         "type": "bool",
         "isNullable": true,
-        "note": "Default true"
+        "note": "Default true An explicit false is kept in the stored spec: the operator writes the CR only as merge patches (operations.md id 150); releases before that turned it into true on the first pass."
       },
       {
         "id": "f-neo4jplugin-install-mode",
@@ -671,7 +671,7 @@
         "id": "f-neo4jdatabase-if-not-exists",
         "name": "ifNotExists",
         "type": "bool",
-        "note": "Defaults true; create database only if it doesn't exist."
+        "note": "Defaults true; create database only if it doesn't exist. An explicit false is kept in the stored spec: the operator writes the CR only as merge patches (operations.md id 150); releases before that turned it into true on the first pass."
       },
       {
         "id": "f-neo4jdatabase-topology-primaries",
@@ -1787,7 +1787,7 @@
         "name": "enforcePrivileges",
         "type": "bool",
         "isNullable": true,
-        "note": "Default true: controller reverts manual privilege drift. False: applies only at creation, never revokes out-of-band grants."
+        "note": "Default true: controller reverts manual privilege drift. False: applies only at creation, never revokes out-of-band grants. An explicit false is kept in the stored spec: the operator writes the CR only as merge patches (operations.md id 150); releases before that turned it into true on the first pass."
       },
       {
         "id": "f-neo4jrole-adopt-builtin",
@@ -1982,7 +1982,7 @@
         "name": "enforceRoles",
         "type": "bool",
         "isNullable": true,
-        "note": "Default true: revokes out-of-band roles not in grantedRoles. False: only adds, never revokes."
+        "note": "Default true: revokes out-of-band roles not in grantedRoles. False: only adds, never revokes. An explicit false is kept in the stored spec: the operator writes the CR only as merge patches (operations.md id 150); releases before that turned it into true on the first pass."
       },
       {
         "id": "f-neo4jauthrule-deletion-policy",
