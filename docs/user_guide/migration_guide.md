@@ -580,6 +580,76 @@ No CRD changes; upgrading the operator restarts no server.
   is now announced when it starts to apply and again every 30 minutes while it
   still does, so it stays visible in `kubectl describe` without the flood.
 
+## Upgrading from v1.21.x
+
+Apply the new CRDs before upgrading the operator. Only field descriptions changed (the `spec.upgradeStrategy` timeouts and strategy, `Neo4jDatabase` status fields, `Neo4jShardedDatabase`'s `ifNotExists`), and the operator needs no new permissions. Upgrading the operator restarts no server by itself, except as listed under [Restarts after the upgrade](#restarts-after-the-upgrade).
+
+### Act now: re-apply manifests that set `false`
+
+Earlier releases wrote most custom resources back whole when they added a finalizer or an annotation, and so stored values you never wrote (see "The operator no longer rewrites the spec you applied" below). The upgrade does not undo what they stored. If you set any of these, re-apply the manifest after upgrading — with server-side apply, add `--force-conflicts`:
+
+- `enforcePrivileges: false` on a `Neo4jRole`, or `enforceRoles: false` on a `Neo4jAuthRule`. They were stored as `true`, so the operator has been revoking privileges and roles you chose to keep.
+- `spec.mcp.readOnly: false` on a cluster or standalone. It was stored as `true`, so the MCP server has run read-only.
+- Any other `false` the CRD defaults to `true`: `Neo4jPlugin.enabled`, `Neo4jDatabase.ifNotExists` and `wait`, and on a cluster or standalone `spec.monitoring.enabled` and the `spec.upgradeStrategy` flags (`preUpgradeHealthCheck`, `postUpgradeHealthCheck`, `autoPauseOnFailure`).
+- `spec.auth.authorizationProviders` on a cluster that set no `authenticationProviders`. Both lists were stored as `[native]`.
+- Provider settings in `spec.config` (`dbms.security.authentication_providers`, `dbms.security.authorization_providers`) on a cluster that set no `spec.auth` lists. Both lists were stored as `[native]`, which take precedence over `spec.config`, and re-applying does not remove them. Remove them by hand:
+
+  ```bash
+  kubectl patch neo4jenterprisecluster <name> --type=json -p \
+    '[{"op":"remove","path":"/spec/auth/authenticationProviders"},{"op":"remove","path":"/spec/auth/authorizationProviders"}]'
+  ```
+
+Re-applying `monitoring.enabled: false` or a provider list changes what the servers run, so they restart (rolling); a plugin re-applied with `enabled: false` is uninstalled.
+
+Two more were stored differently but behave the same, so they show only as drift in GitOps tools: `identity.autoCreate.enabled: false` on a backup or restore was stored as `true` (the field has no effect yet), and a `false` with no CRD default, such as an `AuraInstance`'s `deletionProtection: false`, was dropped.
+
+### Newly refused — check your manifests first
+
+Run `kubectl neo4j validate -f <manifests>` (add `--connect` to also check image tags against what the deployment runs) before upgrading. A cluster or standalone that carries one of these turns `Failed`, and the operator makes no further changes to it until it is fixed. Its running servers are left alone; the databases, users and backups that target it wait. A composite database or alias refused for a name turns `Failed` itself.
+
+- **`spec.config` values Neo4j cannot parse.** 46 commonly set settings are type-checked the way Neo4j parses them, in `spec.config` and in a cluster's `spec.propertySharding.config`: `db.tx_log.buffer.size: "1MiB"` (write `1048576`), `server.memory.heap.max_size: "2Gi"` (write `2G` or `2GiB`), `db.transaction.timeout: "30 sec"`, `db.logs.query.enabled: "true"` (use `INFO`), or an empty value for one of them. Each of these would have stopped the server at its next start. Memory sizes in Neo4j's own units such as `1GiB` or `512MB`, previously refused as "invalid memory format" when a memory limit was set, are now accepted.
+- **Downgrades.** Once a cluster has been `Ready`, `spec.image.tag` is checked against `status.version` (what the servers run) on every pass, mid-upgrade included, and a lower tag is refused before anything changes. Earlier releases let it through to the upgrade, which then failed. Once a rolling upgrade has restarted a server on its target, a tag below that target is refused too, `status.version` included: those servers would be rolled back. A standalone's tag is checked against its `status.version` (it had no check before). Upgrade paths are otherwise unchanged: CalVer only from 5.26.
+- **Upgrade timeouts of zero or less** on a cluster (`spec.upgradeStrategy.upgradeTimeout`, `healthCheckTimeout`, `stabilizationTimeout`).
+- **Names that differ only in case** (`Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`): two constituents of one composite, a constituent that targets its own composite, or an alias that targets a database of its own name, in another case.
+- **An enabled `spec.auth.externalSecrets` that `spec.tls.externalSecrets` would refuse**: no `secretStoreRef` or store name, an unknown store `kind`, no `data` entries, or a bad `refreshInterval`. Before, a block without a `secretStoreRef` panicked on every pass of its cluster before any server was built; the rest were accepted.
+
+### Behaviour changes
+
+- **The operator no longer rewrites the spec you applied.** Every write of a custom resource (finalizers, annotations) is a patch of what changed, and defaults fill only what you left unset, in memory. Earlier releases sent the whole object back, so a `false` the CRD defaults to `true` came back `true`, a `false` with no default was dropped, quantities were re-spelled (`cpu: "0.5"` as `500m`), and a cluster's first accepted pass stored the operator's defaults (`tls`, `service`, both auth provider lists, the image pull policy). Objects keep what earlier releases stored; see [Act now](#act-now-re-apply-manifests-that-set-false). Rendering is unchanged for every spec an earlier release stored, so this restarts nothing (one exception is under [Restarts after the upgrade](#restarts-after-the-upgrade)).
+- **A Paused or Failed rolling upgrade holds where it stopped.** The servers it has not reached stay on the old version until it goes on: a `Failed` upgrade is retried once every server is available; a `Paused` one resumes on a new `spec.image.tag`, or when `spec.upgradeStrategy.autoPauseOnFailure` is turned off, and an `UpgradeStarted` event says it resumed. Earlier releases restarted the remaining servers onto the target at the next pass, without the database catch-up checks, and a Paused upgrade could not resume. While it holds, the cluster is `Ready` once every server is available, `status.message` names the held upgrade, and the rest of reconciliation runs. See [When an upgrade stops](guides/upgrades.md#when-an-upgrade-stops-paused-and-failed).
+- **Upgrades to a tag without a patch complete.** An upgrade to a tag such as `2026.08-enterprise` is verified against any patch of its line; a tag with a patch must still match exactly. Earlier releases failed it after every server had restarted.
+- **Events are announced once.** `ValidationFailed` (all 12 kinds that emit it), `DatabaseReady`, `BackupScheduled`, the sharded database's state events and about 40 other Warnings are emitted when the condition starts (or its message changes), not on every reconcile, and not again after an operator restart. Ten more Warnings that stay true while the resource works, such as `RouteAPINotFound` and `MCPApocMissing`, now follow `ValidationWarning`: once, then every 30 minutes while they still apply. A retried storage expansion or replica promotion keeps showing its last failure until it succeeds, instead of changing phase on every attempt. Alerts that count repeats will see fewer events.
+- **Waits are `Pending`, not `Failed`.** A precondition you can fix and the operator retries now waits in `Pending`, naming what is missing, and carries on by itself once fixed: a `Neo4jRestore` missing seed credentials; a `Neo4jShardedDatabase` missing seed credentials or whose `clusterRef` names no cluster; a `Neo4jDatabase` waiting for seed credentials (was `Unknown`); a `Neo4jReplicaDatabase` whose servers lack `AWS_REGION` (Warning reason `ReplicaObjectStoreEnvMissing`, was `ReplicaFailed`). Argo CD shows the restore, sharded-database and replica waits as Progressing instead of Degraded. An `AuraInstance` deletion that `deletionProtection` blocks sets `Synced=False` with reason `DeletionProtected`.
+- **Plugins wait for a fully available target.** A plugin install, repair or trusted-CA update waits in `Waiting` while its target is not `Ready` with every server available, with one `PluginInstallDeferred` event (`PluginMissing` for a repair). Plugins applied together with a new cluster install once it is `Ready`.
+- **A failed plugin install is retried** every 30 seconds, with one `PluginInstallFailed` Warning per failure. It used to stay `Failed` until the CR was edited or the operator restarted. A server that cannot be reached mid-install keeps the plugin `Installing`, with no Warning.
+- **A `Ready` plugin repairs its target.** If `NEO4J_PLUGINS`, a variable the plugin sets, or a `VerifiedDownload` init container or volume is removed from the target's StatefulSet, the plugin turns `Installing` with one `PluginMissing` Warning and puts it back (one rolling restart). A plugin that would change a variable the cluster renders itself (typically `NEO4J_PLUGINS` in `spec.env`) goes `Failed` with one `PluginInstallFailed` Warning and retries every 30 seconds, instead of the two controllers restarting the servers in turn.
+- **A `VerifiedDownload` plugin follows `trustedCASecrets`.** Changing the target's `spec.trustedCASecrets` restarts its servers twice: for the target's truststore, then for the plugin's `plugin-ca` volume. The first time after upgrading, delete a removed CA's Secret only once the plugin is `Ready` again: a volume an earlier version wrote still requires it. A `VerifiedDownload` install is now one StatefulSet write, so one restart.
+- **`RestartPending` tracks connect-timeout changes.** A change of `dbms.cluster.network.connect_timeout` (applied live; Neo4j's Raft connections take it up at each server's next restart) names the servers that have not restarted since. Upgrading from v1.21.x names nobody, including servers that took the 5s value live under v1.21.x and have not restarted since.
+- **`upgradeStrategy.strategy: Recreate` now applies changes.** A cluster upgrades through the rolling-upgrade state machine one server at a time, with a `ValidationWarning` saying so; a cluster whose new `spec.image.tag` was held back starts that upgrade. A cluster's or standalone's StatefulSet switches from `OnDelete` to `RollingUpdate`, so template changes that were stuck roll out.
+- **Role privileges re-learn only for aliases a role names.** Statements on `*`, `HOME`, `DEFAULT` and `DBMS` no longer re-learn on alias changes. After upgrading, a role on a cluster with an alias it doesn't name re-learns once (no-op grants, not reported), then settles. `PrivilegesApplied` counts only the grants that created a row.
+- **Database names are compared ignoring case**, as Neo4j does. Resources with capitals stop re-sending `CREATE`/`ALTER` on every pass, and a `Neo4jDatabase` or `Neo4jReplicaDatabase` that went `Failed` with "already exists" recovers. A `Neo4jRestore` naming a sharded database in another case is refused and pointed at the `Neo4jShardedDatabase` restore path, as the same spelling was.
+- **`kubectl neo4j validate`** runs the rules the operator runs on every pass — for a cluster after the operator's defaults, `spec.upgradeStrategy` included; `--connect` also checks a cluster's or standalone's tag against the version it runs. `preflight` marks a pass with ✓.
+- **Messages that alerts may match.** A cluster refused before it was ever accepted reports "Cluster validation failed", not "Update validation failed". `BackupScheduled` names the schedule, so a `spec.schedule` edit is announced.
+
+### Fixes
+
+- **A deployment with an OpenShift Route reconciles.** Since v1.13.0, every pass of a cluster or standalone with `spec.service.route.enabled` or an MCP Route (`spec.mcp.http.service.route.enabled`) panicked before the server StatefulSet was built, on OpenShift and elsewhere. Such a deployment never got any servers, and one that enabled a Route later stopped being reconciled; it gets its servers once the upgraded operator runs.
+- **The per-server checks find the admin Secret on a cluster that names none.** Live config, TLS reload, `RestartPending`, split-brain detection and the upgrade's database gate refused a cluster without `spec.auth.adminSecret`; they now use `neo4j-admin-secret`, as the operator's other connections do. On such a cluster a rolling upgrade failed after its first server once `upgradeTimeout` passed, a dynamic `spec.config` change restarted the servers instead of being applied live, and split-brain detection could not connect.
+- **The cluster controller no longer removes a `VerifiedDownload` plugin's init container** and its `plugin-auth-<name>` / `plugin-ca` volumes when it applies its StatefulSet template. Before, the servers restarted without the plugin's JAR while the plugin stayed `Ready`.
+- `Neo4jDatabase` `status.state` and `status.servers` follow `SHOW DATABASES`.
+- A `Neo4jShardedDatabase` stays `Ready` after a `replaceExisting` restore; mixed-case names get their shard status.
+- A `VerifiedDownload` plugin's trusted CAs follow the cluster's or standalone's `spec.trustedCASecrets`.
+- `status.version` records the image tag the servers have rolled out, not `spec.image.tag`.
+- `kubectl neo4j diagnose` no longer says Enterprise images need a pull secret; an image-pull failure names the registry's likely answer.
+
+### Restarts after the upgrade
+
+- A plugin whose target lost its `NEO4J_PLUGINS` entry, a variable it sets, or a `VerifiedDownload` init container or volume under an earlier version restores it: one `PluginMissing` Warning and one rolling restart, once the target is `Ready` with every server available. Expect this on most clusters with a `Ready` `VerifiedDownload` plugin.
+- A `VerifiedDownload` plugin whose target's `spec.trustedCASecrets` changed after the plugin was installed updates its `plugin-ca` volume: one rolling restart, with the plugin `Installing` "Updating the plugin's trusted CAs".
+- A cluster or standalone with `strategy: Recreate` applies what it held back: template changes made since roll out, and a cluster whose `spec.image.tag` was changed starts a rolling upgrade to it, one server at a time.
+- A cluster whose stored spec names authorization providers but no authentication providers, or names its providers only in `spec.config`, now gets those providers instead of `native`, and its servers restart. Such a spec exists only if the stored lists were removed after the first pass (for example by `kubectl replace`).
+- New StatefulSet annotations (`neo4j.com/cluster-controller-init-containers`, `-volumes`) are written at the next template apply; writing them restarts nothing.
+
 ## Upgrading between future releases
 
 When a newer version ships:
