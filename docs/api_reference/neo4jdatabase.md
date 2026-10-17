@@ -36,7 +36,7 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 | Field | Type | Description |
 |---|---|---|
 | `clusterRef` | `string` | **Required.** Name of the target `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. For databases on a Neo4j Aura instance, use the `AuraDatabase` CRD instead. |
-| `name` | `string` | **Required**. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. `system` is reserved; `neo4j` is allowed with a warning (it shadows the default database) |
+| `name` | `string` | **Required**. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. `system` is reserved; `neo4j` is allowed with a warning (it shadows the default database). Neo4j names are case-insensitive and stored lower-cased, so `Sales` creates the database `SHOW DATABASES` lists as `sales`, and the operator finds it by either spelling |
 | `wait` | `boolean` | Wait for database creation to complete (default: `true`) |
 | `ifNotExists` | `boolean` | Create only if database doesn't exist - prevents reconciliation errors (default: `true`) |
 | `topology` | [`DatabaseTopology`](#databasetopology) | Database distribution topology (cluster only; ignored, with a warning, for a standalone target). Applied at `CREATE DATABASE` only — an existing database is observed, not altered |

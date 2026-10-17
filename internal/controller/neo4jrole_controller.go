@@ -557,16 +557,25 @@ func (r *Neo4jRoleReconciler) compositeGraphTargets(
 		// Cannot look, so cannot claim. Silence beats a wrong warning.
 		return nil
 	}
+	return compositesAmong(named, databases)
+}
+
+// compositesAmong returns the names in named that a SHOW DATABASES listing
+// has as composite databases, as the privileges wrote them. Matched ignoring
+// case, as resolvableDatabaseNames matches: Neo4j lists `Travel` as `travel`,
+// and an exact match never warned about a GRAPH grant on a composite whose
+// name the privilege spelled with capitals.
+func compositesAmong(named []string, databases []neo4jclient.DatabaseInfo) []string {
 	composite := map[string]bool{}
 	for _, db := range databases {
 		if db.Type == neo4jclient.CompositeDatabaseType {
-			composite[db.Name] = true
+			composite[strings.ToLower(db.Name)] = true
 		}
 	}
 
 	var out []string
 	for _, name := range named {
-		if composite[name] {
+		if composite[strings.ToLower(name)] {
 			out = append(out, name)
 		}
 	}

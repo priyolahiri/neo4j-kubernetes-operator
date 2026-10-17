@@ -437,7 +437,7 @@ func TestShardedShardNamePattern(t *testing.T) {
 		"products-x000",      // wrong shard prefix
 		"productsales",       // unrelated DB starting with same prefix — the POISONING case
 		"productsales-g000",  // same prefix, different family
-		"PRODUCTS-G000",      // case-sensitive: Neo4j DB names are case-preserving
+		"PRODUCTS-G000",      // the pattern matches as written; shardedGlobPoisoning lower-cases both sides (Neo4j lists names lower-cased)
 		"products-G000",      // mixed case in shard prefix
 		"products-g000.test", // extra suffix
 	}

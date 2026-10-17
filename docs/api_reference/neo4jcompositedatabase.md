@@ -56,8 +56,8 @@ A `composite: true` flag would leave most of that spec silently inert.
 
 | Field | Type | Description |
 |---|---|---|
-| `name` | `string` | **Required.** The constituent's name within the composite. The resulting alias is `<composite>.<name>`, which is also how queries address it. 1–63 characters, `^[a-zA-Z][a-zA-Z0-9\-]*$` (no dots or underscores — it is already namespaced). Must be unique within the composite. |
-| `targetDatabase` | `string` | **Required.** 1–63 characters. The database the constituent resolves to — in this DBMS when `remote` is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. May not be `system`, nor the composite itself. |
+| `name` | `string` | **Required.** The constituent's name within the composite. The resulting alias is `<composite>.<name>`, which is also how queries address it. 1–63 characters, `^[a-zA-Z][a-zA-Z0-9\-]*$` (no dots or underscores — it is already namespaced). Must be unique within the composite, ignoring case: Neo4j lower-cases alias names, so `Latest` and `latest` are one constituent. |
+| `targetDatabase` | `string` | **Required.** 1–63 characters. The database the constituent resolves to — in this DBMS when `remote` is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. May not be `system`, nor the composite itself in any case. |
 | `remote` | [`RemoteConstituent`](#remoteconstituent) | Points the constituent at a database in **another** Neo4j DBMS. Omit for a local constituent. |
 
 ### RemoteConstituent

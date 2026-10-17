@@ -156,10 +156,13 @@ func (r *Neo4jShardedDatabaseReconciler) findSeedRun(ctx context.Context, sharde
 }
 
 // findFamilyArtifacts returns the per-shard artifacts for the named logical
-// family from an all-databases run's ShardedFamilies, or nil if absent.
+// family from an all-databases run's ShardedFamilies, or nil if absent. The
+// family is matched ignoring case: the run catalogues the names neo4j-admin
+// listed, lower-cased as Neo4j stores them, and spec may spell it with
+// capitals.
 func findFamilyArtifacts(run *neo4jv1beta1.BackupRun, family string) []neo4jv1beta1.ShardArtifact {
 	for i := range run.ShardedFamilies {
-		if run.ShardedFamilies[i].Family == family {
+		if strings.EqualFold(run.ShardedFamilies[i].Family, family) {
 			return run.ShardedFamilies[i].ShardArtifacts
 		}
 	}

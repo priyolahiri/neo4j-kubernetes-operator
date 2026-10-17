@@ -1009,15 +1009,18 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	// CR. Detect via Neo4jShardedDatabase lookup in the same namespace.
 	// Match by the DATABASE name (Neo4jShardedDatabase.spec.name), not just
 	// the CR name — a sharded DB whose CR is named differently previously
-	// escaped this guard into the unsupported recreate path (#218). List is
-	// namespace-scoped and sharded CRs are rare, so this stays cheap.
+	// escaped this guard into the unsupported recreate path (#218). Names are
+	// compared ignoring case, as Neo4j compares database names: `Products` and
+	// `products` are one database, and an exact match let a restore spelled
+	// the other way through the guard. List is namespace-scoped and sharded
+	// CRs are rare, so this stays cheap.
 	shardedList := &neo4jv1beta1.Neo4jShardedDatabaseList{}
 	if err := r.List(ctx, shardedList, client.InNamespace(restore.Namespace)); err != nil {
 		return fmt.Errorf("failed to check whether %q is a Neo4jShardedDatabase: %w", restore.Spec.Database, err)
 	}
 	for i := range shardedList.Items {
 		sd := &shardedList.Items[i]
-		if sd.Name == restore.Spec.Database || sd.Spec.Name == restore.Spec.Database {
+		if strings.EqualFold(sd.Name, restore.Spec.Database) || strings.EqualFold(sd.Spec.Name, restore.Spec.Database) {
 			return fmt.Errorf(
 				"database %q is a Neo4jShardedDatabase (CR %q) — use the Neo4jShardedDatabase restore path instead:\n"+
 					"  spec:\n"+
@@ -1631,9 +1634,13 @@ func (r *Neo4jRestoreReconciler) resolveRestoreSource(ctx context.Context, resto
 // records, and it already names the exact file. Found by the v1.15.0
 // release-verify journey, where the documented cross-topology scenario (Phase
 // 2 of docs/developer_guide/release_verification.md) failed on it.
+//
+// The map holds the names neo4j-admin listed, lower-cased as Neo4j stores
+// every database name; the restore may spell the name with capitals, so it is
+// matched ignoring case.
 func artifactForDatabase(artifacts []neo4jv1beta1.DatabaseArtifact, database string) string {
 	for i := range artifacts {
-		if artifacts[i].Database == database && artifacts[i].Filename != "" {
+		if strings.EqualFold(artifacts[i].Database, database) && artifacts[i].Filename != "" {
 			return artifacts[i].Filename
 		}
 	}
@@ -1687,7 +1694,9 @@ func standaloneRestoreArtifact(restore *neo4jv1beta1.Neo4jRestore, dir string) (
 	artifact := snap.ArtifactFilename
 	if artifact != "" {
 		if want := restore.Spec.Source.SourceDatabase; want != "" {
-			if have := artifactDatabase(artifact); have != "" && have != want {
+			// Ignoring case: the artifact carries the name as Neo4j stores
+			// it, lower-cased.
+			if have := artifactDatabase(artifact); have != "" && !strings.EqualFold(have, want) {
 				return "", fmt.Errorf("spec.source.sourceDatabase is %q but Neo4jBackup %q holds database %q; omit sourceDatabase for a backup of one database", want, snap.BackupRef, have)
 			}
 		}
@@ -1717,7 +1726,9 @@ func standaloneRestoreFromPath(restore *neo4jv1beta1.Neo4jRestore, backupPath st
 		return resolveLocalPVCFromPath(backupPath, restoreSourceDatabase(restore)), nil
 	case backupPath == "":
 		return "", nil
-	case restoreSourceDatabase(restore) != restore.Spec.Database:
+	case !strings.EqualFold(restoreSourceDatabase(restore), restore.Spec.Database):
+		// Another name, not another spelling of the same one: neo4j-admin
+		// matches --database ignoring case, as Neo4j matches every name.
 		return "", fmt.Errorf("restoring %q as %q needs the exact .backup artifact: neo4j-admin restores under a different name only from a single file, and %s is a directory. Set source.backupPath to the <database>-<timestamp>.backup file (listed in the Neo4jBackup's status.history), or use source.type=backup",
 			restoreSourceDatabase(restore), restore.Spec.Database, backupPath)
 	default:

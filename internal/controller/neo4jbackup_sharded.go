@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -39,7 +40,8 @@ import (
 // target sharded DB and not an unrelated database that happens to share the
 // logical name as a prefix.
 //
-// Build the regex per-target since the logical name is user-supplied.
+// Build the regex per-target since the logical name is user-supplied. It
+// matches as written; shardedGlobPoisoning lower-cases both sides first.
 func shardedShardNamePattern(logicalName string) *regexp.Regexp {
 	// QuoteMeta escapes any regex special chars in the user-supplied name so
 	// e.g. a logical name containing "." can't widen the match.
@@ -123,16 +125,32 @@ func (r *Neo4jBackupReconciler) shardedPreflightGlobSafety(ctx context.Context, 
 	}
 
 	logical := r.shardedLogicalNameForBackup(ctx, backup)
-	shardPattern := shardedShardNamePattern(logical)
-	prefix := logical
+	if poisoning := shardedGlobPoisoning(logical, dbs); len(poisoning) > 0 {
+		return fmt.Errorf("backup glob %q would also match unrelated database(s): %v — rename or drop the conflicting database(s) before running this backup", logical+"*", poisoning)
+	}
+	return nil
+}
+
+// shardedGlobPoisoning returns the databases in a SHOW DATABASES listing that
+// the backup glob `{logical}*` would match outside the sharded family itself.
+//
+// Names are compared lower-cased. neo4j-admin matches the glob ignoring case
+// (DatabaseNamePattern compiles it CASE_INSENSITIVE) and SHOW DATABASES lists
+// every name lower-cased, while the logical name comes from spec, which may
+// spell it with capitals. Compared as written, `Products` matched no database
+// at all, so the check passed while the backup took `productsales` along.
+func shardedGlobPoisoning(logical string, dbs []neo4jclient.DatabaseInfo) []string {
+	prefix := strings.ToLower(logical)
+	shardPattern := shardedShardNamePattern(prefix)
 	var poisoning []string
 	for _, db := range dbs {
 		// SHOW DATABASES returns duplicate rows per database (one per role).
-		// Filter by exact name match against the prefix and shard regex.
-		if len(db.Name) < len(prefix) || db.Name[:len(prefix)] != prefix {
+		// Filter by name against the prefix and shard regex.
+		name := strings.ToLower(db.Name)
+		if !strings.HasPrefix(name, prefix) {
 			continue
 		}
-		if db.Name == logical {
+		if name == prefix {
 			// The "virtual" aggregated database — same name as the logical
 			// sharded DB. Today this doesn't appear in SHOW DATABASES until
 			// first access (per neo4jshardeddatabase_controller.go), but if a
@@ -140,7 +158,7 @@ func (r *Neo4jBackupReconciler) shardedPreflightGlobSafety(ctx context.Context, 
 			// since it's part of the same sharded family.
 			continue
 		}
-		if shardPattern.MatchString(db.Name) {
+		if shardPattern.MatchString(name) {
 			continue
 		}
 		// Deduplicate names that appear once per role row.
@@ -148,10 +166,7 @@ func (r *Neo4jBackupReconciler) shardedPreflightGlobSafety(ctx context.Context, 
 			poisoning = append(poisoning, db.Name)
 		}
 	}
-	if len(poisoning) > 0 {
-		return fmt.Errorf("backup glob %q would also match unrelated database(s): %v — rename or drop the conflicting database(s) before running this backup", logical+"*", poisoning)
-	}
-	return nil
+	return poisoning
 }
 
 func contains(s []string, v string) bool {

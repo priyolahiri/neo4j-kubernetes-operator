@@ -19,6 +19,7 @@ package neo4j
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
@@ -57,13 +58,19 @@ type AliasInfo struct {
 
 // ShowAlias returns the alias with the given name, or nil when no such alias
 // exists.
+//
+// The name is matched ignoring case: Neo4j normalises alias names to lower
+// case as it does database names (both go through NormalizedDatabaseName), so
+// SHOW ALIASES lists the alias created as `Front` as `front`. An exact match
+// called it absent, and the alias controller re-sent CREATE ALIAS on every
+// pass.
 func (c *Client) ShowAlias(ctx context.Context, aliasName string) (*AliasInfo, error) {
 	rows, err := c.ShowAliases(ctx)
 	if err != nil {
 		return nil, err
 	}
 	for i := range rows {
-		if rows[i].Name == aliasName {
+		if strings.EqualFold(rows[i].Name, aliasName) {
 			return &rows[i], nil
 		}
 	}
