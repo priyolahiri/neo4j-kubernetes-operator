@@ -924,6 +924,10 @@ spec:
 > The default is off to keep the operator's RBAC blast radius narrow for
 > deployments that don't actually use the integration.
 
+An enabled `spec.tls.externalSecrets` or `spec.auth.externalSecrets` block on a
+cluster needs a `secretStoreRef` (with a `name`) and at least one `data`
+mapping; validation refuses the cluster without them.
+
 ```yaml
 # SecretStore for AWS Secrets Manager
 apiVersion: external-secrets.io/v1beta1

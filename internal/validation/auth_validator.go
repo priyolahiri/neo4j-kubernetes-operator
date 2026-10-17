@@ -61,7 +61,15 @@ func NewAuthValidator() *AuthValidator {
 
 // Validate validates the authentication configuration
 func (v *AuthValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
-	return v.ValidateAuthSpec(cluster.Spec.Auth, field.NewPath("spec", "auth"))
+	allErrs := v.ValidateAuthSpec(cluster.Spec.Auth, field.NewPath("spec", "auth"))
+	// Only the cluster builds an ExternalSecret from spec.auth.externalSecrets
+	// (the standalone never reads it), so only the cluster checks it — with the
+	// same rules as spec.tls.externalSecrets.
+	if auth := cluster.Spec.Auth; auth != nil && auth.ExternalSecrets != nil && auth.ExternalSecrets.Enabled {
+		allErrs = append(allErrs, ValidateExternalSecretsConfig(auth.ExternalSecrets,
+			field.NewPath("spec", "auth", "externalSecrets"))...)
+	}
+	return allErrs
 }
 
 // ValidateAuthSpec validates an AuthSpec (shared between cluster and standalone).
