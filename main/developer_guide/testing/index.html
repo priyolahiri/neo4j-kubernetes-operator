@@ -5891,7 +5891,7 @@ example file).</p>
 </tr>
 <tr>
 <td>exposure: <code>nodeport</code>/<code>loadbalancer</code>/<code>ingress</code>/<code>route-cluster</code></td>
-<td>❌ example-only (need a real LB / Ingress / OpenShift)</td>
+<td>❌ example-only (need a real LB / Ingress / OpenShift); the Route and MCP Route reconcile itself is unit-tested against a fake client serving <code>route.openshift.io/v1</code> (<code>internal/controller/unstructured_content_test.go</code>)</td>
 </tr>
 <tr>
 <td><code>databases/database-from-{gcs,azure}-seed</code>, cloud backup to GCS/Azure</td>
