@@ -91,6 +91,20 @@
         "note": "Name of a Kubernetes Secret (keys: username, password) holding initial admin credentials; Secret is not modeled here"
       },
       {
+        "id": "f-neo4jenterprisecluster-auth-authentication-providers",
+        "name": "auth.authenticationProviders",
+        "type": "[]string",
+        "isNullable": true,
+        "note": "Ordered list written into dbms.security.authentication_providers (native, ldap, oidc-<name>, plugin-<name>); a list set here wins over the same setting in spec.config. Unset here and in spec.config, the operator writes Neo4j's default, native, on each pass, never into the stored spec (operations.md id 150)."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-auth-authorization-providers",
+        "name": "auth.authorizationProviders",
+        "type": "[]string",
+        "isNullable": true,
+        "note": "Ordered list written into dbms.security.authorization_providers; kept as written. Unset here and in spec.config, Neo4j's default, native, applies: the operator writes it out when authenticationProviders is unset too, and nothing otherwise (operations.md id 150)."
+      },
+      {
         "id": "f-neo4jenterprisecluster-monitoring-enabled",
         "name": "monitoring.enabled",
         "type": "bool",

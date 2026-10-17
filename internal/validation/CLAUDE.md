@@ -73,6 +73,12 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 - **`ApplyDefaults` adds no field an error can be reported on.** The CLI applies it before validating,
   as the reconciler does, and a finding must name a field the user wrote or one that is missing (the
   nameless `spec.tls.issuerRef` default was removed for that, id 144).
+- **`ApplyDefaults` only fills gaps, on a copy nothing writes back** (`docs/knowledge/operations.md`
+  id 150). It never replaces a value the user set — a provider setting in `spec.config` counts as set —
+  and a default it shares with the CRD says what the `+kubebuilder:default` marker says
+  (`TestClusterValidator_ApplyDefaults_AgreesWithTheCRDDefaults` reads the CRD YAML). Adding a default
+  that changes what is rendered for an existing spec restarts its servers on upgrade
+  (`TestClusterValidator_ApplyDefaults_RendersAsTheDefaultsAnEarlierOperatorStored`).
 - **Every published manifest is validated in CI** by `TestPublishedManifestsPassOurOwnValidators`,
   which walks `examples/` and `config/samples/`. Three shipped examples were unappliable before
   it existed, and `kubectl apply --dry-run=server` accepted all of them — the CRD schema cannot
