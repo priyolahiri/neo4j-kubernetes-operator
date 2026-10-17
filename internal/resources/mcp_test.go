@@ -333,10 +333,7 @@ func TestBuildMCPRouteForCluster_DefaultPath(t *testing.T) {
 	require.NotNil(t, route)
 	assert.Equal(t, "graph-cluster-mcp-route", route.GetName())
 
-	metadata, ok := route.Object["metadata"].(map[string]interface{})
-	require.True(t, ok)
-	annotations, ok := metadata["annotations"].(map[string]string)
-	require.True(t, ok)
+	annotations := route.GetAnnotations()
 	assert.Equal(t, "annotation", annotations["service"])
 	assert.Equal(t, "annotation", annotations["route"])
 
@@ -345,9 +342,9 @@ func TestBuildMCPRouteForCluster_DefaultPath(t *testing.T) {
 	// Fixed path /mcp (official image).
 	assert.Equal(t, "/mcp", path)
 
-	targetPort, _, err := unstructured.NestedFieldNoCopy(route.Object, "spec", "port", "targetPort")
+	targetPort, _, err := unstructured.NestedInt64(route.Object, "spec", "port", "targetPort")
 	require.NoError(t, err)
-	assert.Equal(t, int32(9443), targetPort)
+	assert.Equal(t, int64(9443), targetPort)
 }
 
 func baseCluster(name string) *neo4jv1beta1.Neo4jEnterpriseCluster {

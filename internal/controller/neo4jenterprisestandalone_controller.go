@@ -2828,6 +2828,8 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileServiceMonitor(ctx contex
 		"app.kubernetes.io/instance": standalone.Name,
 	})
 
+	// Unstructured content holds JSON types only: lists are []any, never
+	// []map[string]any (operations.md id 148).
 	serviceMonitor.Object["spec"] = map[string]any{
 		"selector": map[string]any{
 			"matchLabels": map[string]any{
@@ -2841,8 +2843,8 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileServiceMonitor(ctx contex
 				"neo4j.com/metrics-endpoint": "true",
 			},
 		},
-		"endpoints": []map[string]any{
-			{
+		"endpoints": []any{
+			map[string]any{
 				"port":     "metrics",
 				"interval": "30s",
 				"path":     "/metrics",

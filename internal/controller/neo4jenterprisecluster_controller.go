@@ -2651,7 +2651,8 @@ func (qm *QueryMonitor) setupMetricsCollection(ctx context.Context, cluster *neo
 		"neo4j.com/cluster": cluster.Name,
 	})
 
-	// Set ServiceMonitor spec
+	// Set ServiceMonitor spec. Unstructured content holds JSON types only:
+	// lists are []any, never []map[string]any (operations.md id 148).
 	serviceMonitor.Object["spec"] = map[string]any{
 		"selector": map[string]any{
 			"matchLabels": map[string]any{
@@ -2660,8 +2661,8 @@ func (qm *QueryMonitor) setupMetricsCollection(ctx context.Context, cluster *neo
 				"neo4j.com/role":         "metrics",
 			},
 		},
-		"endpoints": []map[string]any{
-			{
+		"endpoints": []any{
+			map[string]any{
 				"port":     "metrics",
 				"interval": "30s",
 				"path":     "/metrics",
@@ -2708,8 +2709,10 @@ func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1
 
 	// Generate alerting rules using actual Neo4j Prometheus metric names.
 	// Neo4j exposes query latency as a histogram in milliseconds and heap as gauges in bytes.
-	rules := []map[string]any{
-		{
+	// []any, not []map[string]any: unstructured content holds JSON types only
+	// (operations.md id 148).
+	rules := []any{
+		map[string]any{
 			"alert": "Neo4jSlowQueries",
 			"expr":  "histogram_quantile(0.99, rate(neo4j_db_query_execution_latency_millis_bucket[5m])) > 5000",
 			"for":   "5m",
@@ -2721,7 +2724,7 @@ func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1
 				"description": "Neo4j cluster {{ $labels.namespace }}/{{ $labels.job }} p99 query latency exceeds 5 seconds",
 			},
 		},
-		{
+		map[string]any{
 			"alert": "Neo4jHighHeapUsage",
 			"expr":  "neo4j_vm_heap_used / neo4j_vm_heap_max > 0.8",
 			"for":   "5m",
@@ -2736,8 +2739,8 @@ func (qm *QueryMonitor) setupAlertingRules(ctx context.Context, cluster *neo4jv1
 	}
 
 	prometheusRule.Object["spec"] = map[string]any{
-		"groups": []map[string]any{
-			{
+		"groups": []any{
+			map[string]any{
 				"name":  "neo4j-monitoring",
 				"rules": rules,
 			},

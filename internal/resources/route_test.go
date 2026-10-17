@@ -63,7 +63,7 @@ func TestBuildRouteForStandalone(t *testing.T) {
 	// Default path and targetPort
 	g.Expect(spec["path"]).To(Equal("/"))
 	port, _, _ := unstructuredNestedMap(spec, "port")
-	g.Expect(port["targetPort"]).To(Equal(int32(7474)))
+	g.Expect(port["targetPort"]).To(Equal(int64(7474)))
 }
 
 // unstructuredNestedMap is a helper for tests to retrieve nested maps safely

@@ -874,8 +874,9 @@ func BuildExternalSecretForAuth(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ma
 
 // buildExternalSecret is a helper function to create ExternalSecrets for both TLS and Auth
 func buildExternalSecret(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, esConfig *neo4jv1beta1.ExternalSecretsConfig, secretType string) map[string]any {
-	// Build data array
-	var data []map[string]any
+	// Build data array. []any, not []map[string]any: the object is applied as
+	// unstructured content, which holds JSON types only (operations.md id 148).
+	var data []any
 	for _, item := range esConfig.Data {
 		secretData := map[string]any{
 			"secretKey": item.SecretKey,
@@ -923,7 +924,7 @@ func buildExternalSecret(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, esConfig 
 		"metadata": map[string]any{
 			"name":      fmt.Sprintf("%s-%s-external-secret", cluster.Name, secretType),
 			"namespace": cluster.Namespace,
-			"labels":    getLabelsForEnterprise(cluster, "external-secret"),
+			"labels":    jsonStringMap(getLabelsForEnterprise(cluster, "external-secret")),
 		},
 		"spec": map[string]any{
 			"secretStoreRef": map[string]any{
@@ -938,6 +939,20 @@ func buildExternalSecret(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, esConfig 
 			"data":            data,
 		},
 	}
+}
+
+// jsonStringMap returns m as the map type unstructured content holds. A
+// map[string]string inside unstructured content makes DeepCopy panic and reads
+// as absent through GetLabels / NestedStringMap (operations.md id 148).
+func jsonStringMap(m map[string]string) map[string]any {
+	if m == nil {
+		return nil
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = v
+	}
+	return out
 }
 
 // BuildDiscoveryServiceAccountForEnterprise creates the ServiceAccount the
