@@ -6434,6 +6434,9 @@ RBAC-denied error when the operator tries to create the <code>ExternalSecret</co
 The default is off to keep the operator's RBAC blast radius narrow for
 deployments that don't actually use the integration.</p>
 </blockquote>
+<p>An enabled <code>spec.tls.externalSecrets</code> or <code>spec.auth.externalSecrets</code> block on a
+cluster needs a <code>secretStoreRef</code> (with a <code>name</code>) and at least one <code>data</code>
+mapping; validation refuses the cluster without them.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-27-1"><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="c1"># SecretStore for AWS Secrets Manager</span>
 </span><span id="__span-27-2"><a id="__codelineno-27-2" name="__codelineno-27-2" href="#__codelineno-27-2"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">external-secrets.io/v1beta1</span>
 </span><span id="__span-27-3"><a id="__codelineno-27-3" name="__codelineno-27-3" href="#__codelineno-27-3"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">SecretStore</span>
