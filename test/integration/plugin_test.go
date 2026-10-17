@@ -798,8 +798,13 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 				Namespace: namespace.Name,
 			}, currentPlugin)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(currentPlugin.Status.Message).To(ContainSubstring("Waiting for"))
-			Expect(currentPlugin.Status.Message).To(ContainSubstring("to be functional"))
+			// The plugin waits for a functional StatefulSet first and, once the
+			// cluster has one, until it is Ready with every server available;
+			// which of the two this read catches depends on timing.
+			Expect(currentPlugin.Status.Message).To(SatisfyAny(
+				MatchRegexp(`^Waiting for cluster `+clusterName+` to be functional$`),
+				HavePrefix("Waiting until Neo4jEnterpriseCluster "+clusterName+" is Ready with every server available"),
+			))
 
 			By("Cleaning up")
 			Expect(k8sClient.Delete(ctx, plugin)).Should(Succeed())
