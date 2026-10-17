@@ -135,12 +135,11 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(backup, BackupFinalizer) {
-		controllerutil.AddFinalizer(backup, BackupFinalizer)
-		if err := r.Update(ctx, backup); err != nil {
+		if err := addFinalizer(ctx, r.Client, backup, BackupFinalizer); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -317,8 +316,7 @@ func (r *Neo4jBackupReconciler) handleDeletion(ctx context.Context, backup *neo4
 	}
 
 	// Remove finalizer
-	controllerutil.RemoveFinalizer(backup, BackupFinalizer)
-	return ctrl.Result{}, r.Update(ctx, backup)
+	return ctrl.Result{}, removeFinalizer(ctx, r.Client, backup, BackupFinalizer)
 }
 
 // reportInvalidBackupSpec records phase Invalid for a spec problem found while

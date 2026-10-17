@@ -168,21 +168,23 @@ func (r *Neo4jRestoreReconciler) targetDatabaseExists(ctx context.Context, targe
 }
 
 // setRestoreAnnotation writes one annotation on the restore (refetch +
-// RetryOnConflict) and mirrors it onto the in-memory object.
+// RetryOnConflict, a patch of the annotation alone: operations.md id 150) and
+// mirrors it onto the in-memory object.
 func (r *Neo4jRestoreReconciler) setRestoreAnnotation(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, key, value string) error {
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.Neo4jRestore{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
-		if latest.Annotations == nil {
-			latest.Annotations = map[string]string{}
-		}
 		if latest.Annotations[key] == value {
 			return nil
 		}
-		latest.Annotations[key] = value
-		return r.Update(ctx, latest)
+		return patchObject(ctx, r.Client, latest, func() {
+			if latest.Annotations == nil {
+				latest.Annotations = map[string]string{}
+			}
+			latest.Annotations[key] = value
+		})
 	})
 	if err != nil {
 		return err

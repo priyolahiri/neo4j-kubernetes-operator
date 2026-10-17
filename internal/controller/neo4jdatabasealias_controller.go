@@ -84,11 +84,10 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 
 	if !controllerutil.ContainsFinalizer(alias, Neo4jDatabaseAliasFinalizer) {
-		controllerutil.AddFinalizer(alias, Neo4jDatabaseAliasFinalizer)
-		if err := r.Update(ctx, alias); err != nil {
+		if err := addFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -204,8 +203,7 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 	requeue := r.requeueAfter()
 
 	if strings.EqualFold(alias.Spec.DeletionPolicy, "Retain") {
-		controllerutil.RemoveFinalizer(alias, Neo4jDatabaseAliasFinalizer)
-		return ctrl.Result{}, r.Update(ctx, alias)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, alias.Namespace, alias.Spec.ClusterRef)
@@ -213,8 +211,7 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
-		controllerutil.RemoveFinalizer(alias, Neo4jDatabaseAliasFinalizer)
-		return ctrl.Result{}, r.Update(ctx, alias)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
 	}
 	if !target.IsReady() {
 		return ctrl.Result{RequeueAfter: requeue}, nil
@@ -223,8 +220,7 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		logger.Error(err, "cannot connect during alias deletion; releasing finalizer")
-		controllerutil.RemoveFinalizer(alias, Neo4jDatabaseAliasFinalizer)
-		return ctrl.Result{}, r.Update(ctx, alias)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
 	}
 	defer func() { _ = nc.Close() }()
 
@@ -233,13 +229,11 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 	if err := nc.DropAliasIfExists(ctx, aliasName); err != nil {
 		r.Recorder.Eventf(alias, corev1.EventTypeWarning, EventReasonAliasFailed,
 			"DROP ALIAS %q failed; releasing finalizer to avoid wedging deletion: %v", aliasName, err)
-		controllerutil.RemoveFinalizer(alias, Neo4jDatabaseAliasFinalizer)
-		return ctrl.Result{}, r.Update(ctx, alias)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
 	}
 
 	r.Recorder.Eventf(alias, corev1.EventTypeNormal, EventReasonAliasDropped, "Alias %q dropped", aliasName)
-	controllerutil.RemoveFinalizer(alias, Neo4jDatabaseAliasFinalizer)
-	return ctrl.Result{}, r.Update(ctx, alias)
+	return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
 }
 
 func (r *Neo4jDatabaseAliasReconciler) requeueAfter() time.Duration {

@@ -122,12 +122,11 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(database, DatabaseFinalizer) {
-		controllerutil.AddFinalizer(database, DatabaseFinalizer)
-		if err := r.Update(ctx, database); err != nil {
+		if err := addFinalizer(ctx, r.Client, database, DatabaseFinalizer); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -356,8 +355,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 		// The host (and its databases) are gone, so there is nothing to drop.
 		// Release the finalizer.
 		logger.Info("Referenced host not found, removing finalizer", "clusterRef", database.Spec.ClusterRef)
-		controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
-		return ctrl.Result{}, r.Update(ctx, database)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
 	}
 
 	// Create the Neo4j client for the resolved host (cluster or standalone).
@@ -371,8 +369,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	if err != nil {
 		logger.Error(err, "Failed to create Neo4j client during deletion")
 		// If we can't connect, assume the database is already gone.
-		controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
-		return ctrl.Result{}, r.Update(ctx, database)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
 	}
 	defer func() {
 		if err := neo4jClient.Close(); err != nil {
@@ -390,8 +387,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 		}
 		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDeletionFailed,
 			"Failed to drop database; releasing finalizer to avoid wedging deletion: %v", err)
-		controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
-		return ctrl.Result{}, r.Update(ctx, database)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
 	}
 
 	r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDatabaseDeleted, "Database dropped successfully")
@@ -402,8 +398,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	r.warnRolesStillGranting(ctx, database)
 
 	logger.Info("Removing finalizer from database", "finalizers", database.Finalizers, "deletionTimestamp", database.DeletionTimestamp)
-	controllerutil.RemoveFinalizer(database, DatabaseFinalizer)
-	err = r.Update(ctx, database)
+	err = removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
 	if err != nil {
 		logger.Error(err, "Failed to update database after removing finalizer", "finalizers", database.Finalizers, "deletionTimestamp", database.DeletionTimestamp)
 		return ctrl.Result{}, err

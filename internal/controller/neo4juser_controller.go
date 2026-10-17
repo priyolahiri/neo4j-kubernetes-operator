@@ -94,11 +94,10 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if !controllerutil.ContainsFinalizer(user, Neo4jUserFinalizer) {
-		controllerutil.AddFinalizer(user, Neo4jUserFinalizer)
-		if err := r.Update(ctx, user); err != nil {
+		if err := addFinalizer(ctx, r.Client, user, Neo4jUserFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -344,8 +343,7 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 	requeue := r.requeueAfter()
 
 	if strings.EqualFold(user.Spec.DeletionPolicy, "Retain") {
-		controllerutil.RemoveFinalizer(user, Neo4jUserFinalizer)
-		return ctrl.Result{}, r.Update(ctx, user)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef)
@@ -353,8 +351,7 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
-		controllerutil.RemoveFinalizer(user, Neo4jUserFinalizer)
-		return ctrl.Result{}, r.Update(ctx, user)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
 	}
 	if !target.IsReady() {
 		return ctrl.Result{RequeueAfter: requeue}, nil
@@ -363,8 +360,7 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 	nc, err := target.NewClient(r.Client)
 	if err != nil {
 		logger.Error(err, "cannot connect during user deletion; releasing finalizer")
-		controllerutil.RemoveFinalizer(user, Neo4jUserFinalizer)
-		return ctrl.Result{}, r.Update(ctx, user)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
 	}
 	defer func() { _ = nc.Close() }()
 
@@ -376,12 +372,10 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 		}
 		r.Recorder.Eventf(user, corev1.EventTypeWarning, EventReasonUserDeletionFailed,
 			"DROP USER %q failed; releasing finalizer to avoid wedging deletion: %v", username, err)
-		controllerutil.RemoveFinalizer(user, Neo4jUserFinalizer)
-		return ctrl.Result{}, r.Update(ctx, user)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
 	}
 	r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserDeleted, "User %q dropped", username)
-	controllerutil.RemoveFinalizer(user, Neo4jUserFinalizer)
-	return ctrl.Result{}, r.Update(ctx, user)
+	return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
 }
 
 // computeAlter builds the set of ALTER USER clauses needed to bring `info`

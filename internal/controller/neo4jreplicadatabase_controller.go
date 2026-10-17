@@ -131,11 +131,10 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 
 	if !controllerutil.ContainsFinalizer(replica, Neo4jReplicaDatabaseFinalizer) {
-		controllerutil.AddFinalizer(replica, Neo4jReplicaDatabaseFinalizer)
-		if err := r.Update(ctx, replica); err != nil {
+		if err := addFinalizer(ctx, r.Client, replica, Neo4jReplicaDatabaseFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -476,8 +475,7 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 
 	requeue := r.requeueAfter()
 	releaseOnly := func() (ctrl.Result, error) {
-		controllerutil.RemoveFinalizer(replica, Neo4jReplicaDatabaseFinalizer)
-		return ctrl.Result{}, r.Update(ctx, replica)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, replica, Neo4jReplicaDatabaseFinalizer)
 	}
 
 	// Promoted per status: never drop. Deliberate asymmetry with

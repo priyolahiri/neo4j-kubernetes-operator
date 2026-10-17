@@ -42,7 +42,9 @@ import (
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
@@ -137,7 +139,10 @@ func addRestoreEnv(env *[]corev1.EnvVar, _ *[]corev1.EnvFromSource, _ map[string
 // cluster and a standalone against a real API server, with the CRDs and their
 // defaults installed, and compares the stored spec after each with the one the
 // apply stored. Without the patches, the first pass alone changes it.
-func TestReconcile_LeavesTheSpecAsApplied_APIServer(t *testing.T) {
+// startStoredSpecEnv starts an API server with the operator's CRDs, and
+// their defaults, installed.
+func startStoredSpecEnv(t *testing.T) (client.Client, *runtime.Scheme) {
+	t.Helper()
 	if os.Getenv("KUBEBUILDER_ASSETS") == "" {
 		t.Skip("KUBEBUILDER_ASSETS not set; run via `make test-unit`")
 	}
@@ -147,12 +152,17 @@ func TestReconcile_LeavesTheSpecAsApplied_APIServer(t *testing.T) {
 	}
 	cfg, err := env.Start()
 	require.NoError(t, err)
-	defer func() { _ = env.Stop() }()
+	t.Cleanup(func() { _ = env.Stop() })
 	scheme := runtime.NewScheme()
 	require.NoError(t, clientgoscheme.AddToScheme(scheme))
 	require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
 	require.NoError(t, err)
+	return c, scheme
+}
+
+func TestReconcile_LeavesTheSpecAsApplied_APIServer(t *testing.T) {
+	c, scheme := startStoredSpecEnv(t)
 	ctx := context.Background()
 	require.NoError(t, c.Create(ctx, &storagev1.StorageClass{
 		ObjectMeta:  metav1.ObjectMeta{Name: "standard"},
@@ -236,6 +246,12 @@ func TestReconcile_LeavesTheSpecAsApplied_APIServer(t *testing.T) {
 
 		require.NoError(t, r.newFleetProvisioner().setDeploymentAnnotation(ctx, get(), "deployment-1"))
 		require.Equal(t, want, storedSpec(t, c, kind, key), "the fleet annotation changed the stored spec")
+		restore := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "default"}}
+		require.NoError(t, restores.setRestoreInProgressAnnotation(ctx, restore, standaloneAsCluster(get())))
+		require.Contains(t, get().Annotations, RestoreInProgressAnnotation, "the restore-in-progress annotation is set")
+		require.Equal(t, want, storedSpec(t, c, kind, key), "the restore-in-progress annotation changed the stored spec")
+		require.NoError(t, restores.clearRestoreInProgressAnnotation(ctx, restore, key.Name, key.Namespace))
+		require.Equal(t, want, storedSpec(t, c, kind, key), "clearing the restore-in-progress annotation changed the stored spec")
 
 		_, err = EnsureSeedCredsProjected(ctx, c, get(), "seed-creds")
 		require.NoError(t, err)
@@ -252,5 +268,113 @@ func TestReconcile_LeavesTheSpecAsApplied_APIServer(t *testing.T) {
 		require.NotContains(t, stored(t, c, kind, key).GetFinalizers(), StandaloneFinalizer, "the deletion pass releases the finalizer")
 		require.Equal(t, want, storedSpec(t, c, kind, key), "the deletion pass changed the stored spec")
 		release(t, c, kind, key)
+	})
+}
+
+// applyKind creates an object of kind from its JSON spec, as kubectl apply
+// does, kept readable after deletion by keepFinalizer.
+func applyKind(t *testing.T, c client.Client, kind, name, spec string) types.NamespacedName {
+	t.Helper()
+	obj := map[string]any{}
+	require.NoError(t, json.Unmarshal([]byte(spec), &obj))
+	u := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": neo4jv1beta1.GroupVersion.String(),
+		"kind":       kind,
+		"metadata":   map[string]any{"name": name, "namespace": "default", "finalizers": []any{keepFinalizer}},
+		"spec":       obj,
+	}}
+	require.NoError(t, c.Create(context.Background(), u), "create %s", kind)
+	return types.NamespacedName{Namespace: "default", Name: name}
+}
+
+// TestFinalizers_LeaveEveryKindsSpecAsApplied_APIServer applies every other
+// kind the operator adds a finalizer to, with each bool the CRD defaults to
+// true set to false, runs its first reconcile pass and its deletion pass, and
+// compares the stored spec with the applied one after each. Their clusterRef
+// names a cluster that does not exist, so the passes need no Neo4j: the first
+// adds the finalizer and the deletion pass releases it. An Update of the
+// object left out each false (omitempty), and the API server defaulted it to
+// true: a Neo4jRole's enforcePrivileges came back true, and the operator
+// revoked the privileges the user had chosen to keep.
+func TestFinalizers_LeaveEveryKindsSpecAsApplied_APIServer(t *testing.T) {
+	c, scheme := startStoredSpecEnv(t)
+	ctx := context.Background()
+	recorder := func() *record.FakeRecorder { return record.NewFakeRecorder(100) }
+	reconcilers := map[string]reconcile.Reconciler{
+		"Neo4jRole":              &Neo4jRoleReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jUser":              &Neo4jUserReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jRoleBinding":       &Neo4jRoleBindingReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jAuthRule":          &Neo4jAuthRuleReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jPlugin":            &Neo4jPluginReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jDatabase":          &Neo4jDatabaseReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jBackup":            &Neo4jBackupReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jRestore":           &Neo4jRestoreReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jCompositeDatabase": &Neo4jCompositeDatabaseReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jDatabaseAlias":     &Neo4jDatabaseAliasReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+		"Neo4jReplicaDatabase":   &Neo4jReplicaDatabaseReconciler{Client: c, Scheme: scheme, Recorder: recorder(), RequeueAfter: time.Second},
+	}
+	// awsStorage carries a cloud identity whose autoCreate.enabled (the CRD's
+	// default: true) is set to false.
+	const awsStorage = `{"type": "s3", "bucket": "b", "cloud": {"provider": "aws",
+	  "identity": {"provider": "aws", "autoCreate": {"enabled": false}}}}`
+	cases := []struct {
+		kind, finalizer, spec string
+	}{
+		{"Neo4jRole", Neo4jRoleFinalizer, `{"clusterRef": "absent", "enforcePrivileges": false,
+		  "privileges": ["GRANT ACCESS ON DATABASE neo4j"]}`},
+		{"Neo4jUser", Neo4jUserFinalizer, `{"clusterRef": "absent", "username": "alice",
+		  "passwordSecretRef": {"name": "alice-password"}, "requirePasswordChange": false, "roles": ["reader"]}`},
+		{"Neo4jRoleBinding", Neo4jRoleBindingFinalizer, `{"clusterRef": "absent", "username": "alice",
+		  "roles": ["reader"], "enforceExclusive": false}`},
+		{"Neo4jAuthRule", Neo4jAuthRuleFinalizer, `{"clusterRef": "absent", "enabled": false, "enforceRoles": false,
+		  "condition": "abac.oidc.user_attribute('dept') = 'eng'", "grantedRoles": ["reader"]}`},
+		{"Neo4jPlugin", PluginFinalizer, `{"clusterRef": "absent", "name": "apoc", "version": "5.26.0", "enabled": false}`},
+		{"Neo4jDatabase", DatabaseFinalizer, `{"clusterRef": "absent", "name": "orders", "wait": false, "ifNotExists": false}`},
+		{"Neo4jBackup", BackupFinalizer, `{"instanceRef": "absent", "database": "neo4j", "storage": ` + awsStorage + `,
+		  "options": {"compress": false, "resources": {"requests": {"cpu": "0.5"}}}}`},
+		{"Neo4jRestore", RestoreFinalizer, `{"instanceRef": "absent", "database": "neo4j",
+		  "source": {"type": "storage", "backupPath": "/backups/neo4j", "storage": ` + awsStorage + `}}`},
+		{"Neo4jCompositeDatabase", Neo4jCompositeDatabaseFinalizer, `{"clusterRef": "absent", "wait": false,
+		  "enforceConstituents": false, "constituents": [{"name": "orders", "targetDatabase": "orders"}]}`},
+		{"Neo4jDatabaseAlias", Neo4jDatabaseAliasFinalizer, `{"clusterRef": "absent", "targetDatabase": "orders"}`},
+		{"Neo4jReplicaDatabase", Neo4jReplicaDatabaseFinalizer, `{"clusterRef": "absent", "upstreamDatabase": "orders",
+		  "source": {"mode": "backup", "pullURI": "s3://b/orders"}}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			key := applyKind(t, c, tc.kind, "applied", tc.spec)
+			want := storedSpec(t, c, tc.kind, key)
+			pass := func() {
+				t.Helper()
+				_, err := reconcilers[tc.kind].Reconcile(ctx, ctrl.Request{NamespacedName: key})
+				require.NoError(t, err)
+			}
+
+			pass()
+			require.Contains(t, stored(t, c, tc.kind, key).GetFinalizers(), tc.finalizer, "the first pass adds the finalizer")
+			require.Equal(t, want, storedSpec(t, c, tc.kind, key), "the first pass changed the stored spec")
+
+			require.NoError(t, c.Delete(ctx, stored(t, c, tc.kind, key)))
+			pass()
+			require.NotContains(t, stored(t, c, tc.kind, key).GetFinalizers(), tc.finalizer, "the deletion pass releases the finalizer")
+			require.Equal(t, want, storedSpec(t, c, tc.kind, key), "the deletion pass changed the stored spec")
+			release(t, c, tc.kind, key)
+		})
+	}
+
+	// The Aura controllers write their CRs through one helper each, all alike;
+	// the AuraInstance one stands for them.
+	t.Run("AuraInstance", func(t *testing.T) {
+		key := applyKind(t, c, "AuraInstance", "applied", `{"cloudProvider": "gcp", "region": "europe-west1",
+		  "type": "professional-db", "version": "5", "memory": "2GB", "deletionProtection": false, "paused": false,
+		  "providerConfigRef": {"name": "aura"}}`)
+		want := storedSpec(t, c, "AuraInstance", key)
+		r := &AuraInstanceReconciler{Client: c, Scheme: scheme}
+		require.NoError(t, r.patchInstance(ctx, ctrl.Request{NamespacedName: key}, func(o *neo4jv1beta1.AuraInstance) {
+			controllerutil.AddFinalizer(o, AuraInstanceFinalizer)
+		}))
+		require.Contains(t, stored(t, c, "AuraInstance", key).GetFinalizers(), AuraInstanceFinalizer)
+		require.Equal(t, want, storedSpec(t, c, "AuraInstance", key), "the finalizer write changed the stored spec")
+		release(t, c, "AuraInstance", key)
 	})
 }

@@ -264,12 +264,11 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(plugin, PluginFinalizer) {
-		controllerutil.AddFinalizer(plugin, PluginFinalizer)
-		if err := r.Update(ctx, plugin); err != nil {
+		if err := addFinalizer(ctx, r.Client, plugin, PluginFinalizer); err != nil {
 			logger.Error(err, "Failed to add finalizer")
 			return ctrl.Result{}, err
 		}
-		// The Update above triggers a watch event that re-queues this object.
+		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
 	}
 
@@ -571,8 +570,7 @@ func (r *Neo4jPluginReconciler) handleDeletion(ctx context.Context, plugin *neo4
 	}
 
 	// Remove finalizer
-	controllerutil.RemoveFinalizer(plugin, PluginFinalizer)
-	if err := r.Update(ctx, plugin); err != nil {
+	if err := removeFinalizer(ctx, r.Client, plugin, PluginFinalizer); err != nil {
 		logger.Error(err, "Failed to remove finalizer")
 		return ctrl.Result{}, err
 	}

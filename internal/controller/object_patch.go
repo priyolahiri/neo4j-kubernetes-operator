@@ -24,8 +24,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
-// The operator never Updates a Neo4jEnterpriseCluster or a
-// Neo4jEnterpriseStandalone: it patches what it changed (operations.md id 150).
+// The operator never Updates one of its custom resources: it patches what it
+// changed (operations.md id 150). Child objects it renders (StatefulSets,
+// Services, ConfigMaps) are its own and are not covered by this.
 //
 // An Update sends the whole object as the Go types encode it, and that is not
 // the object the user applied:
@@ -33,7 +34,8 @@ import (
 //     filled in, and an Update wrote every one of them into the stored spec;
 //   - a bool the CRD defaults to true that the user set to false is omitted
 //     (omitempty), and the API server defaults it to true again
-//     (spec.monitoring.enabled, spec.upgradeStrategy.autoPauseOnFailure, ...);
+//     (Neo4jRole spec.enforcePrivileges, Neo4jPlugin spec.enabled, a cluster's
+//     spec.monitoring.enabled, ...); a false with no default is dropped;
 //   - a quantity is encoded in its canonical spelling ("0.5" becomes "500m").
 //
 // A JSON merge patch computed between two copies of the same object carries

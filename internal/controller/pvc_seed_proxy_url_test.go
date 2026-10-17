@@ -113,8 +113,9 @@ func TestSeedProxyWaitStart_FallsBackToStartTimeOnPersistFailure(t *testing.T) {
 	failingClient := fake.NewClientBuilder().
 		WithScheme(scheme).
 		WithObjects(restore).
+		// The annotation is written as a merge patch (operations.md id 150).
 		WithInterceptorFuncs(interceptor.Funcs{
-			Update: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			Patch: func(ctx context.Context, c client.WithWatch, obj client.Object, patch client.Patch, opts ...client.PatchOption) error {
 				return errors.New("injected: annotation write always fails")
 			},
 		}).
