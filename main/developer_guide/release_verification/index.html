@@ -4362,6 +4362,10 @@ because plugin discovery by binary name is part of what is being verified:</p>
 <td>a manifest with a known-bad spec (<code>spec.config.dbms.default_database</code>, an out-of-range <code>serverRoles[].serverIndex</code>) → one line per finding, errors before warnings, each sorted by field path, exit <code>1</code></td>
 </tr>
 <tr>
+<td>A spec the operator used to crash on</td>
+<td>a cluster with <code>spec.auth.externalSecrets.enabled: true</code> and no <code>secretStoreRef</code> → one error naming <code>spec.auth.externalSecrets.secretStoreRef</code>, exit <code>1</code>, as for the same block under <code>spec.tls</code> (rule 151). Before v1.22.0 the operator panicked on every pass of such a cluster</td>
+</tr>
+<tr>
 <td>Every error, not the first</td>
 <td>one manifest broken in several places at once — a bad <code>spec.image</code>, a deprecated <code>spec.config</code> key, an out-of-range <code>serverRoles</code> index, a missing <code>acceptLicenseAgreement</code> — must report <strong>all</strong> of them from a single run. The fix-one-rerun loop that #354 removed must not be back</td>
 </tr>
@@ -4550,6 +4554,14 @@ back to 1 replica.</p>
 <td><code>kubectl get pods -l app.kubernetes.io/name=neo4j</code> returns the standalone pod (it carries <code>app.kubernetes.io/{name,instance,managed-by}</code>)</td>
 </tr>
 <tr>
+<td>The spec you applied is the spec stored (rule 150)</td>
+<td>With <code>kubectl apply --server-side</code>, apply a <code>Neo4jRole</code> with <code>enforcePrivileges: false</code> and a <code>Neo4jDatabase</code> with <code>wait: false</code>, and give the standalone <code>resources.requests.cpu: "0.5"</code>. Once each is <code>Ready</code>, <code>kubectl get &lt;kind&gt; &lt;name&gt; -o jsonpath='{.spec}'</code> still reads <code>false</code>, <code>false</code> and <code>"0.5"</code>: the finalizer went on as a patch, so no default and no re-spelling came back. Grant that role a privilege by hand: it survives three forced reconciles (annotate the CR), as a role that does not enforce revokes nothing. In the upgrade row, the same role created under the previous release reads <code>enforcePrivileges: true</code> after its first pass and still does once <code>main</code> runs (nothing is rewritten back); re-applying it with <code>--server-side --force-conflicts</code> sets <code>false</code></td>
+</tr>
+<tr>
+<td>A Route where there is no Route API (rule 148)</td>
+<td>Create the standalone with <code>spec.service.route.enabled: true</code> and a <code>host</code>: Kind serves no <code>route.openshift.io/v1</code>, so the operator logs that the Route API is not available and skips the Route; the standalone gets its StatefulSet and reaches <code>Ready</code>, and a dynamic <code>spec.config</code> change made afterwards still draws <code>ConfigAppliedLive</code>. The operator log has <strong>no</strong> <code>cannot deep copy</code> panic. Before v1.22.0 every pass panicked there, before the StatefulSet was built, so this standalone never got a pod. Remove the Route afterwards</td>
+</tr>
+<tr>
 <td>Operator build metadata</td>
 <td>scrape the operator's <code>/metrics</code> (<code>kubectl port-forward -n &lt;operator-ns&gt; deploy/&lt;operator-deploy&gt; 8443:8443</code>, then <code>curl http://localhost:8443/metrics</code>: the dev overlay binds <code>:8443</code> and serves it as <strong>plain HTTP</strong> in <code>--mode=dev</code>, despite the <code>--metrics-secure=true</code> in its args — nothing listens on 8082, which this row named until 2026-10-02; production mode serves HTTPS with a bearer token when <code>metrics.secure</code> is on) and find <code>neo4j_operator_build_info</code>: exactly one series, value <code>1</code>, with <code>version</code>, <code>vcs_ref</code>, <code>build_date</code> and <code>go_version</code> labels. <code>vcs_ref</code> must equal <code>git rev-parse --short HEAD</code> of the tree you built (a <code>make deploy-dev-local</code> build stamps <code>version</code> with the Makefile placeholder <code>0.0.1</code>; only a release image carries a release version). A <code>vcs_ref</code> of <code>unknown</code> or a stale SHA means you are running an image that is not the tree under test</td>
 </tr>
@@ -4707,7 +4719,7 @@ standalone backup" as one of Phase 1's outputs.</p>
 </tr>
 <tr>
 <td>Live config change (cluster)</td>
-<td>Change a dynamic setting in <code>spec.config</code>: <code>ConfigAppliedLive</code>, no pod restarts, and <code>SHOW SETTINGS</code> on <strong>each</strong> server (<code>kubectl exec &lt;pod&gt; -- cypher-shell -a bolt://localhost:7687 -d system …</code>; <code>-d system</code> because the default <code>neo4j</code> database is not on every server) reads the new value. Remove it: each server reads the default again. Change a static one: <code>ConfigNeedsRestart</code> names it and the servers roll</td>
+<td>Change a dynamic setting in <code>spec.config</code>: <code>ConfigAppliedLive</code>, no pod restarts, and <code>SHOW SETTINGS</code> on <strong>each</strong> server (<code>kubectl exec &lt;pod&gt; -- cypher-shell -a bolt://localhost:7687 -d system …</code>; <code>-d system</code> because the default <code>neo4j</code> database is not on every server) reads the new value. Remove it: each server reads the default again. Change a static one: <code>ConfigNeedsRestart</code> names it and the servers roll. Walk it on a cluster whose spec names no <code>spec.auth.adminSecret</code>, so the Secret is <code>neo4j-admin-secret</code>: before v1.22.0 the per-server clients refused such a cluster, and live config, TLS reload and <code>RestartPending</code> did nothing for it</td>
 </tr>
 <tr>
 <td>Connections reused between passes</td>
@@ -4766,6 +4778,10 @@ and every server pod's UID and restart count.</p>
 <tr>
 <td>Rolling upgrade waits for each server's databases (#488)</td>
 <td>Needs two published patch images of one line (e.g. 5.26.30 → 5.26.31). A 3-server cluster with about 30 databases of 3 primaries each (<code>CREATE DATABASE dNN TOPOLOGY 3 PRIMARIES WAIT</code>) and a client writing to a few of them through <code>neo4j://</code> routing. Change the image: at least one step shows <code>status.upgradeStatus.message</code> "waiting for its databases to catch up (…)" naming databases, and <code>CALL dbms.cluster.statusCheck([])</code> run on the server just restarted (<code>cypher-shell -a bolt://localhost:7687</code> in its pod — the default <code>neo4j://</code> routes to the <code>system</code> leader) shows those databases not yet <code>APPLYING</code> at that moment (to post-process its rows with <code>WITH</code>, run it with <code>-d</code> a user database — <code>system</code> refuses <code>WITH</code>); the partition lowers only after they are. No write made through a retrying transaction function fails; brief retryable errors and stalls of a few seconds around each restart are expected. Diagnostics keep being collected during the upgrade, but status is written only when they change or every 5 minutes (#475), so <code>status.diagnostics.lastCollected</code> moves in steps, not every <code>--ready-poll-interval</code>; <code>ServersHealthy</code> turns <code>False</code> naming a restarting server at least once, then <code>True</code> again</td>
+</tr>
+<tr>
+<td>A Paused upgrade holds, then resumes; a tag without a patch verifies (rule 149)</td>
+<td>A 3-server cluster on a pinned 5.26 patch older than the newest (<code>5.26-enterprise</code> on Docker Hub), with <code>upgradeStrategy: {autoPauseOnFailure: true, upgradeTimeout: 30s}</code>. Set the tag to <code>5.26-enterprise</code>: the first server's restart outlasts the 30-second step, so the upgrade is <code>Paused</code>, with an <code>UpgradePaused</code> Warning and <code>status.upgradeStatus.lastError</code> naming the timeout. For the next five minutes the StatefulSet keeps its partition: the servers the upgrade had not reached keep their pod UIDs and the old image, <code>status.version</code> stays the old patch, and once every server is up the cluster is <code>Ready</code>, with <code>status.message</code> saying the upgrade is paused. Before v1.22.0 the next pass restarted the rest onto the target. Set the tag back to the old patch: refused with <em>has already restarted servers on it</em>, and nothing rolls; set <code>5.26-enterprise</code> again. Then remove <code>upgradeTimeout</code> and set <code>autoPauseOnFailure: false</code>: an <code>UpgradeStarted</code> event says the upgrade resumed, the remaining servers roll one at a time through the database checks, and it is <code>Completed</code>, with <code>status.version</code> the patch the servers run (<code>CALL dbms.components()</code>). <code>Completed</code> is the proof that <code>Verifying</code> accepted a tag without a patch</td>
 </tr>
 <tr>
 <td>CalVer TLS standalone, created fresh</td>
@@ -5353,6 +5369,33 @@ the first walk. The scripted steps already do.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Rolling upgrade held when Paused, resumed; tag without a patch</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (5.26, Phase 2b)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Stored spec = applied spec (no defaults or re-spellings written back)</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>OpenShift Route without the Route API</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅</td>
+<td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;"></td>
