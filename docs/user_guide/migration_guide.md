@@ -497,34 +497,6 @@ behaviour changes below take effect on the first reconcile.
   cluster server records its `system` role in
   `/data/.neo4j-operator/system-database-mode`.
 
-## Upgrading from v1.21.0
-
-No CRD changes; upgrading the operator restarts no server.
-
-### Fixes
-
-- **A backup-mode `Neo4jReplicaDatabase` finds `AWS_REGION` in
-  `spec.extraEnvFrom`.** The region check before seeding from `s3://` read only
-  `spec.env` and the server container's `env`, so a downstream cluster whose
-  region came from a Secret or ConfigMap in `spec.extraEnvFrom` — the field is
-  documented for exactly that — had its replica `Failed` with "AWS_REGION is not
-  set". A replica in that state is retried once the upgraded operator runs.
-  `kubectl neo4j preflight` reads the same sources.
-- **A plugin's `NEO4J_PLUGINS` could vanish from a cluster's StatefulSet.**
-  When the cluster controller's StatefulSet update conflicted with the plugin
-  controller's patch, the retry applied the template it had just read and
-  recorded the plugin's variables as its own; the next pass removed them. The
-  `Neo4jPlugin` stayed `Ready` with the plugin missing from the servers. The
-  upgraded operator reconciles every `Neo4jPlugin` when it starts, which puts a
-  missing `NEO4J_PLUGINS` back — rolling that cluster's servers once, as the
-  original install did.
-- **Advisory warnings are announced once, not on every reconcile.**
-  `ValidationWarning` events — and a cluster's `TopologyWarning` — were
-  emitted again on every pass, dozens a minute for one object, which also used
-  up that object's event budget so other events could be dropped. Each warning
-  is now announced when it starts to apply and again every 30 minutes while it
-  still does, so it stays visible in `kubectl describe` without the flood.
-
 ## Upgrading from v1.20.x
 
 ### Behaviour changes
@@ -579,6 +551,34 @@ No CRD changes; upgrading the operator restarts no server.
   (Helm `clusterMaxConcurrentReconciles`, `clusterReconcileTimeout`) change
   them; `--cluster-max-concurrent-reconciles=1` restores the old behaviour.
   See [Many large clusters](guides/performance.md#many-large-clusters).
+
+## Upgrading from v1.21.0
+
+No CRD changes; upgrading the operator restarts no server.
+
+### Fixes
+
+- **A backup-mode `Neo4jReplicaDatabase` finds `AWS_REGION` in
+  `spec.extraEnvFrom`.** The region check before seeding from `s3://` read only
+  `spec.env` and the server container's `env`, so a downstream cluster whose
+  region came from a Secret or ConfigMap in `spec.extraEnvFrom` — the field is
+  documented for exactly that — had its replica `Failed` with "AWS_REGION is not
+  set". A replica in that state is retried once the upgraded operator runs.
+  `kubectl neo4j preflight` reads the same sources.
+- **A plugin's `NEO4J_PLUGINS` could vanish from a cluster's StatefulSet.**
+  When the cluster controller's StatefulSet update conflicted with the plugin
+  controller's patch, the retry applied the template it had just read and
+  recorded the plugin's variables as its own; the next pass removed them. The
+  `Neo4jPlugin` stayed `Ready` with the plugin missing from the servers. The
+  upgraded operator reconciles every `Neo4jPlugin` when it starts, which puts a
+  missing `NEO4J_PLUGINS` back — rolling that cluster's servers once, as the
+  original install did.
+- **Advisory warnings are announced once, not on every reconcile.**
+  `ValidationWarning` events — and a cluster's `TopologyWarning` — were
+  emitted again on every pass, dozens a minute for one object, which also used
+  up that object's event budget so other events could be dropped. Each warning
+  is now announced when it starts to apply and again every 30 minutes while it
+  still does, so it stays visible in `kubectl describe` without the flood.
 
 ## Upgrading between future releases
 
