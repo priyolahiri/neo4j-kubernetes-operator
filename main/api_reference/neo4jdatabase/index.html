@@ -4847,7 +4847,7 @@
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td><strong>Required</strong>. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. <code>system</code> is reserved; <code>neo4j</code> is allowed with a warning (it shadows the default database)</td>
+<td><strong>Required</strong>. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. <code>system</code> is reserved; <code>neo4j</code> is allowed with a warning (it shadows the default database). Neo4j names are case-insensitive and stored lower-cased, so <code>Sales</code> creates the database <code>SHOW DATABASES</code> lists as <code>sales</code>, and the operator finds it by either spelling</td>
 </tr>
 <tr>
 <td><code>wait</code></td>

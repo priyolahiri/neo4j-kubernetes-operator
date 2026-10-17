@@ -4194,12 +4194,12 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> The constituent's name within the composite. The resulting alias is <code>&lt;composite&gt;.&lt;name&gt;</code>, which is also how queries address it. 1–63 characters, <code>^[a-zA-Z][a-zA-Z0-9\-]*$</code> (no dots or underscores — it is already namespaced). Must be unique within the composite.</td>
+<td><strong>Required.</strong> The constituent's name within the composite. The resulting alias is <code>&lt;composite&gt;.&lt;name&gt;</code>, which is also how queries address it. 1–63 characters, <code>^[a-zA-Z][a-zA-Z0-9\-]*$</code> (no dots or underscores — it is already namespaced). Must be unique within the composite, ignoring case: Neo4j lower-cases alias names, so <code>Latest</code> and <code>latest</code> are one constituent.</td>
 </tr>
 <tr>
 <td><code>targetDatabase</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> 1–63 characters. The database the constituent resolves to — in this DBMS when <code>remote</code> is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. May not be <code>system</code>, nor the composite itself.</td>
+<td><strong>Required.</strong> 1–63 characters. The database the constituent resolves to — in this DBMS when <code>remote</code> is unset, or on the remote DBMS when it is set. A local target need not exist yet: the controller skips that constituent and retries. A remote target is never checked, because the operator cannot see the other DBMS. May not be <code>system</code>, nor the composite itself in any case.</td>
 </tr>
 <tr>
 <td><code>remote</code></td>

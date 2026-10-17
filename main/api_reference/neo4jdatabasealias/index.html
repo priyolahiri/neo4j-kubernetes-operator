@@ -4018,7 +4018,7 @@
 <tr>
 <td><code>targetDatabase</code></td>
 <td><code>string</code></td>
-<td><strong>Required.</strong> Database the alias points at. May be a standard database or a cross-cluster replica; the alias survives promotion unchanged. May not be <code>system</code>, and may not equal the alias name.</td>
+<td><strong>Required.</strong> Database the alias points at. May be a standard database or a cross-cluster replica; the alias survives promotion unchanged. May not be <code>system</code>, and may not equal the alias name in any case (Neo4j lower-cases both).</td>
 </tr>
 <tr>
 <td><code>deletionPolicy</code></td>
