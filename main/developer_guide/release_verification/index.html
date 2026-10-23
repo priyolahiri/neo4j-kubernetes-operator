@@ -4363,7 +4363,7 @@ because plugin discovery by binary name is part of what is being verified:</p>
 </tr>
 <tr>
 <td>A spec the operator used to crash on</td>
-<td>a cluster with <code>spec.auth.externalSecrets.enabled: true</code> and no <code>secretStoreRef</code> → one error naming <code>spec.auth.externalSecrets.secretStoreRef</code>, exit <code>1</code>, as for the same block under <code>spec.tls</code> (rule 151). Before v1.22.0 the operator panicked on every pass of such a cluster</td>
+<td>a cluster with <code>spec.auth.externalSecrets.enabled: true</code>, one <code>data</code> entry and no <code>secretStoreRef</code> → one error naming <code>spec.auth.externalSecrets.secretStoreRef</code>, exit <code>1</code> (without <code>data</code>, a second error names <code>spec.auth.externalSecrets.data</code>), as for the same block under <code>spec.tls</code> (rule 151). Before v1.22.0 the operator panicked on every pass of such a cluster</td>
 </tr>
 <tr>
 <td>Every error, not the first</td>
