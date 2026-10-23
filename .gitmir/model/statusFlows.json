@@ -66,7 +66,7 @@
             "kind": "update",
             "entityId": "ent-neo4jenterprisecluster",
             "fieldName": "status.version",
-            "description": "Records status.version from the rolled server StatefulSet when it differs: at the first Ready, and after an image the zero-ready escape hatch let through; not while a Failed or Paused upgrade targets that tag."
+            "description": "Records status.version from the rolled server StatefulSet when it differs: at the first Ready, and after an image the zero-ready escape hatch let through; not while a Failed or Paused upgrade targets that tag. With it, for a tag without a patch, status.runningVersion from the formation check's SHOW SERVERS, written only when it changes (cleared for a tag that names its patch); for a held upgrade whose target names no patch, status.upgradeStatus.resolvedTargetVersion from the servers at or above the kept partition (operations.md id 153). A template write the StatefulSet controller has not observed keeps the cluster Forming."
           }
         ]
       },
@@ -106,7 +106,7 @@
         "from": "Ready",
         "to": "Failed",
         "label": "validation, storage shrink, or property-sharding validation failed on a later reconcile",
-        "condition": "ValidateWithWarnings errors (including a spec.image.tag below status.version, or below status.upgradeStatus.targetVersion once an unfinished upgrade has restarted a server on it), a shrink is detected, or property-sharding validation fails"
+        "condition": "ValidateWithWarnings errors (including a spec.image.tag below status.version or status.runningVersion, or below status.upgradeStatus.targetVersion or resolvedTargetVersion once an unfinished upgrade has restarted a server on it), a shrink is detected, or property-sharding validation fails"
       },
       {
         "from": "Ready",
@@ -308,7 +308,7 @@
             "kind": "update",
             "entityId": "ent-neo4jenterprisecluster",
             "fieldName": "status.version",
-            "description": "Stamps status.version to the target tag alongside CompletionTime and LastUpgradeTime."
+            "description": "Stamps status.version to the target tag alongside CompletionTime and LastUpgradeTime, with status.runningVersion the highest version the servers reported to Verifying when the tag names no patch (cleared when it names one), operations.md id 153."
           }
         ]
       },

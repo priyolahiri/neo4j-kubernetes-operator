@@ -148,6 +148,10 @@ What happens next:
   server still runs. Once a server runs the target, a tag below the target is
   refused (see [Version checks](#version-checks)): Neo4j does not support
   downgrades, and going back means restoring a backup taken before the upgrade.
+  For a target without a patch, such as `5.26-enterprise`, "below the target"
+  means below the patch the restarted servers report, which the operator
+  records in `status.upgradeStatus.resolvedTargetVersion` (see
+  [Tags without a patch](#tags-without-a-patch)).
 
 ### Version checks
 
@@ -160,6 +164,29 @@ Update validation failed: validation failed: spec.image.tag: Invalid value: "202
 ```
 
 Before the upgrade has restarted a server (it stopped while staging, or before its first server restarted), setting the tag back to `status.version` is allowed.
+
+#### Tags without a patch
+
+`status.version` and `status.upgradeStatus.targetVersion` are image tags. A tag without a patch, such as `5.26-enterprise` or `2026.08-enterprise`, floats to the newest patch of its line, so it does not say which patch the servers run, and a patch of the same line cannot be ordered against it. For such a tag the operator records the version the servers report (`SHOW SERVERS`, `version`), and the tag is held to it too:
+
+| Field | Records | When |
+|---|---|---|
+| `status.runningVersion` | What the servers report for a `status.version` without a patch (the highest, if they differ). Empty when `status.version` names a patch | On a `Ready` pass, from the `SHOW SERVERS` the formation check already runs (no extra query), written when it changes; and when an upgrade completes. A standalone asks once it is `Ready`, and again only when its container runs another image |
+| `status.upgradeStatus.resolvedTargetVersion` | What the servers an upgrade restarted report, for a target without a patch | When a restarted server passes the upgrade's availability check, or, for a `Paused` or `Failed` upgrade, at the next `Ready` |
+
+So after an upgrade to `5.26-enterprise` that paused once server-2 ran 5.26.32, setting the tag back to `5.26.31-enterprise` is refused:
+
+```
+Update validation failed: validation failed: spec.image.tag: Invalid value: "5.26.31-enterprise": downgrades are not supported: the upgrade to 5.26-enterprise (status.upgradeStatus.targetVersion) has already restarted servers on it, and they run 5.26.32 (status.upgradeStatus.resolvedTargetVersion); Neo4j cannot go back to an earlier version. Set the tag to 5.26.32 or later; running an earlier version means restoring a backup taken before the upgrade
+```
+
+and once it has completed, the same tag is refused against what every server runs:
+
+```
+Update validation failed: validation failed: spec.image.tag: Invalid value: "5.26.31-enterprise": downgrades are not supported: the servers run 5.26.32 (status.runningVersion, what 5.26-enterprise in status.version resolved to), and Neo4j cannot go back to an earlier version. Set the tag to 5.26.32 or later; running an earlier version means restoring a backup taken before the upgrade
+```
+
+`5.26.32-enterprise`, a later patch, `5.26-enterprise` itself and any later line are accepted. Moving from `5.26-enterprise` to `5.26.32-enterprise` changes the server pod template, so it runs as an upgrade and every server restarts once, even when both tags are the same image.
 
 A `Neo4jEnterpriseStandalone` is held to the same rule. Its `status.version` is recorded once its pod is ready on the current image, so it does not move while the pod is being replaced, nor for an image that never starts: setting the tag back to the version the server runs is always allowed. A downgrade is refused the same way (the standalone turns `Failed` with a `ValidationFailed` event saying `the standalone runs …`), and the server keeps the version it runs.
 
@@ -176,7 +203,8 @@ The servers keep running the version they ran; nothing else in the spec is appli
 Not checked:
 
 - **No `status.version` yet** — a cluster that has not been `Ready` since the operator was installed. There is nothing verified to compare with; the operator records the version at the next `Ready`, for a cluster created by an older release too.
-- **The patch, when either tag names none.** `5.26-enterprise` and `2026.08-enterprise` float to the newest patch, so moving between `5.26.12-enterprise` and `5.26-enterprise` is not treated as a downgrade, and the `Verifying` phase accepts any patch of the line for such a tag (see [Version verification](#upgrade-phases-and-resumability)).
+- **The patch of a tag without one, before the operator has read what the servers run.** Moving from `5.26-enterprise` to `5.26.12-enterprise` (or back) is checked against `status.runningVersion` or `status.upgradeStatus.resolvedTargetVersion` once they are recorded (see [Tags without a patch](#tags-without-a-patch)). Until then — while an upgrade's first restarted server has not yet passed its availability check, or before the first `Ready` pass under an operator that records them — the patch is not ordered, and such a move is allowed. The `Verifying` phase accepts any patch of the line for such a tag (see [Version verification](#upgrade-phases-and-resumability)).
+- **A patch Neo4j changed without a new tag.** A floating tag pulled again (`imagePullPolicy: Always`, or a new node) can start a server on a newer patch. The cluster records it on its next `Ready` pass, and the standalone when its container restarts on the new image; a tag set between the two before then is not refused.
 
 ## Upgrade Strategy
 

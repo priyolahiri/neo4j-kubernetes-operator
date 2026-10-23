@@ -139,6 +139,8 @@ Neo4jEnterpriseCluster/prod (cluster.yaml):
 
 For a standalone the message says `the standalone runs`. A deployment that does not exist yet has nothing to compare with. One the command cannot read (no `get` permission) is a warning saying the tag was not checked, rather than a silent pass.
 
+For a deployment on a tag without a patch (`5.26-enterprise`), the check uses the version the operator recorded from the servers (`status.runningVersion`, and for an unfinished upgrade `status.upgradeStatus.resolvedTargetVersion`), so `5.26.31-enterprise` is refused for servers that run 5.26.32 (see [Tags without a patch](../guides/upgrades.md#tags-without-a-patch)).
+
 A `Neo4jBackup`'s `spec.shardedDatabase` is resolved as the operator resolves it before a run: the `Neo4jShardedDatabase` with that CR name (`metadata.name`, not the logical `spec.name`) in the backup's namespace, on the backup's `instanceRef`. The operator fails a backup whose reference does not resolve, so the command reports it as an error, naming the CR when the value is a logical name:
 
 ```
