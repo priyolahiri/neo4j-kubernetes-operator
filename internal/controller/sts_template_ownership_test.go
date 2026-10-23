@@ -263,6 +263,46 @@ func TestCreateOrUpdateResource_KeepsAPluginsInitContainerAndVolumes(t *testing.
 	assert.Equal(t, before, *writes, "and its install pass writes nothing, defaulted init container and all")
 }
 
+// The defect (v1.22.0 plugin-env walk on Kind, 2026-10-23 10:39 CEST): a cluster
+// template change (spec.trustedCASecrets) was applied, and the cluster's next
+// pass removed a plugin's NEO4J_PLUGINS and NEO4J_apoc_* variables from the
+// server StatefulSet. The apply assigned the desired template to the live
+// object and then the merged env to its neo4j container, which shares the
+// desired template's container array: the merged env — the plugin's variables
+// included — became "desired", was recorded as the cluster's own and hashed,
+// so the next pass saw a change and dropped them as no longer desired.
+func TestCreateOrUpdateResource_KeepsAPluginsEnvAfterATemplateChange(t *testing.T) {
+	ctx := context.Background()
+	cluster := ownershipCluster()
+	c, scheme, _ := ownershipClient(t)
+	r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: scheme}
+	plugins := &Neo4jPluginReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(8)}
+	apoc := selfHealPlugin("apoc", "c", "", "")
+	apoc.Namespace = ownershipNS
+	target := &DeploymentInfo{Object: cluster, Type: "cluster", Name: "c", Namespace: ownershipNS}
+
+	require.NoError(t, r.createOrUpdateResource(ctx, ownershipDesired("neo4j:2026.08.1-enterprise", false), cluster))
+	markStable(t, c)
+	require.NoError(t, plugins.installPluginViaEnvironment(ctx, apoc, target))
+	pluginVars := []string{"NEO4J_PLUGINS", "NEO4J_apoc_export_file_enabled"}
+	require.Subset(t, envNames(liveServerSTS(t, c).Spec.Template.Spec.Containers[0].Env), pluginVars)
+
+	// A change of the cluster's own template, then the passes after it.
+	require.NoError(t, r.createOrUpdateResource(ctx, ownershipDesired("neo4j:2026.08.1-enterprise", true), cluster))
+	changed := liveServerSTS(t, c)
+	assert.Subset(t, envNames(changed.Spec.Template.Spec.Containers[0].Env), pluginVars, "the apply keeps them")
+	assert.Equal(t, "NEO4J_AUTH", changed.Annotations[ownedEnvVarsAnnotation], "and does not record them as the cluster's")
+	for i := 0; i < 2; i++ {
+		require.NoError(t, r.createOrUpdateResource(ctx, ownershipDesired("neo4j:2026.08.1-enterprise", true), cluster))
+	}
+	after := liveServerSTS(t, c)
+	assert.Subset(t, envNames(after.Spec.Template.Spec.Containers[0].Env), pluginVars, "the next passes keep them")
+	assert.True(t, equality.Semantic.DeepEqual(changed.Spec.Template, after.Spec.Template), "and change nothing")
+	missing, _, err := plugins.missingFromTarget(ctx, apoc, target)
+	require.NoError(t, err)
+	assert.Empty(t, missing, "the plugin finds nothing to restore")
+}
+
 // Against an API server, with its own defaulting and the cluster's real server
 // StatefulSet: once a VerifiedDownload plugin is installed, neither the
 // cluster controller's passes nor the plugin's change the pod template again —

@@ -858,6 +858,31 @@ func TestPluginEnvFollowsItsConfig_APIServer(t *testing.T) {
 		assert.Equal(t, ownEnv, clusterEnv())
 	})
 
+	t.Run("a change of the cluster's own template keeps the plugins' variables", func(t *testing.T) {
+		// Found walking this fix on Kind: the cluster's apply of a template
+		// change recorded the plugins' variables as its own, and its next pass
+		// removed them.
+		require.NoError(t, retry.RetryOnConflict(retry.DefaultRetry, func() error {
+			latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+			if err := c.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
+				return err
+			}
+			latest.Spec.Env = append(latest.Spec.Env, corev1.EnvVar{Name: "WALK_OWNED_BY_CLUSTER", Value: "kept"})
+			return c.Update(ctx, latest)
+		}))
+		before := live().Generation
+		for i := 0; i < 3; i++ {
+			clusterWrites()
+		}
+		sts := live()
+		assert.Equal(t, before+1, sts.Generation, "one write: the cluster's change")
+		names := envNames(neo4jContainerEnv(sts.Spec.Template.Spec))
+		assert.Subset(t, names, []string{"WALK_OWNED_BY_CLUSTER", "NEO4J_PLUGINS", baseURLVar, "NEO4J_custom_setting"})
+		assert.NotContains(t, readOwnedEnvVarNames(sts), "NEO4J_PLUGINS")
+		assert.NotContains(t, readOwnedEnvVarNames(sts), baseURLVar)
+		ownEnv = clusterEnv()
+	})
+
 	t.Run("deleting the plugins takes away what they wrote, and nothing else", func(t *testing.T) {
 		require.NoError(t, c.Delete(ctx, genai))
 		pass(genai)
