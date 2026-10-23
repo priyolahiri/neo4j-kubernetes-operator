@@ -133,6 +133,9 @@ type Neo4jUserStatus struct {
 	//   PendingDependencies  — at least one referenced custom role does not
 	//                          yet exist in Neo4j
 	//   ClusterNotReady      — referenced cluster is not Ready
+	//   RoleNamesResolved    — spec.roles names a Neo4jRole by its CR name;
+	//                          the message maps each to the Neo4j role granted
+	//                          (present only then)
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 

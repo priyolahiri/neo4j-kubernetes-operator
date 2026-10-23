@@ -32,6 +32,7 @@ func TestConditionGuidanceCoversEveryConditionType(t *testing.T) {
 		controller.ConditionTypeDatabasesHealthy,
 		controller.ConditionTypeServersPendingDrain,
 		controller.ConditionTypeRolesSynced,
+		controller.ConditionTypeRoleNamesResolved,
 		controller.ConditionTypePasswordSynced,
 		controller.ConditionTypePendingDependencies,
 		controller.ConditionTypePrivilegesSynced,

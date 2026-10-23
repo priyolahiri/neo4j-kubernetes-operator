@@ -88,7 +88,9 @@ type kindValidator struct {
 //
 // needsClient:false is a claim that the validator tolerates a nil client,
 // established per kind and pinned by TestOfflineValidatorsAreNilClientSafe:
-//   - Backup, Plugin — constructor takes no client.
+//   - Plugin — constructor takes no client.
+//   - Backup — constructor takes no client; resolving spec.shardedDatabase,
+//     its one client call, is skipped on nil.
 //   - DatabaseAlias, ReplicaDatabase — accept a client and never dereference it.
 //   - CompositeDatabase — its one client call (the CalVer gate on
 //     defaultCypherLanguage) returns early on nil.
@@ -131,14 +133,34 @@ var validators = map[string]kindValidator{
 			return v.Validate(ctx, c, &obj), append(v.NoEffectWarnings(&obj), notChecked...), nil, nil
 		},
 	},
-	"Neo4jBackup": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
-		var obj neo4jv1beta1.Neo4jBackup
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			return nil, nil, nil, err
-		}
-		v := validation.NewBackupValidator()
-		return v.Validate(&obj), v.NoEffectWarnings(&obj), nil, nil
-	}},
+	// Connected, a backup's spec.shardedDatabase is resolved as the backup
+	// controller resolves it — the Neo4jShardedDatabase by its CR name, on the
+	// backup's instanceRef — through the same function. The operator fails a
+	// backup whose reference does not resolve; offline it passed here.
+	"Neo4jBackup": {
+		connectedChecks: "a Neo4jBackup's spec.shardedDatabase against the Neo4jShardedDatabase it names",
+		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+			var obj neo4jv1beta1.Neo4jBackup
+			if err := yaml.Unmarshal(doc, &obj); err != nil {
+				return nil, nil, nil, err
+			}
+			v := validation.NewBackupValidator()
+			errs, warnings := v.Validate(&obj), v.NoEffectWarnings(&obj)
+			if c == nil {
+				return errs, warnings, nil, nil
+			}
+			_, refusal, err := validation.ResolveBackupShardedDatabase(context.Background(), c, &obj)
+			switch {
+			case err != nil:
+				warnings = append(warnings, fmt.Sprintf(
+					"could not read Neo4jShardedDatabase %s/%s, so spec.shardedDatabase was not checked: %v",
+					obj.Namespace, obj.Spec.ShardedDatabase, err))
+			case refusal != nil:
+				errs = append(errs, refusal)
+			}
+			return errs, warnings, nil, nil
+		},
+	},
 	"Neo4jPlugin": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jPlugin
 		if err := yaml.Unmarshal(doc, &obj); err != nil {

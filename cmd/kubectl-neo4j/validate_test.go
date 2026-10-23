@@ -57,10 +57,13 @@ func TestOfflineValidatorsAreNilClientSafe(t *testing.T) {
 	docs := map[string]string{
 		"Neo4jEnterpriseCluster":    "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jEnterpriseCluster\nmetadata: {name: c}\nspec: {}\n",
 		"Neo4jEnterpriseStandalone": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jEnterpriseStandalone\nmetadata: {name: s}\nspec: {}\n",
-		"Neo4jBackup":               "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jBackup\nmetadata: {name: b}\nspec: {}\n",
-		"Neo4jPlugin":               "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jPlugin\nmetadata: {name: p}\nspec: {}\n",
-		"Neo4jDatabaseAlias":        "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jDatabaseAlias\nmetadata: {name: a}\nspec: {}\n",
-		"Neo4jReplicaDatabase":      "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jReplicaDatabase\nmetadata: {name: r}\nspec: {}\n",
+		// spec.shardedDatabase is set: resolving it is the backup's one
+		// client call.
+		"Neo4jBackup": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jBackup\n" +
+			"metadata: {name: b}\nspec: {instanceRef: sc, shardedDatabase: products}\n",
+		"Neo4jPlugin":          "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jPlugin\nmetadata: {name: p}\nspec: {}\n",
+		"Neo4jDatabaseAlias":   "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jDatabaseAlias\nmetadata: {name: a}\nspec: {}\n",
+		"Neo4jReplicaDatabase": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jReplicaDatabase\nmetadata: {name: r}\nspec: {}\n",
 		// Set defaultCypherLanguage deliberately: it is the one field whose
 		// validation reaches for the client, so an empty spec would not
 		// actually exercise the nil-client path this test exists for.
@@ -577,6 +580,58 @@ spec:
 	require.NoError(t, err)
 	require.Equal(t, 1, resolved[0].errorCount(), "%s", findingsText(resolved[0]))
 	assert.Contains(t, findingsText(resolved[0]), "remoteAliasKeystore")
+}
+
+// A Neo4jBackup names its Neo4jShardedDatabase by the CR's metadata.name; the
+// backup controller fails one whose spec.shardedDatabase names no such CR, or
+// one on another cluster. --connect passed both (v1.22.0 journey, with the
+// logical database name), because the backup validator never looked. It now
+// resolves the reference as the operator does, and names the CR when the
+// value is that CR's logical name.
+func TestValidate_Connected_BackupShardedDatabaseResolvesAsTheOperatorDoes(t *testing.T) {
+	c := testClient(t, &neo4jv1beta1.Neo4jShardedDatabase{
+		ObjectMeta: metav1.ObjectMeta{Name: "products-sharded", Namespace: "neo4j"},
+		Spec:       neo4jv1beta1.Neo4jShardedDatabaseSpec{ClusterRef: "sc", Name: "products"},
+	})
+	backup := func(instanceRef, sharded string) string {
+		return writeManifest(t, `
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jBackup
+metadata: {name: nightly, namespace: neo4j}
+spec:
+  instanceRef: `+instanceRef+`
+  shardedDatabase: `+sharded+`
+  storage: {type: pvc, pvc: {name: backups, size: 10Gi}}
+`)
+	}
+	validate := func(path string, c client.Client) docResult {
+		t.Helper()
+		results, err := validateSource(path, c, "")
+		require.NoError(t, err)
+		require.Len(t, results, 1)
+		return results[0]
+	}
+
+	ok := validate(backup("sc", "products-sharded"), c)
+	assert.Equal(t, 0, ok.errorCount(), "the CR name resolves: %s", findingsText(ok))
+
+	logical := validate(backup("sc", "products"), c)
+	require.Equal(t, 1, logical.errorCount(), "%s", findingsText(logical))
+	assert.Contains(t, findingsText(logical), `spec.shardedDatabase: Invalid value: "products": Neo4jShardedDatabase "products" not found in namespace "neo4j"`)
+	assert.Contains(t, findingsText(logical), `set it to "products-sharded"`, "the logical name points at its CR")
+
+	missing := validate(backup("sc", "orders"), c)
+	require.Equal(t, 1, missing.errorCount(), "%s", findingsText(missing))
+	assert.NotContains(t, findingsText(missing), "set it to")
+
+	otherCluster := validate(backup("prod", "products-sharded"), c)
+	require.Equal(t, 1, otherCluster.errorCount(), "%s", findingsText(otherCluster))
+	assert.Contains(t, findingsText(otherCluster), `references cluster "sc" but spec.instanceRef is "prod"`)
+
+	// Offline nothing is resolved, and the summary says so.
+	offline := validate(backup("sc", "products"), nil)
+	assert.Equal(t, 0, offline.errorCount())
+	assert.Contains(t, offline.notCheckedOffline, "spec.shardedDatabase")
 }
 
 func findingsText(r docResult) string {

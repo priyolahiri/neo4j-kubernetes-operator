@@ -373,6 +373,60 @@ func TestStartRestore_StandaloneOfflineRefusalSaysWhy(t *testing.T) {
 	assert.Contains(t, got.Status.Message, "spec.stopCluster=true")
 }
 
+// A point-in-time restore into a running 5.26 standalone with stopCluster:
+// false announced RestoreStarted "Restoring offline with neo4j-admin, which
+// stops standalone" and was then refused, because the standalone was running
+// (v1.22.0 journey). The offline restore is announced once its checks have
+// passed, and with stopCluster: false it says the standalone is stopped
+// already, since the operator stops nothing.
+func TestStartRestore_OfflineRestoreIsAnnouncedOnlyOnceItsChecksPass(t *testing.T) {
+	pointInTime := func() *neo4jv1beta1.Neo4jRestore {
+		restore := minimalRestore("r", "ns", "sa")
+		at := metav1.Now()
+		restore.Spec.Source = neo4jv1beta1.RestoreSource{
+			Type: "storage", BackupPath: "nightly", PointInTime: &at,
+			Storage: &neo4jv1beta1.StorageLocation{Type: "pvc", PVC: &neo4jv1beta1.PVCSpec{Name: "backups"}},
+		}
+		restore.Spec.Options = &neo4jv1beta1.RestoreOptionsSpec{ReplaceExisting: true}
+		return restore
+	}
+	restoreStarted := func(r *Neo4jRestoreReconciler) []string {
+		rec, ok := r.Recorder.(*record.FakeRecorder)
+		require.True(t, ok)
+		return eventsWithReason(drainEvents(rec), EventReasonRestoreStarted)
+	}
+
+	t.Run("refused: the standalone is running", func(t *testing.T) {
+		sa := minimalStandaloneForRestore("sa", "ns")
+		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "sa-0", Namespace: "ns", Labels: map[string]string{"app": "sa"}}}
+		restore := pointInTime()
+		r := statusRestoreReconciler(t, sa, pod, restore)
+
+		_, err := r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
+		require.Error(t, err)
+
+		got := &neo4jv1beta1.Neo4jRestore{}
+		require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))
+		assert.Equal(t, StatusFailed, got.Status.Phase)
+		assert.Contains(t, got.Status.Message, "cannot run against a running standalone")
+		assert.Empty(t, restoreStarted(r), "a refused restore never started")
+	})
+
+	t.Run("stopCluster false, the standalone is stopped", func(t *testing.T) {
+		sa := minimalStandaloneForRestore("sa", "ns")
+		restore := pointInTime()
+		r := statusRestoreReconciler(t, sa, restore)
+
+		_, _ = r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
+
+		started := restoreStarted(r)
+		require.Len(t, started, 2, "the offline announcement, then the Job: %q", started)
+		assert.Contains(t, started[0], `Restoring offline with neo4j-admin into standalone "sa", which is stopped`)
+		assert.NotContains(t, started[0], "which stops", "the operator stops nothing under stopCluster: false")
+		assert.Contains(t, started[1], "Restore job")
+	})
+}
+
 // A cluster restoring a PVC DIFF used to create the database and leave it
 // offline ("not part of a valid backup chain"). The seed proxy now merges the
 // chain first, with the cluster's Neo4j image.

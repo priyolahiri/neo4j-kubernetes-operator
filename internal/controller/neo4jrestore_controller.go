@@ -454,10 +454,15 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	// online (point-in-time, a `source.type: storage` path, a DIFF on a PVC).
 	// An all-databases one runs a multi-database `neo4j-admin database
 	// restore` and handleRestoreSuccess brings every database online via
-	// registerAllDatabasesAfterRestore.
+	// registerAllDatabasesAfterRestore. Why it goes offline is announced once
+	// the checks below have passed and the instance is stopped: announced
+	// first, it said "Restoring offline" for a restore the next check refused
+	// (stopCluster: false against a running standalone, v1.22.0 journey). It
+	// is decided here, before stopCluster marks the instance as this
+	// restore's, so a re-entry after the stop does not announce it again.
+	offlineReason := ""
 	if reason := standaloneOfflineReason(restore, r.restoreStandalone(ctx, restore)); reason != "" && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
-		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-			fmt.Sprintf("Restoring offline with neo4j-admin, which stops standalone %q: %s", cluster.Name, reason))
+		offlineReason = reason
 	}
 
 	// Check if database exists and handle accordingly. Skipped when THIS
@@ -520,6 +525,13 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 			r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
 			return ctrl.Result{}, err
 		}
+	}
+	if offlineReason != "" {
+		msg := fmt.Sprintf("Restoring offline with neo4j-admin, which stops standalone %q: %s", cluster.Name, offlineReason)
+		if !restore.Spec.StopCluster {
+			msg = fmt.Sprintf("Restoring offline with neo4j-admin into standalone %q, which is stopped: %s", cluster.Name, offlineReason)
+		}
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted, msg)
 	}
 
 	// Create restore job
@@ -1376,12 +1388,16 @@ func seedConfigMissingMessage(target restoreTarget, missing []string) string {
 // carries the configuration, whether the user adds it or sets the annotation.
 // It used to go Failed, which the previously-failed guard in Reconcile keeps
 // until the spec changes, while its message said the annotation was enough.
-// The Warning is emitted when the restore starts waiting, not on every check.
+// The Warning is emitted when the restore starts waiting, not on every check:
+// when the status write changed the persisted phase or message. The pass's own
+// copy only spares the write; two passes that read it before the first one's
+// write landed both announced the wait, in the same second (v1.22.0 journey).
 func (r *Neo4jRestoreReconciler) awaitSeedConfig(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, target restoreTarget, missing []string) ctrl.Result {
 	msg := seedConfigMissingMessage(target, missing)
 	if restore.Status.Phase != StatusPending || restore.Status.Message != msg {
-		r.updateRestoreStatus(ctx, restore, StatusPending, msg)
-		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected, msg)
+		if r.transitionRestoreStatus(ctx, restore, StatusPending, msg) {
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonSeedEndpointNotProjected, msg)
+		}
 	}
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}
 }
@@ -4171,11 +4187,24 @@ func (r *Neo4jRestoreReconciler) cleanupRestoreJobs(ctx context.Context, restore
 }
 
 func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, phase, message string) {
+	r.transitionRestoreStatus(ctx, restore, phase, message)
+}
+
+// transitionRestoreStatus is updateRestoreStatus that also reports whether the
+// write changed the persisted phase or message — a state transition — from the
+// attempt whose write succeeded, which optimistic concurrency guarantees read
+// the current object. A caller announces the state from that, not from its own
+// copy of the restore: two passes that both read a copy from before the first
+// one's write each saw a change, and each emitted (knowledge rule 136).
+func (r *Neo4jRestoreReconciler) transitionRestoreStatus(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, phase, message string) bool {
+	transitioned := false
 	update := func() error {
+		transitioned = false
 		latest := &neo4jv1beta1.Neo4jRestore{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
+		changed := latest.Status.Phase != phase || latest.Status.Message != message
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
@@ -4199,11 +4228,16 @@ func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restor
 		}
 		condStatus, condReason := PhaseToConditionStatus(phase)
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		transitioned = changed
+		return nil
 	}
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update restore status")
+		transitioned = false
 	}
 
 	// Terminal sink for the PVC seed proxy (#219/#224 review): every path
@@ -4218,6 +4252,7 @@ func (r *Neo4jRestoreReconciler) updateRestoreStatus(ctx context.Context, restor
 			log.FromContext(ctx).Error(terr, "Failed to tear down seed proxy on terminal restore phase (non-fatal)")
 		}
 	}
+	return transitioned
 }
 
 // populateRestoreProvenance fills status.stats.duration and status.backupInfo on

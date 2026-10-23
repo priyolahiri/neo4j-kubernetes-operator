@@ -355,7 +355,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		r.recordValidationWarnings(cluster, result)
 
 		if len(result.Errors) > 0 {
-			err := fmt.Errorf("validation failed: %s", result.Errors.ToAggregate().Error())
+			// The errors alone: the status and the event below say "validation
+			// failed" themselves, and the prefix here doubled it.
+			err := result.Errors.ToAggregate()
 			// What a refusal is called follows whether any pass has accepted
 			// the cluster: "Update validation failed" on a first apply sent
 			// people looking for an edit they never made.

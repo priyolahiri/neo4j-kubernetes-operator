@@ -120,6 +120,13 @@ var conditionGuidance = map[string]guidance{
 		meaning: "the user's roles in Neo4j match spec.roles.",
 		action:  "When false, a listed role may not exist. Create the Neo4jRole; the user controller watches roles and retries when one lands.",
 	},
+	controller.ConditionTypeRoleNamesResolved: {
+		meaning: "spec.roles names one or more Neo4jRole resources by their metadata.name, and the operator granted the " +
+			"Neo4j role each one manages (its spec.name) instead. The message lists the mapping. Present only while " +
+			"such a name is in spec.roles.",
+		action: "Nothing to do. To grant by the Neo4j role name directly, list the role's spec.name in spec.roles; " +
+			"the condition then goes away.",
+	},
 	controller.ConditionTypePrivilegesSynced: {
 		meaning: "the role's privileges in Neo4j match spec.privileges and spec.privilegeRules.",
 		action: "When false, read the message for the failing statement. With enforcePrivileges true the spec is authoritative and drift is reverted each loop. " +
@@ -206,6 +213,10 @@ var phaseGuidance = map[string]guidance{
 	neo4jv1beta1.PhaseInvalid: {
 		meaning: "the spec was rejected by the operator's own validation, so nothing was created.",
 		action:  "status.message names the field. `kubectl neo4j validate -f <file>` reports the same thing before you apply, and reports every error at once.",
+	},
+	neo4jv1beta1.PhaseValidationFailed: {
+		meaning: "the spec was rejected by the operator's own validation, so nothing was created. This is Invalid as a Neo4jDatabase names it.",
+		action:  "status.message names the field. Fix it and re-apply; the operator checks again on its next pass. `kubectl neo4j validate -f <file> --connect` reports the same thing before you apply.",
 	},
 	neo4jv1beta1.PhaseDegraded: {
 		meaning: "the resource is serving but not at full health. On a Neo4jEnterpriseCluster: a majority of " +

@@ -50,10 +50,11 @@ type resourceStatus struct {
 
 // problemPhases are the phases that mean something is wrong and needs the
 // user: the operator gave up (Failed), hit an error (Error), rejected the spec
-// (Invalid), is serving below full health (Degraded), or could not tell
-// (Unknown). They are api/v1beta1 constants so a rename breaks the build; the
-// test over api/v1beta1.AllPhases fails when a new phase is added without a
-// decision about which side of this list it belongs on.
+// (Invalid, and ValidationFailed, the same refusal as a Neo4jDatabase names
+// it), is serving below full health (Degraded), or could not tell (Unknown).
+// They are api/v1beta1 constants so a rename breaks the build; the test over
+// api/v1beta1.AllPhases fails when a new phase is added without a decision
+// about which side of this list it belongs on.
 //
 // Suspended is deliberately absent — it is a pause the user asked for — as is
 // every in-progress or terminal-healthy phase.
@@ -61,6 +62,7 @@ var problemPhases = []string{
 	neo4jv1beta1.PhaseFailed,
 	neo4jv1beta1.PhaseError,
 	neo4jv1beta1.PhaseInvalid,
+	neo4jv1beta1.PhaseValidationFailed,
 	neo4jv1beta1.PhaseDegraded,
 	neo4jv1beta1.PhaseUnknown,
 }

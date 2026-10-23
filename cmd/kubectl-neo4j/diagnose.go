@@ -319,10 +319,10 @@ func diagnoseResource(obj *unstructured.Unstructured, env namespaceEnv) diagnosi
 
 	switch obj.GetKind() {
 	case "Neo4jEnterpriseCluster":
-		d.summary, d.symptoms = diagnoseInstance(obj.GetName(),
+		d.summary, d.symptoms = diagnoseInstance(obj.GetKind(), row,
 			resources.ServerPodSelector(obj.GetName()), env)
 	case "Neo4jEnterpriseStandalone":
-		d.summary, d.symptoms = diagnoseInstance(obj.GetName(),
+		d.summary, d.symptoms = diagnoseInstance(obj.GetKind(), row,
 			resources.StandalonePodSelector(obj.GetName()), env)
 	case "Neo4jBackup":
 		d.summary, d.symptoms = diagnoseBackup(obj.GetName(), env)
@@ -334,7 +334,9 @@ func diagnoseResource(obj *unstructured.Unstructured, env namespaceEnv) diagnosi
 }
 
 // diagnoseInstance covers the two kinds that own a StatefulSet of Neo4j pods.
-func diagnoseInstance(name string, selector map[string]string, env namespaceEnv) (string, []symptom) {
+// row is the resource's own status, read as `status` reads it.
+func diagnoseInstance(kind string, row resourceStatus, selector map[string]string, env namespaceEnv) (string, []symptom) {
+	name := row.name
 	pods := selectPods(env.pods, selector)
 	pvcs := selectPVCs(env.pvcs, resources.PVCSelectorByInstance(name))
 
@@ -376,11 +378,29 @@ func diagnoseInstance(name string, selector map[string]string, env namespaceEnv)
 			mark:    markProblem,
 			subject: name,
 			what:    "no StatefulSet and no pods",
-			action: "The operator has not built the workload yet. Check that it is running " +
-				"and watching this namespace: " + operatorLogsCommand(env.operator),
+			action:  noWorkloadAction(kind, row, env.operator),
 		})
 	}
 	return summary, symptoms
+}
+
+// noWorkloadAction says what to do about a deployment with no StatefulSet. A
+// resource the operator has written status to was reconciled: the operator is
+// running and watching it, and chose not to build — a refused spec, a missing
+// StorageClass — so "check that it is running" sent the user after the wrong
+// thing (v1.22.0 journey, a cluster in ValidationFailed). Its status says why.
+func noWorkloadAction(kind string, row resourceStatus, op operatorLocation) string {
+	if row.phase == "-" && row.ready == "-" {
+		return "The operator has not built the workload yet. Check that it is running " +
+			"and watching this namespace: " + operatorLogsCommand(op)
+	}
+	why := "the status message above says why"
+	if row.message == "" {
+		why = "its conditions and events say why: kubectl describe " + strings.ToLower(kind) + " " + row.name
+	}
+	return fmt.Sprintf("The operator has reconciled this resource and built no workload; %s. "+
+		"Fix what it names and re-apply; `kubectl neo4j explain %s/%s` decodes its status.",
+		why, kind, row.name)
 }
 
 // diagnosePod is the heart of the command: one pod's Kubernetes-level state,

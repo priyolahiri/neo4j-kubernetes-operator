@@ -556,6 +556,19 @@ func TestShardedPreflightStatic(t *testing.T) {
 			wantErrSub: `Neo4jShardedDatabase "products" not found`,
 		},
 		{
+			// The logical name is the usual mistake: the refusal names the CR
+			// (shared with `kubectl neo4j validate --connect`).
+			name: "sharded DB named by its logical name → Fail, naming the CR",
+			objs: []runtime.Object{&neo4jv1beta1.Neo4jShardedDatabase{
+				ObjectMeta: metav1.ObjectMeta{Name: "inventory-sharded", Namespace: "default"},
+				Spec:       neo4jv1beta1.Neo4jShardedDatabaseSpec{Name: "inventory", ClusterRef: "ec"},
+			}},
+			cluster:    clusterReady,
+			mutate:     func(b *neo4jv1beta1.Neo4jBackup) { b.Spec.ShardedDatabase = "inventory" },
+			wantAction: preflightFail,
+			wantErrSub: `Neo4jShardedDatabase "inventory" not found in namespace "default"; Neo4jShardedDatabase "inventory-sharded" has spec.name "inventory"`,
+		},
+		{
 			name:        "sharded DB CR not Ready → Wait",
 			objs:        []runtime.Object{shardedDBNotReady},
 			cluster:     clusterReady,

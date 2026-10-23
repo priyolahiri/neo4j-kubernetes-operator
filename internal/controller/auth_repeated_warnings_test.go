@@ -24,6 +24,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -386,6 +387,93 @@ func TestReportPendingRoles_AnnouncesTheWaitOnce(t *testing.T) {
 			tc.report(c, rec, nil)
 			tc.report(c, rec, []string{"auditor"})
 			require.Len(t, eventsWithReason(drainEvents(rec), EventReasonRolePending), 1)
+		})
+	}
+}
+
+// resolvedRolesCase calls one controller's reportResolvedRoles.
+type resolvedRolesCase struct {
+	name string
+	obj  client.Object
+	// report calls reportResolvedRoles on obj through a fresh reconciler.
+	report func(c client.Client, rec record.EventRecorder, resolved map[string]string)
+	// conditions reads obj's persisted conditions.
+	conditions func(t *testing.T, c client.Client) []metav1.Condition
+}
+
+func resolvedRolesCases() []resolvedRolesCase {
+	ctx := context.Background()
+	rb := &neo4jv1beta1.Neo4jRoleBinding{ObjectMeta: repeatedWarningsMeta("rb", Neo4jRoleBindingFinalizer)}
+	user := &neo4jv1beta1.Neo4jUser{ObjectMeta: repeatedWarningsMeta("user", Neo4jUserFinalizer)}
+	return []resolvedRolesCase{
+		{
+			name: "Neo4jRoleBinding", obj: rb,
+			report: func(c client.Client, rec record.EventRecorder, resolved map[string]string) {
+				(&Neo4jRoleBindingReconciler{Client: c, Recorder: rec}).reportResolvedRoles(ctx, rb, resolved)
+			},
+			conditions: func(t *testing.T, c client.Client) []metav1.Condition {
+				live := &neo4jv1beta1.Neo4jRoleBinding{}
+				require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(rb), live))
+				return live.Status.Conditions
+			},
+		},
+		{
+			name: "Neo4jUser", obj: user,
+			report: func(c client.Client, rec record.EventRecorder, resolved map[string]string) {
+				(&Neo4jUserReconciler{Client: c, Recorder: rec}).reportResolvedRoles(ctx, user, resolved)
+			},
+			conditions: func(t *testing.T, c client.Client) []metav1.Condition {
+				live := &neo4jv1beta1.Neo4jUser{}
+				require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(user), live))
+				return live.Status.Conditions
+			},
+		},
+	}
+}
+
+// TestReportResolvedRoles_AnnouncesTheMappingOnce: RolesResolved was emitted on
+// every pass that resolved a Neo4jRole CR name in spec.roles — 40 in five
+// minutes on one Neo4jUser, 7 on one Neo4jRoleBinding (v1.22.0 journey). The
+// mapping is recorded in the RoleNamesResolved condition and announced when it
+// changes. Each call builds its reconciler afresh, so every repeat below is
+// also what a restarted operator does.
+func TestReportResolvedRoles_AnnouncesTheMappingOnce(t *testing.T) {
+	for _, tc := range resolvedRolesCases() {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewClientBuilder().WithScheme(noEffectTestScheme(t)).WithObjects(tc.obj).
+				WithStatusSubresource(tc.obj).Build()
+			rec := record.NewFakeRecorder(100)
+			mapping := map[string]string{"analyst-role": "analyst", "auditor-role": "auditor"}
+
+			for range 3 {
+				tc.report(c, rec, mapping)
+			}
+			got := eventsWithReason(drainEvents(rec), EventReasonRolesResolved)
+			require.Len(t, got, 1, "announced when the mapping appears, not on every pass: %q", got)
+			assert.Contains(t, got[0], "resolved Neo4jRole CR names to Neo4j role names: map[analyst-role:analyst auditor-role:auditor]")
+			cond := meta.FindStatusCondition(tc.conditions(t, c), ConditionTypeRoleNamesResolved)
+			require.NotNil(t, cond, "the mapping is kept in status, which outlives the operator")
+			assert.Equal(t, metav1.ConditionTrue, cond.Status)
+			assert.Equal(t, resolvedRolesMessage(mapping), cond.Message)
+
+			// The same mapping, built again: not news.
+			tc.report(c, rec, map[string]string{"auditor-role": "auditor", "analyst-role": "analyst"})
+			assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonRolesResolved))
+
+			// A role CR now names a different Neo4j role: news, once.
+			mapping["analyst-role"] = "analysts"
+			tc.report(c, rec, mapping)
+			tc.report(c, rec, mapping)
+			require.Len(t, eventsWithReason(drainEvents(rec), EventReasonRolesResolved), 1)
+
+			// spec.roles stops naming CRs: the condition goes, silently...
+			tc.report(c, rec, nil)
+			assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonRolesResolved))
+			assert.Nil(t, meta.FindStatusCondition(tc.conditions(t, c), ConditionTypeRoleNamesResolved))
+
+			// ...and a CR name coming back is announced again.
+			tc.report(c, rec, map[string]string{"analyst-role": "analysts"})
+			require.Len(t, eventsWithReason(drainEvents(rec), EventReasonRolesResolved), 1)
 		})
 	}
 }

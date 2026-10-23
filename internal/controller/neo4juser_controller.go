@@ -251,10 +251,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	desiredRoles := normaliseRoles(user.Spec.Roles)
 	desiredRoles, resolvedRoles := resolveRoleNames(ctx, r.Client, user.Namespace, targetRefKey(user.Spec.ClusterRef), desiredRoles)
 	desiredRoles = normaliseRoles(desiredRoles) // dedupe any CR-name/spec.name collisions
-	if len(resolvedRoles) > 0 {
-		r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonRolesResolved,
-			"resolved Neo4jRole CR names to Neo4j role names: %v", resolvedRoles)
-	}
+	r.reportResolvedRoles(ctx, user, resolvedRoles)
 	currentRoles := normaliseRoles(info.Roles) // Note: may be slightly stale after CREATE; re-read just below.
 	// info is non-nil here: the create branch above re-reads it (and bails if
 	// still nil) and the else branch only runs when it was already non-nil.
@@ -653,6 +650,36 @@ func (r *Neo4jUserReconciler) reportPendingRoles(ctx context.Context, user *neo4
 	msg := pendingRolesMessage(missing)
 	if r.setNamedCondition(ctx, user, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending, msg) {
 		r.Recorder.Eventf(user, corev1.EventTypeWarning, EventReasonRolePending, "%s", msg)
+	}
+}
+
+// reportResolvedRoles records the CR names spec.roles resolved (the
+// RoleNamesResolved condition) and announces RolesResolved when the mapping
+// changes, from the attempt whose write succeeded — not on every pass.
+func (r *Neo4jUserReconciler) reportResolvedRoles(ctx context.Context, user *neo4jv1beta1.Neo4jUser, resolved map[string]string) {
+	announce := false
+	update := func() error {
+		announce = false
+		latest := &neo4jv1beta1.Neo4jUser{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(user), latest); err != nil {
+			return err
+		}
+		write, a := setResolvedRolesCondition(&latest.Status.Conditions, latest.Generation, resolved)
+		if !write {
+			return nil
+		}
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = a
+		return nil
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record resolved role names on Neo4jUser")
+		return
+	}
+	if announce {
+		r.Recorder.Event(user, corev1.EventTypeNormal, EventReasonRolesResolved, resolvedRolesMessage(resolved))
 	}
 }
 

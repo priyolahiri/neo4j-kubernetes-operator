@@ -436,6 +436,66 @@ func databasePhase(t *testing.T, r *Neo4jDatabaseReconciler, key client.ObjectKe
 	return db.Status.Phase
 }
 
+// failingDropServer refuses DROP DATABASE with an error a deletion retries.
+type failingDropServer struct {
+	databaseServer
+	err   error
+	drops int
+}
+
+func (s *failingDropServer) DropDatabase(context.Context, string) error {
+	s.drops++
+	return s.err
+}
+
+// A deletion retries a drop Neo4j refused until it succeeds or the grace period
+// ends: every RequeueAfter, and on every status change of the host, which a
+// teardown makes often. DeletionFailed came on each retry, about ten a minute
+// (v1.22.0 journey). It is announced when the failure starts or its message
+// changes; the retries, and the finalizer, stay.
+func TestDatabaseDeletion_ARetriedDropIsAnnouncedOnce(t *testing.T) {
+	ctx := context.Background()
+	db := ordersDatabase("orders")
+	now := metav1.Now()
+	db.DeletionTimestamp = &now
+	server := &failingDropServer{err: errors.New("Neo.TransientError.General.DatabaseUnavailable: the database is unavailable")}
+	newReconciler := func(c client.Client, rec record.EventRecorder) *Neo4jDatabaseReconciler {
+		return &Neo4jDatabaseReconciler{
+			Client: c, Scheme: c.Scheme(), Recorder: rec, RequeueAfter: 30 * time.Second,
+			newNeo4jClient: func(*neo4jv1beta1.Neo4jEnterpriseCluster, *neo4jv1beta1.Neo4jEnterpriseStandalone) (databaseNeo4jClient, error) {
+				return server, nil
+			},
+		}
+	}
+	c := fake.NewClientBuilder().WithScheme(noEffectTestScheme(t)).WithObjects(readyDatabaseHost(), db).
+		WithStatusSubresource(&neo4jv1beta1.Neo4jDatabase{}).Build()
+	rec := record.NewFakeRecorder(50)
+	r := newReconciler(c, rec)
+	key := client.ObjectKeyFromObject(db)
+
+	for _, err := range reconcileTimes(t, r, key, repeatPasses) {
+		require.NoError(t, err)
+	}
+	failed := eventsWithReason(drainEvents(rec), EventReasonDeletionFailed)
+	require.Len(t, failed, 1, "announced when the failure starts, not on every retry: %q", failed)
+	assert.Contains(t, failed[0], "will retry: Neo.TransientError.General.DatabaseUnavailable")
+	assert.Equal(t, repeatPasses, server.drops, "the drop is still retried on every pass")
+	live := &neo4jv1beta1.Neo4jDatabase{}
+	require.NoError(t, c.Get(ctx, key, live))
+	assert.Contains(t, live.Finalizers, DatabaseFinalizer, "the finalizer stays while the drop is retried")
+	assert.Equal(t, neo4jv1beta1.PhaseError, live.Status.Phase)
+	assert.Contains(t, live.Status.Message, "Failed to drop database, will retry")
+
+	// A different failure is news.
+	server.err = errors.New("Neo.TransientError.Transaction.LockClientStopped: the transaction was terminated")
+	reconcileTimes(t, r, key, repeatPasses)
+	require.Len(t, eventsWithReason(drainEvents(rec), EventReasonDeletionFailed), 1)
+
+	// An operator restart reads the failure from status and stays quiet.
+	reconcileTimes(t, newReconciler(c, rec), key, 1)
+	assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonDeletionFailed))
+}
+
 // --- Neo4jShardedDatabase ----------------------------------------------------
 
 // failingShardedServer refuses SHOW DATABASES the way a server does for a

@@ -167,6 +167,61 @@ func TestShardedReconcile_CreatesOnceAndAnnouncesReadyOnce(t *testing.T) {
 	assert.True(t, got.Status.GraphShard.Ready)
 }
 
+// laggingCache serves the next read of a Neo4jShardedDatabase from a stale
+// copy — what the informer cache can still hold when a status write's own
+// watch event starts the next pass — and reads through after that.
+type laggingCache struct {
+	client.Client
+	stale *neo4jv1beta1.Neo4jShardedDatabase
+}
+
+func (c *laggingCache) Get(ctx context.Context, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+	if sd, ok := obj.(*neo4jv1beta1.Neo4jShardedDatabase); ok && c.stale != nil {
+		c.stale.DeepCopyInto(sd)
+		c.stale = nil
+		return nil
+	}
+	return c.Client.Get(ctx, key, obj, opts...)
+}
+
+// The first pass of a sharded database on a Ready cluster takes it from no
+// status to Ready and announces ShardedDatabaseReady. Its status writes start
+// the next pass at once, which read the database from the cache, still at
+// "Validating": it wrote "Creating" over Ready and announced Ready a second
+// time, in the same second (v1.22.0 journey). Each pass now reads the database
+// from the API server.
+func TestShardedReconcile_AStaleCacheDoesNotAnnounceReadyTwice(t *testing.T) {
+	ctx := context.Background()
+	server := &shardedServer{name: "products"}
+	sd := productsShardedDB()
+	r, rec := shardedTestReconciler(t, server, shardingCluster(), sd)
+	apiServer := r.Client
+	cache := &laggingCache{Client: apiServer}
+	r.Client, r.APIReader = cache, apiServer
+	key := client.ObjectKeyFromObject(sd)
+
+	require.NoError(t, reconcileSharded(t, r, sd))
+	require.Len(t, eventsWithReason(drainEvents(rec), EventReasonShardedDatabaseReady), 1)
+
+	// The database as the first pass's first status write left it, at the
+	// resourceVersion of that time: a write from this copy is a conflict.
+	stale := &neo4jv1beta1.Neo4jShardedDatabase{}
+	require.NoError(t, apiServer.Get(ctx, key, stale))
+	stale.ResourceVersion = "1"
+	stale.Status = neo4jv1beta1.Neo4jShardedDatabaseStatus{
+		Phase: "Validating", Message: "Validating sharded database configuration",
+	}
+	cache.stale = stale
+
+	require.NoError(t, reconcileSharded(t, r, sd))
+	assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonShardedDatabaseReady),
+		"the database was Ready before this pass and is Ready after it")
+	got := &neo4jv1beta1.Neo4jShardedDatabase{}
+	require.NoError(t, apiServer.Get(ctx, key, got))
+	assert.Equal(t, "Ready", got.Status.Phase)
+	assert.Equal(t, 1, server.count("CREATE DATABASE"))
+}
+
 // A family created outside the operator, or by an earlier operator, is not
 // created again either.
 func TestShardedReconcile_ExistingFamilyIsNotCreated(t *testing.T) {

@@ -48,15 +48,15 @@ func TestReconcile_ValidationFailureWording(t *testing.T) {
 	}{
 		{
 			name:        "refused at creation",
-			wantStatus:  "Validation failed: validation failed: ",
-			wantEvent:   "Warning " + EventReasonValidationFailed + " Cluster validation failed: validation failed: ",
+			wantStatus:  "Validation failed: spec.",
+			wantEvent:   "Warning " + EventReasonValidationFailed + " Cluster validation failed: spec.",
 			notInStatus: "Update",
 		},
 		{
 			name:       "refused after an earlier pass accepted it",
 			finalizers: []string{ClusterFinalizer},
-			wantStatus: "Update validation failed: validation failed: ",
-			wantEvent:  "Warning " + EventReasonValidationFailed + " Cluster update validation failed: validation failed: ",
+			wantStatus: "Update validation failed: spec.",
+			wantEvent:  "Warning " + EventReasonValidationFailed + " Cluster update validation failed: spec.",
 		},
 	}
 
@@ -99,14 +99,43 @@ func TestReconcile_ValidationFailureWording(t *testing.T) {
 			if tc.notInStatus != "" {
 				assert.NotContains(t, got.Status.Message, tc.notInStatus)
 			}
+			// "Validation failed: validation failed:" — the reconciler and the
+			// error it wrapped both said it (v1.22.0 journey). Once is enough.
+			assert.Equal(t, 1, strings.Count(strings.ToLower(got.Status.Message), "validation failed"),
+				"status.message = %q", got.Status.Message)
 
 			var found bool
 			for _, e := range drainEvents(rec) {
 				if strings.HasPrefix(e, tc.wantEvent) {
 					found = true
+					assert.Equal(t, 1, strings.Count(strings.ToLower(e), "validation failed"), "event %q", e)
 				}
 			}
 			assert.True(t, found, "no event starting %q", tc.wantEvent)
 		})
 	}
+}
+
+// The sharded database's validator returned "validation failed: …" and the
+// reconciler wrote "Validation failed: %v" around it, so status read
+// "Validation failed: validation failed: …". The event now carries the status
+// message, with the prefix once.
+func TestShardedReconcile_ValidationFailureSaysSoOnce(t *testing.T) {
+	sd := productsShardedDB()
+	sd.Spec.PropertySharding.PropertyShards = 0
+	r, rec := shardedTestReconciler(t, &shardedServer{name: "products"}, shardingCluster(), sd)
+	r.ShardedDatabaseValidator = validation.NewShardedDatabaseValidator(r.Client)
+
+	require.NoError(t, reconcileSharded(t, r, sd))
+
+	got := &neo4jv1beta1.Neo4jShardedDatabase{}
+	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(sd), got))
+	assert.Equal(t, "Failed", got.Status.Phase)
+	assert.True(t, strings.HasPrefix(got.Status.Message, "Validation failed: spec.propertySharding.propertyShards"),
+		"status.message = %q", got.Status.Message)
+	assert.Equal(t, 1, strings.Count(strings.ToLower(got.Status.Message), "validation failed"), "status.message = %q", got.Status.Message)
+
+	failed := eventsWithReason(drainEvents(rec), EventReasonValidationFailed)
+	require.Len(t, failed, 1)
+	assert.Contains(t, failed[0], got.Status.Message, "the event says what status says")
 }
