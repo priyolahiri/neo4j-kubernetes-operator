@@ -590,7 +590,7 @@ Earlier releases wrote most custom resources back whole when they added a finali
 
 - `enforcePrivileges: false` on a `Neo4jRole`, or `enforceRoles: false` on a `Neo4jAuthRule`. They were stored as `true`, so the operator has been revoking privileges and roles you chose to keep.
 - `spec.mcp.readOnly: false` on a cluster or standalone. It was stored as `true`, so the MCP server has run read-only.
-- Any other `false` the CRD defaults to `true`: `Neo4jPlugin.enabled`, `Neo4jDatabase.ifNotExists` and `wait`, and on a cluster or standalone `spec.monitoring.enabled` and the `spec.upgradeStrategy` flags (`preUpgradeHealthCheck`, `postUpgradeHealthCheck`, `autoPauseOnFailure`).
+- Any other `false` the CRD defaults to `true`: `Neo4jDatabase.ifNotExists` and `wait`, and on a cluster or standalone `spec.monitoring.enabled` and the `spec.upgradeStrategy` flags (`preUpgradeHealthCheck`, `postUpgradeHealthCheck`, `autoPauseOnFailure`).
 - `spec.auth.authorizationProviders` on a cluster that set no `authenticationProviders`. Both lists were stored as `[native]`.
 - Provider settings in `spec.config` (`dbms.security.authentication_providers`, `dbms.security.authorization_providers`) on a cluster that set no `spec.auth` lists. Both lists were stored as `[native]`, which take precedence over `spec.config`, and re-applying does not remove them. Remove them by hand:
 
@@ -599,9 +599,9 @@ Earlier releases wrote most custom resources back whole when they added a finali
     '[{"op":"remove","path":"/spec/auth/authenticationProviders"},{"op":"remove","path":"/spec/auth/authorizationProviders"}]'
   ```
 
-Re-applying `monitoring.enabled: false` or a provider list changes what the servers run, so they restart (rolling); a plugin re-applied with `enabled: false` is uninstalled.
+Re-applying `monitoring.enabled: false` or a provider list changes what the servers run, so they restart (rolling).
 
-Two more were stored differently but behave the same, so they show only as drift in GitOps tools: `identity.autoCreate.enabled: false` on a backup or restore was stored as `true` (the field has no effect yet), and a `false` with no CRD default, such as an `AuraInstance`'s `deletionProtection: false`, was dropped.
+Three more were stored differently but behave the same, so they show only as drift in GitOps tools: `Neo4jPlugin.enabled: false` was stored as `true` (the plugin controller does not read the field, so the plugin is installed either way; [#540](https://github.com/priyolahiri/neo4j-kubernetes-operator/issues/540)), `identity.autoCreate.enabled: false` on a backup or restore was stored as `true` (the field has no effect yet), and a `false` with no CRD default, such as an `AuraInstance`'s `deletionProtection: false`, was dropped.
 
 ### Newly refused — check your manifests first
 
