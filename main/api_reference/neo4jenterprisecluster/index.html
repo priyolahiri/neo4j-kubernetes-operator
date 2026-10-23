@@ -6594,9 +6594,10 @@ init container, then sets <code>-Djavax.net.ssl.trustStore</code> on the JVM. Th
 default <code>cacerts</code> is used as the seed, so adding internal CAs does not
 remove trust in public CAs.</p>
 <p>A <code>VerifiedDownload</code> <a href="../neo4jplugin/"><code>Neo4jPlugin</code></a> of the cluster trusts
-the same list when it fetches its JAR (its <code>plugin-ca</code> volume). A change to
-the list restarts the servers for the truststore, and then once more when a
-<code>Ready</code> plugin brings its volume in line, once the cluster is <code>Ready</code> with
+the same list, in addition to its init image's default CAs, when it fetches
+its JAR (its <code>plugin-ca</code> volume). A change to the list restarts the servers
+for the truststore, and then once more when a <code>Ready</code> plugin brings its
+volume in line, once the cluster has finished that roll and is <code>Ready</code> with
 every server available again. Removing a CA is safe to follow with deleting
 its Secret: the plugin's projections are optional (except, on the first change
 after upgrading the operator, a volume an earlier version wrote).</p>

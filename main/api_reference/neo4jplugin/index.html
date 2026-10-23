@@ -5719,8 +5719,15 @@ can't race the verified JAR.</p>
 </span></code></pre></div>
 <p><strong>Failure mode</strong>: on checksum mismatch the init container exits non-zero,
 the pod stays Pending, and <code>kubectl describe pod</code> shows the failure on
-the init container's <code>state.terminated.message</code>. Fix the URL or checksum
-and reconcile — the next pod spawn re-runs the init container.</p>
+the init container's <code>state.terminated.message</code>; the plugin stays
+<code>Installing</code> with a message naming the pod and the exit code. Fix the URL
+or checksum (or the target's <code>spec.trustedCASecrets</code>): the plugin writes the
+fix even though its target is not <code>Ready</code>, with one
+<code>PluginInitContainerFailing</code> Warning, when every server that is down is
+failing in this plugin's init container, those are the highest-numbered
+servers, and Neo4j reports no other server unavailable. Otherwise the fix
+waits like any install. On a standalone the plugin then deletes the stuck
+pod, which its StatefulSet would not replace.</p>
 <p><strong>Coexistence with the cluster controller</strong>: the init container is named
 <code>plugin-init-&lt;name&gt;</code>, its volumes <code>plugin-auth-&lt;name&gt;</code> and <code>plugin-ca</code>
 (shared by every VerifiedDownload plugin of the target). The cluster
@@ -5740,16 +5747,23 @@ full <code>Authorization:</code> header value). Mounted at <code>/etc/plugin-aut
 consumed by the init script.</p>
 <p><strong>Internal CAs</strong> are supported via the owning cluster's (or standalone's)
 <code>spec.trustedCASecrets</code> list. Each Secret's <code>ca.crt</code> (or the per-Secret
-<code>Key</code> override) is mounted under <code>/etc/plugin-ca</code>; the init script
-concatenates the certificates into a single CA bundle and points curl at
-it via <code>--cacert</code>.</p>
+<code>Key</code> override) is mounted under <code>/etc/plugin-ca</code>; the init script appends
+the certificates to the init image's default CA bundle and points curl at
+the result via <code>--cacert</code>, so public URLs keep working. The default bundle
+is <code>$CURL_CA_BUNDLE</code> when it names a file (as in <code>curlimages/curl</code>), else
+the first of <code>/etc/ssl/certs/ca-certificates.crt</code>,
+<code>/etc/pki/tls/certs/ca-bundle.crt</code>, <code>/etc/ssl/cert.pem</code> and <code>/cacert.pem</code>
+that exists; an image with none trusts only the listed CAs and logs a
+<code>WARNING</code>.</p>
 <p>The <code>plugin-ca</code> volume follows the list: when you add, remove or replace a
 Secret in <code>spec.trustedCASecrets</code>, a <code>Ready</code> plugin updates the volume (and
 its init container's mount of it, when the list becomes empty or stops being
 empty) without a <code>PluginMissing</code> event — phase <code>Installing</code>, message
 "Updating the plugin's trusted CAs: …". That write restarts the servers, so it
-waits like an install until the target is <code>Ready</code> with every server available:
-the target's own truststore roll comes first, then the plugin's. A list that
+waits like an install until the target is <code>Ready</code> with every server available
+and has rolled out its own change (<code>Waiting</code>, one <code>PluginInstallDeferred</code>):
+the target's own truststore roll comes first, then the plugin's, and the
+plugin is <code>Ready</code> once its roll has reached every server. A list that
 is only reordered changes nothing. The volume's projections are optional and
 the init script uses the default CAs when <code>/etc/plugin-ca</code> holds no
 certificate, so a Secret you delete right after removing it from the list
