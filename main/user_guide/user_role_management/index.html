@@ -4951,6 +4951,10 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <td><code>ClusterNotReady</code></td>
 <td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
 </tr>
+<tr>
+<td><code>RoleNamesResolved</code></td>
+<td><code>spec.roles</code> names a <code>Neo4jRole</code> by its CR name; the message maps each to the Neo4j role granted. Present only then</td>
+</tr>
 </tbody>
 </table>
 <h3 id="neo4jrole"><code>Neo4jRole</code><a class="headerlink" href="#neo4jrole" title="Anchor link to this section">&para;</a></h3>
@@ -5008,6 +5012,10 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <tr>
 <td><code>ClusterNotReady</code></td>
 <td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
+</tr>
+<tr>
+<td><code>RoleNamesResolved</code></td>
+<td><code>spec.roles</code> names a <code>Neo4jRole</code> by its CR name; the message maps each to the Neo4j role granted. Present only then</td>
 </tr>
 </tbody>
 </table>

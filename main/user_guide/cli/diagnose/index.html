@@ -3988,6 +3988,10 @@
 <td>a StatefulSet that wants replicas but has none</td>
 </tr>
 <tr>
+<td>No workload at all</td>
+<td>a cluster or standalone with neither StatefulSet nor pods. If the operator has written its status, it reconciled the resource and chose not to build it (a refused spec, a missing StorageClass): the hint points at that status message and <code>explain</code>. With no status, the operator may not be running or watching the namespace, and the hint says how to check</td>
+</tr>
+<tr>
 <td>Backup Job failed</td>
 <td>the Job's <code>Failed</code> condition being <code>True</code> (including a missed <code>activeDeadlineSeconds</code>, where no pod failed), plus its pods, container by container. The verdict is the Job's conditions, not its <code>status.failed</code> count: that counts failed <em>attempts</em> and never goes down, so a backup that retried and then completed is a success — it gets a <code>⚠</code> line noting the retries, and one still retrying gets <code>…</code>, neither of which changes the exit code</td>
 </tr>

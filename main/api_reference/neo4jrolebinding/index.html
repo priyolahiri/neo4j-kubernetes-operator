@@ -4304,6 +4304,11 @@
 <td><code>ClusterNotReady</code>, <code>ClusterReady</code></td>
 <td>Mirrors the readiness of the referenced cluster.</td>
 </tr>
+<tr>
+<td><code>RoleNamesResolved</code></td>
+<td><code>RoleCRNamesResolved</code></td>
+<td>Present only while <code>.spec.roles</code> names a <code>Neo4jRole</code> by its CR <code>metadata.name</code>; True, and the message maps each such name to the Neo4j role granted. A <code>RolesResolved</code> event announces the mapping when it appears or changes.</td>
+</tr>
 </tbody>
 </table>
 <h2 id="validation-rules">Validation rules<a class="headerlink" href="#validation-rules" title="Anchor link to this section">&para;</a></h2>
