@@ -2799,6 +2799,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#removing-settings-and-uninstalling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removing settings and uninstalling
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4560,6 +4571,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#removing-settings-and-uninstalling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Removing settings and uninstalling
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -5246,7 +5268,7 @@
 <li><strong>Target Discovery</strong>: Automatically detects whether <code>clusterRef</code> points to a cluster or standalone</li>
 <li><strong>Plugin Collection</strong>: Gathers main plugin and all dependencies into a unified list</li>
 <li><strong>Environment Variable Setup</strong>: Merges plugin names into the existing <code>NEO4J_PLUGINS</code> JSON array (additive — does not overwrite entries added by other controllers such as the Aura Fleet Management reconciler)</li>
-<li><strong>Configuration Application</strong>: Adds plugin-specific settings as <code>NEO4J_*</code> environment variables</li>
+<li><strong>Configuration Application</strong>: Adds plugin-specific settings as <code>NEO4J_*</code> environment variables, records their names on the StatefulSet (annotation <code>neo4j.com/plugin-env-vars.&lt;plugin name&gt;</code>), and removes the ones it recorded before and no longer sets</li>
 <li><strong>StatefulSet Update</strong>: Patches the target StatefulSet with new configuration — in one update (with a <code>VerifiedDownload</code> plugin's init container and volumes), and only when something changes. Because the update restarts every server, it waits (phase <code>Waiting</code>, a <code>PluginInstallDeferred</code> event) until the target is <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code>), nor while it is forming, rolling its servers or upgrading</li>
 <li><strong>Rolling Restart</strong>: Triggers controlled pod restarts to apply changes</li>
 <li><strong>Verification</strong>: Confirms plugin installation and updates status</li>
@@ -5264,17 +5286,22 @@
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">env</span><span class="p">:</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_PLUGINS</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'["apoc"]'</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_APOC_EXPORT_FILE_ENABLED</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_apoc_export_file_enabled</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'true'</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_APOC_IMPORT_FILE_ENABLED</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_apoc_import_file_enabled</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'true'</span>
 </span></code></pre></div></p>
 <p><strong>Notes</strong>:</p>
 <ul>
-<li>APOC settings are applied via environment variables in Neo4j 5.26+</li>
-<li>Bloom/GDS/GenAI settings are applied via ConfigMap (standalone) or runtime configuration (cluster)</li>
+<li>Every <code>spec.config</code> key becomes a <code>NEO4J_&lt;setting&gt;</code> environment variable (<code>.</code> → <code>_</code>, a literal <code>_</code> doubled, case kept), which Neo4j reads at startup; APOC settings must go this way in Neo4j 5.26+</li>
+<li>On a standalone, security and startup-only settings go to its <code>neo4j.conf</code> instead of the env</li>
+<li>Neo4j refuses to start on a setting it does not know, so list only settings your Neo4j version documents</li>
 <li>Automatic dependency resolution and security defaults are applied as needed</li>
 </ul>
+<h3 id="removing-settings-and-uninstalling">Removing settings and uninstalling<a class="headerlink" href="#removing-settings-and-uninstalling" title="Anchor link to this section">&para;</a></h3>
+<p>The plugin records the variables it sets on the target's StatefulSet, under <code>neo4j.com/plugin-env-vars.&lt;plugin name&gt;</code>. When a key leaves <code>spec.config</code>, the plugin removes its variable — one rolling restart, which waits like an install until the target is <code>Ready</code> with every server available. When every server that is down keeps failing in its <code>neo4j</code> container while running a variable the removal changes (Neo4j refused the setting), those are the highest-numbered servers, and Neo4j reports no other server unavailable, the removal does not wait: phase <code>Installing</code>, one <code>PluginSettingsFailing</code> Warning, and the restart replaces the failing servers first; on a standalone the plugin then deletes the stuck pod. A variable the cluster or standalone renders from its own spec, or one another plugin of the target sets, is never removed.</p>
+<p>Deleting the <code>Neo4jPlugin</code> takes off the StatefulSet, in one write, everything the plugin wrote: its variables, its tokens in the procedure allowlists (not those another plugin needs), in Managed mode its <code>NEO4J_PLUGINS</code> entry and its dependencies' (not those another plugin of the target installs, nor <code>fleet-management</code> while <code>spec.auraFleetManagement</code> installs it, nor anything when <code>NEO4J_PLUGINS</code> comes from the cluster's own <code>spec.env</code>), a <code>VerifiedDownload</code> plugin's init container and volumes, and the record.</p>
+<p>A plugin installed by an operator older than v1.22.0 has no record: its first reconcile records what it sets now (a metadata write, no restart) and removes nothing. A variable a key removal left behind before the upgrade stays until removed by hand.</p>
 <h2 id="api-version">API Version<a class="headerlink" href="#api-version" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
@@ -6161,7 +6188,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <ul>
 <li><strong>Pending</strong>: Plugin resource created, waiting for processing</li>
 <li><strong>Waiting</strong>: Waiting for the deployment to be functional, or — when the plugin has something to write to its StatefulSet, which restarts every server — for it to be <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), nor while it is forming, rolling its servers or upgrading. A <code>PluginInstallDeferred</code> event (or, for a <code>Ready</code> plugin that lost something, a <code>PluginMissing</code> one) marks the start of the wait; the plugin checks again every 30 seconds</li>
-<li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event), and while a <code>VerifiedDownload</code> plugin brings its trusted CAs in line with the target's changed <code>spec.trustedCASecrets</code> ("Updating the plugin's trusted CAs: …")</li>
+<li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event), and while a <code>VerifiedDownload</code> plugin brings its trusted CAs in line with the target's changed <code>spec.trustedCASecrets</code> ("Updating the plugin's trusted CAs: …"). While its roll is stuck, the message names the pods that cannot start ("…; cannot start: c-server-2 (container neo4j exited with code 1)")</li>
 <li><strong>Ready</strong>: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets, a <code>VerifiedDownload</code> init container or volume), the plugin goes back to <code>Installing</code> and restores it — or <code>Waiting</code>, while the target is not <code>Ready</code> with every server available; if nothing is missing, the check writes nothing and the phase stays <code>Ready</code>, whatever state the target is in</li>
 <li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
 <li><strong>Invalid</strong>: The spec failed validation (for example an unsupported <code>securityPolicy</code>, a missing <code>source.url</code>/<code>checksum</code>, or a non-https URL); the controller does not requeue until the CR is edited</li>

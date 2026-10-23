@@ -4718,6 +4718,10 @@ standalone backup" as one of Phase 1's outputs.</p>
 <td>Point the plugin at a download that fails (a wrong <code>sha256:</code>, or an in-cluster HTTPS mirror signed by a CA the cluster does not trust yet): the highest-numbered server crash-loops in <code>plugin-init-&lt;name&gt;</code>, the cluster stays <code>Forming</code>, the plugin stays <code>Installing</code> with a message naming the pod and the exit code. Fix it (the right checksum, or the mirror's CA in <code>spec.trustedCASecrets</code>): the plugin writes the fix although the cluster is not <code>Ready</code>, with <strong>one</strong> <code>PluginInitContainerFailing</code> Warning, the stuck server is replaced first and starts, the rest roll one at a time, and the plugin is <code>Ready</code>. With another server also down, the fix waits (<code>Waiting</code>, <code>PluginInstallDeferred</code>)</td>
 </tr>
 <tr>
+<td>A plugin's settings follow its <code>spec.config</code> (rule 155)</td>
+<td>On the cluster, a Managed <code>Neo4jPlugin</code> with a <code>spec.config</code> key Neo4j does not know (e.g. <code>genai.vector.enabled: "true"</code> on a <code>genai</code> plugin) plus one it does: the install writes <code>NEO4J_genai_vector_enabled</code>, the StatefulSet's <code>neo4j.com/plugin-env-vars.&lt;plugin&gt;</code> lists both variables, the highest-numbered server crash-loops ("Unrecognized setting" in <code>kubectl logs &lt;pod&gt; -c neo4j --previous</code>) and the plugin stays <code>Installing</code> "… cannot start: <pod> (container neo4j exited with code …)". Remove the key from the plugin: it writes the removal although the cluster is not <code>Ready</code>, with <strong>one</strong> <code>PluginSettingsFailing</code> Warning; the variable is gone from the StatefulSet, the crashing server is replaced first and starts, the rest roll once, and the plugin is <code>Ready</code>. Then delete the plugin: one roll, and its variables, its <code>NEO4J_PLUGINS</code> entry and its record are gone while every variable the cluster's annotation <code>neo4j.com/cluster-controller-env-vars</code> lists keeps its value. A <code>VerifiedDownload</code> plugin deleted the same way loses its <code>plugin-init-&lt;name&gt;</code> and volumes in that one roll. With a plugin installed, change the cluster's own <code>spec.env</code> (or <code>spec.trustedCASecrets</code>): the cluster writes its StatefulSet <strong>once</strong>, the plugin's variables and <code>NEO4J_PLUGINS</code> stay (compare the StatefulSet's revisions: <code>kubectl get controllerrevisions -l app.kubernetes.io/instance=&lt;cluster&gt;</code>), and the plugin stays <code>Ready</code> with no <code>PluginMissing</code></td>
+</tr>
+<tr>
 <td>Scaling up restarts nothing</td>
 <td>Under a loop writing a node every second, scale <code>servers</code> 3 → 5: <code>Ready</code> within about a minute, servers 0–2 keep their pod UIDs and restart counts, a <code>ScaledWithoutRestart</code> event, no failed write. <code>SHOW DATABASE system YIELD address, role</code> lists the two new servers as <code>secondary</code>, and each has <code>/data/.neo4j-operator/system-database-mode</code> reading <code>SECONDARY</code>. Restart server-3: still <code>secondary</code>. Scale 5 → 3: nothing restarts. (A scale-up that adds a system primary, such as 2 → 3, still restarts: that is a unit test, <code>TestScale_RestartDecision</code>)</td>
 </tr>
@@ -5418,6 +5422,15 @@ the first walk. The scripted steps already do.</p>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">✅ (ConfigMap)</td>
 <td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">n/a</td>
+<td style="text-align: center;"></td>
+</tr>
+<tr>
+<td>Plugin settings removed with the key, and on delete</td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;"></td>
+<td style="text-align: center;">✅ (env path, crash-loop repair)</td>
 <td style="text-align: center;"></td>
 <td style="text-align: center;">n/a</td>
 <td style="text-align: center;"></td>
