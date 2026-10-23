@@ -26,10 +26,11 @@ spec:
   # so they never reach the StatefulSet.
   #
   # Every key here becomes a NEO4J_<setting> variable on the servers, and Neo4j
-  # refuses to start on a setting it does not know. Only list settings your
-  # Neo4j version documents, for example on CalVer:
-  #   genai.openai.baseurl: "https://llm-proxy.internal"        # CalVer only
-  #   genai.azure.openai.baseurl: "https://azure-proxy.internal" # 2026.04+
+  # refuses to start on a setting it does not know. The docs list some for
+  # CalVer (genai.openai.baseurl; genai.azure.openai.baseurl from 2026.04), but
+  # the GenAI plugin bundled with 2026.08.1 declares neither, so Neo4j refuses
+  # them there. Before adding one, check that your servers know it:
+  #   SHOW SETTINGS YIELD name WHERE name STARTS WITH 'genai' RETURN name
   # Removing a key here removes its variable from the servers (one restart).
   # config: {}
 

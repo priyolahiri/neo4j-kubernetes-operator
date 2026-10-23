@@ -120,9 +120,10 @@ spec:
   source:
     type: official
   # No config: provider credentials are procedure arguments
-  # (genai.vector.encode(text, 'OpenAI', {token: $token})). On CalVer you can
-  # point OpenAI at a proxy with genai.openai.baseurl. Neo4j refuses to start on
-  # a setting it does not know, so list only documented ones.
+  # (genai.vector.encode(text, 'OpenAI', {token: $token})). Neo4j refuses to
+  # start on a setting it does not know — the GenAI plugin bundled with
+  # 2026.08.1 declares none, not even the documented genai.openai.baseurl — so
+  # check SHOW SETTINGS on your version before adding one.
   security:
     allowedProcedures: ["genai.*", "ai.*"]   # ai.* is the CalVer 2025.11+ prefix
 ```
