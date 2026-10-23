@@ -1156,7 +1156,13 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						// and any mesh/plugin pod annotations survive (only env vars
 						// are merged otherwise). Mirrors the standalone controller.
 						livePodAnnotations := sts.Spec.Template.Annotations
-						sts.Spec.Template = *updatedTemplate
+						// A copy: a struct assignment shares the container array,
+						// so writing the merged env into the live template wrote
+						// it into updatedTemplate too, and the record and hash
+						// below then took the plugin's variables for the
+						// cluster's — the next pass removed them (operations.md
+						// id 155).
+						sts.Spec.Template = *updatedTemplate.DeepCopy()
 						if len(sts.Spec.Template.Spec.Containers) > 0 {
 							sts.Spec.Template.Spec.Containers[0].Env = merged
 						}

@@ -344,11 +344,11 @@ func TestUninstall_RemovesTheSharedCAVolumeOnceUnused(t *testing.T) {
 	}
 	require.ElementsMatch(t, []string{"plugin-auth-custom", "plugin-auth-other", resources.PluginCAVolumeName}, templateVolumeNames(live()))
 
-	require.NoError(t, r.removeVerifiedDownloadInitContainer(ctx, first, target))
+	require.NoError(t, r.removePluginFromTarget(ctx, first, target))
 	assert.ElementsMatch(t, []string{"plugin-auth-other", resources.PluginCAVolumeName}, templateVolumeNames(live()),
 		"the other plugin still mounts it")
 
-	require.NoError(t, r.removeVerifiedDownloadInitContainer(ctx, second, target))
+	require.NoError(t, r.removePluginFromTarget(ctx, second, target))
 	assert.Empty(t, templateVolumeNames(live()))
 	assert.Empty(t, initContainerNames(live()))
 }
