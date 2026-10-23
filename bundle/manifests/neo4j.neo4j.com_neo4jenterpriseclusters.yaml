@@ -6794,6 +6794,17 @@ spec:
                     format: int32
                     type: integer
                 type: object
+              runningVersion:
+                description: |-
+                  RunningVersion is the Neo4j version the servers report (SHOW SERVERS
+                  `version`) when status.version is a tag without a patch, such as
+                  "5.26-enterprise", which floats to the newest patch of its line: the
+                  highest one when the servers report different patches. The operator
+                  reads it from the SHOW SERVERS its formation check runs and writes it
+                  when it changes. A spec.image.tag below it is refused. Empty when
+                  status.version names a patch, which says the version itself, and until
+                  the operator has read it.
+                type: string
               upgradeStatus:
                 description: UpgradeStatus provides detailed upgrade progress information
                 properties:
@@ -6897,6 +6908,18 @@ spec:
                         format: int32
                         type: integer
                     type: object
+                  resolvedTargetVersion:
+                    description: |-
+                      ResolvedTargetVersion is the Neo4j version a server this upgrade
+                      restarted reports (SHOW SERVERS `version`), when targetVersion is a tag
+                      without a patch, which floats to the newest patch of its line: what the
+                      target resolved to. Recorded when a restarted server passes the
+                      upgrade's availability check, or, for a Paused or Failed upgrade, at the
+                      next Ready; the highest one when servers report different patches, and
+                      kept when the target changes mid-upgrade, since the servers it restarted
+                      still run it. Once the upgrade has restarted a server, a spec.image.tag
+                      below it is refused.
+                    type: string
                   startTime:
                     description: StartTime shows when the upgrade started
                     format: date-time
@@ -6914,7 +6937,12 @@ spec:
                     type: string
                 type: object
               version:
-                description: Version shows the current Neo4j version
+                description: |-
+                  Version is the image tag every server runs: recorded at the first Ready,
+                  after each verified upgrade, and at a Ready on an image that reached the
+                  servers while none was ready. It does not move while an upgrade is in
+                  flight, Paused or Failed. spec.image.tag is checked against it on every
+                  reconcile, and a downgrade is refused.
                 type: string
             type: object
         type: object

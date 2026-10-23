@@ -28,6 +28,7 @@
 | `rolling_upgrade.go` / `rolling_upgrade_statemachine.go` / `scale_down.go` / `storage_expansion.go` | In-place upgrade, drain, and PVC-expansion flows. `upgrade_hold.go`: a `Paused` or `Failed` upgrade keeps its StatefulSet partition until the state machine takes it up again (knowledge `operations.md` id 149). |
 | `configmap_manager.go` / `cache_manager.go` / `connection_helper.go` / `backup_resolver.go` / `cluster_seed_creds.go` / `finalizer_deletion.go` | Supporting managers/helpers. |
 | `object_patch.go` | `patchObject` / `addFinalizer` / `removeFinalizer`: the merge patches every write of one of the operator's CRs goes through (id 150). |
+| `running_version.go` / `reported_version.go` / `standalone_running_version.go` | `status.version` (the tag the servers rolled out, id 144) and, for a tag without a patch, the version the servers report: `status.runningVersion` and `status.upgradeStatus.resolvedTargetVersion`, read from the SHOW SERVERS the cluster's formation check and the upgrade's availability check already run, and once per image on a standalone (id 153). |
 | `suite_test.go` | envtest harness (`TestControllers` → `RunSpecs`). |
 
 ## Key types & functions

@@ -290,7 +290,7 @@ func TestUpdateUpgradeStatus_PersistsCompleted(t *testing.T) {
 		Build()
 	orch := &RollingUpgradeOrchestrator{Client: fc}
 
-	orch.updateUpgradeStatus(context.Background(), cluster, "Completed", "done", "")
+	orch.updateUpgradeStatus(context.Background(), cluster, "Completed", "done", "", "")
 
 	latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := fc.Get(context.Background(), types.NamespacedName{Name: "mycluster", Namespace: "default"}, latest); err != nil {

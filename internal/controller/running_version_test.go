@@ -143,7 +143,7 @@ func TestRecordClusterReady_RecordsTheImageTheEscapeHatchApplied(t *testing.T) {
 	require.NoError(t, r.Status().Update(ctx, live))
 
 	// 3. The Ready pass records what the servers run.
-	r.recordClusterReady(ctx, cluster)
+	r.recordClusterReady(ctx, cluster, nil)
 	got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, r.Get(ctx, types.NamespacedName{Name: "c", Namespace: "default"}, got))
 	assert.Equal(t, "Ready", got.Status.Phase)
@@ -164,7 +164,7 @@ func TestRecordClusterReady_LeavesTheVersionWhileARolloutIsInFlight(t *testing.T
 	cluster.Status.Version = before
 	r := gateTestReconciler(t, sts, cluster)
 
-	r.recordClusterReady(context.Background(), cluster)
+	r.recordClusterReady(context.Background(), cluster, nil)
 	got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "c", Namespace: "default"}, got))
 	assert.Equal(t, before, got.Status.Version)

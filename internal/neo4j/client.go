@@ -215,7 +215,8 @@ type ServerInfo struct {
 	Health  string
 	Hosting []string
 	// Version is the Neo4j version the server itself reports in SHOW
-	// SERVERS (e.g. "5.26.0", "2025.01.0"). Populated by ListServers.
+	// SERVERS (e.g. "5.26.0", "2025.01.0"). Populated by ListServers and
+	// GetServerList.
 	// NOTE: unlike dbms.components(), this column reports the calendar
 	// version for ALL CalVer releases — 2025.01 included (components()
 	// reports its pre-rebrand kernel "5.27.0" there) — which makes it the
@@ -2444,7 +2445,11 @@ func (c *Client) GetServerList(ctx context.Context) ([]ServerInfo, error) {
 	})
 	defer session.Close(ctx)
 
-	result, err := session.Run(ctx, "SHOW SERVERS", nil)
+	// SHOW SERVERS' default columns, in their order, plus `version`: the
+	// version each server runs, which the cluster records for a tag without a
+	// patch (operations.md id 153). The formation check runs this on every
+	// pass, so the version costs no query of its own.
+	result, err := session.Run(ctx, "SHOW SERVERS YIELD name, address, state, health, hosting, version", nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute SHOW SERVERS: %w", err)
 	}
@@ -2454,7 +2459,7 @@ func (c *Client) GetServerList(ctx context.Context) ([]ServerInfo, error) {
 		record := result.Record()
 
 		// Extract server information from record
-		// SHOW SERVERS returns: name, address, state, health, hosting
+		// The query yields: name, address, state, health, hosting, version
 		if len(record.Values) >= 5 {
 			// columnString, not %v: SHOW SERVERS returns a NULL address for
 			// a server that is down, which %v renders as the literal "<nil>"
@@ -2474,6 +2479,9 @@ func (c *Client) GetServerList(ctx context.Context) ([]ServerInfo, error) {
 						server.Hosting = append(server.Hosting, fmt.Sprintf("%v", db))
 					}
 				}
+			}
+			if v, ok := record.Get("version"); ok {
+				server.Version = columnString(v)
 			}
 
 			servers = append(servers, server)

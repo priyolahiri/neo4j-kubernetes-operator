@@ -446,12 +446,28 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeRolling(
 	var lagging []string
 	if kubernetesSettled && partition < replicas {
 		podName := fmt.Sprintf("%s-server-%d", cluster.Name, partition)
-		available, err := r.isServerAvailable(ctx, cluster, podName)
+		available, version, err := r.isServerAvailable(ctx, cluster, podName)
 		if err != nil {
 			logger.V(1).Info("SHOW SERVERS gate not yet answerable (retrying)", "pod", podName, "error", err.Error())
 		}
 		obs.LastRolledAvailable = available
 		if available {
+			// The server runs the target now; for a target without a patch,
+			// what it reports is the only record of the patch it runs, and the
+			// version rule refuses a tag below it (operations.md id 153).
+			if resolved, changed := resolvedTargetVersionFor(us, version); changed {
+				if err := r.patchUpgradeStatus(ctx, cluster, func(s *neo4jv1beta1.UpgradeStatus) {
+					if want, ok := resolvedTargetVersionFor(s, version); ok {
+						s.ResolvedTargetVersion = want
+					}
+				}); err != nil {
+					logger.V(1).Info("Failed to record the version the target resolved to", "error", err.Error())
+				} else {
+					logger.Info("Recorded the version the upgrade's target resolved to",
+						"pod", podName, "target", us.TargetVersion, "version", resolved)
+				}
+				us = cluster.Status.UpgradeStatus
+			}
 			caughtUp, notReady, err := r.lastRolledDatabasesCaughtUp(ctx, cluster, podName)
 			switch {
 			case err != nil:
@@ -610,7 +626,8 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeVerifying(
 	}
 	defer func() { _ = neo4jClient.Close() }()
 
-	if err := orch.verifyVersionUpgrade(ctx, cluster, neo4jClient); err != nil {
+	reported, err := orch.verifyVersionUpgrade(ctx, cluster, neo4jClient)
+	if err != nil {
 		if upgradeStepDeadlineExceeded(cluster.Status.UpgradeStatus, orch.getHealthCheckTimeout(cluster), time.Now()) {
 			return r.failUpgrade(ctx, cluster, fmt.Errorf("post-upgrade version verification failed: %w", err))
 		}
@@ -619,7 +636,9 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeVerifying(
 	}
 
 	// Completed: stamps CompletionTime, LastUpgradeTime and Status.Version on
-	// a refetched object (see updateUpgradeStatus), then the cluster phase +
+	// a refetched object (see updateUpgradeStatus), with the version the
+	// servers reported to the verification for a tag without a patch
+	// (status.runningVersion, operations.md id 153), then the cluster phase +
 	// version in one write (#207 fix pattern). The Completed persist GATES the
 	// Ready write: if it fails, retry the (idempotent) verification next
 	// reconcile rather than reporting Ready while upgradeStatus still says
@@ -629,7 +648,7 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeVerifying(
 	if us := cluster.Status.UpgradeStatus; us != nil && us.StartTime != nil {
 		startTime = us.StartTime.Time
 	}
-	if err := orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "Rolling upgrade completed successfully", ""); err != nil {
+	if err := orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "Rolling upgrade completed successfully", "", reported); err != nil {
 		logger.Error(err, "Failed to persist Completed upgrade phase; retrying")
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 	}
@@ -715,29 +734,30 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 }
 
 // isServerAvailable is a one-shot SHOW SERVERS check: does the server whose
-// bolt address contains podName report Enabled+Available?
+// bolt address contains podName report Enabled+Available? When it does, the
+// version it reports comes with it, from the same row.
 func (r *Neo4jEnterpriseClusterReconciler) isServerAvailable(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	podName string,
-) (bool, error) {
+) (bool, string, error) {
 	if r.UpgradeGates != nil && r.UpgradeGates.serverAvailable != nil {
 		return r.UpgradeGates.serverAvailable(ctx, cluster, podName)
 	}
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	defer func() { _ = neo4jClient.Close() }()
 
 	servers, err := neo4jClient.GetServerList(ctx)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	for _, s := range servers {
 		if addressIsPod(s.Address, podName) && s.State == "Enabled" && s.Health == "Available" {
-			return true, nil
+			return true, s.Version, nil
 		}
 	}
-	return false, nil
+	return false, "", nil
 }

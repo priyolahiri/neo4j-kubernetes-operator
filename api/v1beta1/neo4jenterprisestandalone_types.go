@@ -207,8 +207,20 @@ type Neo4jEnterpriseStandaloneStatus struct {
 	// Endpoints provides connection information
 	Endpoints *EndpointStatus `json:"endpoints,omitempty"`
 
-	// Version shows the current Neo4j version
+	// Version is the image tag the standalone runs, recorded once its pod is
+	// ready on the current template. spec.image.tag is checked against it on
+	// every reconcile, and a downgrade is refused.
 	Version string `json:"version,omitempty"`
+
+	// RunningVersion is the Neo4j version the server reports (SHOW SERVERS
+	// `version`) when status.version is a tag without a patch, such as
+	// "5.26-enterprise", which floats to the newest patch of its line. Read
+	// once the standalone is Ready, again only when its container runs a
+	// different image, and written when it changes. A spec.image.tag below it
+	// is refused. Empty when status.version names a patch, which says the
+	// version itself, and until the operator has read it.
+	// +optional
+	RunningVersion string `json:"runningVersion,omitempty"`
 
 	// Ready indicates if the standalone deployment is ready for connections
 	Ready bool `json:"ready,omitempty"`

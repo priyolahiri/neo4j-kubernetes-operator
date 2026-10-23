@@ -27,6 +27,7 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -89,6 +90,15 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// ServerVersionReader reads the version the standalone's server reports
+	// (status.runningVersion, operations.md id 153); nil uses Bolt. Tests
+	// inject a fake.
+	ServerVersionReader func(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (string, error)
+	// runningVersionReads records, per standalone (key ns/name), the running
+	// image (standaloneRunningImage) its version was last read for, so it is
+	// read again only when the container runs another image.
+	runningVersionReads sync.Map
 }
 
 func podSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
@@ -271,6 +281,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	}
 
 	neo4jclient.ForgetStandalone(standalone.Namespace, standalone.Name)
+	r.runningVersionReads.Delete(standalone.Namespace + "/" + standalone.Name)
 
 	// Remove finalizer
 	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); err != nil {
@@ -397,6 +408,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 	if err := r.updateStatus(ctx, standalone); err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to update status: %w", err)
 	}
+
+	// The version the server reports, for a status.version without a patch:
+	// read once Ready and again only when the container runs another image
+	// (operations.md id 153). Non-fatal.
+	r.recordStandaloneRunningVersion(ctx, standalone)
 
 	// Collect live diagnostics when standalone is Ready (non-fatal).
 	// Diagnostics are collected by default; only skipped when monitoring is explicitly disabled.
@@ -2251,7 +2267,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 			return nil
 		}
 
-		// Update status on the latest version
+		// Update status on the latest version. status.runningVersion describes
+		// status.version: when the tag moves, it is read again for the new one
+		// (recordStandaloneRunningVersion, operations.md id 153).
+		if latestStandalone.Status.Version != version {
+			latestStandalone.Status.RunningVersion = ""
+		}
 		latestStandalone.Status.Phase = phase
 		latestStandalone.Status.Message = message
 		latestStandalone.Status.Ready = ready

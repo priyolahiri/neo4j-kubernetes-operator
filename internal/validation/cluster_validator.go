@@ -368,17 +368,27 @@ func (v *ClusterValidator) ValidateWithWarnings(ctx context.Context, cluster *ne
 // run the target, so a tag below the target is a downgrade of those servers
 // (validateTagAgainstUpgrade). Before any server has restarted, the tag may go
 // back to status.version (operations.md id 149).
+//
+// A tag without a patch says no version on its own, so for one the tag is also
+// held to what the servers report: status.runningVersion for status.version,
+// status.upgradeStatus.resolvedTargetVersion for the upgrade's target
+// (operations.md id 153).
 func (v *ClusterValidator) validateAgainstRunning(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
-	if v.upgradeValidator.parseVersion(cluster.Spec.Image.Tag) == nil {
+	tag := cluster.Spec.Image.Tag
+	if v.upgradeValidator.parseVersion(tag) == nil {
 		// A tag the image rule already refuses.
 		return nil
 	}
 	if cluster.Status.Version != "" {
-		if errs := v.upgradeValidator.ValidateVersionUpgrade(cluster.Status.Version, cluster.Spec.Image.Tag); len(errs) > 0 {
+		if errs := v.upgradeValidator.ValidateVersionUpgrade(cluster.Status.Version, tag); len(errs) > 0 {
 			return errs
 		}
 	}
-	return v.upgradeValidator.validateTagAgainstUpgrade(cluster.Status.UpgradeStatus, cluster.Spec.Image.Tag)
+	if errs := v.upgradeValidator.validateTagAgainstRunningVersion(
+		cluster.Status.RunningVersion, cluster.Status.Version, tag, "the servers run"); len(errs) > 0 {
+		return errs
+	}
+	return v.upgradeValidator.validateTagAgainstUpgrade(cluster.Status.UpgradeStatus, tag)
 }
 
 // validatePropertySharding validates property sharding configuration and version requirements.

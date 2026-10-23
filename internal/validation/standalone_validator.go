@@ -78,11 +78,20 @@ func (v *StandaloneValidator) Validate(ctx context.Context, c client.Client, sta
 // downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26, and 4.x. An
 // empty status.version (nothing recorded yet) and a tag the image rule already
 // refuses are not checked.
+//
+// For a status.version without a patch ("5.26-enterprise"), the tag is also
+// held to status.runningVersion, the version the server reports: the tag
+// alone does not say which patch it runs (operations.md id 153).
 func (v *StandaloneValidator) validateAgainstRunning(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) field.ErrorList {
-	if standalone.Status.Version == "" || v.upgradeValidator.parseVersion(standalone.Spec.Image.Tag) == nil {
+	tag := standalone.Spec.Image.Tag
+	if standalone.Status.Version == "" || v.upgradeValidator.parseVersion(tag) == nil {
 		return nil
 	}
-	return v.upgradeValidator.validateVersionMove(standalone.Status.Version, standalone.Spec.Image.Tag, "the standalone runs")
+	if errs := v.upgradeValidator.validateVersionMove(standalone.Status.Version, tag, "the standalone runs"); len(errs) > 0 {
+		return errs
+	}
+	return v.upgradeValidator.validateTagAgainstRunningVersion(
+		standalone.Status.RunningVersion, standalone.Status.Version, tag, "the standalone runs")
 }
 
 // maxStandaloneNameLength is the max name length for standalone deployments (DNS label limit).

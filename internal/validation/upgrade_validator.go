@@ -125,18 +125,68 @@ func (v *UpgradeValidator) validateVersionMove(currentVersion, targetVersion, ru
 // one the upgrade has not restarted a server for yet, is not refused here
 // (the tag may then go back to status.version). The patch is ordered only
 // when both tags name one, as in ValidateVersionUpgrade.
+//
+// A target without a patch ("5.26-enterprise") floats to the newest patch of
+// its line, so the tag alone does not say what the restarted servers run, and
+// a patch of the same line ("5.26.31-enterprise") is not ordered against it.
+// What they report is recorded in status.upgradeStatus.resolvedTargetVersion
+// (operations.md id 153), and the tag is held to that as well: the incident
+// that found this set a floating target back to the patch the servers ran
+// before, and the operator rolled the restarted server down from 5.26.32 to
+// 5.26.31. Without a recorded version the patch is not checked.
 func (v *UpgradeValidator) validateTagAgainstUpgrade(us *neo4jv1beta1.UpgradeStatus, tag string) field.ErrorList {
-	if !upgradeRestartedAServer(us) || us.TargetVersion == tag {
+	if !upgradeRestartedAServer(us) {
 		return nil
 	}
-	target, current := v.parseVersion(tag), v.parseVersion(us.TargetVersion)
-	if target == nil || current == nil || !v.isDowngrade(current, target) {
+	tagPath := field.NewPath("spec", "image", "tag")
+	if us.TargetVersion != tag {
+		target, current := v.parseVersion(tag), v.parseVersion(us.TargetVersion)
+		if target != nil && current != nil && v.isDowngrade(current, target) {
+			return field.ErrorList{field.Invalid(tagPath, tag, fmt.Sprintf(
+				"downgrades are not supported: the upgrade to %s (status.upgradeStatus.targetVersion) has already restarted "+
+					"servers on it, and Neo4j cannot go back to an earlier version. Set the tag to %s or later; running an "+
+					"earlier version means restoring a backup taken before the upgrade", us.TargetVersion, us.TargetVersion))}
+		}
+	}
+	if v.belowReported(us.ResolvedTargetVersion, tag) {
+		return field.ErrorList{field.Invalid(tagPath, tag, fmt.Sprintf(
+			"downgrades are not supported: the upgrade to %s (status.upgradeStatus.targetVersion) has already restarted "+
+				"servers on it, and they run %s (status.upgradeStatus.resolvedTargetVersion); Neo4j cannot go back to an "+
+				"earlier version. Set the tag to %s or later; running an earlier version means restoring a backup taken "+
+				"before the upgrade", us.TargetVersion, us.ResolvedTargetVersion, us.ResolvedTargetVersion))}
+	}
+	return nil
+}
+
+// validateTagAgainstRunningVersion checks spec.image.tag against
+// status.runningVersion: the Neo4j version the servers report for a
+// status.version without a patch (operations.md id 153). Such a tag floats to
+// the newest patch of its line, so after an upgrade to "5.26-enterprise"
+// status.version names no patch, and "5.26.31-enterprise" is not ordered
+// against it, while the servers run 5.26.32: moving the tag there rolls every
+// server down. runs names what runs it ("the servers run", "the standalone
+// runs"). An empty runningVersion (not read yet, or a status.version that
+// names a patch) is not checked.
+func (v *UpgradeValidator) validateTagAgainstRunningVersion(runningVersion, version, tag, runs string) field.ErrorList {
+	if !v.belowReported(runningVersion, tag) {
 		return nil
 	}
 	return field.ErrorList{field.Invalid(field.NewPath("spec", "image", "tag"), tag, fmt.Sprintf(
-		"downgrades are not supported: the upgrade to %s (status.upgradeStatus.targetVersion) has already restarted "+
-			"servers on it, and Neo4j cannot go back to an earlier version. Set the tag to %s or later; running an "+
-			"earlier version means restoring a backup taken before the upgrade", us.TargetVersion, us.TargetVersion))}
+		"downgrades are not supported: %s %s (status.runningVersion, what %s in status.version resolved to), and "+
+			"Neo4j cannot go back to an earlier version. Set the tag to %s or later; running an earlier version means "+
+			"restoring a backup taken before the upgrade", runs, runningVersion, version, runningVersion))}
+}
+
+// belowReported reports whether tag names a version earlier than reported, a
+// version a server reports (SHOW SERVERS), which always names a patch. A tag
+// without a patch on the same line is not below it: it floats to the newest
+// patch. An empty or unparseable reported version, or tag, is not judged.
+func (v *UpgradeValidator) belowReported(reported, tag string) bool {
+	if reported == "" {
+		return false
+	}
+	current, target := v.parseVersion(reported), v.parseVersion(tag)
+	return current != nil && target != nil && v.isDowngrade(current, target)
 }
 
 // upgradeRestartedAServer reports whether an upgrade that has not completed —

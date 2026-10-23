@@ -99,7 +99,9 @@ func TestReconcile_CollectsDiagnosticsDuringAnUpgrade(t *testing.T) {
 
 	diagnosed := 0
 	r := &Neo4jEnterpriseClusterReconciler{Client: fc, Scheme: scheme, Recorder: record.NewFakeRecorder(20), UpgradeGates: &upgradeGates{
-		serverAvailable: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, error) { return true, nil },
+		serverAvailable: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, string, error) {
+			return true, "", nil
+		},
 		databasesCaughtUp: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, []string, error) {
 			return false, []string{"d01"}, nil
 		},

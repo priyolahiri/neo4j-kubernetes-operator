@@ -99,11 +99,15 @@ func (r *RollingUpgradeOrchestrator) getServerStatefulSet(
 	return sts, nil
 }
 
-// Utility methods
+// updateUpgradeStatus writes the upgrade's phase and step. For Completed,
+// reported is the highest version the servers reported to the verification:
+// it becomes status.runningVersion when the target tag names no patch (and
+// status.runningVersion is cleared when it names one), and
+// status.upgradeStatus.resolvedTargetVersion follows it (operations.md id 153).
 func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
-	phase, currentStep, lastError string,
+	phase, currentStep, lastError, reported string,
 ) error {
 	if cluster.Status.UpgradeStatus == nil {
 		return nil
@@ -143,6 +147,13 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 			latest.Status.UpgradeStatus.CompletionTime = &now
 			latest.Status.LastUpgradeTime = &now
 			latest.Status.Version = cluster.Spec.Image.Tag
+			// What the servers report for the new status.version; "" when the
+			// tag names a patch, or when nothing was reported, so it never
+			// describes the version before the upgrade.
+			latest.Status.RunningVersion, _ = runningVersionFor(cluster.Spec.Image.Tag, reported)
+			if resolved, ok := resolvedTargetVersionFor(latest.Status.UpgradeStatus, reported); ok {
+				latest.Status.UpgradeStatus.ResolvedTargetVersion = resolved
+			}
 		}
 		ended = stampUpgradePhaseTransition(latest.Status.UpgradeStatus, prevPhase, prevPhaseStart, metav1.Now())
 		// Keep the in-memory object consistent for callers that read it after.
@@ -245,32 +256,34 @@ func (r *RollingUpgradeOrchestrator) validateStatefulSetsReady(
 // SERVERS also reports the calendar version for ALL CalVer releases (2025.01
 // included), whereas dbms.components() reports the pre-rebrand kernel
 // "5.27.0" there; the versionsMatch kernel alias is kept as belt-and-braces.
+// On success it returns the highest version the enabled servers reported,
+// which the Completed write records for a tag without a patch.
 func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	neo4jClient *neo4jclient.Client,
-) error {
+) (string, error) {
 	logger := log.FromContext(ctx)
 
 	// Get the target version from the cluster spec
 	targetVersion := cluster.Spec.Image.Tag
 	if targetVersion == "" {
-		return fmt.Errorf("target version not specified in cluster spec")
+		return "", fmt.Errorf("target version not specified in cluster spec")
 	}
 
 	logger.Info("Verifying cluster version after upgrade", "targetVersion", targetVersion)
 
 	servers, err := neo4jClient.ListServers(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to list servers for version verification: %w", err)
+		return "", fmt.Errorf("failed to list servers for version verification: %w", err)
 	}
 
 	mismatches, verified := r.versionMismatchesFromServers(servers, targetVersion)
 	if verified == 0 {
-		return fmt.Errorf("no enabled servers found during version verification")
+		return "", fmt.Errorf("no enabled servers found during version verification")
 	}
 	if len(mismatches) > 0 {
-		return fmt.Errorf("version verification failed for %d servers: %s",
+		return "", fmt.Errorf("version verification failed for %d servers: %s",
 			len(mismatches), strings.Join(mismatches, "; "))
 	}
 
@@ -278,9 +291,10 @@ func (r *RollingUpgradeOrchestrator) verifyVersionUpgrade(
 	// transition persists it via refetch+RetryOnConflict (#207) — a bare
 	// Status().Update on the reconcile-start object would silently 409.
 
+	reported := highestReportedVersion(servers, nil)
 	logger.Info("Version verification completed successfully",
-		"targetVersion", targetVersion, "verifiedServers", verified)
-	return nil
+		"targetVersion", targetVersion, "verifiedServers", verified, "reported", reported)
+	return reported, nil
 }
 
 // versionMismatchesFromServers compares each ENABLED server's self-reported

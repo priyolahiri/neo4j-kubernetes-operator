@@ -367,9 +367,9 @@ func TestStepUpgradeRolling_ARetriedUpgradeRollsTheRestThroughTheGates(t *testin
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(c, sts).WithStatusSubresource(c).Build()
 	var asked []string
 	r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: record.NewFakeRecorder(10), UpgradeGates: &upgradeGates{
-		serverAvailable: func(_ context.Context, _ *neo4jv1beta1.Neo4jEnterpriseCluster, pod string) (bool, error) {
+		serverAvailable: func(_ context.Context, _ *neo4jv1beta1.Neo4jEnterpriseCluster, pod string) (bool, string, error) {
 			asked = append(asked, pod)
-			return true, nil
+			return true, "", nil
 		},
 		databasesCaughtUp: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, []string, error) {
 			return true, nil, nil
