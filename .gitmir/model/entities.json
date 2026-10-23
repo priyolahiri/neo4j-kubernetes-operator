@@ -199,7 +199,21 @@
         "name": "status.version",
         "type": "string",
         "isNullable": true,
-        "note": "The image tag every server runs, read from the rolled server StatefulSet: stamped at the first Ready, after each verified upgrade, and at a Ready on an image that reached the servers while none was ready; unchanged while an upgrade is in flight or after one fails. spec.image.tag is validated against it on every pass (no downgrades)."
+        "note": "The image tag every server runs, read from the rolled server StatefulSet: stamped at the first Ready, after each verified upgrade, and at a Ready on an image that reached the servers while none was ready; unchanged while an upgrade is in flight or after one fails. spec.image.tag is validated against it on every pass (no downgrades). It stays a tag: for a tag without a patch the version the servers report is recorded beside it (status.runningVersion, operations.md id 153)."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-running-version",
+        "name": "status.runningVersion",
+        "type": "string",
+        "isNullable": true,
+        "note": "The Neo4j version the servers report (SHOW SERVERS version) when status.version is a tag without a patch (5.26-enterprise floats to the newest 5.26 patch); the highest one when servers differ. Written on a Ready pass from the SHOW SERVERS the formation check already runs (no extra query), only when it changes, and at Completed from the list Verifying read; cleared when status.version names a patch. While an upgrade is held, read from the servers below the kept partition. spec.image.tag below it is refused (operations.md id 153)."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-upgrade-status-resolved-target-version",
+        "name": "status.upgradeStatus.resolvedTargetVersion",
+        "type": "string",
+        "isNullable": true,
+        "note": "For an upgrade target without a patch, the Neo4j version a server the upgrade restarted reports (SHOW SERVERS version): written when the Rolling step's availability check passes for it, or, for a Paused or Failed upgrade, at the next Ready from the servers at or above the kept partition; the highest one, kept across a retarget and when a held upgrade is taken up. Once the upgrade has restarted a server, spec.image.tag below it is refused (operations.md id 153)."
       },
       {
         "id": "f-neo4jenterprisecluster-cross-cluster-replication-enabled",
@@ -412,6 +426,13 @@
         "type": "string",
         "isNullable": true,
         "note": "The image tag the standalone runs: recorded from its StatefulSet once the pod is ready on the current template, never from spec.image.tag. spec.image.tag is validated against it on every pass (no downgrades)."
+      },
+      {
+        "id": "f-neo4jenterprisestandalone-status-running-version",
+        "name": "status.runningVersion",
+        "type": "string",
+        "isNullable": true,
+        "note": "The Neo4j version the server reports (SHOW SERVERS version) when status.version is a tag without a patch: read with one query once the standalone is Ready, again only when its container runs another image (pod UID + imageID), written when it changes, cleared when status.version moves or names a patch. spec.image.tag below it is refused (operations.md id 153)."
       },
       {
         "id": "f-neo4jenterprisestandalone-status-pod-status-pod-name",

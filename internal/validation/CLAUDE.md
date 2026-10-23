@@ -70,6 +70,9 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
   the standalone's `ValidateUpdate` was never called at all (id 144). A rule that needs only the spec
   goes in `validateCluster`, where the CLI also runs it. `status.version` is what the servers run,
   read from a rolled StatefulSet (`rolledImageTag` in `internal/controller/running_version.go`).
+  It is a tag: for one without a patch (`5.26-enterprise`), the version the servers report is in
+  `status.runningVersion` (and an upgrade's in `status.upgradeStatus.resolvedTargetVersion`), and
+  the tag is held to those too (`validateTagAgainstRunningVersion`, `belowReported`; id 153).
 - **`ApplyDefaults` adds no field an error can be reported on.** The CLI applies it before validating,
   as the reconciler does, and a finding must name a field the user wrote or one that is missing (the
   nameless `spec.tls.issuerRef` default was removed for that, id 144).

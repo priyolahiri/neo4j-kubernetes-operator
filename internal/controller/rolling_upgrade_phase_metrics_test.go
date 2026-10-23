@@ -207,10 +207,10 @@ func TestUpdateUpgradeStatus_ObservesVerifyingOnCompleted(t *testing.T) {
 	orch := NewRollingUpgradeOrchestrator(fc, name, "default")
 	ctx := context.Background()
 
-	require.NoError(t, orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "done", ""))
+	require.NoError(t, orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "done", "", ""))
 	// A retried Completed persist (the caller retries on the next reconcile
 	// when a later step failed) must not observe again.
-	require.NoError(t, orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "done", ""))
+	require.NoError(t, orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "done", "", ""))
 
 	count, sum := upgradePhaseObservations(t, name, "default", upgradePhaseVerifying)
 	assert.Equal(t, uint64(1), count)

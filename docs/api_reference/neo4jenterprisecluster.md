@@ -932,12 +932,13 @@ The `Neo4jEnterpriseClusterStatus` represents the observed state of the cluster.
 | `replicas` | [`*ReplicaStatus`](#replicastatus) | Server counts: `servers` (desired) and `ready` |
 | `endpoints` | [`EndpointStatus`](#endpointstatus) | Service endpoints |
 | `version` | `string` | The image tag every server runs: recorded at the first `Ready`, after each verified upgrade, and at a `Ready` with every server on an image that reached them while no server was ready; unchanged while an upgrade is in flight or after one fails. `spec.image.tag` is checked against it on every reconcile, and a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)) |
+| `runningVersion` | `string` | The Neo4j version the servers report (`SHOW SERVERS`, `version`) when `version` is a tag without a patch, such as `5.26-enterprise`, which floats to the newest patch of its line; the highest one if servers report different patches. Read from the `SHOW SERVERS` the formation check runs on every `Ready` pass (no extra query) and written when it changes, and at the end of an upgrade. A `spec.image.tag` below it is refused (see [Tags without a patch](../user_guide/guides/upgrades.md#tags-without-a-patch)). Empty when `version` names a patch, and until it has been read |
 | `upgradeStatus` | [`*UpgradeStatus`](#upgradestatus) | Detailed upgrade progress information |
 | `lastUpgradeTime` | `*metav1.Time` | When the last upgrade was performed |
 | `propertyShardingReady` | `bool` | Whether property sharding is configured and ready (Neo4j 2025.12+) |
 | `effectiveCypherLanguage` | `string` | The server default Cypher version the operator resolved (see `spec.serverDefaultCypherLanguage`), recorded once so an unset spec never changes meaning under a running cluster |
 | `auraFleetManagement` | `object` | State of the Aura Fleet Management integration (when `spec.auraFleetManagement.enabled=true`) |
-| `observedGeneration` | `int64` | Last observed generation |
+| `observedGeneration` | `int64` | The generation of the spec the last status write describes: the one that pass read and acted on. Behind `metadata.generation` while a newer spec has not been reconciled yet |
 | `diagnostics` | [`*DiagnosticsStatus`](#diagnosticsstatus) | Live diagnostics, collected once the cluster has formed (also while it is degraded) unless `spec.monitoring.enabled: false`. |
 | `crossClusterReplication` | [`*CrossClusterReplicationStatus`](#crossclusterreplicationspec) | State of the network-mode CCDR exposure proxy, when `spec.crossClusterReplication.enabled` is `true`. |
 | `internalAddresses` | `[]string` | Ready-to-paste `<pod-fqdn>:6000` list for a downstream `Neo4jReplicaDatabase` on this **same** Kubernetes cluster (`source.upstreamClusterRef`, or pasted directly into `source.addresses`). Always populated — no proxy, no LoadBalancer needed — but not routable from a genuinely separate Kubernetes cluster; use `crossClusterReplication` for that. |
@@ -1006,7 +1007,8 @@ Detailed upgrade progress tracking.
 | `currentStep` | `string` | Current upgrade step description |
 | `previousVersion` | `string` | Version before upgrade |
 | `targetVersion` | `string` | Version being upgraded to |
-| `progress` | [`*UpgradeProgress`](#upgradeprogress) | Upgrade progress statistics. Once `inProgress` or `upgraded` is above zero the upgrade has restarted a server on its target, and until it completes a `spec.image.tag` below `targetVersion` is refused |
+| `resolvedTargetVersion` | `string` | For a `targetVersion` without a patch, the Neo4j version the servers this upgrade restarted report (`SHOW SERVERS`, `version`): what the target resolved to. Recorded when a restarted server passes the upgrade's availability check, or, for a `Paused` or `Failed` upgrade, at the next `Ready`; kept when the target changes mid-upgrade. Once a server has restarted, a `spec.image.tag` below it is refused too |
+| `progress` | [`*UpgradeProgress`](#upgradeprogress) | Upgrade progress statistics. Once `inProgress` or `upgraded` is above zero the upgrade has restarted a server on its target, and until it completes a `spec.image.tag` below `targetVersion` (and below `resolvedTargetVersion`, when recorded) is refused |
 | `message` | `string` | Additional upgrade details |
 | `lastError` | `string` | Last error encountered during upgrade |
 

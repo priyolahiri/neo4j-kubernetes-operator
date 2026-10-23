@@ -549,6 +549,9 @@ endpoints:
 #### `version` (string)
 The image tag the standalone runs, recorded once its pod is ready on the current image: it does not move while the pod is being replaced, nor for an image that never starts. `spec.image.tag` is checked against it on every reconcile, and a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)). It used to be `spec.image.tag`, written on every reconcile whether or not the pod ran it.
 
+#### `runningVersion` (string)
+The Neo4j version the server reports (`SHOW SERVERS`, `version`) when `version` is a tag without a patch, such as `5.26-enterprise`, which floats to the newest patch of its line. Read with one query once the standalone is `Ready`, and again only when its container runs another image (a new pod, or a new pull of the floating tag); written when it changes, and cleared when `version` moves. A `spec.image.tag` below it is refused (see [Tags without a patch](../user_guide/guides/upgrades.md#tags-without-a-patch)). Empty when `version` names a patch, and until it has been read.
+
 #### `podStatus` (StandalonePodStatus)
 **Reserved — never populated today** (the schema is shown for reference; use `kubectl get pod <name>-0` for pod state). Intended: information about the Neo4j pod.
 

@@ -42,7 +42,9 @@ package controller
 //     it as a Failed one. A tag below the target is refused once the upgrade
 //     has restarted a server on the target (validateAgainstRunning in
 //     internal/validation), so a tag can go back to status.version only while
-//     no server runs the target.
+//     no server runs the target. For a target without a patch, "below" is
+//     below what a restarted server reports (resolvedTargetVersion, recorded
+//     at the next Ready while the upgrade is held, operations.md id 153).
 //
 // While an upgrade is held, the rest of the normal pass runs: services,
 // configuration, diagnostics, and the Ready status that users, roles, databases
@@ -162,7 +164,9 @@ func sameHeldUpgrade(us *neo4jv1beta1.UpgradeStatus, previousVersion string) boo
 // (sameHeldUpgrade) keeps its start time and its progress: the progress says
 // whether a server has been restarted on a target, which is what the version
 // rule reads to refuse a tag below it (operations.md id 149), and a fresh
-// record would forget it.
+// record would forget it. It keeps the version a floating target resolved to
+// for the same reason (resolvedTargetVersion, operations.md id 153): the
+// servers the earlier target restarted still run it.
 func newUpgradeRecord(held *neo4jv1beta1.UpgradeStatus, previousVersion, targetVersion string, servers int32, now metav1.Time) neo4jv1beta1.UpgradeStatus {
 	record := neo4jv1beta1.UpgradeStatus{
 		Phase:           upgradePhaseStaging,
@@ -185,6 +189,7 @@ func newUpgradeRecord(held *neo4jv1beta1.UpgradeStatus, previousVersion, targetV
 		progress.Total = servers
 		record.Progress = progress
 	}
+	record.ResolvedTargetVersion = held.ResolvedTargetVersion
 	return record
 }
 

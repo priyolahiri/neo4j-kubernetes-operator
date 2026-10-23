@@ -58,7 +58,9 @@ const (
 // upgradeGates replaces the network in rolling-upgrade tests; nil in
 // production.
 type upgradeGates struct {
-	serverAvailable   func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (bool, error)
+	// serverAvailable answers isServerAvailable: the server is Enabled and
+	// Available, and the version it reports.
+	serverAvailable   func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (bool, string, error)
 	databasesCaughtUp func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (bool, []string, error)
 	// diagnostics replaces CollectDiagnostics during an upgrade.
 	diagnostics func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error

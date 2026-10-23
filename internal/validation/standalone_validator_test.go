@@ -257,6 +257,42 @@ func TestStandaloneValidator_Validate_ChecksTheTagAgainstStatusVersion(t *testin
 	}
 }
 
+// A standalone moved to a tag without a patch runs whichever patch the tag
+// pointed to when its pod started; status.version names no patch, so a patch
+// of its line was not ordered against it and could roll the server down.
+// status.runningVersion records what the server reports, and the tag is held
+// to it (operations.md id 153).
+func TestStandaloneValidator_Validate_ChecksTheTagAgainstTheVersionTheServerReports(t *testing.T) {
+	v := NewStandaloneValidator()
+	cases := []struct {
+		name, running, tag string
+		wantErr            string // substring; "" = no error
+	}{
+		{"a patch below what it runs", "5.26.32", "5.26.31-enterprise",
+			"downgrades are not supported: the standalone runs 5.26.32 (status.runningVersion, what 5.26-enterprise in status.version resolved to)"},
+		{"the patch it runs", "5.26.32", "5.26.32-enterprise", ""},
+		{"a later patch", "5.26.32", "5.26.33-enterprise", ""},
+		{"the floating tag", "5.26.32", "5.26-enterprise", ""},
+		{"nothing read yet: not checked, as before", "", "5.26.31-enterprise", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sa := validStandalone()
+			sa.Spec.Image.Tag = tc.tag
+			sa.Status.Version = "5.26-enterprise"
+			sa.Status.RunningVersion = tc.running
+			errs := v.Validate(context.Background(), nil, sa)
+			if tc.wantErr == "" {
+				assert.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1, "%v", errs)
+			assert.Equal(t, "spec.image.tag", errs[0].Field)
+			assert.Contains(t, errs[0].Error(), tc.wantErr)
+		})
+	}
+}
+
 // Validate is a superset of ValidateCreate: the spec rules still run, with the
 // tag rule after them, and the admin password's shape is checked when a client
 // can read its Secret.

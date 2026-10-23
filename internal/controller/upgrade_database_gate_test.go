@@ -130,8 +130,8 @@ func TestStepUpgradeRolling_WaitsForTheRolledServersDatabases(t *testing.T) {
 	var asked []string
 	notReady := []string{"d02"}
 	r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: record.NewFakeRecorder(10), UpgradeGates: &upgradeGates{
-		serverAvailable: func(_ context.Context, _ *neo4jv1beta1.Neo4jEnterpriseCluster, pod string) (bool, error) {
-			return true, nil
+		serverAvailable: func(_ context.Context, _ *neo4jv1beta1.Neo4jEnterpriseCluster, pod string) (bool, string, error) {
+			return true, "", nil
 		},
 		databasesCaughtUp: func(_ context.Context, _ *neo4jv1beta1.Neo4jEnterpriseCluster, pod string) (bool, []string, error) {
 			asked = append(asked, pod)
@@ -179,7 +179,9 @@ func TestStepUpgradeRolling_TimeoutNamesTheLaggingDatabases(t *testing.T) {
 	sts.Status = appsv1.StatefulSetStatus{ObservedGeneration: 2, ReadyReplicas: replicas, UpdatedReplicas: 1}
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, sts).WithStatusSubresource(cluster).Build()
 	r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: record.NewFakeRecorder(10), UpgradeGates: &upgradeGates{
-		serverAvailable: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, error) { return true, nil },
+		serverAvailable: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, string, error) {
+			return true, "", nil
+		},
 		databasesCaughtUp: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, []string, error) {
 			return false, []string{"d07"}, nil
 		},

@@ -133,6 +133,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// seen the new phase yet does not announce it twice (#444). Cleared when
 	// every server is available again.
 	availabilityAnnounced sync.Map
+	// serverStatefulSetWrites records, per cluster (key ns/name), the UID and
+	// generation of the server StatefulSet as the last pass left it
+	// (writtenGeneration), so a cached read that predates the write is a
+	// rollout in flight, not the rolled-out template it replaced.
+	serverStatefulSetWrites sync.Map
 
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
@@ -726,6 +731,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create server StatefulSet: %v", err))
 		return ctrl.Result{}, err
 	}
+	// The rollout checks below read the StatefulSet from the cache, which may
+	// not have this write yet (serverTemplateWriteUnobserved).
+	r.noteServerStatefulSetWrite(cluster, serverStatefulSet)
 
 	// Handle Query Performance Monitoring
 	if cluster.Spec.Monitoring != nil && cluster.Spec.Monitoring.Enabled {
@@ -797,7 +805,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 	// Update status to "Ready" only if cluster formation is verified
 	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
-	statusChanged := r.recordClusterReady(ctx, cluster, formedConditions...)
+	statusChanged := r.recordClusterReady(ctx, cluster, formation.servers, formedConditions...)
 
 	// Scale-down draining (server cordon→deallocate→drop) is driven earlier in
 	// the reconcile by reconcileScaleDownDrain, which owns the
@@ -853,6 +861,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.availabilityAnnounced.Delete(clusterKey(cluster))
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	r.upgradeDiagnostics.Delete(clusterKey(cluster))
+	r.serverStatefulSetWrites.Delete(clusterKey(cluster))
 	forgetServerAddresses(cluster)
 	neo4jclient.ForgetCluster(cluster.Namespace, cluster.Name)
 
@@ -1729,8 +1738,35 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 // "changed", which callers read as "the phase, message or Ready condition
 // moved" and announce with an event.
 func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message, version string, extra ...metav1.Condition) bool {
+	return r.updateClusterStatusRecording(ctx, cluster, phase, message, statusRecord{version: version}, extra...)
+}
+
+// statusRecord is what a cluster status write records besides the phase. An
+// empty version, or a nil pointer, leaves that field as it is.
+type statusRecord struct {
+	// version is status.version, the image tag every server runs.
+	version string
+	// runningVersion is status.runningVersion: what the servers report for a
+	// status.version without a patch, "" to clear it (operations.md id 153).
+	runningVersion *string
+	// resolvedTargetVersion is status.upgradeStatus.resolvedTargetVersion,
+	// written only when there is an upgrade record.
+	resolvedTargetVersion *string
+}
+
+// updateClusterStatusRecording is updateClusterStatusWithVersion with the
+// versions the servers report (statusRecord), in the same write.
+//
+// status.observedGeneration, and the conditions' observedGeneration, is the
+// generation this pass read at its start and acted on (cluster.Generation),
+// not the one the write re-reads: a spec changed while the pass ran has not
+// been acted on, and claiming it had read as "nothing pending" while a
+// rollout of it was about to start.
+func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusRecording(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message string, rec statusRecord, extra ...metav1.Condition) bool {
 	logger := log.FromContext(ctx)
 	statusChanged := false
+	version := rec.version
+	actedOn := cluster.Generation
 
 	update := func() error {
 		// Get latest version
@@ -1738,12 +1774,21 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
+		if actedOn == 0 {
+			// An object built in memory rather than read from the API server.
+			actedOn = latest.Generation
+		}
 
 		// Check if status is already exactly what we want
 		readyBool := (phase == "Ready")
 		statusNeedsUpdate := latest.Status.Phase != phase || latest.Status.Message != message ||
-			latest.Status.Ready != readyBool || latest.Status.ObservedGeneration != latest.Generation ||
+			latest.Status.Ready != readyBool || latest.Status.ObservedGeneration != actedOn ||
 			(version != "" && latest.Status.Version != version)
+		// The versions the servers report are written when they change; they
+		// do not count as a state change to announce.
+		versionsNeedUpdate := (rec.runningVersion != nil && latest.Status.RunningVersion != *rec.runningVersion) ||
+			(rec.resolvedTargetVersion != nil && latest.Status.UpgradeStatus != nil &&
+				latest.Status.UpgradeStatus.ResolvedTargetVersion != *rec.resolvedTargetVersion)
 
 		// Determine standard condition status and reason
 		condStatus, condReason := PhaseToConditionStatus(phase)
@@ -1768,7 +1813,7 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		}
 
 		// If neither status nor condition needs update, skip entirely
-		if !statusNeedsUpdate && !conditionNeedsUpdate && !extraNeedsUpdate {
+		if !statusNeedsUpdate && !conditionNeedsUpdate && !extraNeedsUpdate && !versionsNeedUpdate {
 			logger.V(1).Info("Status and condition already correct, skipping update",
 				"phase", phase, "message", message)
 			statusChanged = false
@@ -1785,9 +1830,15 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.Ready = readyBool
-		latest.Status.ObservedGeneration = latest.Generation
+		latest.Status.ObservedGeneration = actedOn
 		if version != "" {
 			latest.Status.Version = version
+		}
+		if rec.runningVersion != nil {
+			latest.Status.RunningVersion = *rec.runningVersion
+		}
+		if rec.resolvedTargetVersion != nil && latest.Status.UpgradeStatus != nil {
+			latest.Status.UpgradeStatus.ResolvedTargetVersion = *rec.resolvedTargetVersion
 		}
 
 		// Populate connection endpoints + connection examples. Cluster
@@ -1810,9 +1861,9 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		latest.Status.Replicas = r.buildReplicaStatus(ctx, cluster)
 
 		// Update Ready condition using standard helper
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
+		SetReadyCondition(&latest.Status.Conditions, actedOn, condStatus, condReason, message)
 		for _, c := range extra {
-			SetNamedCondition(&latest.Status.Conditions, c.Type, latest.Generation, c.Status, c.Reason, c.Message)
+			SetNamedCondition(&latest.Status.Conditions, c.Type, actedOn, c.Status, c.Reason, c.Message)
 		}
 
 		// Record Prometheus phase metric on every phase transition
@@ -3605,33 +3656,137 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 // it empty, which skipped the next upgrade's version check) and after an image
 // reached the servers outside the machine, through the zero-ready escape hatch
 // in holdImageDriftUntilReady (clusterVersionToRecord, operations.md id 144).
-func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, conditions ...metav1.Condition) bool {
-	version := clusterVersionToRecord(&cluster.Status, r.runningServerImageTag(ctx, cluster))
-	if version != "" && cluster.Status.Version != "" {
-		log.FromContext(ctx).Info("Recording the version the servers now run",
-			"previous", cluster.Status.Version, "running", version)
-	}
-	return r.updateClusterStatusWithVersion(ctx, cluster, "Ready", clusterReadyMessage(cluster), version, conditions...)
-}
-
-// runningServerImageTag returns the image tag every server runs, read from the
-// server StatefulSet (rolledImageTag); "" when the StatefulSet cannot be read
-// or is not fully rolled.
-func (r *Neo4jEnterpriseClusterReconciler) runningServerImageTag(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+//
+// servers is the SHOW SERVERS the formation check read on this pass. For a
+// tag without a patch the versions they report are recorded with it, when
+// they change (reportedVersionsToRecord, operations.md id 153): no query of
+// their own.
+func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, servers []neo4jclient.ServerInfo, conditions ...metav1.Condition) bool {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      fmt.Sprintf("%s-server", cluster.Name),
 		Namespace: cluster.Namespace,
 	}, sts); err != nil {
-		return ""
+		sts = nil
 	}
-	return rolledImageTag(sts)
+	rec := reportedVersionsToRecord(cluster, sts, servers)
+	if rec.version != "" && cluster.Status.Version != "" {
+		log.FromContext(ctx).Info("Recording the version the servers now run",
+			"previous", cluster.Status.Version, "running", rec.version)
+	}
+	if rec.runningVersion != nil && *rec.runningVersion != cluster.Status.RunningVersion {
+		log.FromContext(ctx).Info("Recording the version the servers report",
+			"version", firstNonEmpty(rec.version, cluster.Status.Version), "reported", *rec.runningVersion)
+	}
+	if rec.resolvedTargetVersion != nil {
+		log.FromContext(ctx).Info("Recording the version the held upgrade's target resolved to",
+			"target", cluster.Status.UpgradeStatus.TargetVersion, "reported", *rec.resolvedTargetVersion)
+	}
+	return r.updateClusterStatusRecording(ctx, cluster, "Ready", clusterReadyMessage(cluster), rec, conditions...)
+}
+
+// reportedVersionsToRecord is what a Ready pass records about the versions the
+// servers run, from the rolled server StatefulSet (nil when it cannot be read)
+// and the SHOW SERVERS rows the pass read:
+//
+//   - status.version, the tag every server runs (clusterVersionToRecord,
+//     operations.md id 144);
+//   - status.runningVersion, what the servers report for that tag when it
+//     names no patch, cleared when it names one. While an upgrade is held,
+//     only the servers below the partition it kept run status.version;
+//   - for a held upgrade whose target names no patch, what the servers it
+//     rolled report, in status.upgradeStatus.resolvedTargetVersion
+//     (operations.md id 153).
+func reportedVersionsToRecord(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet, servers []neo4jclient.ServerInfo) statusRecord {
+	var rec statusRecord
+	if sts != nil {
+		rec.version = clusterVersionToRecord(&cluster.Status, rolledImageTag(sts))
+	}
+	tag := firstNonEmpty(rec.version, cluster.Status.Version)
+	if !upgradeHeld(cluster) {
+		if running, ok := runningVersionFor(tag, highestReportedVersion(servers, nil)); ok {
+			rec.runningVersion = &running
+		}
+		return rec
+	}
+	if sts == nil {
+		return rec
+	}
+	if partition := keptUpgradePartition(cluster, sts); partition > 0 {
+		below := highestReportedVersion(servers, func(s neo4jclient.ServerInfo) bool {
+			for i := int32(0); i < partition; i++ {
+				if addressIsPod(s.Address, fmt.Sprintf("%s-server-%d", cluster.Name, i)) {
+					return true
+				}
+			}
+			return false
+		})
+		if running, ok := runningVersionFor(tag, below); ok {
+			rec.runningVersion = &running
+		}
+	}
+	if resolved, ok := resolvedTargetVersionFor(cluster.Status.UpgradeStatus, heldTargetServerVersion(cluster, sts, servers)); ok {
+		rec.resolvedTargetVersion = &resolved
+	}
+	return rec
+}
+
+// firstNonEmpty returns the first of values that is not "".
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
+// noteServerStatefulSetWrite remembers the generation of the server
+// StatefulSet as this pass left it, so a read from a cache that has not seen
+// the write yet is not taken for the rolled-out StatefulSet it replaced
+// (serverTemplateWriteUnobserved).
+func (r *Neo4jEnterpriseClusterReconciler) noteServerStatefulSetWrite(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet) {
+	if sts == nil || sts.UID == "" {
+		return
+	}
+	r.serverStatefulSetWrites.Store(clusterKey(cluster), writtenGeneration{uid: sts.UID, generation: sts.Generation})
+}
+
+// writtenGeneration is the server StatefulSet a pass wrote: its UID (a
+// StatefulSet created again starts at generation 1) and generation.
+type writtenGeneration struct {
+	uid        types.UID
+	generation int64
+}
+
+// serverTemplateWriteUnobserved reports whether sts carries a spec the
+// StatefulSet controller has not acted on yet: its observedGeneration is
+// behind its generation, or the read is older than the generation this
+// operator last wrote. Either way the pods may be about to roll, so a status
+// read off it describes the template before the write, not the one the pods
+// are moving to.
+func (r *Neo4jEnterpriseClusterReconciler) serverTemplateWriteUnobserved(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet) bool {
+	if sts.Status.ObservedGeneration < sts.Generation {
+		return true
+	}
+	v, ok := r.serverStatefulSetWrites.Load(clusterKey(cluster))
+	if !ok {
+		return false
+	}
+	w, ok := v.(writtenGeneration)
+	return ok && w.uid == sts.UID && sts.Generation < w.generation
 }
 
 // serverStatefulSetFullyRolled reports whether the server StatefulSet has no
-// rollout in flight: every replica updated to the current template revision
-// and ready. A false result carries a human-readable detail for the status
-// message.
+// rollout in flight: the StatefulSet controller has seen its current spec, and
+// every replica is updated to the current template revision and ready. A false
+// result carries a human-readable detail for the status message.
+//
+// A template write the StatefulSet controller has not seen yet is a rollout in
+// flight. Right after the pass's own write its status still described the
+// template before it, every replica updated and ready, so the cluster was
+// reported Ready and users, roles, databases and an upgrade started against
+// it, just before its servers restarted.
 func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, string) {
 	serverSts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
@@ -3643,6 +3798,9 @@ func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx cont
 	replicas := int32(1)
 	if serverSts.Spec.Replicas != nil {
 		replicas = *serverSts.Spec.Replicas
+	}
+	if r.serverTemplateWriteUnobserved(cluster, serverSts) {
+		return false, "the StatefulSet controller has not seen the current template"
 	}
 	// A Paused or Failed upgrade keeps its partition: the servers below it run
 	// the version they ran until the upgrade goes on, which is not a rollout

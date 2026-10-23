@@ -973,8 +973,23 @@ type Neo4jEnterpriseClusterStatus struct {
 	// Endpoints provides connection information
 	Endpoints *EndpointStatus `json:"endpoints,omitempty"`
 
-	// Version shows the current Neo4j version
+	// Version is the image tag every server runs: recorded at the first Ready,
+	// after each verified upgrade, and at a Ready on an image that reached the
+	// servers while none was ready. It does not move while an upgrade is in
+	// flight, Paused or Failed. spec.image.tag is checked against it on every
+	// reconcile, and a downgrade is refused.
 	Version string `json:"version,omitempty"`
+
+	// RunningVersion is the Neo4j version the servers report (SHOW SERVERS
+	// `version`) when status.version is a tag without a patch, such as
+	// "5.26-enterprise", which floats to the newest patch of its line: the
+	// highest one when the servers report different patches. The operator
+	// reads it from the SHOW SERVERS its formation check runs and writes it
+	// when it changes. A spec.image.tag below it is refused. Empty when
+	// status.version names a patch, which says the version itself, and until
+	// the operator has read it.
+	// +optional
+	RunningVersion string `json:"runningVersion,omitempty"`
 
 	// LastUpgradeTime shows when the last upgrade was performed
 	LastUpgradeTime *metav1.Time `json:"lastUpgradeTime,omitempty"`
@@ -1370,6 +1385,18 @@ type UpgradeStatus struct {
 
 	// TargetVersion shows the version being upgraded to
 	TargetVersion string `json:"targetVersion,omitempty"`
+
+	// ResolvedTargetVersion is the Neo4j version a server this upgrade
+	// restarted reports (SHOW SERVERS `version`), when targetVersion is a tag
+	// without a patch, which floats to the newest patch of its line: what the
+	// target resolved to. Recorded when a restarted server passes the
+	// upgrade's availability check, or, for a Paused or Failed upgrade, at the
+	// next Ready; the highest one when servers report different patches, and
+	// kept when the target changes mid-upgrade, since the servers it restarted
+	// still run it. Once the upgrade has restarted a server, a spec.image.tag
+	// below it is refused.
+	// +optional
+	ResolvedTargetVersion string `json:"resolvedTargetVersion,omitempty"`
 
 	// Progress shows upgrade progress statistics
 	Progress *UpgradeProgress `json:"progress,omitempty"`
