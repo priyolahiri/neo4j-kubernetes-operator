@@ -84,6 +84,9 @@ type Neo4jRoleBindingStatus struct {
 	//   UserNotFound         — the referenced user does not exist in Neo4j
 	//   PendingDependencies  — one or more .spec.roles do not yet exist
 	//   ClusterNotReady      — the referenced cluster is not Ready
+	//   RoleNamesResolved    — .spec.roles names a Neo4jRole by its CR name;
+	//                          the message maps each to the Neo4j role granted
+	//                          (present only then)
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
 

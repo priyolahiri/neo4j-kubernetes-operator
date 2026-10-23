@@ -165,10 +165,7 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	desiredRoles := normaliseRoles(rb.Spec.Roles)
 	desiredRoles, resolvedRoles := resolveRoleNames(ctx, r.Client, rb.Namespace, targetRefKey(rb.Spec.ClusterRef), desiredRoles)
 	desiredRoles = normaliseRoles(desiredRoles) // dedupe any CR-name/spec.name collisions
-	if len(resolvedRoles) > 0 {
-		r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonRolesResolved,
-			"resolved Neo4jRole CR names to Neo4j role names: %v", resolvedRoles)
-	}
+	r.reportResolvedRoles(ctx, rb, resolvedRoles)
 	currentRoles := normaliseRoles(info.Roles)
 
 	addRoles, dropRoles, missing := r.diffRoles(ctx, rb, desiredRoles, currentRoles)
@@ -474,6 +471,36 @@ func (r *Neo4jRoleBindingReconciler) reportPendingRoles(ctx context.Context, rb 
 	msg := pendingRolesMessage(missing)
 	if r.setNamedCondition(ctx, rb, ConditionTypePendingDependencies, metav1.ConditionTrue, ConditionReasonRolesPending, msg) {
 		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonRolePending, "%s", msg)
+	}
+}
+
+// reportResolvedRoles records the CR names spec.roles resolved (the
+// RoleNamesResolved condition) and announces RolesResolved when the mapping
+// changes, from the attempt whose write succeeded — not on every pass.
+func (r *Neo4jRoleBindingReconciler) reportResolvedRoles(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, resolved map[string]string) {
+	announce := false
+	update := func() error {
+		announce = false
+		latest := &neo4jv1beta1.Neo4jRoleBinding{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(rb), latest); err != nil {
+			return err
+		}
+		write, a := setResolvedRolesCondition(&latest.Status.Conditions, latest.Generation, resolved)
+		if !write {
+			return nil
+		}
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = a
+		return nil
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record resolved role names on Neo4jRoleBinding")
+		return
+	}
+	if announce {
+		r.Recorder.Event(rb, corev1.EventTypeNormal, EventReasonRolesResolved, resolvedRolesMessage(resolved))
 	}
 }
 

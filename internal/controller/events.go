@@ -300,6 +300,12 @@ const (
 	// that CAN be applied may be in sync while those naming a missing
 	// database are skipped.
 	ConditionTypePrivilegesResolve = "PrivilegesResolve"
+	// ConditionTypeRoleNamesResolved records, on a Neo4jUser or
+	// Neo4jRoleBinding whose spec.roles names a Neo4jRole by its CR name,
+	// which Neo4j role each such name was granted as. Present only then. It
+	// is what RolesResolved is announced from, so the event follows a change
+	// of the mapping and not every pass.
+	ConditionTypeRoleNamesResolved = "RoleNamesResolved"
 )
 
 const (
@@ -315,6 +321,8 @@ const (
 	// attribute to a spec statement and so will not revoke (Neo4jRole
 	// status.unattributedPrivileges).
 	ConditionReasonPrivilegesUnattributed = "UnattributedPrivileges"
+	// ConditionReasonRoleCRNamesResolved is RoleNamesResolved's reason.
+	ConditionReasonRoleCRNamesResolved = "RoleCRNamesResolved"
 )
 
 // Aura orchestration (control-plane) event reasons.

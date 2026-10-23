@@ -456,6 +456,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `PasswordSynced` | The password from the current version of the Secret has been applied |
 | `PendingDependencies` | One or more `spec.roles` reference custom roles that don't yet exist |
 | `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
+| `RoleNamesResolved` | `spec.roles` names a `Neo4jRole` by its CR name; the message maps each to the Neo4j role granted. Present only then |
 
 ### `Neo4jRole`
 
@@ -475,6 +476,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `UserNotFound` | The named user does not exist in Neo4j (waiting for SSO/LDAP first-login) |
 | `PendingDependencies` | One or more `spec.roles` reference a custom role that doesn't exist yet |
 | `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
+| `RoleNamesResolved` | `spec.roles` names a `Neo4jRole` by its CR name; the message maps each to the Neo4j role granted. Present only then |
 
 The `kubectl get` printer columns surface the most actionable bits:
 

@@ -136,6 +136,9 @@ spec:
                     UserNotFound         — the referenced user does not exist in Neo4j
                     PendingDependencies  — one or more .spec.roles do not yet exist
                     ClusterNotReady      — the referenced cluster is not Ready
+                    RoleNamesResolved    — .spec.roles names a Neo4jRole by its CR name;
+                                           the message maps each to the Neo4j role granted
+                                           (present only then)
                 items:
                   description: Condition contains details for one aspect of the current
                     state of this API Resource.

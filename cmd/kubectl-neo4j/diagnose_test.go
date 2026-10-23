@@ -314,6 +314,46 @@ func TestDiagnose_ContainerStillStartingIsNamedAsWaiting(t *testing.T) {
 	}
 }
 
+// A cluster the operator refused has no StatefulSet because the operator chose
+// not to build one. diagnose said "the operator has not built the workload
+// yet; check that it is running" — wrong about the one thing it named, since
+// the operator wrote the status right above it (v1.22.0 journey). It points at
+// that status instead, and still counts as a problem.
+func TestDiagnose_NoWorkloadOfARefusedClusterPointsAtItsStatus(t *testing.T) {
+	refused := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "prod", Namespace: "neo4j"},
+		Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{
+			Phase:   "Failed",
+			Message: "Validation failed: spec.topology.servers: Invalid value: 1: a cluster needs at least 2 servers",
+		},
+	}
+	results, err := diagnoseNamespace(context.Background(), testClient(t, refused), "neo4j", "")
+	require.NoError(t, err)
+	d := results[0]
+	out := joinSymptoms(d.symptoms)
+	assert.Contains(t, out, "no StatefulSet and no pods")
+	assert.NotContains(t, out, "has not built the workload yet", "the operator did reconcile it")
+	assert.NotContains(t, out, "kubectl logs", "the operator is not the suspect")
+	assert.Contains(t, out, "status message above says why")
+	assert.Contains(t, out, "kubectl neo4j explain Neo4jEnterpriseCluster/prod")
+	assert.True(t, d.problems(), "a deployment without servers is still a problem")
+
+	// A status without a message: the conditions and events carry the reason.
+	refused.Status.Message = ""
+	results, err = diagnoseNamespace(context.Background(), testClient(t, refused), "neo4j", "")
+	require.NoError(t, err)
+	assert.Contains(t, joinSymptoms(results[0].symptoms), "kubectl describe neo4jenterprisecluster prod")
+
+	// A standalone nothing has reconciled keeps the old hint: there the
+	// operator is the suspect.
+	fresh := &neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "dev", Namespace: "neo4j"}}
+	results, err = diagnoseNamespace(context.Background(), testClient(t, fresh), "neo4j", "")
+	require.NoError(t, err)
+	out = joinSymptoms(results[0].symptoms)
+	assert.Contains(t, out, "has not built the workload yet")
+	assert.Contains(t, out, "kubectl logs")
+}
+
 // The failure mode with no other signal: a CR nothing ever reconciled. This is
 // what a user sees when the operator is not running, lacks RBAC for the kind,
 // or is namespace-scoped and not watching this namespace (#282).

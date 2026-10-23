@@ -108,7 +108,7 @@ The operator has **27 CRD kinds, but only 13 have operator-side validators**. Th
 - Neo4jRestore/restore-1 (restore.yaml): skipped — no operator-side validator for Neo4jRestore; its CRD schema still applies (kubectl apply --dry-run=server)
 ```
 
-**Checked offline does not mean every rule ran.** One rule of a cluster, and the same rule of a standalone, compares the manifest with the deployment already running under its name: `spec.image.tag` against the version its servers run (`status.version`), which refuses a downgrade. A manifest carries no such state — a `status` in the file is ignored, as `kubectl apply` ignores it — so offline the summary says what was not checked:
+**Checked offline does not mean every rule ran.** One rule of a cluster, and the same rule of a standalone, compares the manifest with the deployment already running under its name: `spec.image.tag` against the version its servers run (`status.version`), which refuses a downgrade. A manifest carries no such state — a `status` in the file is ignored, as `kubectl apply` ignores it — so offline the summary says what was not checked. The same goes for a `Neo4jBackup`'s `spec.shardedDatabase`, which names an object in the cluster:
 
 ```
 ✓ Neo4jEnterpriseCluster/prod (cluster.yaml): ok
@@ -139,6 +139,13 @@ Neo4jEnterpriseCluster/prod (cluster.yaml):
 
 For a standalone the message says `the standalone runs`. A deployment that does not exist yet has nothing to compare with. One the command cannot read (no `get` permission) is a warning saying the tag was not checked, rather than a silent pass.
 
+A `Neo4jBackup`'s `spec.shardedDatabase` is resolved as the operator resolves it before a run: the `Neo4jShardedDatabase` with that CR name (`metadata.name`, not the logical `spec.name`) in the backup's namespace, on the backup's `instanceRef`. The operator fails a backup whose reference does not resolve, so the command reports it as an error, naming the CR when the value is a logical name:
+
+```
+Neo4jBackup/products-nightly (backups.yaml):
+  ✗ spec.shardedDatabase: Invalid value: "products": Neo4jShardedDatabase "products" not found in namespace "neo4j"; Neo4jShardedDatabase "products-sharded" has spec.name "products", and spec.shardedDatabase takes the CR's metadata.name: set it to "products-sharded"
+```
+
 The connection also adds a third finding type:
 
 ```
@@ -161,7 +168,7 @@ It is advisory and silent when it cannot tell — the operator may be in a names
 
 ### Required permissions
 
-`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster` (for a cluster manifest, the running cluster's status; for the other kinds, their `clusterRef`), `Neo4jEnterpriseStandalone` (likewise, for a standalone manifest the running standalone's status), `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, and `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
+`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster` (for a cluster manifest, the running cluster's status; for the other kinds, their `clusterRef`), `Neo4jEnterpriseStandalone` (likewise, for a standalone manifest the running standalone's status), `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`, and `get` and `list` on `Neo4jShardedDatabase` when validating a `Neo4jBackup` with `spec.shardedDatabase`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
 
 ### One run lists every error
 

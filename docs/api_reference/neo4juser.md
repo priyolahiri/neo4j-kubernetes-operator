@@ -77,6 +77,7 @@ Configures a single non-native authentication provider for the user. The provide
 | `PasswordSynced` | `PasswordMatchesSecret` | True when the last-applied change token matches the current Secret. |
 | `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `spec.roles` reference a custom role that does not yet exist. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
+| `RoleNamesResolved` | `RoleCRNamesResolved` | Present only while `spec.roles` names a `Neo4jRole` by its CR `metadata.name`; True, and the message maps each such name to the Neo4j role granted. A `RolesResolved` event announces the mapping when it appears or changes. |
 
 ## Validation rules
 

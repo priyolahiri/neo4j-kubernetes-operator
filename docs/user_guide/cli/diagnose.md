@@ -37,6 +37,7 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | Still starting (`…`) | waiting reason `ContainerCreating` / `PodInitializing` — a pod that was just replaced, before its container runs; or a container that runs but whose readiness probe has not passed yet. Neither changes the exit code |
 | PVC never bound | `pvc.status.phase != Bound`, naming the StorageClass |
 | No pods at all | a StatefulSet that wants replicas but has none |
+| No workload at all | a cluster or standalone with neither StatefulSet nor pods. If the operator has written its status, it reconciled the resource and chose not to build it (a refused spec, a missing StorageClass): the hint points at that status message and `explain`. With no status, the operator may not be running or watching the namespace, and the hint says how to check |
 | Backup Job failed | the Job's `Failed` condition being `True` (including a missed `activeDeadlineSeconds`, where no pod failed), plus its pods, container by container. The verdict is the Job's conditions, not its `status.failed` count: that counts failed *attempts* and never goes down, so a backup that retried and then completed is a success — it gets a `⚠` line noting the retries, and one still retrying gets `…`, neither of which changes the exit code |
 | Nothing ever reconciled | a CR with no status at all after two minutes |
 | Operator warnings | the three most recent `Warning` events on the resource |

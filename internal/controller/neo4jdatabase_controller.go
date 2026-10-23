@@ -381,8 +381,15 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	if err := neo4jClient.DropDatabase(ctx, database.Spec.Name); err != nil {
 		logger.Error(err, "Failed to drop database")
 		if classifyFinalizerCleanup(database, err) == retryCleanup {
-			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDeletionFailed,
-				"Failed to drop database, will retry: %v", err)
+			// Retried every RequeueAfter and on every status change of the
+			// host, which a teardown makes often: the Warning came about ten
+			// times a minute (v1.22.0 journey). The failure is written to
+			// status and announced when it starts or its message changes;
+			// the retries go on (knowledge rule 145).
+			msg := fmt.Sprintf("Failed to drop database, will retry: %v", err)
+			if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonDeletionFailed, msg) {
+				r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonDeletionFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDeletionFailed,
@@ -750,7 +757,7 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatusObserved(ctx context.Conte
 			// Set phase based on the reason for failure
 			switch reason {
 			case EventReasonValidationFailed:
-				latest.Status.Phase = EventReasonValidationFailed
+				latest.Status.Phase = neo4jv1beta1.PhaseValidationFailed
 			case EventReasonClusterNotFound, EventReasonClusterNotReady,
 				EventReasonSeedCredsMissing, EventReasonSeedCredsAutoInherited:
 				// Waiting on something the user (or the operator) puts in
@@ -758,6 +765,10 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatusObserved(ctx context.Conte
 				latest.Status.Phase = "Pending"
 			case EventReasonConnectionFailed, EventReasonCreationFailed, EventReasonDataImportFailed:
 				latest.Status.Phase = "Failed"
+			case EventReasonDeletionFailed:
+				// A drop the deletion retries until it succeeds or the
+				// grace period ends.
+				latest.Status.Phase = neo4jv1beta1.PhaseError
 			default:
 				latest.Status.Phase = "Unknown"
 			}

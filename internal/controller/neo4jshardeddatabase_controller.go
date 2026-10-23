@@ -94,6 +94,14 @@ type Neo4jShardedDatabaseReconciler struct {
 	RequeueAfter             time.Duration
 	ShardedDatabaseValidator *validation.ShardedDatabaseValidator
 
+	// APIReader reads straight from the API server, bypassing the informer
+	// cache. Each pass reads the sharded database through it: the pass decides
+	// from the status the previous pass wrote — its phase, ShardingReady,
+	// LastDestructiveRestoreGeneration — and the cache can still hold a copy
+	// from before that write when the write's own watch event starts the pass
+	// (knowledge rule 94). nil falls back to the cached client.
+	APIReader client.Reader
+
 	// newNeo4jClient builds the Neo4j client for the referenced cluster. nil
 	// selects the real one; tests substitute a scripted server.
 	newNeo4jClient func(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (shardedNeo4jClient, error)
@@ -115,9 +123,13 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	logger := log.FromContext(ctx).WithValues("neo4jshardeddatabase", req.NamespacedName)
 	logger.Info("Starting reconciliation of Neo4jShardedDatabase")
 
-	// Fetch the Neo4jShardedDatabase instance
+	// Fetch the Neo4jShardedDatabase instance, as the API server has it. From
+	// the cache, a pass started by the Ready write could read the phase from
+	// before it ("Validating"), write "Creating" over Ready and announce
+	// ShardedDatabaseReady a second time in the same second (v1.22.0
+	// journey); a stale ShardingReady would also re-resolve a consumed seed.
 	var shardedDatabase neo4jv1beta1.Neo4jShardedDatabase
-	if err := r.Get(ctx, req.NamespacedName, &shardedDatabase); err != nil {
+	if err := r.reader().Get(ctx, req.NamespacedName, &shardedDatabase); err != nil {
 		if errors.IsNotFound(err) {
 			logger.Info("Neo4jShardedDatabase resource not found, likely deleted")
 			return ctrl.Result{}, nil
@@ -138,7 +150,9 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	// Validate the sharded database configuration
 	if err := r.validateShardedDatabase(ctx, &shardedDatabase); err != nil {
 		logger.Error(err, "Validation failed")
-		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Validation failed: %v", err), nil)
+		// One prefix, here: the validator returns the errors alone.
+		msg := fmt.Sprintf("Validation failed: %v", err)
+		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", msg, nil)
 		if statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after validation failure")
 		}
@@ -146,7 +160,7 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		// every RequeueAfter while the spec stays invalid: the persisted phase
 		// and message say whether this pass is news (knowledge rule 136).
 		if failed {
-			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonValidationFailed, err.Error())
+			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
@@ -830,6 +844,15 @@ func (r *Neo4jShardedDatabaseReconciler) updateShardStatus(ctx context.Context, 
 }
 
 // updateStatus updates the sharded database status
+// reader is where a pass reads its sharded database: the API server when an
+// APIReader is wired, else the cache.
+func (r *Neo4jShardedDatabaseReconciler) reader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
+}
+
 func (r *Neo4jShardedDatabaseReconciler) updateStatus(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, phase, message string, shardingReady *bool) error {
 	_, err := r.transitionStatus(ctx, shardedDB, phase, message, shardingReady)
 	return err

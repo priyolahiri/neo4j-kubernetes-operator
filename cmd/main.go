@@ -547,6 +547,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				MaxConcurrentReconciles:  1,
 				RequeueAfter:             controller.GetTestRequeueAfter(),
 				ShardedDatabaseValidator: validation.NewShardedDatabaseValidator(mgr.GetClient()),
+				APIReader:                mgr.GetAPIReader(), // uncached — each pass decides from the last pass's status
 			},
 		},
 		{
@@ -834,6 +835,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				MaxConcurrentReconciles:  1,
 				RequeueAfter:             controller.GetTestRequeueAfter(),
 				ShardedDatabaseValidator: validation.NewShardedDatabaseValidator(mgr.GetClient()),
+				APIReader:                mgr.GetAPIReader(), // uncached — each pass decides from the last pass's status
 			}, "Neo4jShardedDatabase"
 		},
 		"role": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {

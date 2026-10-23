@@ -18,7 +18,10 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
+	"k8s.io/apimachinery/pkg/api/meta"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -111,4 +114,35 @@ func resolveRoleNames(ctx context.Context, c client.Client, namespace, targetKey
 		}
 	}
 	return out, resolved
+}
+
+// resolvedRolesMessage is the RoleNamesResolved condition message, and the
+// RolesResolved event text, for a CR-name -> Neo4j-name mapping. fmt prints a
+// map sorted by key, so the same mapping always reads the same.
+func resolvedRolesMessage(resolved map[string]string) string {
+	return fmt.Sprintf("resolved Neo4jRole CR names to Neo4j role names: %v", resolved)
+}
+
+// setResolvedRolesCondition records which Neo4jRole CR names in spec.roles were
+// resolved to which Neo4j role names: the RoleNamesResolved condition, present
+// only while there is a mapping. write says the conditions changed and need
+// writing; announce says the mapping is new or different — the change
+// RolesResolved reports. RolesResolved was emitted on every pass that resolved
+// a name (40 in five minutes on one Neo4jUser, v1.22.0 journey); with the
+// mapping in status the event follows its change, and an operator restart
+// announces nothing (knowledge rule 136).
+func setResolvedRolesCondition(conditions *[]metav1.Condition, generation int64, resolved map[string]string) (write, announce bool) {
+	if len(resolved) == 0 {
+		return meta.RemoveStatusCondition(conditions, ConditionTypeRoleNamesResolved), false
+	}
+	msg := resolvedRolesMessage(resolved)
+	existing := findCondition(*conditions, ConditionTypeRoleNamesResolved)
+	announce = existing == nil || existing.Message != msg
+	if !announce && existing.Status == metav1.ConditionTrue &&
+		existing.Reason == ConditionReasonRoleCRNamesResolved && existing.ObservedGeneration == generation {
+		return false, false
+	}
+	SetNamedCondition(conditions, ConditionTypeRoleNamesResolved, generation, metav1.ConditionTrue,
+		ConditionReasonRoleCRNamesResolved, msg)
+	return true, announce
 }

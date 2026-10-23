@@ -156,7 +156,7 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 		return metav1.ConditionFalse, ConditionReasonSuspended
 	case neo4jv1beta1.PhaseDegraded:
 		return metav1.ConditionFalse, ConditionReasonDegraded
-	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseError:
+	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseValidationFailed, neo4jv1beta1.PhaseError:
 		return metav1.ConditionFalse, ConditionReasonFailed
 	case neo4jv1beta1.PhaseUpgrading:
 		return metav1.ConditionUnknown, ConditionReasonUpgrading

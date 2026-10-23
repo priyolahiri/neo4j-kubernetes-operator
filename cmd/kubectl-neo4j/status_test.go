@@ -129,11 +129,12 @@ func TestResourceStatus_UnknownPhaseIsNotAlarming(t *testing.T) {
 // problem fails here instead of being silently treated as healthy.
 func TestResourceStatus_EveryPhaseInTheVocabularyIsClassified(t *testing.T) {
 	problems := map[string]bool{
-		neo4jv1beta1.PhaseFailed:   true,
-		neo4jv1beta1.PhaseError:    true,
-		neo4jv1beta1.PhaseInvalid:  true,
-		neo4jv1beta1.PhaseDegraded: true,
-		neo4jv1beta1.PhaseUnknown:  true,
+		neo4jv1beta1.PhaseFailed:           true,
+		neo4jv1beta1.PhaseError:            true,
+		neo4jv1beta1.PhaseInvalid:          true,
+		neo4jv1beta1.PhaseValidationFailed: true,
+		neo4jv1beta1.PhaseDegraded:         true,
+		neo4jv1beta1.PhaseUnknown:          true,
 	}
 	notProblems := map[string]bool{
 		neo4jv1beta1.PhaseReady:      true,
@@ -211,6 +212,34 @@ func TestStatusProblems_ReportsInvalidAndNotScheduledOrCompleted(t *testing.T) {
 	assert.Contains(t, out, "✗ Neo4jBackup/bad: Invalid backup spec")
 	assert.NotContains(t, out, "done")
 	assert.NotContains(t, out, "sched")
+	assert.NotContains(t, out, "look healthy")
+}
+
+// A Neo4jDatabase the operator refused reports phase ValidationFailed, not
+// Invalid. The phase was in no list, so --problems counted the database as
+// healthy and left out the one message that said what to fix (v1.22.0
+// journey). A phase this binary has never heard of still counts as healthy.
+func TestStatusProblems_ReportsAValidationFailedDatabase(t *testing.T) {
+	c := testClient(t,
+		&neo4jv1beta1.Neo4jDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "orders", Namespace: "neo4j"},
+			Status: neo4jv1beta1.Neo4jDatabaseStatus{
+				Phase:   "ValidationFailed",
+				Message: "Database validation failed: [spec.topology.primaries: Invalid value: 5: exceeds the cluster's 3 servers]",
+			},
+		},
+		&neo4jv1beta1.Neo4jDatabase{
+			ObjectMeta: metav1.ObjectMeta{Name: "future", Namespace: "neo4j"},
+			Status:     neo4jv1beta1.Neo4jDatabaseStatus{Phase: "SomeFuturePhase", Message: "newer than this CLI"},
+		},
+	)
+	rows, err := collectStatus(context.Background(), c, "neo4j")
+	require.NoError(t, err)
+
+	out := renderTo(t, rows, false, true, "neo4j")
+	assert.Contains(t, out, "ValidationFailed")
+	assert.Contains(t, out, "✗ Neo4jDatabase/orders: Database validation failed")
+	assert.NotContains(t, out, "future", "an unknown phase is not alarmed about")
 	assert.NotContains(t, out, "look healthy")
 }
 

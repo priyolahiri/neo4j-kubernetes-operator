@@ -167,6 +167,29 @@ func TestRestore_WaitsForSeedConfigAndCarriesOn(t *testing.T) {
 	}
 }
 
+// Two passes that both read the restore before the first one's status write
+// landed — the informer cache lags writes — each saw a restore not yet
+// waiting, and each announced the wait: SeedEndpointNotProjected twice in the
+// same second (v1.22.0 journey). The second write changes nothing, so the
+// second pass is silent.
+func TestAwaitSeedConfig_TwoPassesOnAStaleCopyAnnounceOnce(t *testing.T) {
+	f := newSeedConfigWaitFixture(t, false)
+	stale := f.restore()
+	require.Empty(t, stale.Status.Phase, "both passes read a restore that is not waiting yet")
+	target := restoreTarget{cluster: f.cluster()}
+	missing := []string{`credentials Secret "creds"`}
+
+	f.r.awaitSeedConfig(f.ctx, stale.DeepCopy(), target, missing)
+	f.r.awaitSeedConfig(f.ctx, stale.DeepCopy(), target, missing)
+
+	assert.Equal(t, 1, f.seedConfigWarnings(), "the wait is announced once")
+	assert.Equal(t, StatusPending, f.restore().Status.Phase)
+
+	// A different wait (now also the endpoint) is news, even from a stale copy.
+	f.r.awaitSeedConfig(f.ctx, stale.DeepCopy(), target, append(missing, "AWS_ENDPOINT_URL_S3"))
+	assert.Equal(t, 1, f.seedConfigWarnings())
+}
+
 // A restore that already failed for another reason stays Failed: the
 // previously-failed guard is unchanged.
 func TestRestore_GenuineFailureStaysTerminal(t *testing.T) {

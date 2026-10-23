@@ -78,17 +78,14 @@ func (r *Neo4jBackupReconciler) shardedPreflightStatic(ctx context.Context, back
 		return preflightFail, "", fmt.Errorf("cluster preflight failed: %w", err)
 	}
 
-	ns := backup.Namespace
-	shardedDB := &neo4jv1beta1.Neo4jShardedDatabase{}
-	if err := r.Get(ctx, types.NamespacedName{Name: backup.Spec.ScopedName(), Namespace: ns}, shardedDB); err != nil {
-		if errors.IsNotFound(err) {
-			return preflightFail, "", fmt.Errorf("Neo4jShardedDatabase %q not found in namespace %q", backup.Spec.ScopedName(), ns)
-		}
+	// The reference is resolved as `kubectl neo4j validate --connect` resolves
+	// it: one function, so the CLI refuses what this fails.
+	shardedDB, refusal, err := validation.ResolveBackupShardedDatabase(ctx, r.Client, backup)
+	if err != nil {
 		return preflightFail, "", fmt.Errorf("failed to fetch Neo4jShardedDatabase %q: %w", backup.Spec.ScopedName(), err)
 	}
-
-	if shardedDB.Spec.ClusterRef != backup.Spec.InstanceRef {
-		return preflightFail, "", fmt.Errorf("Neo4jShardedDatabase %q references cluster %q but backup target.clusterRef is %q", shardedDB.Name, shardedDB.Spec.ClusterRef, backup.Spec.InstanceRef)
+	if refusal != nil {
+		return preflightFail, "", fmt.Errorf("%s", refusal.Detail)
 	}
 
 	if shardedDB.Status.ShardingReady == nil || !*shardedDB.Status.ShardingReady {

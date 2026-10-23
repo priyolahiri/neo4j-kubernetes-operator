@@ -71,8 +71,10 @@ func (v *ShardedDatabaseValidator) ValidateShardedDatabase(ctx context.Context, 
 	// Validate Cypher language version
 	v.validateCypherLanguage(shardedDB, result)
 
+	// The errors alone: the reconciler's status message says "Validation
+	// failed" itself, and the prefix here doubled it.
 	if len(result.Errors) > 0 {
-		return fmt.Errorf("validation failed: %v", result.Errors.ToAggregate().Error())
+		return result.Errors.ToAggregate()
 	}
 
 	return nil

@@ -40,11 +40,14 @@ const (
 	PhaseScheduled = "Scheduled"
 
 	// Terminal, unhealthy.
-	PhaseFailed    = "Failed"
-	PhaseError     = "Error"
-	PhaseInvalid   = "Invalid"
-	PhaseDegraded  = "Degraded"
-	PhaseSuspended = "Suspended"
+	PhaseFailed  = "Failed"
+	PhaseError   = "Error"
+	PhaseInvalid = "Invalid"
+	// PhaseValidationFailed is Invalid under the name a Neo4jDatabase reports
+	// it: the operator's validation refused the spec, so nothing was created.
+	PhaseValidationFailed = "ValidationFailed"
+	PhaseDegraded         = "Degraded"
+	PhaseSuspended        = "Suspended"
 
 	// In progress.
 	PhasePending    = "Pending"
@@ -80,6 +83,7 @@ var AllPhases = []string{
 	PhaseFailed,
 	PhaseError,
 	PhaseInvalid,
+	PhaseValidationFailed,
 	PhaseDegraded,
 	PhaseSuspended,
 	PhasePending,
