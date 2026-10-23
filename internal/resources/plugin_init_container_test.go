@@ -205,11 +205,30 @@ func TestBuildPluginCAVolume_ProjectionsAreOptional(t *testing.T) {
 	}
 }
 
+// defaultCABundles are the paths the init script looks for the image's default
+// CA bundle at, after $CURL_CA_BUNDLE.
+var defaultCABundles = []string{
+	"/etc/ssl/certs/ca-certificates.crt",
+	"/etc/pki/tls/certs/ca-bundle.crt",
+	"/etc/ssl/cert.pem",
+	"/cacert.pem",
+}
+
+// initImage is what the init image holds, for runPluginInit: curlCABundle is
+// $CURL_CA_BUNDLE ("" leaves it unset), and files maps a default bundle path
+// to its content. Every other default path does not exist, whatever the host
+// running the test has there.
+type initImage struct {
+	curlCABundle string
+	files        map[string]string
+}
+
 // runPluginInit runs the init container's script with /bin/sh against a fake
 // curl that records its arguments and writes a JAR with known content: the CA
-// directory is caDir. It returns the script's output, the curl arguments and
-// the CA bundle the script built ("" when none).
-func runPluginInit(t *testing.T, caDir string, withCA bool) (string, string, string) {
+// directory is caDir, the image's default CAs what image says. It returns the
+// script's output, the curl arguments and the CA bundle the script built (""
+// when none).
+func runPluginInit(t *testing.T, caDir string, withCA bool, image ...initImage) (string, string, string) {
 	t.Helper()
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("sh not available")
@@ -236,9 +255,32 @@ done
 		cas = []neo4jv1beta1.TrustedCASecret{{Name: "corp-ca"}}
 	}
 	c := resources.BuildPluginVerifiedDownloadInitContainer(plugin, "", cas)
-	script := strings.NewReplacer("/etc/plugin-ca", caDir, "/tmp/plugin-init", filepath.Join(dir, "work")).Replace(c.Args[1])
+	var img initImage
+	if len(image) > 0 {
+		img = image[0]
+	}
+	// The image's file system: each default bundle path moves under dir, and
+	// exists there only when the image has it.
+	replace := []string{"/etc/plugin-ca", caDir, "/tmp/plugin-init", filepath.Join(dir, "work")}
+	imageRoot := filepath.Join(dir, "image")
+	for _, p := range defaultCABundles {
+		replace = append(replace, p, filepath.Join(imageRoot, p))
+	}
+	for p, content := range img.files {
+		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(imageRoot, p)), 0o755))
+		require.NoError(t, os.WriteFile(filepath.Join(imageRoot, p), []byte(content), 0o600))
+	}
+	script := strings.NewReplacer(replace...).Replace(c.Args[1])
 	cmd := exec.CommandContext(t.Context(), "sh", "-c", script)
-	cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	for _, e := range os.Environ() {
+		if !strings.HasPrefix(e, "CURL_CA_BUNDLE=") {
+			cmd.Env = append(cmd.Env, e)
+		}
+	}
+	cmd.Env = append(cmd.Env, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	if img.curlCABundle != "" {
+		cmd.Env = append(cmd.Env, "CURL_CA_BUNDLE="+filepath.Join(imageRoot, img.curlCABundle))
+	}
 	for _, e := range c.Env {
 		v := e.Value
 		if e.Name == "PLUGIN_TARGET" {
@@ -264,9 +306,9 @@ func TestPluginInitScript_TrustedCAs(t *testing.T) {
 		require.NoError(t, os.WriteFile(filepath.Join(caDir, "corp-ca.crt"), []byte("CORP\n"), 0o600))
 		require.NoError(t, os.WriteFile(filepath.Join(caDir, "mirror-ca.crt"), []byte("MIRROR\n"), 0o600))
 		out, args, bundle := runPluginInit(t, caDir, true)
-		assert.Contains(t, out, "using custom CA bundle")
+		assert.Contains(t, out, "trusting ONLY the custom CAs")
 		assert.Contains(t, args, "--cacert")
-		assert.Equal(t, "CORP\nMIRROR\n", bundle)
+		assert.Equal(t, "CORP\n\nMIRROR\n\n", bundle)
 	})
 	t.Run("no CA left", func(t *testing.T) {
 		out, args, bundle := runPluginInit(t, t.TempDir(), true)
@@ -280,6 +322,55 @@ func TestPluginInitScript_TrustedCAs(t *testing.T) {
 		assert.NotContains(t, out, "CA bundle")
 		assert.NotContains(t, out, "CA certificate")
 		assert.NotContains(t, args, "--cacert")
+	})
+}
+
+// The defect (v1.22.0 journey): the bundle held the custom CAs alone, and
+// --cacert is curl's only trust store, so a target with any trustedCASecrets
+// could not download a plugin from a public URL (GitHub: curl exit 60) and
+// its restarting server crash-looped in the init container. Custom CAs now
+// extend the image's defaults, found where the configurable init image keeps
+// them.
+func TestPluginInitScript_CustomCAsExtendTheDefaults(t *testing.T) {
+	caDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(caDir, "corp-ca.crt"), []byte("CORP\n"), 0o600))
+	for _, tc := range []struct {
+		name   string
+		image  initImage
+		used   string
+		bundle string
+	}{
+		{"curlimages/curl: CURL_CA_BUNDLE first", initImage{curlCABundle: "/cacert.pem", files: map[string]string{
+			"/cacert.pem": "MOZILLA\n", "/etc/ssl/certs/ca-certificates.crt": "ALPINE\n",
+		}}, "/cacert.pem", "MOZILLA\n\nCORP\n\n"},
+		{"CURL_CA_BUNDLE naming no file", initImage{curlCABundle: "/missing.pem", files: map[string]string{
+			"/etc/pki/tls/certs/ca-bundle.crt": "RHEL\n",
+		}}, "/etc/pki/tls/certs/ca-bundle.crt", "RHEL\n\nCORP\n\n"},
+		{"Debian and Alpine before /etc/ssl/cert.pem", initImage{files: map[string]string{
+			"/etc/ssl/cert.pem": "OPENSSL\n", "/etc/ssl/certs/ca-certificates.crt": "DEBIAN\n",
+		}}, "/etc/ssl/certs/ca-certificates.crt", "DEBIAN\n\nCORP\n\n"},
+		{"only cert.pem", initImage{files: map[string]string{"/etc/ssl/cert.pem": "OPENSSL\n"}},
+			"/etc/ssl/cert.pem", "OPENSSL\n\nCORP\n\n"},
+		{"an empty bundle is no bundle", initImage{files: map[string]string{
+			"/etc/ssl/certs/ca-certificates.crt": "", "/cacert.pem": "MOZILLA\n",
+		}}, "/cacert.pem", "MOZILLA\n\nCORP\n\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, args, bundle := runPluginInit(t, caDir, true, tc.image)
+			assert.Contains(t, out, "trusting the default CAs (")
+			assert.Contains(t, out, filepath.FromSlash(tc.used)+") and the custom CAs")
+			assert.NotContains(t, out, "WARNING")
+			assert.Contains(t, args, "--cacert")
+			assert.Equal(t, tc.bundle, bundle, "the defaults, then the custom CAs")
+		})
+	}
+
+	t.Run("PEM blocks never share a line", func(t *testing.T) {
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "a.crt"), []byte("-----END CERTIFICATE-----"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "b.crt"), []byte("-----BEGIN CERTIFICATE-----\n"), 0o600))
+		_, _, bundle := runPluginInit(t, dir, true, initImage{files: map[string]string{"/cacert.pem": "-----END CERTIFICATE-----"}})
+		assert.Equal(t, "-----END CERTIFICATE-----\n-----END CERTIFICATE-----\n-----BEGIN CERTIFICATE-----\n\n", bundle)
 	})
 }
 

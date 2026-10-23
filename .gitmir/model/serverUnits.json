@@ -643,7 +643,8 @@
     "moduleId": "mod-plugins",
     "paths": [
       "internal/controller/plugin_controller.go",
-      "internal/controller/plugin_conf_settings.go"
+      "internal/controller/plugin_conf_settings.go",
+      "internal/controller/plugin_target_gate.go"
     ]
   },
   {

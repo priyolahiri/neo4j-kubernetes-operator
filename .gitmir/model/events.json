@@ -1016,7 +1016,13 @@
   {
     "id": "ev-plugin-install-deferred",
     "name": "PluginInstallDeferred",
-    "description": "Normal event, once per wait, on a Neo4jPlugin whose install — or, for a VerifiedDownload plugin, whose update of its plugin-ca volume after the target's spec.trustedCASecrets changed — would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held.",
+    "description": "Normal event, once per wait, on a Neo4jPlugin whose install — or, for a VerifiedDownload plugin, whose update of its plugin-ca volume after the target's spec.trustedCASecrets changed (\"updating the plugin's trusted CAs restarts every server\") — would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available, or has not rolled out its latest spec: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a target whose status.observedGeneration lags its generation, or whose StatefulSet is still rolling its template out; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held, nor is a write that repairs the plugin's own failing init container (PluginInitContainerFailing).",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-init-container-failing",
+    "name": "PluginInitContainerFailing",
+    "description": "On a VerifiedDownload Neo4jPlugin whose own init container (plugin-init-<name>) keeps server pods from starting. A Warning, once, when the plugin writes the change that repairs it to a target that is not Ready: the write changes that init container or a volume it mounts, every server pod that is down is failing in it (exited non-zero, not succeeded since), those pods are the highest ordinals at or above the partition, no pod is missing or terminating, and Neo4j's last diagnostics report no other server unavailable — so the roll replaces the failing pods first and costs no server that is up (knowledge operations.md id 152). A Normal event when the plugin deletes a standalone's pod stuck in that container on an older revision, which its OrderedReady StatefulSet does not replace.",
     "moduleId": "mod-plugins"
   },
   {

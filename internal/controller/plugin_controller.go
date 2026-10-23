@@ -241,6 +241,9 @@ func (r *Neo4jPluginReconciler) checkForDuplicatePlugin(
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jplugins,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jplugins/status,verbs=get;update;patch
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jplugins/finalizers,verbs=update
+// Pods: read for the target's servers, and a standalone's pod deleted when its
+// OrderedReady StatefulSet will not replace it (replaceStuckPods).
+//+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
 
 // Reconcile handles the reconciliation of Neo4jPlugin resources
 func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -358,6 +361,25 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// flapped with it — this project's own ArgoCD health checks included.
 	settled := plugin.Status.Phase == neo4jv1beta1.PhaseReady &&
 		plugin.Status.ObservedGeneration == plugin.Generation
+	// Whether this pass may write to the target's StatefulSet, decided where a
+	// write is first wanted: the target is Ready with every server available
+	// and has rolled out its latest spec (IsReady), or the write repairs the
+	// plugin's own init container, failing on every server that is down
+	// (selfRepair; repair says where).
+	repair, repairChecked := "", false
+	mayWrite := func() bool {
+		if deployment.IsReady {
+			return true
+		}
+		if !repairChecked {
+			repairChecked = true
+			var err error
+			if repair, err = r.selfRepair(ctx, plugin, deployment); err != nil {
+				logger.Error(err, "Cannot tell whether the plugin's write repairs its target")
+			}
+		}
+		return repair != ""
+	}
 	if settled {
 		// A settled plugin is reconciled again whenever its target's pod
 		// template changes (SetupWithManager), because other controllers write
@@ -380,21 +402,23 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		case missing == "" && outdated == "":
 			return ctrl.Result{}, nil
 		case missing == "":
-			// Not Ready: the gate below holds the write like an install's.
+			// Not writable: the gate below holds the write like an install's.
 			logger.Info("The target's trusted CAs changed; updating the plugin's", "change", outdated)
-			if deployment.IsReady {
+			if mayWrite() && repair == "" {
 				r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Updating the plugin's trusted CAs: "+outdated)
 			}
-		case !deployment.IsReady:
+		case !mayWrite():
 			// Restoring it restarts every server, like an install, and waits
 			// for the same reason (below).
 			logger.Info("Plugin missing from its target; restoring it once the target is fully available", "missing", missing)
-			return r.deferInstall(ctx, plugin, deployment, missing)
+			return r.deferInstall(ctx, plugin, deployment, missing, "")
 		default:
 			logger.Info("Plugin missing from its target; restoring it", "missing", missing)
 			r.Recorder.Eventf(plugin, corev1.EventTypeWarning, EventReasonPluginMissing,
 				"%s; restoring it, which restarts the servers", missing)
-			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Restoring the plugin: "+missing)
+			if repair == "" {
+				r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Restoring the plugin: "+missing)
+			}
 		}
 	}
 
@@ -402,7 +426,9 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// the target's StatefulSet. A cluster already short of a server (Degraded),
 	// or still forming, rolling or upgrading, could lose its majority to it
 	// (CLAUDE.md, "Server availability (#444)"), so the write waits until the
-	// target is Ready with every server available. A pass with nothing to write
+	// target is Ready with every server available and has rolled out its
+	// latest spec — unless it repairs the plugin's own init container, failing
+	// on every server that is down (selfRepair). A pass with nothing to write
 	// — one waiting for the servers this install restarted, which turned the
 	// cluster Forming — carries on.
 	if !deployment.IsReady {
@@ -411,14 +437,26 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		case err != nil:
 			// The install below reads the same StatefulSet and reports it.
 			logger.Error(err, "Cannot tell whether installing the plugin would change its target")
-		case changes:
+		case !changes:
+		case !mayWrite():
 			logger.Info("Target not fully available; deferring the plugin installation", "type", deployment.Type, "name", deployment.Name)
-			return r.deferInstall(ctx, plugin, deployment, "")
+			return r.deferInstall(ctx, plugin, deployment, "", r.trustedCAUpdate(ctx, plugin, deployment))
+		default:
+			logger.Info("Target not fully available, but the plugin's init container keeps its servers from starting; writing the repair",
+				"type", deployment.Type, "name", deployment.Name, "servers", repair)
 		}
 	}
 
-	// Check if deployment is actually functional, not just status reporting
-	if !r.deploymentFunctional(ctx, deployment) {
+	// A standalone's pod that the plugin's init container keeps from starting
+	// is not replaced by its StatefulSet once a write repairs it; the plugin
+	// deletes it (replaceStuckPods). Before the functional check: the
+	// standalone answers nothing until the pod is back.
+	r.replaceStuckPods(ctx, plugin, deployment)
+
+	// Check if deployment is actually functional, not just status reporting.
+	// Not before a repair: the servers it repairs are down, and a standalone
+	// whose one server is down answers nothing.
+	if repair == "" && !r.deploymentFunctional(ctx, deployment) {
 		logger.Info("Target deployment not functional, requeuing", "type", deployment.Type, "name", deployment.Name)
 		r.updatePluginStatus(ctx, plugin, "Waiting", fmt.Sprintf("Waiting for %s %s to be functional", deployment.Type, deployment.Name))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -433,12 +471,27 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// time, as fast as passes could run.
 	inProgress := plugin.Status.ObservedGeneration == plugin.Generation &&
 		(plugin.Status.Phase == neo4jv1beta1.PhaseInstalling || plugin.Status.Phase == neo4jv1beta1.PhaseFailed)
-	if !settled && !inProgress {
-		r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Installing plugin")
+	switch {
+	case repair != "":
+		// A write to a target that is not Ready: said once, from the status
+		// write that records it (operations.md ids 136, 145).
+		message := fmt.Sprintf("Writing the plugin to %s although it is not Ready: its init container keeps %s from starting, "+
+			"and this write changes that container; the roll replaces those pods first", targetName(deployment), repair)
+		if r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, message) {
+			r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginInitContainerFailing, message)
+		}
+	case !settled && !inProgress:
+		message := "Installing plugin"
+		if outdated := r.trustedCAUpdate(ctx, plugin, deployment); outdated != "" {
+			// A CA update that waited for the target is still a CA update.
+			message = "Updating the plugin's trusted CAs: " + outdated
+		}
+		r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, message)
 	}
 
 	// Install plugin using NEO4J_PLUGINS environment variable (recommended by Neo4j docs)
-	if err := r.installPluginViaEnvironment(ctx, plugin, deployment); err != nil {
+	written, err := r.writePluginToTarget(ctx, plugin, deployment)
+	if err != nil {
 		if retryablePluginError(err) {
 			logger.Info("Plugin installation interrupted; retrying", "error", err.Error())
 			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling,
@@ -450,17 +503,25 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			fmt.Sprintf("Plugin %s installation failed: %v", plugin.Spec.Name, err))
 	}
 
-	// Check if deployment is ready after restart (non-blocking)
-	if !r.arePodsReady(ctx, deployment) {
-		logger.Info("Waiting for pods to be ready after plugin installation")
-		r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, "Waiting for pods to be ready after plugin installation")
+	// The write restarts every server, and the old pods report Ready until
+	// they stop: the plugin is Ready only once its target's StatefulSet has
+	// rolled the template out to every pod and they are ready (non-blocking),
+	// judged against the generation this pass wrote, if it wrote. A pod its init
+	// container keeps from starting is named, so the wait says what it waits for.
+	if pending, failing := r.rolloutPending(ctx, plugin, deployment, written); pending != "" || !r.arePodsReady(ctx, deployment) {
+		logger.Info("Waiting for pods to be ready after plugin installation", "rollout", pending)
+		message := "Waiting for pods to be ready after plugin installation"
+		if failing != "" {
+			message += "; cannot start: " + failing
+		}
+		r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling, message)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Configure plugin. This can run while the servers restart to take the
-	// plugin: the write above is what restarts them, and the old pods still
-	// report Ready until they stop. A server that cannot be reached then is
-	// part of the install, not a failed one.
+	// Configure plugin, once every server runs it. A server that cannot be
+	// reached even then (one restarting for another reason; before the wait
+	// above, the old pods still reported Ready while they stopped) is part of
+	// the install, not a failed one.
 	if err := r.configure(ctx, plugin, deployment); err != nil {
 		if retryablePluginError(err) {
 			logger.Info("Cannot reach the target to configure the plugin yet; retrying", "error", err.Error())
@@ -498,14 +559,20 @@ func (r *Neo4jPluginReconciler) installFailed(ctx context.Context, plugin *neo4j
 // deferInstall holds a write of the plugin to a target that is not Ready with
 // every server available: phase Waiting, another look after RequeueAfter, and
 // one event when the wait starts — PluginMissing for a Ready plugin whose target
-// lost what it set (missing says what), PluginInstallDeferred otherwise. The
-// event follows the status write that starts the wait (operations.md id 136),
-// so the passes that go on waiting, and an operator restart, say nothing more.
-func (r *Neo4jPluginReconciler) deferInstall(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo, missing string) (ctrl.Result, error) {
+// lost what it set (missing says what), PluginInstallDeferred otherwise. A
+// write that only follows the target's trusted CAs (caUpdate says what
+// changed) says so. The event follows the status write that starts the wait
+// (operations.md id 136), so the passes that go on waiting, and an operator
+// restart, say nothing more.
+func (r *Neo4jPluginReconciler) deferInstall(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo, missing, caUpdate string) (ctrl.Result, error) {
 	until := targetAvailable(deployment)
-	message := "Waiting until " + until + ": installing the plugin restarts every server"
+	what := "installing the plugin"
+	if caUpdate != "" {
+		what = "updating the plugin's trusted CAs"
+	}
+	message := "Waiting until " + until + ": " + what + " restarts every server"
 	if deployment.Type == "standalone" {
-		message = "Waiting until " + until + ": installing the plugin restarts it"
+		message = "Waiting until " + until + ": " + what + " restarts it"
 	}
 	if r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseWaiting, message) {
 		if missing != "" {
@@ -532,6 +599,20 @@ func targetName(deployment *DeploymentInfo) string {
 		return "Neo4jEnterpriseStandalone " + deployment.Name
 	}
 	return "Neo4jEnterpriseCluster " + deployment.Name
+}
+
+// trustedCAUpdate says what changed when all the plugin's write would put
+// right on its target is what follows the target's spec.trustedCASecrets — its
+// CA volume, and its init container's mount of it (missingFromTarget's
+// "outdated", operations.md id 147); "" otherwise. Every pass words a write the
+// same way from it — the settled one that finds the change, the wait for the
+// target, the pass that then writes — so a wait is announced once.
+func (r *Neo4jPluginReconciler) trustedCAUpdate(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) string {
+	missing, outdated, err := r.missingFromTarget(ctx, plugin, deployment)
+	if err != nil || missing != "" {
+		return ""
+	}
+	return outdated
 }
 
 // installChangesTarget reports whether installing the plugin would change its
@@ -595,16 +676,20 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 		Name:      plugin.Spec.ClusterRef,
 		Namespace: plugin.Namespace,
 	}, cluster); err == nil {
-		// Ready only, not Degraded: installing a plugin rolls every server,
-		// which on a cluster already short of one could cost it its majority.
-		isReady := cluster.Status.Phase == "Ready" && serversUnavailableSince(cluster) == nil
-		return &DeploymentInfo{
+		info := &DeploymentInfo{
 			Object:    cluster,
 			Type:      "cluster",
 			Name:      cluster.Name,
 			Namespace: cluster.Namespace,
-			IsReady:   isReady,
-		}, nil
+		}
+		// Ready only, not Degraded: installing a plugin rolls every server,
+		// which on a cluster already short of one could cost it its majority.
+		// And not a Ready the cluster has yet to act on: one read before it
+		// processed its latest spec, or while its servers still roll
+		// (targetRolloutPending).
+		info.IsReady = cluster.Status.Phase == "Ready" && serversUnavailableSince(cluster) == nil &&
+			r.targetRolloutPending(ctx, info, cluster.Generation, cluster.Status.ObservedGeneration) == ""
+		return info, nil
 	}
 
 	// Try Neo4jEnterpriseStandalone
@@ -613,14 +698,17 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 		Name:      plugin.Spec.ClusterRef,
 		Namespace: plugin.Namespace,
 	}, standalone); err == nil {
-		isReady := standalone.Status.Phase == "Ready"
-		return &DeploymentInfo{
+		info := &DeploymentInfo{
 			Object:    standalone,
 			Type:      "standalone",
 			Name:      standalone.Name,
 			Namespace: standalone.Namespace,
-			IsReady:   isReady,
-		}, nil
+		}
+		// A standalone reads Ready while its one pod does, also when its
+		// StatefulSet is about to replace it.
+		info.IsReady = standalone.Status.Phase == "Ready" &&
+			r.targetRolloutPending(ctx, info, standalone.Generation, standalone.Status.ObservedGeneration) == ""
+		return info, nil
 	}
 
 	return nil, fmt.Errorf("target deployment %s not found (tried both Neo4jEnterpriseCluster and Neo4jEnterpriseStandalone)", plugin.Spec.ClusterRef)
@@ -986,6 +1074,15 @@ func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *
 // that container reads (applyPluginToTemplate). A pass whose edits change
 // nothing writes nothing.
 func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
+	_, err := r.writePluginToTarget(ctx, plugin, deployment)
+	return err
+}
+
+// writePluginToTarget is installPluginViaEnvironment, and returns the
+// StatefulSet generation its write created (0 when it wrote nothing), so the
+// pass can wait for that generation's roll: the cached StatefulSet it reads
+// next may not have seen the write yet, and reads as rolled out.
+func (r *Neo4jPluginReconciler) writePluginToTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (int64, error) {
 	logger := log.FromContext(ctx)
 	switch {
 	case isVerifiedDownloadInstallMode(plugin):
@@ -1002,7 +1099,7 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 	}
 
 	// Update the StatefulSet with retry on conflict
-	written := false
+	var written int64
 	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
 		// Fetch latest version of StatefulSet for each retry
 		currentSts := &appsv1.StatefulSet{}
@@ -1035,21 +1132,23 @@ func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context,
 		if err := r.Update(ctx, currentSts); err != nil {
 			return err
 		}
-		written = true
+		// The API server's answer: the generation the template write moved
+		// the StatefulSet to.
+		written = max(currentSts.Generation, 1)
 		return nil
 	})
 	if err != nil {
-		return fmt.Errorf("failed to update StatefulSet with plugin configuration: %w", err)
+		return 0, fmt.Errorf("failed to update StatefulSet with plugin configuration: %w", err)
 	}
 
-	if written {
-		logger.Info("Successfully updated StatefulSet with plugin configuration", "plugin", plugin.Spec.Name)
+	if written > 0 {
+		logger.Info("Successfully updated StatefulSet with plugin configuration", "plugin", plugin.Spec.Name, "generation", written)
 	}
 
 	// Note: ConfigMap updates for standalone deployments are now handled earlier in reconcile flow
 	// before connectivity checks to ensure security settings are applied before Neo4j starts
 
-	return nil
+	return written, nil
 }
 
 // applyPluginToTemplate makes on template, the target's pod template, every

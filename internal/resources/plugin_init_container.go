@@ -59,17 +59,17 @@ func PluginInitContainerName(pluginName string) string {
 //   - image     overrides DefaultPluginInitContainerImage when non-empty
 //     (sourced from the operator's PLUGIN_INIT_CONTAINER_IMAGE env var).
 //   - caSecrets is the cluster/standalone's TrustedCASecrets list. Each
-//     Secret's CA bundle is mounted under /etc/plugin-ca and curl is
-//     pointed at the resulting concatenated file. Empty list = system
-//     CA only.
+//     Secret's CA bundle is mounted under /etc/plugin-ca, and curl is
+//     pointed at the image's default CAs with those added. Empty list =
+//     default CAs only.
 //
 // The script behaviour:
 //
 //  1. Reads PLUGIN_URL, PLUGIN_CHECKSUM, PLUGIN_TARGET from env.
 //  2. Optionally adds an Authorization header from /etc/plugin-auth/token
 //     when source.authSecret is set (mounted by the caller).
-//  3. curl --fail --location -o $PLUGIN_TARGET (with optional --cacert
-//     when CA bundle present).
+//  3. curl --fail --location -o $PLUGIN_TARGET (with --cacert, the
+//     default CAs plus the custom ones, when a custom CA is present).
 //  4. Computes sha256sum or sha512sum based on the checksum prefix.
 //  5. Compares against the expected value. Mismatch -> exit non-zero.
 //
@@ -230,23 +230,53 @@ echo "[plugin-init] starting download for plugin=${PLUGIN_NAME} target=${PLUGIN_
 	b.WriteString("CURL_ARGS=\"--fail --location --silent --show-error\"\n")
 
 	if withCA {
-		// Concatenate every certificate file in /etc/plugin-ca into a
-		// single bundle; curl accepts only one --cacert path. The
-		// projected volume drops files as <secret-name>.crt.
+		// Custom CAs extend the default ones, never replace them: curl's
+		// --cacert is its only trust store, and spec.trustedCASecrets is the
+		// target's list for its corporate CA, not a statement that nothing
+		// else may be trusted. A bundle of the custom CAs alone failed every
+		// download from a public URL (curl exit 60), and so held a restarting
+		// server in Init:CrashLoopBackOff.
 		//
-		// Its projections are optional (BuildPluginCAVolume), so the
-		// directory can be empty: every CA Secret the volume still names
-		// was deleted after it left spec.trustedCASecrets, before the
-		// plugin controller updated the volume. Then there is no CA to add
-		// and curl keeps its default ones — what it uses once the volume is
-		// updated — rather than failing the pod on an unmatched glob. The
-		// checksum check below is what vouches for the JAR either way.
+		// The bundle is the image's default CAs followed by every file in
+		// /etc/plugin-ca (the projected volume drops <secret-name>.crt), each
+		// ended by a newline so two PEM blocks never share a line. The init
+		// image is configurable (an air-gapped mirror), so the default bundle
+		// is found, not assumed: $CURL_CA_BUNDLE when it names a file
+		// (curlimages/curl sets it to /cacert.pem), else the first of the
+		// usual paths that exists — Debian, Ubuntu and Alpine, then RHEL and
+		// UBI, then /etc/ssl/cert.pem, then curlimages/curl's own. An image
+		// with none of them trusts the custom CAs only, and says so.
+		//
+		// The volume's projections are optional (BuildPluginCAVolume), so the
+		// directory can be empty: every CA Secret the volume still names was
+		// deleted after it left spec.trustedCASecrets, before the plugin
+		// controller updated the volume. Then there is no CA to add and curl
+		// keeps its default ones — what it uses once the volume is updated —
+		// rather than failing the pod on an unmatched glob. The checksum check
+		// below is what vouches for the JAR either way.
 		b.WriteString(`mkdir -p /tmp/plugin-init
 set -- /etc/plugin-ca/*.crt
 if [ -e "$1" ]; then
-    cat "$@" > /tmp/plugin-init/ca-bundle.crt
+    DEFAULT_CAS=""
+    for f in "${CURL_CA_BUNDLE:-}" /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem /cacert.pem; do
+        if [ -n "$f" ] && [ -s "$f" ]; then
+            DEFAULT_CAS="$f"
+            break
+        fi
+    done
+    : > /tmp/plugin-init/ca-bundle.crt
+    if [ -n "${DEFAULT_CAS}" ]; then
+        cat "${DEFAULT_CAS}" >> /tmp/plugin-init/ca-bundle.crt
+        echo >> /tmp/plugin-init/ca-bundle.crt
+        echo "[plugin-init] trusting the default CAs (${DEFAULT_CAS}) and the custom CAs in /etc/plugin-ca"
+    else
+        echo "[plugin-init] WARNING: no default CA bundle found (CURL_CA_BUNDLE unset or empty, none of /etc/ssl/certs/ca-certificates.crt /etc/pki/tls/certs/ca-bundle.crt /etc/ssl/cert.pem /cacert.pem exists); trusting ONLY the custom CAs in /etc/plugin-ca"
+    fi
+    for f in "$@"; do
+        cat "$f"
+        echo
+    done >> /tmp/plugin-init/ca-bundle.crt
     CURL_ARGS="${CURL_ARGS} --cacert /tmp/plugin-init/ca-bundle.crt"
-    echo "[plugin-init] using custom CA bundle"
 else
     echo "[plugin-init] no CA certificate in /etc/plugin-ca; using the default CAs"
 fi
