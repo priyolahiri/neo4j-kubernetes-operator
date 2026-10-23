@@ -20,7 +20,7 @@
         "kind": "update",
         "entityId": "ent-neo4jenterprisecluster",
         "fieldName": "StatefulSet annotation neo4j.com/cluster-controller-env-vars",
-        "description": "Rewrites the owned-env-var-names annotation each reconcile so the next loop can distinguish a true removal from a foreign var it never owned."
+        "description": "Rewrites the owned-env-var-names annotation (and the template hash) from the desired template only — the merged env goes into a copy of it — so the next loop can distinguish a true removal from a foreign var it never owned, and never records a plugin's variables as its own (knowledge operations.md ids 134, 155)."
       }
     ]
   },
