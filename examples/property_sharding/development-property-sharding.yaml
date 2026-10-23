@@ -17,6 +17,16 @@
 #   --from-literal=username=neo4j \
 #   --from-literal=password=dev-password
 
+# Development namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: neo4j-dev
+  labels:
+    purpose: development
+    environment: dev
+
+---
 # Development property sharding cluster with minimal resources
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jEnterpriseCluster
@@ -112,16 +122,6 @@ spec:
 
   wait: true
   ifNotExists: true
-
----
-# Development namespace
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: neo4j-dev
-  labels:
-    purpose: development
-    environment: dev
 
 # ── Admin credentials Secret (create this BEFORE you apply this manifest) ──────
 # This Secret is intentionally NOT defined inline. If it were, `kubectl apply -f`
