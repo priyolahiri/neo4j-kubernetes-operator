@@ -195,16 +195,17 @@ When you can't bake images, `VerifiedDownload` closes the `Managed`-mode verific
 apiVersion: neo4j.neo4j.com/v1beta1
 kind: Neo4jPlugin
 metadata:
-  name: gds-verified
+  name: apoc-verified
 spec:
-  clusterRef: my-cluster
-  name: graph-data-science
-  version: "2.13.0"
+  clusterRef: my-cluster          # running 2026.08.1
+  name: apoc
+  version: "2026.08.1"
   installMode: VerifiedDownload
   source:
     type: url
-    url: https://github.com/neo4j/graph-data-science/releases/download/2.13.0/neo4j-graph-data-science-2.13.0.jar
-    checksum: sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+    url: https://github.com/neo4j/apoc/releases/download/2026.08.1/apoc-2026.08.1-core.jar
+    # sha256sum of that file; pin the digest of the exact JAR you reviewed
+    checksum: sha256:8607c873df867aa1b3b8c9926d55262d09088d2cccd62b53a35f43cdc22f8433
 ```
 
 The validator enforces additional gates for this mode:
