@@ -172,7 +172,7 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 | Field | Type | Description |
 |---|---|---|
 | `conditions` | `[]metav1.Condition` | Current status conditions |
-| `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found / not ready, or waiting for the seed credentials on the target — `SeedCredsMissing`, `SeedCredsAutoInherited`), `Failed` (connection, creation or data-import failure), `ValidationFailed`, or `Unknown` (any other blocked state) |
+| `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found / not ready, or waiting for the seed credentials on the target — `SeedCredsMissing`, `SeedCredsAutoInherited`), `Failed` (connection, creation or data-import failure), `ValidationFailed` (the spec was refused; `kubectl neo4j status --problems` lists it), `Error` (a deletion whose `DROP DATABASE` failed and is being retried; reason `DeletionFailed`), or `Unknown` (any other blocked state) |
 | `message` | `string` | Human-readable status message |
 | `observedGeneration` | `int64` | Generation observed by the controller |
 | `dataImported` | `*bool` | `true` once `spec.initialData.cypherStatements` have run, or, for a `seedURI` database, once it was created from the seed. Set once; the statements are not run again |

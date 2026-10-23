@@ -724,7 +724,7 @@
         "id": "f-neo4jdatabase-status-phase",
         "name": "status.phase",
         "type": "string",
-        "note": "Ready; Pending (host not found or not ready, or waiting for the seed credentials Secret on the host: SeedCredsMissing, SeedCredsAutoInherited); Failed (connection, creation or data-import failure); ValidationFailed; Unknown."
+        "note": "Ready; Pending (host not found or not ready, or waiting for the seed credentials Secret on the host: SeedCredsMissing, SeedCredsAutoInherited); Failed (connection, creation or data-import failure); ValidationFailed (the spec was refused; api/v1beta1 PhaseValidationFailed, a problem phase for kubectl neo4j status --problems); Error (a deletion retrying a failed DROP DATABASE, reason DeletionFailed); Unknown."
       },
       {
         "id": "f-neo4jdatabase-status-message",
@@ -1731,6 +1731,13 @@
         "name": "status.passwordLastRotated",
         "type": "timestamp",
         "isNullable": true
+      },
+      {
+        "id": "f-neo4juser-status-conditions",
+        "name": "status.conditions",
+        "type": "json",
+        "isNullable": true,
+        "note": "Includes Ready, RolesSynced, PasswordSynced, PendingDependencies, ClusterNotReady, and RoleNamesResolved (present only while spec.roles names a Neo4jRole by its CR name; the message maps each to the Neo4j role granted, and RolesResolved is announced when it changes)."
       }
     ],
     "paths": [
@@ -1925,7 +1932,7 @@
         "name": "status.conditions",
         "type": "json",
         "isNullable": true,
-        "note": "Includes Ready, RolesSynced, UserNotFound, PendingDependencies, ClusterNotReady."
+        "note": "Includes Ready, RolesSynced, UserNotFound, PendingDependencies, ClusterNotReady, and RoleNamesResolved (present only while spec.roles names a Neo4jRole by its CR name; the message maps each to the Neo4j role granted, and RolesResolved is announced when it changes)."
       }
     ],
     "paths": [

@@ -56,6 +56,7 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 | `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `.spec.roles` correspond to a Neo4jRole CR that does not yet exist. |
 | `UserNotFound` | `UserNotFound`, `UserPresent` | True when the user named by `.spec.username` is absent from Neo4j. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
+| `RoleNamesResolved` | `RoleCRNamesResolved` | Present only while `.spec.roles` names a `Neo4jRole` by its CR `metadata.name`; True, and the message maps each such name to the Neo4j role granted. A `RolesResolved` event announces the mapping when it appears or changes. |
 
 ## Validation rules
 

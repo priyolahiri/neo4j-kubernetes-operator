@@ -26,7 +26,7 @@
   {
     "id": "ev-validation-failed",
     "name": "ValidationFailed",
-    "description": "Fires when an inline spec validator (cluster, standalone, database, sharded database, composite database, alias, replica, plugin, user, role, role binding, auth rule) rejects the CR's spec with hard errors; reconciliation halts until the spec is fixed. Emitted after the status write that records the failure, and only when that write changed the phase, the message or the Ready condition's status or reason — when the failure starts or its message changes — not on every retry while the spec stays invalid, nor after an operator restart (knowledge operations.md id 136). For a cluster and a standalone this includes a spec.image.tag below status.version (a downgrade), checked on every pass; for a cluster the message says \"Validation failed\" until a pass has accepted the cluster, then \"Update validation failed\".",
+    "description": "Fires when an inline spec validator (cluster, standalone, database, sharded database, composite database, alias, replica, plugin, user, role, role binding, auth rule) rejects the CR's spec with hard errors; reconciliation halts until the spec is fixed. Emitted after the status write that records the failure, and only when that write changed the phase, the message or the Ready condition's status or reason — when the failure starts or its message changes — not on every retry while the spec stays invalid, nor after an operator restart (knowledge operations.md id 136). For a cluster and a standalone this includes a spec.image.tag below status.version (a downgrade), checked on every pass; for a cluster the message says \"Validation failed\" until a pass has accepted the cluster, then \"Update validation failed\". The message says \"validation failed\" once: a validator returns its errors alone and the reconciler adds the prefix (the cluster and the sharded database said it twice); the sharded database's event carries its status message. A Neo4jDatabase so refused is in phase ValidationFailed, which kubectl neo4j status --problems lists (knowledge operations.md ids 136, 154).",
     "moduleId": "mod-platform"
   },
   {
@@ -248,7 +248,7 @@
   {
     "id": "ev-deletion-failed",
     "name": "DeletionFailed",
-    "description": "DROP DATABASE failed during Neo4jDatabase finalizer cleanup; the finalizer is retried or released depending on the error class.",
+    "description": "DROP DATABASE failed during Neo4jDatabase finalizer cleanup. A retryable failure keeps the finalizer and is recorded in status (phase Error, Ready reason DeletionFailed, the message); the event is emitted only when that write changed the status - once per failure while the drop is retried on every pass, not on every retry (knowledge operations.md id 145). A failure that releases the finalizer (not retryable, or the five-minute grace period has passed) is announced once more as it releases.",
     "moduleId": "mod-database"
   },
   {
@@ -296,7 +296,7 @@
   {
     "id": "ev-sharded-database-ready",
     "name": "ShardedDatabaseReady",
-    "description": "The property-sharded database became ready: the status write moved the CR to phase Ready (graph shard online in SHOW DATABASES), or a destructive replaceExisting pass recreated it. Not emitted again while it stays Ready (knowledge operations.md id 136).",
+    "description": "The property-sharded database became ready: the status write moved the CR to phase Ready (graph shard online in SHOW DATABASES), or a destructive replaceExisting pass recreated it. Not emitted again while it stays Ready (knowledge operations.md id 136). Each pass reads the CR through the uncached APIReader, so a pass started by the Ready write cannot read the earlier phase from the cache, write it over Ready and announce Ready a second time (knowledge operations.md ids 94, 136).",
     "moduleId": "mod-database"
   },
   {
@@ -464,7 +464,7 @@
   {
     "id": "ev-restore-started",
     "name": "RestoreStarted",
-    "description": "A restore Job was created, a cluster-native Cypher recreate was issued, or an all-databases per-database seed began.",
+    "description": "A restore Job was created, a cluster-native Cypher recreate was issued, or an all-databases per-database seed began. For a standalone restore that runs offline with neo4j-admin, a first RestoreStarted names the reason; it is emitted only once the existence check, the pre-restore hooks and the stop (or, with stopCluster false, the refusal of a running standalone) have passed, and with stopCluster false it says the standalone is already stopped (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -494,7 +494,7 @@
   {
     "id": "ev-seed-endpoint-not-projected",
     "name": "SeedEndpointNotProjected",
-    "description": "An online restore's target (cluster or standalone) has server pods that cannot reach the cloud seed source: the credentials Secret or custom S3 endpoint is missing and the target is not opted in to auto-inherit. Emitted when the restore starts waiting in Pending; it carries on once the target has them.",
+    "description": "An online restore's target (cluster or standalone) has server pods that cannot reach the cloud seed source: the credentials Secret or custom S3 endpoint is missing and the target is not opted in to auto-inherit. Emitted when the restore starts waiting in Pending; it carries on once the target has them. Announced when the status write (transitionRestoreStatus, which re-reads the restore) changed the phase or message, not from the pass's own copy, so two passes on a copy from before the first write announce it once (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -566,7 +566,7 @@
   {
     "id": "ev-roles-resolved",
     "name": "RolesResolved",
-    "description": "Emitted when a Neo4jRole CR's Kubernetes metadata.name in spec.roles is resolved to its effective Neo4j role name (#260 CR-name resolution) (neo4juser_controller.go, neo4jrolebinding_controller.go).",
+    "description": "Emitted by Neo4jUser and Neo4jRoleBinding when spec.roles names a Neo4jRole by its CR metadata.name and the operator grants the Neo4j role that CR manages (#260 CR-name resolution). The mapping is recorded in the RoleNamesResolved condition (present only while there is one), and the event is emitted only when that write changed it - the mapping appeared or changed - not on every pass, nor after an operator restart (knowledge operations.md id 136) (reportResolvedRoles in neo4juser_controller.go and neo4jrolebinding_controller.go).",
     "moduleId": "mod-security"
   },
   {

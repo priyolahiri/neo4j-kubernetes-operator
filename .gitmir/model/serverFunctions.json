@@ -576,10 +576,12 @@
     "name": "Drop Database On Deletion",
     "serverUnitId": "su-neo4jdatabase",
     "operation": "delete",
-    "description": "handleDeletion() resolves the host and issues DROP DATABASE for spec.name, releasing the finalizer on success or on a non-retryable failure. After a successful drop it lists Neo4jRoles on the same clusterRef and warns (non-fatally) on each role whose spec still grants on the dropped database, case-insensitively.",
+    "description": "handleDeletion() resolves the host and issues DROP DATABASE for spec.name, releasing the finalizer on success or on a non-retryable failure. A retryable failure keeps the finalizer and requeues: the failure is written through updateDatabaseStatus (phase Error, Ready reason DeletionFailed) and DeletionFailed is emitted only when that write changed the status, once per failure rather than on every retry (knowledge operations.md id 145). After a successful drop it lists Neo4jRoles on the same clusterRef and warns (non-fatally) on each role whose spec still grants on the dropped database, case-insensitively.",
     "readsFieldIds": [],
     "writesFieldIds": [],
-    "callsFunctionIds": [],
+    "callsFunctionIds": [
+      "sf-update-database-status"
+    ],
     "emitsEventIds": [
       "ev-deletion-failed",
       "ev-database-deleted",
@@ -610,7 +612,7 @@
     "name": "Update Neo4jDatabase Status",
     "serverUnitId": "su-neo4jdatabase",
     "operation": "update",
-    "description": "updateDatabaseStatus() / updateDatabaseStatusObserved() re-fetch the CR under retry.RetryOnConflict and set the Ready condition, status.phase and status.message, plus the pass's SHOW DATABASES observation (status.state, status.servers) applied to the re-fetched object. Nothing is written when the status would not change (a status write is a watch event). They report whether the Ready condition's status or reason, the phase or the message changed, from the attempt whose write succeeded; reportDatabaseReady emits DatabaseReady and the validation gate emits ValidationFailed only on that transition (knowledge operations.md ids 136, 143).",
+    "description": "updateDatabaseStatus() / updateDatabaseStatusObserved() re-fetch the CR under retry.RetryOnConflict and set the Ready condition, status.phase and status.message, plus the pass's SHOW DATABASES observation (status.state, status.servers) applied to the re-fetched object. Nothing is written when the status would not change (a status write is a watch event). They report whether the Ready condition's status or reason, the phase or the message changed, from the attempt whose write succeeded; reportDatabaseReady emits DatabaseReady and the validation gate emits ValidationFailed only on that transition (knowledge operations.md ids 136, 143). The phase follows the Ready reason: ValidationFailed is written as the api/v1beta1 constant PhaseValidationFailed, and DeletionFailed (a retried drop during deletion) as Error.",
     "readsFieldIds": [],
     "writesFieldIds": [
       "f-neo4jdatabase-status-phase",
@@ -699,7 +701,7 @@
     "name": "Reconcile Neo4jShardedDatabase",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. shardCreateNeeded decides whether CREATE DATABASE is sent: always on the destructive replaceExisting pass and while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard); for a listed family only under ifNotExists: false when this CR did not create it (status.virtualDatabase does not name spec.name), so Neo4j's 'already exists' refusal surfaces instead of the family being adopted. ShardedDatabaseReady, SeedBackupPending, SeedProxyStarting and ValidationFailed are emitted only when the status write (transitionStatus) changes the phase or message. A clusterRef that names no cluster is phase Pending (ev-cluster-not-found, once); any other read error is retried with backoff. Every Warning about a lasting condition (cluster without property sharding, client creation, seedBackupRef resolution, a failed reconcile) is emitted only when the status write that records it changed the phase or message (knowledge operations.md id 145).",
+    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. shardCreateNeeded decides whether CREATE DATABASE is sent: always on the destructive replaceExisting pass and while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard); for a listed family only under ifNotExists: false when this CR did not create it (status.virtualDatabase does not name spec.name), so Neo4j's 'already exists' refusal surfaces instead of the family being adopted. ShardedDatabaseReady, SeedBackupPending, SeedProxyStarting and ValidationFailed are emitted only when the status write (transitionStatus) changes the phase or message. A clusterRef that names no cluster is phase Pending (ev-cluster-not-found, once); any other read error is retried with backoff. Every Warning about a lasting condition (cluster without property sharding, client creation, seedBackupRef resolution, a failed reconcile) is emitted only when the status write that records it changed the phase or message (knowledge operations.md id 145). Each pass reads the CR through the uncached APIReader (reader()), so the phase steps, shardedSeedConsumable and the destructive-restore generation guard decide from the last pass's write rather than a stale cache copy (knowledge operations.md ids 94, 136). A refused spec reads \"Validation failed\" once, in status and in the ValidationFailed event.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -907,7 +909,8 @@
       "sf-create-backup-job",
       "sf-create-backup-cronjob",
       "sf-record-backup-run",
-      "sf-cleanup-backup-artifacts"
+      "sf-cleanup-backup-artifacts",
+      "sf-resolve-backup-sharded-database"
     ],
     "emitsEventIds": [
       "ev-backup-failed",
@@ -1017,7 +1020,7 @@
     "name": "Start Restore",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startRestore() validates the request, pins the resolved backup source onto status, and routes it: online (Cypher recreate/create with a seedURI, or the all-databases loop) for every cluster and for most standalone restores; the offline neo4j-admin Job (stopping the instance first when spec.stopCluster is set) only for a standalone restore that cannot be seeded online — point-in-time, a source.type storage path, cloud storage by pod identity, or a Job restore already holding the instance (rule 108). The offline path emits an event naming the reason. With source.pointInTime it pins the earliest run that started at or after it (restoreRunIndex) and decides the point-in-time path before routing.",
+    "description": "startRestore() validates the request, pins the resolved backup source onto status, and routes it: online (Cypher recreate/create with a seedURI, or the all-databases loop) for every cluster and for most standalone restores; the offline neo4j-admin Job (stopping the instance first when spec.stopCluster is set) only for a standalone restore that cannot be seeded online — point-in-time, a source.type storage path, cloud storage by pod identity, or a Job restore already holding the instance (rule 108). The offline path emits a RestoreStarted event naming the reason once its checks have passed (existence check, pre-restore hooks, and the stop or, with stopCluster false, the refusal of a running standalone), never for a restore it then refuses; with stopCluster false it says the standalone is already stopped (knowledge operations.md id 145). With source.pointInTime it pins the earliest run that started at or after it (restoreRunIndex) and decides the point-in-time path before routing.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1069,7 +1072,7 @@
     "name": "Online Cypher Restore",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startClusterCypherRestore() restores one database online against the running DBMS — on a cluster and on a standalone (rule 108): dbms.[cluster.]recreateDatabase with a seedURI over an existing database (DatabaseExists, matching the name ignoring case), CREATE DATABASE … OPTIONS {seedURI} for a new one, then polls SHOW DATABASE until every allocation is online. Target-specific plumbing (StatefulSet name, pod labels for the seed proxy's NetworkPolicy, the CR that carries seed spec.env/extraEnvFrom) comes from restoreTarget. A PVC differential is merged by the seed proxy first (the proxy serves one file over HTTP; Neo4j refuses a DIFF without its chain); it runs pre-restore hooks before issuing and post-restore hooks once online; never a Job on cluster targets. Into a standalone by pod identity, awaitSeedIdentity() holds the seed until the pod runs under its identity ServiceAccount. A point-in-time restore creates the database with seedRestoreUntil (CreateDatabaseWithSeedURIUntil) and never recreates an existing one. When the target's server pods lack the cloud seed credentials or endpoint and the target is not opted in, awaitSeedConfig() holds the restore Pending (before any hook or database action) and it carries on once they are there. What a restore writes into that CR (spec.env, spec.extraEnvFrom, annotations) is a merge patch of those fields (updateTargetSpec; operations.md id 150).",
+    "description": "startClusterCypherRestore() restores one database online against the running DBMS — on a cluster and on a standalone (rule 108): dbms.[cluster.]recreateDatabase with a seedURI over an existing database (DatabaseExists, matching the name ignoring case), CREATE DATABASE … OPTIONS {seedURI} for a new one, then polls SHOW DATABASE until every allocation is online. Target-specific plumbing (StatefulSet name, pod labels for the seed proxy's NetworkPolicy, the CR that carries seed spec.env/extraEnvFrom) comes from restoreTarget. A PVC differential is merged by the seed proxy first (the proxy serves one file over HTTP; Neo4j refuses a DIFF without its chain); it runs pre-restore hooks before issuing and post-restore hooks once online; never a Job on cluster targets. Into a standalone by pod identity, awaitSeedIdentity() holds the seed until the pod runs under its identity ServiceAccount. A point-in-time restore creates the database with seedRestoreUntil (CreateDatabaseWithSeedURIUntil) and never recreates an existing one. When the target's server pods lack the cloud seed credentials or endpoint and the target is not opted in, awaitSeedConfig() holds the restore Pending (before any hook or database action) and it carries on once they are there; SeedEndpointNotProjected is announced when transitionRestoreStatus's write changed the phase or message, not from the pass's own copy. What a restore writes into that CR (spec.env, spec.extraEnvFrom, annotations) is a merge patch of those fields (updateTargetSpec; operations.md id 150).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1149,7 +1152,7 @@
     "name": "Reconcile Neo4jUser",
     "serverUnitId": "su-neo4juser",
     "operation": "business_action",
-    "description": "Drives a Neo4jUser to its desired state each loop: validates the spec (routing a not-yet-applied password Secret to Pending, not Failed), resolves the clusterRef target, creates or ALTERs the Neo4j user over Bolt (the home database compared with SHOW USERS ignoring case), diffs granted vs. desired roles and issues GRANT/REVOKE ROLE, then records RolesSynced/PasswordSynced conditions and the Ready phase. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150).",
+    "description": "Drives a Neo4jUser to its desired state each loop: validates the spec (routing a not-yet-applied password Secret to Pending, not Failed), resolves the clusterRef target, creates or ALTERs the Neo4j user over Bolt (the home database compared with SHOW USERS ignoring case), diffs granted vs. desired roles and issues GRANT/REVOKE ROLE, then records RolesSynced/PasswordSynced conditions and the Ready phase. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). CR names in spec.roles that resolve to another Neo4j role name are recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when that mapping appears or changes (operations.md id 136).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1228,7 +1231,7 @@
     "name": "Reconcile Neo4jRoleBinding",
     "serverUnitId": "su-neo4jrolebinding",
     "operation": "business_action",
-    "description": "Drives a Neo4jRoleBinding to its desired state each loop: verifies the target Neo4j user already exists (bindings never create/drop users), resolves Neo4jRole CR names to Neo4j role names, and diffs/grants/revokes role membership — non-exclusive by default, but always revoking roles this binding previously granted that were removed from spec.roles. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150).",
+    "description": "Drives a Neo4jRoleBinding to its desired state each loop: verifies the target Neo4j user already exists (bindings never create/drop users), resolves Neo4jRole CR names to Neo4j role names, and diffs/grants/revokes role membership — non-exclusive by default, but always revoking roles this binding previously granted that were removed from spec.roles. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). The resolved CR-name mapping is recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when it appears or changes (operations.md id 136).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -2034,13 +2037,14 @@
     "name": "CLI Validate",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. A Neo4jEnterpriseCluster runs the same ApplyDefaults and ValidateWithWarnings the operator runs on every pass, the defaults applied only to the copy it validates (a tls block without a mode is held to the cert-manager rules, as the API server stores it, and an authorization provider list is judged as written; operations.md id 150); a Neo4jEnterpriseStandalone runs the operator's StandaloneValidator.Validate (no defaults: the operator applies none). For both, offline it drops any status in the manifest and its summary says the image-tag rule needs --connect; with --connect it copies in the live deployment's status, so a downgrade below the version it runs is refused, and one it cannot read is a warning. Its usage text says each validator reports every error it finds, except Neo4jShardedDatabase's, which stops when its clusterRef cannot be read (operations.md id 144). Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names.",
+    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. A Neo4jEnterpriseCluster runs the same ApplyDefaults and ValidateWithWarnings the operator runs on every pass, the defaults applied only to the copy it validates (a tls block without a mode is held to the cert-manager rules, as the API server stores it, and an authorization provider list is judged as written; operations.md id 150); a Neo4jEnterpriseStandalone runs the operator's StandaloneValidator.Validate (no defaults: the operator applies none). For both, offline it drops any status in the manifest and its summary says the image-tag rule needs --connect; with --connect it copies in the live deployment's status, so a downgrade below the version it runs is refused, and one it cannot read is a warning. Its usage text says each validator reports every error it finds, except Neo4jShardedDatabase's, which stops when its clusterRef cannot be read (operations.md id 144). Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names. With --connect a Neo4jBackup's spec.shardedDatabase is resolved through ResolveBackupShardedDatabase, the function the backup controller's sharded preflight calls: a name that is no Neo4jShardedDatabase CR (naming the CR when it is that CR's logical name) or a CR on another cluster is an error, as the operator fails the backup for it (operations.md id 116).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
       "sf-validate-spec-config",
       "sf-validate-cluster",
-      "sf-validate-standalone"
+      "sf-validate-standalone",
+      "sf-resolve-backup-sharded-database"
     ],
     "emitsEventIds": [],
     "subscribesEventIds": [],
@@ -2064,7 +2068,7 @@
     "name": "CLI Status",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Lists every Neo4j resource in a namespace with phase, readiness and age, taking the kind list from the registered scheme so a new CRD appears without code changes. An unrecognised phase is not treated as a problem, and Pending messages are shown as guidance rather than failure. With --problems it lists the phases Failed, Error, Invalid, Degraded and Unknown, decided from the phase alone (status.ready is omitempty and never stores false); the message block under the table covers only the rows shown.",
+    "description": "Lists every Neo4j resource in a namespace with phase, readiness and age, taking the kind list from the registered scheme so a new CRD appears without code changes. An unrecognised phase is not treated as a problem, and Pending messages are shown as guidance rather than failure. With --problems it lists the phases Failed, Error, Invalid, ValidationFailed (a Neo4jDatabase's name for Invalid), Degraded and Unknown, decided from the phase alone (status.ready is omitempty and never stores false); the message block under the table covers only the rows shown.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -2077,7 +2081,7 @@
     "name": "CLI Diagnose",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Explains why a resource is unhealthy at the Kubernetes level: unschedulable pods, OOMKills (kubelet reason or exit code 137) and non-zero exits, read from both the previous and the current container state so a Job pod under RestartPolicyNever (which never restarts, leaving its last state empty) is reported with the plain log command and, for a backup, the Neo4jBackup's own spec.options.resources, image-pull and crash-loop states (a crash-looping container is not reported twice), unbound PVCs, failed backup Jobs (judged by the Job's Failed and Complete conditions rather than the cumulative status.failed attempt count, so a backup that retried and then completed is not an error; the leftover failed pods of a Job that did not fail are softened to warning or waiting findings), warning events, and custom resources the operator has never written status to. Finds workloads through the operator's exported selectors and anchors rules to Kubernetes API constants where they exist. Exits 1 when a problem is found.",
+    "description": "Explains why a resource is unhealthy at the Kubernetes level: unschedulable pods, OOMKills (kubelet reason or exit code 137) and non-zero exits, read from both the previous and the current container state so a Job pod under RestartPolicyNever (which never restarts, leaving its last state empty) is reported with the plain log command and, for a backup, the Neo4jBackup's own spec.options.resources, image-pull and crash-loop states (a crash-looping container is not reported twice), unbound PVCs, failed backup Jobs (judged by the Job's Failed and Complete conditions rather than the cumulative status.failed attempt count, so a backup that retried and then completed is not an error; the leftover failed pods of a Job that did not fail are softened to warning or waiting findings), warning events, and custom resources the operator has never written status to. Finds workloads through the operator's exported selectors and anchors rules to Kubernetes API constants where they exist. Exits 1 when a problem is found. A cluster or standalone with neither StatefulSet nor pods is told to check the operator only when the operator has written no status; with a status (a refused spec, a missing StorageClass) the hint (noWorkloadAction) points at the status message, or the conditions and events, and at explain (operations.md id 154).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -2240,5 +2244,18 @@
     "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-resolve-backup-sharded-database",
+    "name": "Resolve Backup Sharded Database",
+    "serverUnitId": "su-validation",
+    "operation": "resolver",
+    "description": "ResolveBackupShardedDatabase() (internal/validation/backup_sharded_ref.go) reads the Neo4jShardedDatabase a ShardedDatabase-scope Neo4jBackup names in spec.shardedDatabase: by the CR's metadata.name in the backup's namespace, never by the logical spec.name, and on the backup's spec.instanceRef. It returns a refusal at spec.shardedDatabase for a name that is no such CR (naming the CR whose spec.name matches it, ignoring case) or a CR on another cluster, and an error for any other read failure. The backup controller's sharded preflight and kubectl neo4j validate --connect both call it, so the CLI refuses what the operator fails (operations.md id 116).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-backup-restore"
   }
 ]

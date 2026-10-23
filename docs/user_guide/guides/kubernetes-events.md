@@ -88,7 +88,7 @@ is met on many passes. It is announced once:
 | `BackupStarted` | Normal | Backup job has started |
 | `BackupCompleted` | Normal | Backup job completed successfully |
 | `BackupFailed` | Warning | Backup job failed, or the spec is invalid (phase `Invalid`, once per refusal) |
-| `RestoreStarted` | Normal | Restore operation has started |
+| `RestoreStarted` | Normal | Restore operation has started. A standalone restore that runs offline with `neo4j-admin` (a point in time, a `source.type: storage` path) first says why, once its checks have passed — never for a restore that is then refused; with `stopCluster: false` it says the standalone is already stopped |
 | `RestoreCompleted` | Normal | Restore operation completed |
 | `RestoreFailed` | Warning | Restore operation failed |
 | `RestoreFromChainParent` | Warning | `source.backupRef` points at a FULL+DIFF chain parent; the restore seeds from its latest full snapshot, not the latest chain state. Advisory, so a restore that waits (for seed credentials, a rollout, the seed proxy) does not repeat it on every check |
@@ -98,7 +98,7 @@ is met on many passes. It is announced once:
 | `BackupShardedDifferential` | Warning | A run wrote differential backups of sharded-database shards to a PVC; no sharded database can be seeded from that run. Comes from an all-databases backup; a `spec.shardedDatabase` backup takes full backups on a PVC. Once per run, when the run is recorded in `status.history` |
 | `BackupValidateUnsupported` | Warning | `options.validate` has no effect: `neo4j-admin backup validate` needs a CalVer (2025.x+) image. Advisory |
 | `ServiceAccountAnnotationConflict` | Warning | A backup/restore CR overwrote different workload-identity annotations on the namespace's shared `neo4j-backup-sa` / `neo4j-restore-sa`; the last CR reconciled wins and the others' cloud access breaks. On a `Neo4jBackup` it is advisory: two backups that disagree overwrite each other on every pass, and each says so once |
-| `SeedEndpointNotProjected` | Warning | An online restore's server pods (cluster or standalone) lack the cloud credentials or custom S3 endpoint (`AWS_ENDPOINT_URL_S3`) the seed fetch needs, and the target is not opted in to `neo4j.com/auto-inherit-seed-creds`. The restore waits in `Pending` with the missing items named, and carries on once the target has them or is opted in. Emitted when the restore starts waiting |
+| `SeedEndpointNotProjected` | Warning | An online restore's server pods (cluster or standalone) lack the cloud credentials or custom S3 endpoint (`AWS_ENDPOINT_URL_S3`) the seed fetch needs, and the target is not opted in to `neo4j.com/auto-inherit-seed-creds`. The restore waits in `Pending` with the missing items named, and carries on once the target has them or is opted in. Emitted when the restore starts waiting (or what it waits for changes), once |
 | `RestoreSeedProgress` | Normal | One poll of an all-databases restore's per-database seed (emitted on every non-terminal poll; the apiserver aggregates repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck) |
 | `RestoreShardedDatabasesNotCovered` | Warning | An all-databases restore's source backup recorded property-sharded databases it does not recreate; restore each via its `Neo4jShardedDatabase` CR. Advisory |
 
@@ -110,7 +110,7 @@ is met on many passes. It is announced once:
 | `DatabaseDeleted` | Normal | Database was dropped |
 | `DatabaseCreatedFromSeed` | Normal | Database created from a seed URI |
 | `CreationFailed` | Warning | Database creation failed; the database is `Failed` and retried with backoff. Once per failure |
-| `DeletionFailed` | Warning | Database deletion failed |
+| `DeletionFailed` | Warning | `DROP DATABASE` failed while deleting the `Neo4jDatabase`. The drop is retried (the database is phase `Error` with the failure in `status.message`) until it succeeds or five minutes have passed since the deletion was requested, then the finalizer is released. Once per failure, not on every retry; a second event says when the finalizer is released |
 | `DataImported` | Normal | Initial data imported successfully |
 | `DataImportFailed` | Warning | Initial data import failed; retried with backoff. Once per failure |
 | `DataSeeded` | Normal | Database seeded from URI |
@@ -188,7 +188,7 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed. Once per failure |
 | `PasswordRotated` | Normal | Password updated from the referenced Secret |
 | `RolesGranted` / `RolesRevoked` | Normal | Roles granted to / revoked from a user, role binding or auth rule |
-| `RolesResolved` | Normal | `Neo4jRole` CR names were resolved to Neo4j role names |
+| `RolesResolved` | Normal | `spec.roles` names `Neo4jRole` resources by their CR name, and those were granted as the Neo4j roles they manage; the message maps each, as the `RoleNamesResolved` condition does. Once when the mapping appears or changes, not on every reconcile. Emitted by `Neo4jUser` and `Neo4jRoleBinding` |
 | `RolePending` | Warning | Waiting for referenced roles to exist; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `RoleCreated` | Normal | Role created in Neo4j |
 | `RoleReady` | Normal | Role exists and its privileges are in sync |
