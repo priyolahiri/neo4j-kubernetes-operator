@@ -171,6 +171,15 @@ const (
 	// 152); and a Normal event when it deletes a standalone's pod stuck on an
 	// older revision, which an OrderedReady StatefulSet does not replace.
 	EventReasonPluginInitContainerFailing = "PluginInitContainerFailing"
+	// EventReasonPluginSettingsFailing is emitted on a Neo4jPlugin whose write
+	// changes the settings that every server that is down keeps failing with
+	// (its neo4j container exits and restarts — a setting Neo4j refuses at
+	// startup, typically): a Warning, once, when the plugin writes that change
+	// to a target that is not Ready, and the roll replaces those pods first
+	// (operations.md id 155); and a Normal event when it deletes a
+	// standalone's pod stuck on an older revision, which an OrderedReady
+	// StatefulSet does not replace.
+	EventReasonPluginSettingsFailing = "PluginSettingsFailing"
 )
 
 // Split-brain events

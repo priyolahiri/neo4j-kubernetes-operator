@@ -1,5 +1,5 @@
-# NOTE: the GenAI plugin is not covered by integration tests (plugin download needs
-# internet egress) — validate in your own environment.
+# NOTE: the GenAI plugin is not covered by integration tests — validate in your
+# own environment.
 # GenAI Plugin Example - AI Provider Integration
 # GenAI plugin enables vector embeddings and AI integrations
 
@@ -19,32 +19,28 @@ spec:
   source:
     type: official
 
-  # GenAI-specific configuration - these go through neo4j.conf
-  config:
-    # Provider configurations would typically be set via environment variables
-    # or external configuration management for security
+  # The GenAI plugin needs no settings: provider credentials and models are
+  # arguments of its procedures and functions, e.g.
+  #   genai.vector.encode(text, 'OpenAI', {token: $openaiToken})   (5.26)
+  #   ai.text.embed(text, 'OpenAI', {token: $openaiToken, model: '...'})   (CalVer)
+  # so they never reach the StatefulSet.
+  #
+  # Every key here becomes a NEO4J_<setting> variable on the servers, and Neo4j
+  # refuses to start on a setting it does not know. Only list settings your
+  # Neo4j version documents, for example on CalVer:
+  #   genai.openai.baseurl: "https://llm-proxy.internal"        # CalVer only
+  #   genai.azure.openai.baseurl: "https://azure-proxy.internal" # 2026.04+
+  # Removing a key here removes its variable from the servers (one restart).
+  # config: {}
 
-    # Example: OpenAI configuration (use secrets in production)
-    # genai.openai.api_key: "your-api-key"
-    # genai.openai.model: "text-embedding-ada-002"
-
-    # Example: Vertex AI configuration
-    # genai.vertexai.project_id: "your-project-id"
-    # genai.vertexai.region: "us-central1"
-
-    # Enable specific GenAI features
-    genai.vector.enabled: "true"
-    genai.embeddings.enabled: "true"
-
-  # Security configuration
+  # Security configuration. CalVer 2025.11+ also exposes the procedures as
+  # ai.* (genai.* is the deprecated prefix there); 5.26 has genai.* only.
   security:
     allowedProcedures:
       - "genai.*"
+      - "ai.*"
     sandbox: false
 
-# Note: In production, store API keys and credentials in Kubernetes secrets
-# and reference them via environment variables rather than in the config section.
-#
 # The GenAI plugin enables:
 # - Vector similarity search
 # - Text embedding generation

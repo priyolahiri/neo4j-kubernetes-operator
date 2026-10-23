@@ -119,11 +119,12 @@ spec:
   version: "1.0.0"
   source:
     type: official
-  config:
-    genai.vector.enabled: "true"
-    genai.embeddings.enabled: "true"
-  # Automatically configured by operator:
-  # - dbms.security.procedures.unrestricted=genai.*
+  # No config: provider credentials are procedure arguments
+  # (genai.vector.encode(text, 'OpenAI', {token: $token})). On CalVer you can
+  # point OpenAI at a proxy with genai.openai.baseurl. Neo4j refuses to start on
+  # a setting it does not know, so list only documented ones.
+  security:
+    allowedProcedures: ["genai.*", "ai.*"]   # ai.* is the CalVer 2025.11+ prefix
 ```
 
 ### Plugin with Dependencies
