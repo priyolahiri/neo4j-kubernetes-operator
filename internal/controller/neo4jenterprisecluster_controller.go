@@ -133,6 +133,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// seen the new phase yet does not announce it twice (#444). Cleared when
 	// every server is available again.
 	availabilityAnnounced sync.Map
+	// serverStatefulSetWrites records, per cluster (key ns/name), the UID and
+	// generation of the server StatefulSet as the last pass left it
+	// (writtenGeneration), so a cached read that predates the write is a
+	// rollout in flight, not the rolled-out template it replaced.
+	serverStatefulSetWrites sync.Map
 
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
@@ -726,6 +731,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create server StatefulSet: %v", err))
 		return ctrl.Result{}, err
 	}
+	// The rollout checks below read the StatefulSet from the cache, which may
+	// not have this write yet (serverTemplateWriteUnobserved).
+	r.noteServerStatefulSetWrite(cluster, serverStatefulSet)
 
 	// Handle Query Performance Monitoring
 	if cluster.Spec.Monitoring != nil && cluster.Spec.Monitoring.Enabled {
@@ -853,6 +861,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.availabilityAnnounced.Delete(clusterKey(cluster))
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	r.upgradeDiagnostics.Delete(clusterKey(cluster))
+	r.serverStatefulSetWrites.Delete(clusterKey(cluster))
 	forgetServerAddresses(cluster)
 	neo4jclient.ForgetCluster(cluster.Namespace, cluster.Name)
 
@@ -1728,9 +1737,16 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatus(ctx context.Conte
 // They force a write when they differ but do not count towards the returned
 // "changed", which callers read as "the phase, message or Ready condition
 // moved" and announce with an event.
+//
+// status.observedGeneration, and the conditions' observedGeneration, is the
+// generation this pass read at its start and acted on (cluster.Generation),
+// not the one the write re-reads: a spec changed while the pass ran has not
+// been acted on, and claiming it had read as "nothing pending" while a
+// rollout of it was about to start.
 func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message, version string, extra ...metav1.Condition) bool {
 	logger := log.FromContext(ctx)
 	statusChanged := false
+	actedOn := cluster.Generation
 
 	update := func() error {
 		// Get latest version
@@ -1738,11 +1754,15 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
+		if actedOn == 0 {
+			// An object built in memory rather than read from the API server.
+			actedOn = latest.Generation
+		}
 
 		// Check if status is already exactly what we want
 		readyBool := (phase == "Ready")
 		statusNeedsUpdate := latest.Status.Phase != phase || latest.Status.Message != message ||
-			latest.Status.Ready != readyBool || latest.Status.ObservedGeneration != latest.Generation ||
+			latest.Status.Ready != readyBool || latest.Status.ObservedGeneration != actedOn ||
 			(version != "" && latest.Status.Version != version)
 
 		// Determine standard condition status and reason
@@ -1785,7 +1805,7 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.Ready = readyBool
-		latest.Status.ObservedGeneration = latest.Generation
+		latest.Status.ObservedGeneration = actedOn
 		if version != "" {
 			latest.Status.Version = version
 		}
@@ -1810,9 +1830,9 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusWithVersion(ctx co
 		latest.Status.Replicas = r.buildReplicaStatus(ctx, cluster)
 
 		// Update Ready condition using standard helper
-		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
+		SetReadyCondition(&latest.Status.Conditions, actedOn, condStatus, condReason, message)
 		for _, c := range extra {
-			SetNamedCondition(&latest.Status.Conditions, c.Type, latest.Generation, c.Status, c.Reason, c.Message)
+			SetNamedCondition(&latest.Status.Conditions, c.Type, actedOn, c.Status, c.Reason, c.Message)
 		}
 
 		// Record Prometheus phase metric on every phase transition
@@ -3628,10 +3648,52 @@ func (r *Neo4jEnterpriseClusterReconciler) runningServerImageTag(ctx context.Con
 	return rolledImageTag(sts)
 }
 
+// noteServerStatefulSetWrite remembers the generation of the server
+// StatefulSet as this pass left it, so a read from a cache that has not seen
+// the write yet is not taken for the rolled-out StatefulSet it replaced
+// (serverTemplateWriteUnobserved).
+func (r *Neo4jEnterpriseClusterReconciler) noteServerStatefulSetWrite(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet) {
+	if sts == nil || sts.UID == "" {
+		return
+	}
+	r.serverStatefulSetWrites.Store(clusterKey(cluster), writtenGeneration{uid: sts.UID, generation: sts.Generation})
+}
+
+// writtenGeneration is the server StatefulSet a pass wrote: its UID (a
+// StatefulSet created again starts at generation 1) and generation.
+type writtenGeneration struct {
+	uid        types.UID
+	generation int64
+}
+
+// serverTemplateWriteUnobserved reports whether sts carries a spec the
+// StatefulSet controller has not acted on yet: its observedGeneration is
+// behind its generation, or the read is older than the generation this
+// operator last wrote. Either way the pods may be about to roll, so a status
+// read off it describes the template before the write, not the one the pods
+// are moving to.
+func (r *Neo4jEnterpriseClusterReconciler) serverTemplateWriteUnobserved(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet) bool {
+	if sts.Status.ObservedGeneration < sts.Generation {
+		return true
+	}
+	v, ok := r.serverStatefulSetWrites.Load(clusterKey(cluster))
+	if !ok {
+		return false
+	}
+	w, ok := v.(writtenGeneration)
+	return ok && w.uid == sts.UID && sts.Generation < w.generation
+}
+
 // serverStatefulSetFullyRolled reports whether the server StatefulSet has no
-// rollout in flight: every replica updated to the current template revision
-// and ready. A false result carries a human-readable detail for the status
-// message.
+// rollout in flight: the StatefulSet controller has seen its current spec, and
+// every replica is updated to the current template revision and ready. A false
+// result carries a human-readable detail for the status message.
+//
+// A template write the StatefulSet controller has not seen yet is a rollout in
+// flight. Right after the pass's own write its status still described the
+// template before it, every replica updated and ready, so the cluster was
+// reported Ready and users, roles, databases and an upgrade started against
+// it, just before its servers restarted.
 func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, string) {
 	serverSts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{
@@ -3643,6 +3705,9 @@ func (r *Neo4jEnterpriseClusterReconciler) serverStatefulSetFullyRolled(ctx cont
 	replicas := int32(1)
 	if serverSts.Spec.Replicas != nil {
 		replicas = *serverSts.Spec.Replicas
+	}
+	if r.serverTemplateWriteUnobserved(cluster, serverSts) {
+		return false, "the StatefulSet controller has not seen the current template"
 	}
 	// A Paused or Failed upgrade keeps its partition: the servers below it run
 	// the version they ran until the upgrade goes on, which is not a rollout
