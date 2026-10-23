@@ -2986,6 +2986,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#runningversion-string" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        runningVersion (string)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#podstatus-standalonepodstatus" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5103,6 +5114,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#runningversion-string" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        runningVersion (string)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#podstatus-standalonepodstatus" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -6051,6 +6073,8 @@ changes meaning under a running deployment.</p>
 </span></code></pre></div>
 <h4 id="version-string"><code>version</code> (string)<a class="headerlink" href="#version-string" title="Anchor link to this section">&para;</a></h4>
 <p>The image tag the standalone runs, recorded once its pod is ready on the current image: it does not move while the pod is being replaced, nor for an image that never starts. <code>spec.image.tag</code> is checked against it on every reconcile, and a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>). It used to be <code>spec.image.tag</code>, written on every reconcile whether or not the pod ran it.</p>
+<h4 id="runningversion-string"><code>runningVersion</code> (string)<a class="headerlink" href="#runningversion-string" title="Anchor link to this section">&para;</a></h4>
+<p>The Neo4j version the server reports (<code>SHOW SERVERS</code>, <code>version</code>) when <code>version</code> is a tag without a patch, such as <code>5.26-enterprise</code>, which floats to the newest patch of its line. Read with one query once the standalone is <code>Ready</code>, and again only when its container runs another image (a new pod, or a new pull of the floating tag); written when it changes, and cleared when <code>version</code> moves. A <code>spec.image.tag</code> below it is refused (see <a href="../../user_guide/guides/upgrades/#tags-without-a-patch">Tags without a patch</a>). Empty when <code>version</code> names a patch, and until it has been read.</p>
 <h4 id="podstatus-standalonepodstatus"><code>podStatus</code> (StandalonePodStatus)<a class="headerlink" href="#podstatus-standalonepodstatus" title="Anchor link to this section">&para;</a></h4>
 <p><strong>Reserved — never populated today</strong> (the schema is shown for reference; use <code>kubectl get pod &lt;name&gt;-0</code> for pod state). Intended: information about the Neo4j pod.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-24-1"><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nt">podStatus</span><span class="p">:</span>

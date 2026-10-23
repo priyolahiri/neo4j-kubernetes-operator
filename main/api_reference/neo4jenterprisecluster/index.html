@@ -8123,6 +8123,11 @@ for details.</p>
 <td>The image tag every server runs: recorded at the first <code>Ready</code>, after each verified upgrade, and at a <code>Ready</code> with every server on an image that reached them while no server was ready; unchanged while an upgrade is in flight or after one fails. <code>spec.image.tag</code> is checked against it on every reconcile, and a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>)</td>
 </tr>
 <tr>
+<td><code>runningVersion</code></td>
+<td><code>string</code></td>
+<td>The Neo4j version the servers report (<code>SHOW SERVERS</code>, <code>version</code>) when <code>version</code> is a tag without a patch, such as <code>5.26-enterprise</code>, which floats to the newest patch of its line; the highest one if servers report different patches. Read from the <code>SHOW SERVERS</code> the formation check runs on every <code>Ready</code> pass (no extra query) and written when it changes, and at the end of an upgrade. A <code>spec.image.tag</code> below it is refused (see <a href="../../user_guide/guides/upgrades/#tags-without-a-patch">Tags without a patch</a>). Empty when <code>version</code> names a patch, and until it has been read</td>
+</tr>
+<tr>
 <td><code>upgradeStatus</code></td>
 <td><a href="#upgradestatus"><code>*UpgradeStatus</code></a></td>
 <td>Detailed upgrade progress information</td>
@@ -8150,7 +8155,7 @@ for details.</p>
 <tr>
 <td><code>observedGeneration</code></td>
 <td><code>int64</code></td>
-<td>Last observed generation</td>
+<td>The generation of the spec the last status write describes: the one that pass read and acted on. Behind <code>metadata.generation</code> while a newer spec has not been reconciled yet</td>
 </tr>
 <tr>
 <td><code>diagnostics</code></td>
@@ -8361,9 +8366,14 @@ visible via <code>kubectl get svc</code>.</p>
 <td>Version being upgraded to</td>
 </tr>
 <tr>
+<td><code>resolvedTargetVersion</code></td>
+<td><code>string</code></td>
+<td>For a <code>targetVersion</code> without a patch, the Neo4j version the servers this upgrade restarted report (<code>SHOW SERVERS</code>, <code>version</code>): what the target resolved to. Recorded when a restarted server passes the upgrade's availability check, or, for a <code>Paused</code> or <code>Failed</code> upgrade, at the next <code>Ready</code>; kept when the target changes mid-upgrade. Once a server has restarted, a <code>spec.image.tag</code> below it is refused too</td>
+</tr>
+<tr>
 <td><code>progress</code></td>
 <td><a href="#upgradeprogress"><code>*UpgradeProgress</code></a></td>
-<td>Upgrade progress statistics. Once <code>inProgress</code> or <code>upgraded</code> is above zero the upgrade has restarted a server on its target, and until it completes a <code>spec.image.tag</code> below <code>targetVersion</code> is refused</td>
+<td>Upgrade progress statistics. Once <code>inProgress</code> or <code>upgraded</code> is above zero the upgrade has restarted a server on its target, and until it completes a <code>spec.image.tag</code> below <code>targetVersion</code> (and below <code>resolvedTargetVersion</code>, when recorded) is refused</td>
 </tr>
 <tr>
 <td><code>message</code></td>
