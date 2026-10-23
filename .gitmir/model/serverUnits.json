@@ -644,7 +644,8 @@
     "paths": [
       "internal/controller/plugin_controller.go",
       "internal/controller/plugin_conf_settings.go",
-      "internal/controller/plugin_target_gate.go"
+      "internal/controller/plugin_target_gate.go",
+      "internal/controller/plugin_env_ownership.go"
     ]
   },
   {

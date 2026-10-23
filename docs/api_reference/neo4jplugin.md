@@ -38,7 +38,7 @@ The `Neo4jPlugin` controller implements Neo4j's recommended installation approac
 1. **Target Discovery**: Automatically detects whether `clusterRef` points to a cluster or standalone
 2. **Plugin Collection**: Gathers main plugin and all dependencies into a unified list
 3. **Environment Variable Setup**: Merges plugin names into the existing `NEO4J_PLUGINS` JSON array (additive — does not overwrite entries added by other controllers such as the Aura Fleet Management reconciler)
-4. **Configuration Application**: Adds plugin-specific settings as `NEO4J_*` environment variables
+4. **Configuration Application**: Adds plugin-specific settings as `NEO4J_*` environment variables, records their names on the StatefulSet (annotation `neo4j.com/plugin-env-vars.<plugin name>`), and removes the ones it recorded before and no longer sets
 5. **StatefulSet Update**: Patches the target StatefulSet with new configuration — in one update (with a `VerifiedDownload` plugin's init container and volumes), and only when something changes. Because the update restarts every server, it waits (phase `Waiting`, a `PluginInstallDeferred` event) until the target is `Ready` with every server available: not while a cluster has a server down (`Degraded`), nor while it is forming, rolling its servers or upgrading
 6. **Rolling Restart**: Triggers controlled pod restarts to apply changes
 7. **Verification**: Confirms plugin installation and updates status
@@ -59,17 +59,26 @@ config:
 env:
 - name: NEO4J_PLUGINS
   value: '["apoc"]'
-- name: NEO4J_APOC_EXPORT_FILE_ENABLED
+- name: NEO4J_apoc_export_file_enabled
   value: 'true'
-- name: NEO4J_APOC_IMPORT_FILE_ENABLED
+- name: NEO4J_apoc_import_file_enabled
   value: 'true'
 ```
 
 **Notes**:
 
-- APOC settings are applied via environment variables in Neo4j 5.26+
-- Bloom/GDS/GenAI settings are applied via ConfigMap (standalone) or runtime configuration (cluster)
+- Every `spec.config` key becomes a `NEO4J_<setting>` environment variable (`.` → `_`, a literal `_` doubled, case kept), which Neo4j reads at startup; APOC settings must go this way in Neo4j 5.26+
+- On a standalone, security and startup-only settings go to its `neo4j.conf` instead of the env
+- Neo4j refuses to start on a setting it does not know, so list only settings your Neo4j version documents
 - Automatic dependency resolution and security defaults are applied as needed
+
+### Removing settings and uninstalling
+
+The plugin records the variables it sets on the target's StatefulSet, under `neo4j.com/plugin-env-vars.<plugin name>`. When a key leaves `spec.config`, the plugin removes its variable — one rolling restart, which waits like an install until the target is `Ready` with every server available. When every server that is down keeps failing in its `neo4j` container while running a variable the removal changes (Neo4j refused the setting), those are the highest-numbered servers, and Neo4j reports no other server unavailable, the removal does not wait: phase `Installing`, one `PluginSettingsFailing` Warning, and the restart replaces the failing servers first; on a standalone the plugin then deletes the stuck pod. A variable the cluster or standalone renders from its own spec, or one another plugin of the target sets, is never removed.
+
+Deleting the `Neo4jPlugin` takes off the StatefulSet, in one write, everything the plugin wrote: its variables, its tokens in the procedure allowlists (not those another plugin needs), in Managed mode its `NEO4J_PLUGINS` entry and its dependencies' (not those another plugin of the target installs, nor `fleet-management` while `spec.auraFleetManagement` installs it, nor anything when `NEO4J_PLUGINS` comes from the cluster's own `spec.env`), a `VerifiedDownload` plugin's init container and volumes, and the record.
+
+A plugin installed by an operator older than v1.22.0 has no record: its first reconcile records what it sets now (a metadata write, no restart) and removes nothing. A variable a key removal left behind before the upgrade stays until removed by hand.
 
 ## API Version
 
@@ -646,7 +655,7 @@ config:
 
 - **Pending**: Plugin resource created, waiting for processing
 - **Waiting**: Waiting for the deployment to be functional, or — when the plugin has something to write to its StatefulSet, which restarts every server — for it to be `Ready` with every server available: not while a cluster has a server down (`Degraded` condition `True`, or phase `Degraded`), nor while it is forming, rolling its servers or upgrading. A `PluginInstallDeferred` event (or, for a `Ready` plugin that lost something, a `PluginMissing` one) marks the start of the wait; the plugin checks again every 30 seconds
-- **Installing**: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, while a `Ready` plugin restores what was removed from its target (`PluginMissing` event), and while a `VerifiedDownload` plugin brings its trusted CAs in line with the target's changed `spec.trustedCASecrets` ("Updating the plugin's trusted CAs: …")
+- **Installing**: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, while a `Ready` plugin restores what was removed from its target (`PluginMissing` event), and while a `VerifiedDownload` plugin brings its trusted CAs in line with the target's changed `spec.trustedCASecrets` ("Updating the plugin's trusted CAs: …"). While its roll is stuck, the message names the pods that cannot start ("…; cannot start: c-server-2 (container neo4j exited with code 1)")
 - **Ready**: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or volume), the plugin goes back to `Installing` and restores it — or `Waiting`, while the target is not `Ready` with every server available; if nothing is missing, the check writes nothing and the phase stays `Ready`, whatever state the target is in
 - **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its `PluginInstallFailed` Warning is emitted once, not on each retry
 - **Invalid**: The spec failed validation (for example an unsupported `securityPolicy`, a missing `source.url`/`checksum`, or a non-https URL); the controller does not requeue until the CR is edited

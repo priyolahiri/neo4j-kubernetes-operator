@@ -564,7 +564,7 @@
         "name": "config",
         "type": "json",
         "isNullable": true,
-        "note": "map[string]string of plugin-specific configuration entries"
+        "note": "map[string]string of plugin-specific configuration entries; each becomes a NEO4J_<setting> env var on the target's servers (on a standalone, security and startup-only keys go to neo4j.conf). The plugin records the vars it sets on the target StatefulSet (neo4j.com/plugin-env-vars.<plugin>) and removes a removed key's var (knowledge operations.md id 155)"
       },
       {
         "id": "f-neo4jplugin-dependencies",

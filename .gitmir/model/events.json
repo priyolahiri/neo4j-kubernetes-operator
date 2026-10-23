@@ -1026,6 +1026,12 @@
     "moduleId": "mod-plugins"
   },
   {
+    "id": "ev-plugin-settings-failing",
+    "name": "PluginSettingsFailing",
+    "description": "On a Neo4jPlugin whose write changes the settings (NEO4J_<setting> variables) that every server that is down keeps failing with — typically a spec.config key Neo4j refuses at startup, removed from the plugin. A Warning, once, when the plugin writes that change to a target that is not Ready: every server pod that is down has its neo4j container exited non-zero and not running again while running a variable the write changes, those pods are the highest ordinals at or above the partition, no pod is missing or terminating, and Neo4j's last diagnostics report no other server unavailable — so the roll replaces the failing pods first and costs no server that is up (knowledge operations.md id 155). A Normal event when the plugin deletes a standalone's pod stuck on the old settings on an older revision, which its OrderedReady StatefulSet does not replace.",
+    "moduleId": "mod-plugins"
+  },
+  {
     "id": "ev-upstream-cluster-not-found",
     "name": "UpstreamClusterNotFound",
     "description": "A Neo4jReplicaDatabase's source.upstreamClusterRef names a Neo4jEnterpriseCluster that does not exist (yet) in the given namespace; the replica sits Pending and retries.",

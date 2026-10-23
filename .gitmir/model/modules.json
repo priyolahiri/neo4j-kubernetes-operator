@@ -62,7 +62,8 @@
     "paths": [
       "api/v1beta1/neo4jplugin_types.go",
       "internal/controller/plugin_controller.go",
-      "internal/controller/plugin_target_gate.go"
+      "internal/controller/plugin_target_gate.go",
+      "internal/controller/plugin_env_ownership.go"
     ]
   },
   {
