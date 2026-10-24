@@ -126,6 +126,36 @@ func TestUpdateClusterStatus_RecordsTheGenerationThePassActedOn(t *testing.T) {
 	assert.Equal(t, int64(3), ptr.Deref(findCondition(got.Status.Conditions, ConditionTypeReady), metav1.Condition{}).ObservedGeneration)
 }
 
+// The standalone's status.observedGeneration is the generation its pass acted
+// on too: updateStatus stamped the one its write re-read (#550).
+func TestStandaloneUpdateStatus_RecordsTheGenerationThePassActedOn(t *testing.T) {
+	ctx := context.Background()
+	key := types.NamespacedName{Name: "sa", Namespace: "default"}
+	sa := standaloneForSTS("2026.08.1-enterprise")
+	sa.Status.Version = "2026.08.1-enterprise"
+	sa.Generation = 3 // the spec was edited after the pass read generation 2
+	r := standaloneVersionTestReconciler(t, sa, standaloneVersionTestSTS("neo4j:2026.08.1-enterprise", "rev1", "rev1", 1, 1))
+
+	stored := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	require.NoError(t, r.Get(ctx, key, stored))
+	require.Equal(t, int64(3), stored.Generation)
+	actedOn := stored.DeepCopy()
+	actedOn.Generation = 2
+
+	require.NoError(t, r.updateStatus(ctx, actedOn))
+	got := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+	require.NoError(t, r.Get(ctx, key, got))
+	assert.Equal(t, actedOn.Generation, got.Status.ObservedGeneration)
+	ready := findCondition(got.Status.Conditions, ConditionTypeReady)
+	require.NotNil(t, ready)
+	assert.Equal(t, actedOn.Generation, ready.ObservedGeneration)
+
+	// The pass that acts on the new generation records it.
+	require.NoError(t, r.updateStatus(ctx, got))
+	require.NoError(t, r.Get(ctx, key, got))
+	assert.Equal(t, stored.Generation, got.Status.ObservedGeneration)
+}
+
 // noteServerStatefulSetWrite ignores what it cannot identify.
 func TestNoteServerStatefulSetWrite_NeedsAUID(t *testing.T) {
 	r := &Neo4jEnterpriseClusterReconciler{}

@@ -508,6 +508,8 @@ func TestDeployedOperatorVersion(t *testing.T) {
 			deploy("registry:5000/op:v1.15.0"), "v1.15.0"},
 		{"digest pin names no release",
 			deploy("ghcr.io/x/op@sha256:" + strings.Repeat("a", 64)), ""},
+		{"a tag pinned to its digest is still the tag's release (#531)",
+			deploy("registry:5000/op:v1.15.0@sha256:" + strings.Repeat("a", 64)), "v1.15.0"},
 		{"both placeholders means we cannot tell",
 			deploy("ghcr.io/x/op:latest", ver("latest")), ""},
 		{"a dev build is not a release",

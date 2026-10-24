@@ -91,6 +91,16 @@ var conditionGuidance = map[string]guidance{
 		meaning:         "a scale-down is waiting for servers to hand off their data before they can be removed.",
 		action:          "Wait. Removing the pods by hand loses the data those servers still hold.",
 	},
+	controller.ConditionTypeTopologyChangeDeferred: {
+		problemWhenTrue: true,
+		meaning: "spec.topology.servers asks for another number of servers than the cluster runs, and the change " +
+			"waits: an upgrade is in progress, or stopped Paused or Failed part-way. A rolling upgrade changes no " +
+			"topology — servers added then would start on the upgrade's target, and a scale-down's drain would run " +
+			"mid-upgrade. The message gives both counts and the upgrade.",
+		action: "Nothing is lost; the change is applied once the upgrade completes. To go on with a Paused upgrade, " +
+			"see status.upgradeStatus.lastError and change spec.image.tag or set " +
+			"spec.upgradeStrategy.autoPauseOnFailure to false; or set spec.topology.servers back to the count the cluster runs.",
+	},
 	controller.ConditionTypeRestartPending: {
 		problemWhenTrue: true,
 		meaning: "one or more servers have not restarted since the operator added or changed a setting that takes " +

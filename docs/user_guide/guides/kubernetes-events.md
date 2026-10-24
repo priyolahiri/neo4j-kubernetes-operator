@@ -73,11 +73,11 @@ is met on many passes. It is announced once:
 
 | Reason | Type | Description |
 |---|---|---|
-| `UpgradeStarted` | Normal | Rolling upgrade initiated, or a `Paused` or `Failed` one resumed ("Rolling upgrade resumed after it was …") |
+| `UpgradeStarted` | Normal | Rolling upgrade initiated, or a `Paused` or `Failed` one resumed ("Rolling upgrade resumed after it was …"). A resumed one whose restarted servers cannot start on the earlier target names them: "… cannot start on … and is replaced first" |
 | `UpgradeCompleted` | Normal | Rolling upgrade finished successfully |
-| `UpgradePaused` | Warning | Upgrade paused after a failed check or step (`autoPauseOnFailure`); the servers stay where it stopped until you change `spec.image.tag` or turn `autoPauseOnFailure` off |
-| `UpgradeFailed` | Warning | Upgrade failed. On a `Neo4jEnterpriseStandalone` with `upgradeStrategy.preUpgradeHealthCheck` and `autoPauseOnFailure`, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked |
-| `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready`, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards. Once per held target, not on every check (a drain's deferral names the target, and each drain announces it once) |
+| `UpgradePaused` | Warning | Upgrade paused after a failed check or step (`autoPauseOnFailure`); the servers stay where it stopped until you change `spec.image.tag` or turn `autoPauseOnFailure` off. A check that refuses the upgrade before it starts is announced once, not on every attempt |
+| `UpgradeFailed` | Warning | Upgrade failed. A check that refuses it before it starts is announced once, and again only with a new error, while the operator tries it every minute; the cluster stays `Ready`. On a `Neo4jEnterpriseStandalone` with `upgradeStrategy.preUpgradeHealthCheck` and `autoPauseOnFailure`, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked |
+| `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready` (announced once the hold outlasts one reconcile), or a scale-down drain is in progress (once per target) — and will be performed by the rolling-upgrade state machine afterwards. Once per held target, not on every check (a drain's deferral names the target, and each drain announces it once) |
 
 ### Backups and Restores
 
