@@ -150,7 +150,7 @@ is met on many passes. It is announced once:
 |---|---|---|
 | `AuraFleetManagementRegistered` | Normal | Successfully registered with Aura Fleet Management |
 | `AuraFleetManagementFailed` | Warning | Aura Fleet Management token registration failed. Raised when a failure first appears or its message changes, not on every retry; the current message is in `status.auraFleetManagement.message` |
-| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the pass that finds it adds the plugin |
+| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin |
 | `AuraFleetDeploymentCreated` | Normal | Operator-driven provisioning (`spec.auraFleetManagement.provision`) registered a Fleet Manager deployment in Aura |
 | `AuraFleetDeploymentAdopted` | Normal | Provisioning adopted an existing Aura fleet deployment of the same name instead of creating one |
 | `AuraFleetDeploymentDeleted` | Normal | The Aura fleet deployment was unregistered |

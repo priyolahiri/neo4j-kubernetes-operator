@@ -170,7 +170,7 @@
   {
     "id": "ev-aura-fleet-management-plugin-patch-failed",
     "name": "AuraFleetManagementPluginPatchFailed",
-    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the pass that finds it adds the plugin (#531; knowledge operations.md id 164).",
+    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the write that creates the StatefulSet already lists the plugin (#531; knowledge operations.md ids 164, 175).",
     "moduleId": "mod-cluster"
   },
   {
