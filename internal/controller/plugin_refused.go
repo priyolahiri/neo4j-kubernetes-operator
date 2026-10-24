@@ -120,9 +120,9 @@ func (r *Neo4jPluginReconciler) reconcileRefused(ctx context.Context, plugin *ne
 
 	if changes {
 		logger.Info("Refused plugin is on its target; taking it off", "refusal", refusal)
-		repair, repairSettings := "", false
 		if !deployment.IsReady {
-			if repair, repairSettings, err = r.selfRepair(ctx, plugin, deployment); err != nil {
+			repair, repairSettings, err := r.selfRepair(ctx, plugin, deployment)
+			if err != nil {
 				logger.Error(err, "Cannot tell whether removing the refused plugin repairs its target")
 			}
 			if repair == "" {
