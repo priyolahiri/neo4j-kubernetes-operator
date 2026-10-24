@@ -8,7 +8,7 @@ The `Neo4jPlugin` Custom Resource Definition (CRD) provides automated plugin ins
 - **Kind**: `Neo4jPlugin`
 - **Target Deployments**: Both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`
 - **Installation Method**: Neo4j's `NEO4J_PLUGINS` environment variable approach
-- **Supported Plugins**: APOC, Graph Data Science, Bloom, GraphQL, GenAI, N10s, and custom plugins
+- **Supported Plugins**: APOC, APOC Extended, Graph Data Science, Bloom, GenAI and, on 5.26, N10s by name (`installMode: Managed`, [the names each image's entrypoint installs](#names-the-entrypoint-installs)); any other JAR with `installMode: VerifiedDownload` or `PreBaked`
 - **Note**: Fleet Management is managed via `spec.auraFleetManagement` on the cluster/standalone CRD, not via `Neo4jPlugin`. Both coexist without conflict.
 - **Automatic Configuration**: Plugin-specific settings and security policies
 
@@ -84,6 +84,20 @@ Deleting the `Neo4jPlugin` — or setting `spec.enabled: false` — takes off th
 
 A plugin installed by an operator older than v1.22.0 has no record of its variables, and one older than this release none of its `NEO4J_PLUGINS` names: its first reconcile records what it sets now (a metadata write, no restart) and removes nothing. What a removal left behind before the upgrade stays until removed by hand.
 
+### Names the entrypoint installs
+
+In `Managed` mode the plugin's name and its dependencies' go into `NEO4J_PLUGINS`, after the aliases `gds` (`graph-data-science`) and `neosemantics` (`n10s`). The Neo4j Docker entrypoint looks each name up in the image's `/startup/neo4j-plugins.json` and exits on one it does not list, so the server does not start. The lists, read from `neo4j/docker-neo4j` at every release tag and checked on the images (2026-10-24):
+
+| Neo4j image | Names `NEO4J_PLUGINS` may hold |
+|---|---|
+| 5.26.0 – 5.26.10 | `apoc`, `apoc-extended`, `bloom`, `genai`, `graph-data-science`, `n10s` |
+| 5.26.11 and later (also `5.26-enterprise`) | the above and `fleet-management` |
+| 2025.01 – 2025.04 | `apoc`, `apoc-extended`, `bloom`, `genai`, `graph-data-science`, `n10s` |
+| 2025.05 – 2025.07 | `apoc`, `apoc-extended`, `bloom`, `genai`, `graph-data-science` |
+| 2025.08 and later | `apoc`, `apoc-extended`, `bloom`, `fleet-management`, `genai`, `graph-data-science` |
+
+The operator judges a `Managed` plugin by the image tag of its target (`spec.image.tag`; a tag without a patch as its line's newest patch, a CalVer newer than the operator by the newest list it knows). A name the image does not list — `graphql` on any supported release, `n10s` on CalVer from 2025.05, a custom JAR's name — is refused: phase `Failed` with `spec.name: Invalid value: "<name>": not a plugin the neo4j:<tag> image can install: …; install its JAR with installMode: VerifiedDownload (source.url + source.checksum) instead` (or `spec.dependencies[i].name`), one `PluginUnknownToImage` Warning, nothing written, and another look every 30 seconds. What an earlier operator wrote of it — its `NEO4J_PLUGINS` names (those it recorded; without a record, its own and its dependencies' as the entrypoint knows them), its settings and records — is taken off in the write a disabled plugin's removal makes, gated the same way: at once, with one `PluginSettingsFailing` Warning, when every server that is down keeps failing on it, otherwise once the target is `Ready` with every server available. `VerifiedDownload` and `PreBaked` never touch `NEO4J_PLUGINS`, so any JAR installs that way; a disabled plugin is not judged. `kubectl neo4j validate --connect` applies the same rule; offline it warns about a name no supported release installs.
+
 ### Disabling a plugin
 
 `spec.enabled: false` keeps the plugin off its target's servers and keeps the CR. An installed plugin is removed in the one write described above, phase `Installing` ("Removing the plugin … (spec.enabled: false)") while the servers restart without it, then `Disabled`, with one `PluginDisabled` event; a plugin created disabled is `Disabled` at once and writes nothing. Like an install, the removal waits (`Waiting`, one `PluginInstallDeferred` event, "… removing the disabled plugin restarts every server") until the target is `Ready` with every server available — except when every server that is down keeps failing in what the plugin set (its `VerifiedDownload` init container, or a setting Neo4j refuses): then it is written at once, with one `PluginInitContainerFailing` or `PluginSettingsFailing` Warning, and the restart replaces the failing servers first. Setting `spec.enabled: true` again installs the plugin again (one rolling restart). On a standalone with settings in its `neo4j.conf` (an allowlist, say), those leave with the standalone's own restart first and the plugin's write restarts it once more, as on install.
@@ -100,7 +114,7 @@ kind: Neo4jPlugin
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `clusterRef` | `string` | ✅ | Name of target Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone |
-| `name` | `string` | ✅ | Plugin name (e.g., "apoc", "graph-data-science") |
+| `name` | `string` | ✅ | Plugin name (e.g., "apoc", "graph-data-science"). In `Managed` mode it must be a name the target's image installs — see [Names the entrypoint installs](#names-the-entrypoint-installs) |
 | `version` | `string` | ✅ | Plugin version to install (must match Neo4j version compatibility) |
 | `enabled` | `boolean` | ❌ | Whether the plugin is on its target's servers (default: `true`). `false` removes an installed plugin (one rolling restart) and keeps the CR, in phase `Disabled`; `true` again installs it. See [Disabling a plugin](#disabling-a-plugin) |
 | `installMode` | `string` | ❌ | `Managed` (default) — operator adds plugin to `NEO4J_PLUGINS`. `PreBaked` — operator only writes config; JAR must be in a custom image. `VerifiedDownload` — operator injects an init container that downloads `source.url` and verifies it against `source.checksum` before Neo4j starts. See [Supply-chain](#supply-chain). |
@@ -209,9 +223,10 @@ copied to `/plugins/`: **APOC core** from `labs/`, and from `products/`
 **GenAI**, **Graph Data Science** and **Fleet Management** (the Operations
 Manual lists them as pre-installed; Bloom too, on CalVer). The entrypoint
 copies one of these from the image when it is there and downloads it only
-when it is not. **Every other plugin** (`apoc-extended`, `n10s`) is
-**downloaded from the internet on every pod start**, which has three
-production consequences:
+when it is not. **The other plugins it knows** (`apoc-extended`, and
+`n10s` on 5.26) are **downloaded from the internet on every pod start**,
+which has three production consequences (a name it does not know is
+refused, see [Names the entrypoint installs](#names-the-entrypoint-installs)):
 
 - **Non-reproducibility** — a restart can pull a different artifact than
   the one originally validated.
@@ -237,11 +252,10 @@ FROM neo4j:2025.01.0-enterprise
 COPY graph-data-science-2.13.0.jar /var/lib/neo4j/plugins/
 ```
 
-### `installMode: Managed` with a checksum (when you must download)
+### A checksum for `source.type: url` and `custom`
 
-When the JAR must be fetched at runtime, the validator requires a
-`source.checksum` for any `source.type: url` or `source.type: custom`.
-The checksum format is enforced:
+The validator requires a `source.checksum` for any `source.type: url`
+or `source.type: custom`. The checksum format is enforced:
 
 - `sha256:` followed by exactly 64 hex characters, **or**
 - `sha512:` followed by exactly 128 hex characters.
@@ -250,11 +264,13 @@ SHA1, MD5, and unprefixed hex are rejected. SHA1/MD5 because they are
 not collision-resistant; unprefixed hex because verification tooling
 should never have to guess the algorithm.
 
-**Honest limitation**: the upstream Neo4j Docker entrypoint does **not**
-consume `source.checksum` at download time. The operator records the
-field for audit and exposes it on the StatefulSet, but enforcement at
-the moment of download requires either (a) pinning to PreBaked or (b)
-the VerifiedDownload mode described next.
+**`source.url` and `source.checksum` are used by `VerifiedDownload`
+only.** In `Managed` mode the operator writes the plugin's name to
+`NEO4J_PLUGINS` and the entrypoint installs from its own list by name;
+it never reads `source`, and a name it does not list is refused
+([Names the entrypoint installs](#names-the-entrypoint-installs)). A
+JAR fetched from a URL at runtime takes the VerifiedDownload mode
+described next, which checks it before Neo4j starts.
 
 ### `installMode: VerifiedDownload` (verified download via init container)
 
@@ -517,7 +533,7 @@ spec:
 
 ### URL Plugin Example
 
-Install a plugin directly from a URL:
+Install a plugin directly from a URL (`VerifiedDownload`: in `Managed` mode the URL is not read, and the name is refused):
 
 ```yaml
 apiVersion: neo4j.neo4j.com/v1beta1
@@ -528,6 +544,7 @@ spec:
   clusterRef: my-cluster
   name: direct-download-plugin
   version: "2.0.0"
+  installMode: VerifiedDownload
 
   # Direct URL source with checksum verification
   source:
@@ -540,13 +557,13 @@ spec:
 
 ### Official Neo4j Plugins
 
+The names below are the ones `Managed` mode installs; which of them a release lists is in [Names the entrypoint installs](#names-the-entrypoint-installs). Neo4j Streams is not a plugin of any supported release, and GraphQL has none either: the [Neo4j GraphQL Library](https://neo4j.com/docs/graphql/current/) is a JavaScript library you run in your own GraphQL server, a client of the database (the old `neo4j-graphql` server extension stopped at Neo4j 3.5).
+
 | Plugin | Name | Description | Configuration Method | Automatic Security |
 |--------|------|-------------|---------------------|-------------------|
 | **APOC** | `apoc` | Awesome Procedures on Cypher | Environment Variables | ❌ Manual setup |
 | **APOC Extended** | `apoc-extended` | Extended APOC procedures | Environment Variables | ❌ Manual setup |
 | **Graph Data Science** | `graph-data-science` | Advanced graph algorithms | Neo4j Config + Security | ✅ Auto-configured |
-| **Neo4j Streams** | `streams` | Kafka/Pulsar integration | Neo4j Config | ❌ Manual setup |
-| **GraphQL** | `graphql` | GraphQL endpoint | Neo4j Config | ❌ Manual setup |
 
 ### Enterprise Plugins
 
@@ -622,8 +639,8 @@ spec:
 
 | Plugin | Name | Description | Configuration |
 |--------|------|-------------|---------------|
-| **Neo Semantics (N10s)** | `n10s` | RDF/ontology support | Neo4j Config |
-| **Custom Plugins** | `custom` | User-defined plugins | Flexible |
+| **Neo Semantics (N10s)** | `n10s` | RDF/ontology support. `Managed` on 5.26 (and CalVer before 2025.05) only; on CalVer install its JAR with `VerifiedDownload` (see the [plugins guide](../user_guide/guides/plugins.md#which-plugins-managed-installs)) | Neo4j Config |
+| **Custom Plugins** | any | User-defined plugins, with `VerifiedDownload` or `PreBaked` — a custom name is refused in `Managed` mode | Flexible |
 
 ### Plugin-Specific Configuration
 
@@ -668,7 +685,7 @@ config:
 - **Waiting**: When the plugin has something to write to its StatefulSet, which restarts every server: waiting for the target to answer, or for it to be `Ready` with every server available: not while a cluster has a server down (`Degraded` condition `True`, or phase `Degraded`), nor while it is forming, rolling its servers or upgrading. A `PluginInstallDeferred` event (or, for a `Ready` plugin that lost something, a `PluginMissing` one) marks the start of the wait; the plugin checks again every 30 seconds
 - **Installing**: Plugin installation in progress — including while the servers restart to take it (a pass waiting for that restart asks Neo4j nothing, so a standalone restarting its one pod does not turn the plugin `Waiting`), while a disabled plugin is removed (`spec.enabled: false`), while a `Ready` plugin restores what was removed from its target (`PluginMissing` event), and while a `VerifiedDownload` plugin brings its trusted CAs in line with the target's changed `spec.trustedCASecrets` ("Updating the plugin's trusted CAs: …"). While its roll is stuck, the message names the pods that cannot start ("…; cannot start: c-server-2 (container neo4j exited with code 1)")
 - **Ready**: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or volume), the plugin goes back to `Installing` and restores it — or `Waiting`, while the target is not `Ready` with every server available; if nothing is missing, the check writes nothing and the phase stays `Ready`, whatever state the target is in
-- **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs, and when the cluster's own spec sets a variable the plugin would have to change). A failed install is retried every 30 seconds; its `PluginInstallFailed` Warning is emitted once, not on each retry
+- **Failed**: Plugin installation failed (also set on the newer of two duplicate `Neo4jPlugin` CRs, when the cluster's own spec sets a variable the plugin would have to change, and on a `Managed` plugin whose name the target's image cannot install — [Names the entrypoint installs](#names-the-entrypoint-installs); one `PluginUnknownToImage` Warning). A failed install is retried every 30 seconds; its `PluginInstallFailed` Warning is emitted once, not on each retry
 - **Invalid**: The spec failed validation (for example an unsupported `securityPolicy`, a missing `source.url`/`checksum`, or a non-https URL); the controller does not requeue until the CR is edited
 - **Disabled**: `spec.enabled: false`, and nothing of the plugin is on its target's servers (its removal written and rolled out, or nothing there to remove). One `PluginDisabled` event. Not a fault: the `Ready` condition is `False` with reason `Disabled`
 
@@ -678,25 +695,14 @@ config:
 
 ## Supported Plugin Sources
 
-### Official Repository
-Neo4j's official plugin repository (recommended for production):
-
-- APOC (Awesome Procedures On Cypher)
-- Neo4j Streams
-- Neo4j GraphQL
-
-### Community Repository
-Community-maintained plugins:
-
-- Graph Data Science (GDS)
-- Additional APOC extensions
-- Third-party plugins
+### Official and Community
+`source.type: official` and `community` say only that the Neo4j entrypoint installs the plugin by name in `Managed` mode: from the image when it ships the JAR (APOC core, GDS, GenAI, Fleet Management, and Bloom on CalVer), otherwise from the plugin's published versions list (APOC Extended, and N10s on 5.26). Neither type changes what the operator writes. Which names a release installs: [Names the entrypoint installs](#names-the-entrypoint-installs).
 
 ### Custom Registry
-Private plugin registries with authentication support.
+Private plugin registries with authentication support, with `installMode: VerifiedDownload` (`source.url` + `checksum`, `authSecret`).
 
 ### Direct URL
-Direct download from URLs with checksum verification.
+Direct download from URLs with checksum verification, with `installMode: VerifiedDownload`.
 
 ## Installation Workflow
 
@@ -791,13 +797,13 @@ env:
 # Result: Combined environment variables
 env:
 - name: NEO4J_PLUGINS
-  value: '["apoc", "graph-data-science", "streams"]'
+  value: '["apoc", "graph-data-science", "bloom"]'
 - name: NEO4J_apoc_export_file_enabled
   value: 'true'
 - name: NEO4J_gds_enterprise_license__file
   value: '/licenses/gds.license'
-- name: NEO4J_streams_sink_topic_cypher_nodes
-  value: 'CREATE (n:Node {id: event.id})'
+- name: NEO4J_dbms_bloom_license__file
+  value: '/licenses/bloom.license'
 ```
 
 ## Advanced Plugin Configurations
@@ -813,13 +819,16 @@ spec:
   clusterRef: my-cluster
   name: my-custom-plugin
   version: "1.0.0"
+  # A custom JAR: in Managed mode the name would be refused (the
+  # entrypoint does not know it) and the URL never read
+  installMode: VerifiedDownload
 
   # Custom plugin source
   source:
     type: url
     url: "https://my-registry.example.com/plugins/my-plugin-1.0.0.jar"
     checksum: "sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"
-    authSecret: custom-registry-credentials   # only used with installMode: VerifiedDownload
+    authSecret: custom-registry-credentials
 
   # Custom configuration
   config:
@@ -947,23 +956,9 @@ spec:
     memoryLimit: "8Gi"
     cpuLimit: "4"
     threadPoolSize: 16
-
----
-# Neo4j Streams for Real-time Data
-apiVersion: neo4j.neo4j.com/v1beta1
-kind: Neo4jPlugin
-metadata:
-  name: analytics-streams
-spec:
-  clusterRef: analytics-cluster
-  name: streams
-  version: "5.26.0"
-  config:
-    "streams.sink.enabled": "true"
-    "streams.sink.topic.nodes": "graph-nodes"
-    "streams.sink.topic.relationships": "graph-relationships"
-    "kafka.bootstrap.servers": "kafka.analytics.svc.cluster.local:9092"
 ```
+
+(Neo4j Streams is not a plugin of 5.26 or CalVer: the entrypoint does not know `streams`, and the operator refuses it.)
 
 ## Troubleshooting
 
