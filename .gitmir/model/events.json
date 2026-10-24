@@ -986,7 +986,7 @@
   {
     "id": "ev-plugin-installed",
     "name": "PluginInstalled",
-    "description": "Emitted once a Neo4jPlugin's env/init-container merge succeeds and the target's rolling restart is triggered.",
+    "description": "Normal event, once per install, from the status write that turns a Neo4jPlugin Ready: its write reached every server (the target's StatefulSet rolled the template out and the pods are ready). A pass that read an older copy of the plugin writes nothing and announces nothing (operations.md id 136).",
     "moduleId": "mod-plugins"
   },
   {
@@ -1010,7 +1010,7 @@
   {
     "id": "ev-plugin-install-deferred",
     "name": "PluginInstallDeferred",
-    "description": "Normal event, once per wait, on a Neo4jPlugin whose install — or, for a VerifiedDownload plugin, whose update of its plugin-ca volume after the target's spec.trustedCASecrets changed (\"updating the plugin's trusted CAs restarts every server\") — would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available, or has not rolled out its latest spec: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a target whose status.observedGeneration lags its generation, or whose StatefulSet is still rolling its template out; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held, nor is a write that repairs the plugin's own failing init container (PluginInitContainerFailing).",
+    "description": "Normal event, once per wait, on a Neo4jPlugin whose install — or, for a VerifiedDownload plugin, whose update of its plugin-ca volume after the target's spec.trustedCASecrets changed (\"updating the plugin's trusted CAs restarts every server\") — would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available, or has not rolled out its latest spec: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a target whose status.observedGeneration lags its generation, or whose StatefulSet is still rolling its template out; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held, nor is a write that repairs the plugin's own failing init container (PluginInitContainerFailing). Also emitted when the removal of a plugin set to spec.enabled false waits (\"removing the disabled plugin restarts every server\").",
     "moduleId": "mod-plugins"
   },
   {
@@ -1102,5 +1102,17 @@
     "name": "TLSCertificateNeedsRestart",
     "description": "Warning when a renewed TLS certificate could not be reloaded on the named servers (TLS reload not enabled on them yet, or still the old certificate ten minutes after the new one was issued); they serve the previous certificate until they restart.",
     "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-plugin-disabled",
+    "name": "PluginDisabled",
+    "description": "Normal event, once, when a Neo4jPlugin with spec.enabled false reaches phase Disabled: nothing of it is on its target's servers any more — its removal written and rolled out, or nothing there to remove (operations.md id 160).",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-procedures-hidden",
+    "name": "PluginProceduresHidden",
+    "description": "Warning event on a Neo4jPlugin whose procedures the target's effective dbms.security.procedures.allowlist — shared by every plugin of the target — loads none of, emitted when its ProceduresHidden condition appears or its message changes. The plugin stays Ready; the list is not widened (operations.md id 161).",
+    "moduleId": "mod-plugins"
   }
 ]

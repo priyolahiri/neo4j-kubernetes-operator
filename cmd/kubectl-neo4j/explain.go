@@ -240,6 +240,10 @@ var phaseGuidance = map[string]guidance{
 		meaning: "reconciliation is deliberately paused for this resource.",
 		action:  "Nothing will change until it is resumed. Expected during a maintenance window; unexpected otherwise.",
 	},
+	neo4jv1beta1.PhaseDisabled: {
+		meaning: "the Neo4jPlugin has spec.enabled: false, and nothing of it is on its target's servers: its NEO4J_PLUGINS entry, settings, procedure-list tokens and VerifiedDownload init container were removed (one rolling restart), or were never there.",
+		action:  "Nothing to do. Set spec.enabled: true to install the plugin again; delete the CR if you no longer want it at all.",
+	},
 	neo4jv1beta1.PhasePending: {
 		meaning: "the resource is waiting on something that does not exist yet — a Secret, a referenced cluster, a database.",
 		action:  "This is 'not yet', not 'wrong'. status.message names what it is waiting for; create that and it proceeds on its own. On a Neo4jReplicaDatabase it also means the replica has not been created in Neo4j yet: check the downstream is Ready and, for an s3:// source, that its servers have AWS_REGION (reason ReplicaObjectStoreEnvMissing). A Neo4jDatabase or Neo4jShardedDatabase waiting for seed credentials on its cluster says so with reason SeedCredsMissing.",

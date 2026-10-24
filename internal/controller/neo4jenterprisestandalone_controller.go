@@ -2187,11 +2187,24 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	var phase, message string
 	var ready bool
 
-	if statefulSet.Status.ReadyReplicas == 1 {
+	// Ready is the one pod ready on the StatefulSet's latest pod template. A
+	// ready pod alone read Ready from the moment a template write started a
+	// roll until the old pod stopped — the pod that was about to restart — so
+	// a dependent that went by Ready (a database, a user, a plugin) acted on a
+	// server on its way down; the plugin gate had to check the roll itself
+	// (operations.md id 141, #548). A cluster turns Forming for a roll the same
+	// way (#444).
+	rolling := statefulSetRolloutPending(statefulSet)
+	switch {
+	case statefulSet.Status.ReadyReplicas == 1 && rolling == "":
 		phase = "Ready"
 		message = "Standalone deployment is ready"
 		ready = true
-	} else {
+	case statefulSet.Status.ReadyReplicas == 1:
+		phase = "Pending"
+		message = "Waiting for the standalone to restart on its latest pod template: " + rolling
+		ready = false
+	default:
 		phase = "Pending"
 		message = "Waiting for standalone deployment to be ready"
 		ready = false

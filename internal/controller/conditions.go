@@ -49,6 +49,14 @@ const (
 	// the cluster SSL policy is the only access control there is; False means
 	// the port is reachable without one. Set only while the proxy is enabled.
 	ConditionTypeCrossClusterProxySecure = "CrossClusterProxySecure"
+
+	// ConditionTypeProceduresHidden is set on a Neo4jPlugin, True with reason
+	// NotInAllowlist, while the effective dbms.security.procedures.allowlist of
+	// its target loads none of its procedures (operations.md id 161); it is
+	// removed when the list loads them again.
+	ConditionTypeProceduresHidden = "ProceduresHidden"
+	// ConditionReasonNotInAllowlist is the reason of ProceduresHidden.
+	ConditionReasonNotInAllowlist = "NotInAllowlist"
 )
 
 // Reason constants for the Ready condition across all CRDs.
@@ -75,7 +83,11 @@ const (
 	// (Neo4jBackup spec.suspend). The Ready status stays False, since a
 	// suspended resource is not ready to do its work, but the reason must not
 	// be ConditionReasonFailed: nothing failed.
-	ConditionReasonSuspended       = "Suspended"
+	ConditionReasonSuspended = "Suspended"
+	// ConditionReasonDisabled — a Neo4jPlugin with spec.enabled: false, off
+	// its target as asked. Ready is False (the plugin is not installed), but
+	// nothing failed.
+	ConditionReasonDisabled        = "Disabled"
 	ConditionReasonRestoreComplete = "RestoreCompleted"
 	ConditionReasonRestoreFailed   = "RestoreFailed"
 	ConditionReasonPluginInstalled = "PluginInstalled"
@@ -165,6 +177,9 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 		// Declared state, not a fault: False (not Ready to run) with a reason
 		// that says so, instead of the ReconciliationFailed a real failure gets.
 		return metav1.ConditionFalse, ConditionReasonSuspended
+	case neo4jv1beta1.PhaseDisabled:
+		// Declared state too: a disabled plugin is not installed, as asked.
+		return metav1.ConditionFalse, ConditionReasonDisabled
 	case neo4jv1beta1.PhaseDegraded:
 		return metav1.ConditionFalse, ConditionReasonDegraded
 	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseValidationFailed, neo4jv1beta1.PhaseError:

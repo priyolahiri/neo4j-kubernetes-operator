@@ -178,10 +178,6 @@ func noBolt(t *testing.T) *pluginBolt {
 			t.Error("a settled plugin whose target is intact must not connect to Neo4j")
 			return true
 		},
-		configure: func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error {
-			t.Error("a settled plugin whose target is intact must not configure anything")
-			return nil
-		},
 	}
 }
 
@@ -333,6 +329,11 @@ func TestPluginEnvDrift(t *testing.T) {
 		{"a setting removed", without("NEO4J_apoc_export_file_enabled"), false, []string{"NEO4J_apoc_export_file_enabled"}},
 		{"a setting someone else changed", with("NEO4J_apoc_export_file_enabled", "false"), false, nil},
 		{"a list another writer changed", with(unrestricted, "gds.*"), false, nil},
+		// What the plugin's write would take away is a removal, not a loss
+		// (id 155): a name its record says it no longer adds, a cluster list
+		// no plugin of the target puts anything in.
+		{"NEO4J_PLUGINS with a name the write takes away", with("NEO4J_PLUGINS", `["fleet-management","apoc","apoc-extended"]`), false, nil},
+		{"a cluster list nobody asks for", append(desired, corev1.EnvVar{Name: "NEO4J_dbms_security_procedures_allowlist", Value: "apoc.load.*"}), false, nil},
 		// On a standalone the plugin's edits only take its tokens out of a
 		// conf list, or the copy out of the env (id 114): one left behind by
 		// an earlier operator is put right.
@@ -449,38 +450,11 @@ func TestInstallPluginViaEnvironment_LeavesClusterOwnedVariablesAlone(t *testing
 	assert.Equal(t, `["apoc","graph-data-science"]`, v)
 }
 
-// The install write is what restarts the servers, and the old pods still
-// report Ready until they stop, so the configuration step used to run while
-// they went down. With spec.security set (the documented APOC example) it
-// opens a Bolt client — on a standalone one that verifies connectivity —
-// which then cannot connect. That reported Failed with a PluginInstallFailed
-// Warning, though the install went on to succeed (v1.21.0 journey). The step
-// now runs only once the roll is done (operations.md id 141); a server that
-// cannot be reached then, one restarting for another reason, is still a wait.
-func TestReconcile_ConfigureWhileTheServersRestartIsNotAFailure(t *testing.T) {
-	plugin := selfHealPlugin("apoc", "c", neo4jv1beta1.PhaseInstalling, "Installing plugin")
-	unreachable := fmt.Errorf("failed to create Neo4j client for security configuration: %w",
-		fmt.Errorf("failed to verify Neo4j connectivity: %w",
-			&driver.ConnectivityError{Inner: errors.New("dial tcp 10.96.0.20:7687: connect: connection refused")}))
-	bolt := &pluginBolt{
-		functional: func(context.Context, *DeploymentInfo) bool { return true },
-		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return unreachable },
-	}
-	objs := append([]client.Object{plugin, readyCluster(), installedSelfHealSTS()}, readyClusterPods()...)
-	r, rec, _ := selfHealReconciler(t, bolt, nil, objs...)
-
-	res := reconcilePlugin(t, r, "apoc")
-
-	got := getPlugin(t, r, "apoc")
-	assert.Equal(t, neo4jv1beta1.PhaseInstalling, got.Status.Phase)
-	assert.Contains(t, got.Status.Message, "to accept connections")
-	assert.Positive(t, res.RequeueAfter, "it tries again")
-	assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonPluginInstallFailed))
-}
-
-// The other path to the same Warning: the StatefulSet kept changing under the
-// install write (its controller rewrites status at every pod transition of a
-// restart) until the conflict retries ran out.
+// A transient PluginInstallFailed Warning (v1.21.0 journey): the StatefulSet
+// kept changing under the install write (its controller rewrites status at
+// every pod transition of a restart) until the conflict retries ran out. (The
+// other path to it, a configuration step opening a Bolt client while the
+// servers restarted, is gone with the step: nothing is set at runtime, #548.)
 func TestReconcile_InstallConflictIsNotAFailure(t *testing.T) {
 	plugin := selfHealPlugin("apoc", "c", neo4jv1beta1.PhaseInstalling, "Installing plugin")
 	bolt := &pluginBolt{functional: func(context.Context, *DeploymentInfo) bool { return true }}
@@ -505,18 +479,18 @@ func TestReconcile_InstallConflictIsNotAFailure(t *testing.T) {
 // failure flipped the phase and repeated the Warning as fast as passes ran.
 func TestReconcile_ARealFailureIsAnnouncedOnceAndRetried(t *testing.T) {
 	plugin := selfHealPlugin("apoc", "c", neo4jv1beta1.PhaseInstalling, "Installing plugin")
-	rejected := errors.New("failed to set configuration apoc.x=y: Neo.ClientError.General.InvalidArguments: unknown setting")
-	bolt := &pluginBolt{
-		functional: func(context.Context, *DeploymentInfo) bool { return true },
-		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return rejected },
+	bolt := &pluginBolt{functional: func(context.Context, *DeploymentInfo) bool { return true }}
+	refused := func() error {
+		return apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "statefulsets"}, "c-server",
+			errors.New("exceeded quota: compute-resources"))
 	}
-	objs := append([]client.Object{plugin, readyCluster(), installedSelfHealSTS()}, readyClusterPods()...)
-	r, rec, _ := selfHealReconciler(t, bolt, nil, objs...)
+	objs := append([]client.Object{plugin, readyCluster(), selfHealSTS()}, readyClusterPods()...)
+	r, rec, _ := selfHealReconciler(t, bolt, refused, objs...)
 
 	res := reconcilePlugin(t, r, "apoc")
 	got := getPlugin(t, r, "apoc")
 	assert.Equal(t, neo4jv1beta1.PhaseFailed, got.Status.Phase)
-	assert.Contains(t, got.Status.Message, "unknown setting")
+	assert.Contains(t, got.Status.Message, "exceeded quota")
 	assert.Positive(t, res.RequeueAfter, "the cause can lie outside the plugin, so it is retried")
 	require.Len(t, eventsWithReason(drainEvents(rec), EventReasonPluginInstallFailed), 1)
 

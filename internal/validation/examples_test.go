@@ -70,6 +70,37 @@ func TestPublishedManifestsPassOurOwnValidators(t *testing.T) {
 	}
 }
 
+// The defect (#553, v1.22.0 re-walk): applying the published GenAI example
+// raised a ValidationWarning that genai is not in the operator's compatibility
+// matrix — the matrix recorded "neo4j-genai", a name no Neo4jPlugin can use
+// (the entrypoint's key is genai), and "neo4j-bloom" for bloom. A published
+// plugin manifest raises no warning: a user copying it has nothing to fix.
+func TestPublishedPluginManifestsRaiseNoWarning(t *testing.T) {
+	seen := 0
+	for _, root := range []string{"../../examples", "../../config/samples"} {
+		require.NoError(t, filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info.IsDir() || (filepath.Ext(path) != ".yaml" && filepath.Ext(path) != ".yml") {
+				return err
+			}
+			for i, doc := range splitYAMLDocuments(t, path) {
+				var meta struct {
+					Kind string `json:"kind"`
+				}
+				if yaml.Unmarshal(doc, &meta) != nil || meta.Kind != "Neo4jPlugin" {
+					continue
+				}
+				plugin := &neo4jv1beta1.Neo4jPlugin{}
+				require.NoError(t, yaml.Unmarshal(doc, plugin))
+				seen++
+				assert.Empty(t, NewPluginValidator().Validate(plugin).Warnings,
+					"document %d of %s (spec.name %q)", i+1, path, plugin.Spec.Name)
+			}
+			return nil
+		}))
+	}
+	assert.GreaterOrEqual(t, seen, 6, "the plugin examples were found")
+}
+
 func splitYAMLDocuments(t *testing.T, path string) [][]byte {
 	t.Helper()
 	raw, err := os.ReadFile(path)

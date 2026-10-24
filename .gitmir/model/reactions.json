@@ -195,7 +195,7 @@
   {
     "id": "rx-plugin-deleted-cleans-target",
     "name": "Deleted Plugin Takes Away What It Wrote",
-    "description": "When a Neo4jPlugin is deleted, its finalizer takes off the target's StatefulSet, in one write (one rolling restart), everything the plugin wrote: the variables its record lists and those its spec sets, its tokens in the procedure allowlists that no other plugin of the target needs, in Managed mode its NEO4J_PLUGINS names and its dependencies' that no other Managed plugin of the target installs (fleet-management stays while the target's spec.auraFleetManagement installs it; a NEO4J_PLUGINS the target renders itself is left alone), a VerifiedDownload plugin's init container, auth volume and, once nothing mounts it, the shared CA volume, and its record. What the target renders from its own spec stays. The uninstall does not wait for a fully available target.",
+    "description": "When a Neo4jPlugin is deleted, its finalizer takes off the target's StatefulSet, in one write (one rolling restart), everything the plugin wrote: the variables its record lists and those its spec sets, its tokens in the procedure lists (on a cluster each list becomes what the other enabled plugins put there), its NEO4J_PLUGINS names — those its record lists and, in Managed mode, its own and its dependencies' — that no other Managed plugin of the target installs (fleet-management stays while the target's spec.auraFleetManagement installs it; a NEO4J_PLUGINS the target renders itself is left alone), a VerifiedDownload plugin's init container, auth volume and, once nothing mounts it, the shared CA volume, and its record. What the target renders from its own spec stays. The uninstall does not wait for a fully available target.",
     "moduleId": "mod-plugins",
     "trigger": {
       "entityId": "ent-neo4jplugin",
@@ -214,6 +214,50 @@
         "entityId": "ent-neo4jplugin",
         "fieldName": "metadata.finalizers",
         "description": "Releases the finalizer (a merge patch of metadata.finalizers) once the write succeeded; a target that is gone counts as uninstalled."
+      }
+    ]
+  },
+  {
+    "id": "rx-plugin-disabled-leaves-target",
+    "name": "Disabled Plugin Leaves Its Target",
+    "description": "When a Neo4jPlugin's spec.enabled turns false, the plugin controller takes it off its target with the uninstall's single write and keeps the CR: Installing while the servers restart without it, then Disabled with one PluginDisabled event. The write waits for a fully available target unless it removes what keeps the down servers failing. On a standalone the standalone controller drops the plugin's neo4j.conf settings at once (its own roll) before the plugin's write. Turning it true again installs it.",
+    "moduleId": "mod-plugins",
+    "trigger": {
+      "entityId": "ent-neo4jplugin",
+      "fieldName": "spec.enabled",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet.spec.template (neo4j container env; initContainers and volumes); StatefulSet annotations neo4j.com/plugin-env-vars.<plugin>, neo4j.com/plugin-entries.<plugin>",
+        "description": "One update removing the plugin's variables, list tokens, NEO4J_PLUGINS names, init container and volumes, and its records."
+      },
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jplugin",
+        "fieldName": "status.phase",
+        "description": "Installing while the removal rolls out, then Disabled (Ready condition False, reason Disabled)."
+      }
+    ]
+  },
+  {
+    "id": "rx-plugin-hidden-by-allowlist",
+    "name": "Plugin Hidden By The Shared Allowlist",
+    "description": "When another plugin's write (or the target's own configuration) sets the server-wide dbms.security.procedures.allowlist so that it loads none of a plugin's procedures, the hidden plugin — woken by that write to the StatefulSet if it is Ready — carries the ProceduresHidden condition and emits one PluginProceduresHidden Warning; it stays Ready and the list is not widened. The condition goes when the list loads the plugin again.",
+    "moduleId": "mod-plugins",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "StatefulSet neo4j container env NEO4J_dbms_security_procedures_allowlist / neo4j.conf",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jplugin",
+        "fieldName": "status.conditions[ProceduresHidden]",
+        "description": "Set (True, NotInAllowlist) with the list and who sets it, or removed when the list loads the plugin."
       }
     ]
   }
