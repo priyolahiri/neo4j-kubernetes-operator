@@ -115,7 +115,10 @@ func versionKey(v *VersionInfo) [3]int {
 // patch, the one it pulls.
 func entrypointPluginNames(tag string) ([]string, bool) {
 	v := parseTagVersion(tag)
-	if v == nil || !((v.Major == 5 && v.Minor == 26) || v.Major >= 2025) {
+	if v == nil {
+		return nil, false
+	}
+	if lts := v.Major == 5 && v.Minor == 26; !lts && v.Major < 2025 {
 		return nil, false
 	}
 	var names []string
