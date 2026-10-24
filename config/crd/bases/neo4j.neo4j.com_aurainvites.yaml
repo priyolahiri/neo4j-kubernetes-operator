@@ -252,8 +252,10 @@ spec:
                   neo4j.com/external-invite-id annotation for idempotent create + adopt).
                 type: string
               lastSyncedTime:
-                description: LastSyncedTime is when the invite was last observed from
-                  the Aura API.
+                description: |-
+                  LastSyncedTime is when the operator last recorded the invite as
+                  observed from the Aura API: written with every change to the status,
+                  and at least every 15 minutes while nothing changes.
                 format: date-time
                 type: string
               observedGeneration:

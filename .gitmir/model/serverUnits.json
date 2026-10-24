@@ -424,7 +424,7 @@
     "id": "su-aurainstance",
     "name": "AuraInstance Reconciler",
     "kind": "controller",
-    "description": "Provisions and manages a Neo4j Aura cloud instance via the Aura REST API as a status-poll state machine: idempotent create/adopt (external-name annotation), observe, drift-patch (memory/storage/name/secondariesCount/cdcEnrichmentMode), tier upgrade, pause/resume, and orphan-or-delete on CR deletion (AuraInstanceReconciler).",
+    "description": "Provisions and manages a Neo4j Aura cloud instance via the Aura REST API as a status-poll state machine: idempotent create/adopt (external-name annotation), observe, drift-patch (memory/storage/name/secondariesCount/cdcEnrichmentMode), tier upgrade, pause/resume, and orphan-or-delete on CR deletion, resolving credentials only when the deletion calls Aura (AuraInstanceReconciler).",
     "entityIds": [
       "ent-aurainstance"
     ],
@@ -480,7 +480,7 @@
     "id": "su-auracustomermanagedkey",
     "name": "AuraCustomerManagedKey Reconciler",
     "kind": "controller",
-    "description": "Registers and manages a customer-managed encryption key with Aura: idempotent create/adopt by matching keyId/region/cloudProvider/instanceType, polls to Ready, and on deletion either orphans (default) or deregisters (refused by the API while any instance still uses the key) (AuraCustomerManagedKeyReconciler).",
+    "description": "Registers and manages a customer-managed encryption key with Aura: idempotent create/adopt by matching keyId/region/cloudProvider/instanceType, polls to Ready, and on deletion either orphans (default) or deregisters (refused by the API while any instance still uses the key), resolving credentials only when the deletion calls Aura (AuraCustomerManagedKeyReconciler).",
     "entityIds": [
       "ent-auracustomermanagedkey"
     ],

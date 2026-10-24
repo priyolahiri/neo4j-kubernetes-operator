@@ -234,8 +234,11 @@ func (fp *fleetProvisioner) reconcileAuraFleetProvision(ctx context.Context, obj
 
 	// --- token --------------------------------------------------------------
 	if err := fp.ensureToken(ctx, obj, p, apiClient, orgID, projectID, deploymentID); err != nil {
-		// Refusals are checked BEFORE IsTransient — see the auraRefusalError doc.
-		if !isAuraRefusal(err) && aura.IsTransient(err) {
+		// Only a failed Aura call is retried quietly. aura.IsTransient also says
+		// yes to a failure to store a token just minted — a Kubernetes error —
+		// which then went unreported while every pass minted again (knowledge
+		// rule 88).
+		if isRetryableAuraCall(err) {
 			return nil
 		}
 		return fp.note(ctx, key, err.Error())
@@ -399,13 +402,23 @@ func (fp *fleetProvisioner) ensureToken(
 		// Both legs are wrapped: POST and PATCH are complementary (landmine 3), so
 		// which one failed and how is the whole diagnosis — and callers classify on
 		// the API error, which would be lost if either leg were flattened to text.
-		return fmt.Errorf("minting token for fleet deployment %q failed (post: %w; rotate: %w)", deploymentID, postErr, err)
+		return retryableAuraCall(fmt.Errorf("minting token for fleet deployment %q failed (post: %w; rotate: %w)", deploymentID, postErr, err))
+	}
+	// The rotation is announced once its token is stored. A token that cannot
+	// be stored is lost, so the next pass rotates again; announcing before the
+	// store repeated the Warning on every one of those passes. Until the store
+	// succeeds, the status message says a rotation happened (knowledge rule
+	// 136).
+	if err := fp.storeToken(ctx, obj, secretName, token); err != nil {
+		return fmt.Errorf("rotated the token of fleet deployment %s, which invalidates any previous registration, "+
+			"but could not keep the new one, so the next attempt rotates again: %w", deploymentID, err)
 	}
 	if p.TokenPolicy == "Rotate" {
 		fp.Recorder.Eventf(obj, corev1.EventTypeWarning, EventReasonAuraFleetTokenRotated,
-			"Rotated the Aura fleet token for deployment %s; any previous registration is now invalid", deploymentID)
+			"Rotated the Aura fleet token for deployment %s and stored it in Secret %q; any previous registration is now invalid",
+			deploymentID, secretName)
 	}
-	return fp.storeToken(ctx, obj, secretName, token)
+	return nil
 }
 
 // storeToken persists a freshly minted token. Called immediately after minting —
