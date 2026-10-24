@@ -853,9 +853,9 @@
         "description": "The CR was deleted with deletionPolicy=Delete; DeleteInstance has been called and the finalizer is pending release."
       },
       {
-        "key": "Failed",
-        "name": "Failed",
-        "description": "A non-transient, non-conflict error occurred during create, observe, patch, or upgrade; fail() set Ready=False."
+        "key": "Error",
+        "name": "Error",
+        "description": "The operator could not reconcile the instance: credentials or project ID unavailable, a create, observe, patch or upgrade Aura refused, a Delete waiting for credentials, or a terminal create refusal (MultiDatabaseUnsupported / ServerlessGraphAnalyticsUnsupported). fail() sets phase Error with Ready=False; a terminal refusal on status for the current generation is not asked again. A 429, a 5xx or a transport failure is retried and never writes this phase."
       }
     ],
     "transitions": [
@@ -901,13 +901,18 @@
       },
       {
         "from": "Creating",
-        "to": "Failed",
-        "label": "observeOrCreate/CreateInstance returns a non-transient error; fail() sets Ready=False"
+        "to": "Error",
+        "label": "observeOrCreate/CreateInstance returns an error that is not a transient Aura failure; fail() sets phase Error and Ready=False"
       },
       {
         "from": "Running",
-        "to": "Failed",
-        "label": "GetInstance or PatchInstance/UpgradeInstance returns a non-transient, non-conflict error; fail() sets Ready=False"
+        "to": "Error",
+        "label": "GetInstance returns an error Aura gave that is neither a 404 nor transient; fail() sets phase Error and Ready=False (a PatchInstance/UpgradeInstance error is returned for error backoff instead)"
+      },
+      {
+        "from": "Error",
+        "to": "Running",
+        "label": "the failure clears and the next GetInstance observation writes Aura's own status back"
       }
     ]
   },

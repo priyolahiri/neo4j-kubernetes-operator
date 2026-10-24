@@ -20,11 +20,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -452,4 +454,100 @@ func auraCondStatus(ok bool) metav1.ConditionStatus {
 func auraConditionChanged(conditions []metav1.Condition, want metav1.Condition) bool {
 	have := meta.FindStatusCondition(conditions, want.Type)
 	return have == nil || have.Status != want.Status || have.Reason != want.Reason || have.Message != want.Message
+}
+
+// auraSyncedTimeRefresh is how old a stored status.lastSyncedTime may get while
+// nothing else in the status changes.
+//
+// Every Aura controller watches its own kind, so a status write is a watch
+// event that starts another pass at once. Stamping a fresh lastSyncedTime on
+// every pass made each pass start the next one: an invite or member that was
+// failing or waiting ran about twice every 30s, and each Ready resource twice
+// or more every 5 minutes, every extra pass spending the Aura API's rate limit
+// (knowledge rules 122 and 156). It is longer than the 5-minute re-observe, so
+// most of those passes write nothing.
+const auraSyncedTimeRefresh = 15 * time.Minute
+
+// auraStatusWriteNeeded reports whether a status the pass rebuilt differs from
+// the stored one in anything but lastSyncedTime, or the stored lastSyncedTime
+// is missing or older than auraSyncedTimeRefresh. before and after are the
+// status values with lastSyncedTime not yet touched.
+func auraStatusWriteNeeded(before, after any, lastSynced *metav1.Time, now time.Time) bool {
+	return !equality.Semantic.DeepEqual(before, after) ||
+		lastSynced == nil || now.Sub(lastSynced.Time) >= auraSyncedTimeRefresh
+}
+
+// auraRefusalRecorded reports whether status already records, for the current
+// generation, the terminal refusal this pass would reach again: Ready is False
+// with this reason (and, when message is not empty, this message), and
+// observedGeneration is the generation. Such a pass stops before calling Aura.
+// A refusal is returned without a requeue, but every later event (a resync, an
+// operator restart, the refusal's own status write) used to run the pass again,
+// with the same Aura calls, and for some refusals the same refused create. The
+// spec edit that can change the answer bumps the generation.
+func auraRefusalRecorded(conditions []metav1.Condition, observedGeneration, generation int64, reason, message string) bool {
+	if observedGeneration != generation {
+		return false
+	}
+	c := meta.FindStatusCondition(conditions, "Ready")
+	return c != nil && c.Status == metav1.ConditionFalse && c.Reason == reason &&
+		(message == "" || c.Message == message)
+}
+
+// auraRetryableError marks the failure of one Aura API call that is worth
+// retrying as it is: aura.IsTransient said so (a 429, a 5xx, or a transport
+// failure).
+//
+// Only the call site can say it. aura.IsTransient also answers true for every
+// error the operator raises itself (knowledge rule 88), so a caller that gets
+// one error back from several steps — a list, a write to the CR, a check of the
+// spec, a create — classifies on this mark, never on aura.IsTransient: an
+// unmarked error still reaches status.
+type auraRetryableError struct{ err error }
+
+func (e *auraRetryableError) Error() string { return e.err.Error() }
+func (e *auraRetryableError) Unwrap() error { return e.err }
+
+// retryableAuraCall marks err, returned by an Aura API call (or wrapping one),
+// when aura.IsTransient says to retry it; any other error is returned as it is.
+func retryableAuraCall(err error) error {
+	if err == nil || !aura.IsTransient(err) {
+		return err
+	}
+	return &auraRetryableError{err: err}
+}
+
+// isRetryableAuraCall reports whether err carries retryableAuraCall's mark.
+func isRetryableAuraCall(err error) bool {
+	var r *auraRetryableError
+	return errors.As(err, &r)
+}
+
+// auraDeletionNeedsCredentials is the status message of a deletion that has to
+// call Aura (deletionPolicy Delete) while what the call needs — the
+// credentials, and for an IP filter the organization — cannot be resolved. It
+// names the moment the operator stops waiting, which does not move, so the
+// message — and the Warning announcing it — stays the same on every retry.
+func auraDeletionNeedsCredentials(obj client.Object, what, externalID string, cause error) error {
+	return fmt.Errorf("deletionPolicy is Delete, so deleting %s %s calls Aura, but %v; if that still holds "+
+		"at %s, the finalizer is released and %s %s is left in Aura",
+		what, externalID, cause, auraDeletionDeadline(obj).UTC().Format(time.RFC3339), what, externalID)
+}
+
+// auraOrphanedWithoutCredentials is the Warning of a deletion that gave up
+// waiting for the credentials and released its finalizer without deleting.
+func auraOrphanedWithoutCredentials(what, externalID, remains string, cause error) string {
+	return fmt.Sprintf("Orphaning %s %s although deletionPolicy is Delete: the deletion still could not call "+
+		"Aura %s after it was requested (%v); %s, so delete it in the Aura console",
+		what, externalID, finalizerDeletionGracePeriod, cause, remains)
+}
+
+// auraDeletionDeadline is when a deletion that cannot resolve its credentials
+// stops waiting for them (finalizerDeletionGracePeriod after it was requested).
+func auraDeletionDeadline(obj client.Object) time.Time {
+	ts := obj.GetDeletionTimestamp()
+	if ts == nil {
+		return time.Now().Add(finalizerDeletionGracePeriod)
+	}
+	return ts.Add(finalizerDeletionGracePeriod)
 }

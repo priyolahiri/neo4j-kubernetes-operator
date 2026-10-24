@@ -49,14 +49,16 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | Field | Type | Description |
 |---|---|---|
 | `customerManagedKeyId` | `string` | Aura-assigned key ID. Reference this value from an `AuraInstance`'s `spec.customerManagedKeyId`. |
-| `phase` | `string` | Mirrors the Aura key status: `Pending`, `Ready`, `Deleting`, `Error`. |
+| `phase` | `string` | Mirrors the Aura key status: `Pending`, `Ready`, `Deleting`, `Error`. `Error` also while the operator cannot reconcile the key — the `Ready` condition says why. |
 | `conditions` | `[]metav1.Condition` | `Ready` (key usable) and `Synced` (operator reconciled spec). |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
-| `lastSyncedTime` | `*metav1.Time` | When the key was last observed from the Aura API. |
+| `lastSyncedTime` | `*metav1.Time` | When the operator last recorded the key as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile. |
 
 ## Deletion note
 
 A key still bound to an instance **cannot be deleted** — Aura returns `encryption-key-is-active`. The CR then sets `Synced=False` with reason `KeyInUse` and keeps its finalizer until the key is no longer referenced by any instance.
+
+`Orphan` needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). `Delete` needs them: while they cannot be read the CR waits, with `Ready=False`, reason `CredentialsUnavailable`, and after 5 minutes it is removed anyway with a Warning `AuraCustomerManagedKeyOrphaned` — the key stays registered in Aura.
 
 ## Example
 

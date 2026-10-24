@@ -27,12 +27,12 @@ The `AuraDatabaseBackup` CRD takes an **on-demand** per-database backup on a man
 | Field | Type | Description |
 |---|---|---|
 | `backupId` | `string` | Aura-assigned backup ID. |
-| `phase` | `string` | `Pending`, `Completed`, `Failed`, `Error`. Mirrors Aura's own `status` enum (`Pending`/`InProgress`/`Completed`/`Failed`) — `Pending` covers both Aura's `Pending` and `InProgress`; `Error` means the operator could not reconcile the backup. A freshly-scheduled backup reports `Pending` — the create response carries only an ID, so no status is known until the next read. |
+| `phase` | `string` | `Pending`, `Completed`, `Failed`, `Error`. Mirrors Aura's own `status` enum (`Pending`/`InProgress`/`Completed`/`Failed`) — `Pending` covers both Aura's `Pending` and `InProgress`; `Error` means the operator could not reconcile the backup. A freshly-scheduled backup reports `Pending` — the create response carries only an ID, so no status is known until the next read. A request Aura could not take just then (rate limit, 5xx, network failure, or another operation in flight, HTTP 409) is retried, not reported as `Error`. |
 | `timestamp` | `string` | Backup timestamp as reported by Aura. |
 | `exportable` | `bool` | Whether Aura can export/download this backup. Only populated once the backup has been read back. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
-| `lastSyncedTime` | `*metav1.Time` | When the backup was last observed from the Aura API. |
+| `lastSyncedTime` | `*metav1.Time` | When the operator last recorded the backup as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile. |
 
 ## Example
 
