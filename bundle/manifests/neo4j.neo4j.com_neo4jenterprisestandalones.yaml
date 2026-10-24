@@ -4161,8 +4161,14 @@ spec:
                                     - Redirect
                                     type: string
                                   secretName:
-                                    description: Secret containing the certificate
-                                      (for reencrypt/passthrough)
+                                    description: |-
+                                      Secret containing the certificate (for reencrypt/passthrough).
+
+                                      Reserved: accepted by the schema but not acted on today. No Route the
+                                      operator writes names a certificate, so the OpenShift router serves its
+                                      default one (edge, reencrypt) or the server's own (passthrough). The
+                                      operator raises a ValidationWarning event whenever it is set; a
+                                      certificate added to the Route itself is kept.
                                     type: string
                                   termination:
                                     enum:
@@ -5569,7 +5575,14 @@ spec:
                             - Redirect
                             type: string
                           secretName:
-                            description: Secret containing the certificate (for reencrypt/passthrough)
+                            description: |-
+                              Secret containing the certificate (for reencrypt/passthrough).
+
+                              Reserved: accepted by the schema but not acted on today. No Route the
+                              operator writes names a certificate, so the OpenShift router serves its
+                              default one (edge, reencrypt) or the server's own (passthrough). The
+                              operator raises a ValidationWarning event whenever it is set; a
+                              certificate added to the Route itself is kept.
                             type: string
                           termination:
                             enum:

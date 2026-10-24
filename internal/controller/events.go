@@ -2,12 +2,19 @@ package controller
 
 // Cluster formation events
 const (
-	EventReasonClusterFormationStarted       = "ClusterFormationStarted"
-	EventReasonClusterFormationFailed        = "ClusterFormationFailed"
-	EventReasonClusterReady                  = "ClusterReady"
-	EventReasonTopologyWarning               = "TopologyWarning"
-	EventReasonValidationFailed              = "ValidationFailed"
-	EventReasonTopologyPlacementFailed       = "TopologyPlacementFailed"
+	// EventReasonClusterFormationStarted — a cluster that has never formed
+	// entered Forming. Announced by the status write that entered it, once
+	// (operations.md id 136). There is no ClusterFormationFailed: formation
+	// does not fail, it waits, and a cluster that cannot be reached for long
+	// raises ConnectivityDegraded.
+	EventReasonClusterFormationStarted = "ClusterFormationStarted"
+	EventReasonClusterReady            = "ClusterReady"
+	EventReasonTopologyWarning         = "TopologyWarning"
+	EventReasonValidationFailed        = "ValidationFailed"
+	EventReasonTopologyPlacementFailed = "TopologyPlacementFailed"
+	// EventReasonTopologyPlacementCalc — the placement of a zoned cluster was
+	// calculated. Announced when it is first calculated and when its zones
+	// change, not on every pass (operations.md id 136).
 	EventReasonTopologyPlacementCalc         = "TopologyPlacementCalculated"
 	EventReasonTopologyZoneDiscoveryDegraded = "TopologyZoneDiscoveryDegraded"
 	EventReasonPropertyShardingFailed        = "PropertyShardingValidationFailed"
@@ -54,9 +61,11 @@ const (
 	EventReasonUpgradeCompleted = "UpgradeCompleted"
 	EventReasonUpgradePaused    = "UpgradePaused"
 	EventReasonUpgradeFailed    = "UpgradeFailed"
-	// EventReasonUpgradeDeferred — an image upgrade was requested while a
-	// scale-down drain is in progress; the upgrade starts once the drain
-	// completes (#173/#174 mutual exclusion).
+	// EventReasonUpgradeDeferred — an image change was held back: the cluster
+	// is not Ready with every server available, or a scale-down drain is in
+	// progress (#173/#174 mutual exclusion). The upgrade starts once it is.
+	// Announced once per held target, not on every pass (operations.md id
+	// 136).
 	EventReasonUpgradeDeferred = "UpgradeDeferred"
 )
 

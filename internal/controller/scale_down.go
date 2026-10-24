@@ -470,11 +470,44 @@ func (r *Neo4jEnterpriseClusterReconciler) clearScaleDownState(ctx context.Conte
 	return r.setDrainServers(ctx, cluster, nil)
 }
 
+// drainDeferralKey is where deferredUpgradeTargets remembers the image change
+// a scale-down drain holds back. The Ready gate's (holdImageDriftUntilReady)
+// is under clusterKey.
+func drainDeferralKey(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	return clusterKey(cluster) + "#drain"
+}
+
+// announceUpgradeDeferredByDrain emits UpgradeDeferred for an image change a
+// scale-down drain holds back, once per target. The upgrade machine asks again
+// every upgradeStepRequeue (15s) while the drain runs, and each ask announced
+// it again (#527; operations.md id 136). Nothing in status records the
+// deferral, so the memory is this process's; setDrainServers forgets it when
+// the drain releases its hold, so a later drain announces again.
+func (r *Neo4jEnterpriseClusterReconciler) announceUpgradeDeferredByDrain(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	target := cluster.Spec.Image.Tag
+	if previous, loaded := r.deferredUpgradeTargets.Swap(drainDeferralKey(cluster), target); loaded && previous == target {
+		return
+	}
+	r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeDeferred,
+		"Rolling upgrade to %s deferred until the in-progress scale-down drain completes", target)
+}
+
+// forgetDeferredUpgrades drops what the reconciler remembers about a deleted
+// cluster's held image changes.
+func (r *Neo4jEnterpriseClusterReconciler) forgetDeferredUpgrades(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	r.deferredUpgradeTargets.Delete(clusterKey(cluster))
+	r.deferredUpgradeTargets.Delete(drainDeferralKey(cluster))
+}
+
 // setDrainServers sets (or clears, when ids is empty) the draining-servers
 // annotation on the cluster CR — both in memory (so THIS reconcile's
 // StatefulSet apply holds replicas) and persisted (refetch + RetryOnConflict),
 // as a patch of the annotation alone (operations.md id 150).
 func (r *Neo4jEnterpriseClusterReconciler) setDrainServers(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ids []string) error {
+	if len(ids) == 0 {
+		// No drain holds an upgrade back any more.
+		r.deferredUpgradeTargets.Delete(drainDeferralKey(cluster))
+	}
 	val := strings.Join(ids, ",")
 	if cluster.GetAnnotations()[ScaleDownDrainingServersAnnotation] == val {
 		return nil

@@ -267,7 +267,8 @@ example file).
 | `plugins/` — apoc, gds, bloom, cluster, standalone | ✅ core (`plugin`) |
 | `clusters/topology-placement` (`serverRoles`) | ❌ **gap — Kind-testable, see GitHub issue** |
 | `plugins/genai` | ❌ untested (plugin download needs egress) |
-| exposure: `nodeport`/`loadbalancer`/`ingress`/`route-cluster` | ❌ example-only (need a real LB / Ingress / OpenShift); the Route and MCP Route reconcile itself is unit-tested against a fake client serving `route.openshift.io/v1` (`internal/controller/unstructured_content_test.go`) |
+| exposure: `nodeport`/`loadbalancer`/`ingress` | ❌ example-only (need a real LB / Ingress controller) |
+| exposure: `route-cluster` | ⚠️ partly. The operator's side of a Route needs no OpenShift: the Route and MCP Route reconcile is unit-tested against a fake client serving `route.openshift.io/v1` (`internal/controller/unstructured_content_test.go`, `route_apply_test.go`, including the fields OpenShift fills in), and the whole cluster and standalone passes run against envtest, an API server without the Route API as on Kind (`TestReconcile_RoutesWithoutTheRouteAPI_APIServer`). Applying `examples/clusters/route-cluster.yaml` on Kind walks that path too (one `RouteAPINotFound` per Route, servers created). Only what OpenShift does with the Route — its router serving traffic, the host it generates — needs OpenShift |
 | `databases/database-from-{gcs,azure}-seed`, cloud backup to GCS/Azure | ❌ example-only (S3/MinIO carry the coverage) |
 | `fleet-management/*` | ❌ example-only (needs Aura) |
 | `auth-example` LDAP/OIDC variants | ❌ example-only (needs a real IdP; native auth **is** tested) |
