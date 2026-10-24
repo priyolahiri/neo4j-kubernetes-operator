@@ -2024,7 +2024,7 @@
         "name": "status.phase",
         "type": "string",
         "isNullable": true,
-        "note": "Pending, Ready, Failed, or PendingDependencies."
+        "note": "Pending, Ready, Failed, or PendingDependencies (api/v1beta1 PhasePendingDependencies, in AllPhases)."
       },
       {
         "id": "f-neo4jauthrule-status-applied-roles",

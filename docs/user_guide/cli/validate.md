@@ -174,13 +174,13 @@ It is advisory and silent when it cannot tell — the operator may be in a names
 
 ### One run lists every error
 
-A validator reports every error it finds, not just the first: an invalid image does not hide a bad `spec.config` key or storage size behind it, so you can fix the whole list before you re-run. The one exception is `Neo4jShardedDatabase`: when its `clusterRef` cannot be read, that is the error it reports, and its other rules wait until the cluster can be read.
+A validator reports every error it finds, not just the first: an invalid image does not hide a bad `spec.config` key or storage size behind it, so you can fix the whole list before you re-run. That holds for `Neo4jShardedDatabase` too: every rule on its spec runs whether or not its cluster can be read, and each error names its own field. A `clusterRef` that names no cluster yet is pending, as it is for the operator (the database waits in `Pending`); one the command cannot read is a warning that the rules needing the cluster (property sharding enabled, room for the shards) were not checked.
 
 A clean run covers the rules that ran. Offline, the ones that compare a manifest with what already runs did not, and the summary names them (see [above](#what-gets-checked-and-what-doesnt)).
 
-### The operator's defaults are applied first
+### The defaults are applied first
 
-The operator fills in a few fields a cluster manifest may leave out before it validates one — `spec.tls.mode: disabled`, `native` authentication and authorization providers, a `ClusterIP` Service, `spec.storage.retentionPolicy: Delete`, `spec.image.pullPolicy: IfNotPresent` — and `validate` does the same, so a manifest is judged as the operator will judge it. The defaults go only into the copy that is validated: nothing is printed or written back, and a finding names a field you wrote, or one that is missing. A standalone gets no defaults from the operator, so none from `validate` either.
+The operator never sees your manifest as written: the API server stores it with every default its CRD declares, and the operator validates what is stored. `validate` applies the same defaults, for every kind, from the CRDs built into the binary: a standalone's `tls: {}` is judged as `mode: cert-manager`, which then needs an `issuerRef`, as the operator will say; an `upgradeStrategy` that names only a `strategy` gets its timeouts; a `Neo4jRole` without `enforcePrivileges` is judged as `true`. For a cluster the operator then fills in a few fields of its own (Neo4j's `native` authentication provider, TLS disabled with no `tls` block, a `ClusterIP` Service with no `service` block), and `validate` does the same. A value you wrote is never replaced. The defaults go only into the copy that is validated: nothing is printed or written back, and a finding names a field you wrote, or one that is missing.
 
 ### Version skew
 
