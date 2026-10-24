@@ -268,7 +268,7 @@ status:
 | `Validating` | Initial phase while the spec is validated |
 | `Creating` | Spec validated; the sharded database is being created |
 | `Waiting` | The target cluster is not yet `Ready` (or `Degraded`) with property sharding operational (reconciler requeues) |
-| `Pending` | Waiting on a `seedBackupRef` whose backup has no Succeeded run yet, on the PVC seed proxy, or on seed credentials being projected onto the cluster (reconciler requeues) |
+| `Pending` | Waiting on a `clusterRef` that names no cluster yet (one `ClusterNotFound` event), a `seedBackupRef` whose backup has no Succeeded run yet, the PVC seed proxy, or seed credentials being projected onto the cluster (reconciler requeues) |
 | `Ready` | Sharded database created and operational |
 | `Failed` | Validation, seed resolution, client creation or database creation failed |
 
@@ -361,7 +361,7 @@ queryMetrics:
 
 ### Neo4jShardedDatabase Validation
 
-- `clusterRef` must reference existing Neo4jEnterpriseCluster with property sharding enabled
+- `clusterRef` must reference a Neo4jEnterpriseCluster with property sharding enabled. A cluster that does not exist yet is not an error: the database waits in `Pending` and is created once the cluster is there. Every other rule is checked whether or not the cluster can be read, and every error is reported at once
 - `name` is at most 63 characters, contains only letters, digits, `_` and `-`, and must not be `system` or `neo4j`
 - `defaultCypherLanguage` must be "25"
 - `propertyShards` must be 1-1000

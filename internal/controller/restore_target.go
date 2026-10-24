@@ -145,7 +145,8 @@ func (r *Neo4jRestoreReconciler) targetClient(t restoreTarget) (*neo4j.Client, e
 // reports a change, and then only what it changed: a patch, never an Update,
 // which wrote the rest of the user's spec back as the Go types encode it
 // (operations.md id 150). Refetch-inside-RetryOnConflict is mandatory: the
-// owning controller rewrites its CR every reconcile.
+// patch is locked to the resourceVersion it read, and the owning controller's
+// status writes move that on many passes (it never rewrites the spec).
 func (r *Neo4jRestoreReconciler) updateTargetSpec(
 	ctx context.Context,
 	t restoreTarget,

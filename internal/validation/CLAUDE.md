@@ -17,7 +17,7 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 | `topology_validator.go` | Server count, `serverModeConstraint`/`serverRoles` index/dup/all-SECONDARY checks. |
 | `config_validator.go` | Rejects deprecated / operator-managed / per-pod runtime `spec.config` keys; calls `ValidateSettingValues`. |
 | `setting_values.go` | `typedSettings` (setting → Neo4j value type + documented minimum) and `ValidateSettingValues`: refuses a typed value Neo4j would refuse at startup, with readers that mirror Neo4j's own parsers. Narrow on purpose — see `docs/knowledge/operations.md` id 140 before adding a setting. |
-| `memory_validator.go`, `storage_validator.go` | Memory floors, PVC/storage checks. |
+| `memory_validator.go`, `storage_validator.go` | Memory floors, PVC/storage checks; `StorageClassChangeWarning`, the advisory the reconcilers raise while `spec.storage.className` names a class the existing volumes do not use (operations.md id 102). |
 | `tls_validator.go`, `truststore_validator.go` | TLS mode/issuer/strict-peer rules, trusted CA secrets. |
 | `auth_validator.go`, `user_validator.go`, `role_validator.go`, `rolebinding_validator.go`, `authrule_validator.go` | Auth providers and the user/role/binding/authrule CRDs. |
 | `backup_validator.go` | `BackupValidator` + standalone helper `ValidateNeo4jVersion`. |
@@ -43,6 +43,9 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 - `cluster_validator.go` **reports every validator, not just the first**: the early return on
   image errors was removed in #354, because it produced a fix-one-rerun loop (a broken image hid
   the `spec.config` and `spec.storage` problems behind it). Keep it that way — two tests pin it.
+  The sharded validator had the same loop behind a failed cluster read (#532): its spec rules now
+  run first, and a cluster that does not exist yet is `Pending` (the reconciler waits for it,
+  operations.md id 145), never an error.
 - `image_validator.go` rejects only the unambiguous `-community` signal; a bare/retagged Enterprise
   tag passes (runtime `CALL dbms.components()` is the backstop). Version must be 5.26.x or 2025.01.0+.
 - `edition_validator.go` is a deliberate no-op — keep it; the edition field was removed.

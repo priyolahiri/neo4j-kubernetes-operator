@@ -272,6 +272,12 @@ var phaseGuidance = map[string]guidance{
 		meaning: "the volumes are being grown.",
 		action:  "Wait. This needs a StorageClass with allowVolumeExpansion: true — `kubectl neo4j preflight` checks that before you ask for it.",
 	},
+	neo4jv1beta1.PhasePendingDependencies: {
+		meaning: "a Neo4jAuthRule is applied in Neo4j with the roles that exist, and waits for the others it grants. " +
+			"The rule is in force for those roles; the missing ones get it once they exist.",
+		action: "This is 'not yet', not 'wrong'. status.message names the missing roles: create them (a Neo4jRole, or a " +
+			"role created in Neo4j) and the rule is granted to them on its own, without re-applying it.",
+	},
 	neo4jv1beta1.PhaseUnknown: {
 		meaning: "the operator could not determine the state.",
 		action:  "Usually a connectivity problem between the operator and Neo4j rather than a broken deployment. Check status.diagnostics.collectionError and the operator log.",
