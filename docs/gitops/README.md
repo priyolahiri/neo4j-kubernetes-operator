@@ -19,8 +19,14 @@ Health state mapping:
 | ArgoCD Status  | Neo4j Phase(s)                        |
 |----------------|---------------------------------------|
 | Healthy        | Ready, Completed, Succeeded, Installed; `Neo4jBackup` also `Scheduled` and `Suspended` |
-| Degraded       | Failed, Degraded; `Neo4jBackup` and `Neo4jPlugin` also `Invalid` |
+| Degraded       | Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — every phase `kubectl neo4j status --problems` reports, on every self-managed kind |
 | Progressing    | Forming, Pending, Creating, Waiting, Running, or empty |
+
+A `Neo4jDatabase` the operator refused (`ValidationFailed`) is Degraded: nothing
+was created, and nothing changes until the spec is edited. As Progressing (the
+health checks of v1.22.0 and earlier), Argo CD showed the Application still syncing
+and a later sync wave waited for ever. So is one whose deletion keeps retrying a
+refused `DROP DATABASE` (`Error`).
 
 A `Neo4jBackup` with `spec.schedule` stays in `Scheduled` for its whole life (it
 never reaches `Completed`), and `spec.suspend: true` is declared state rather
@@ -45,7 +51,9 @@ Health checks are configured for **all 27 CRDs** in the `neo4j.neo4j.com`
 group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
 replication) and all 12 Aura CRDs.
 
-**Self-managed CRDs** key off `status.phase`, per the table above.
+**Self-managed CRDs** key off `status.phase`, per the table above. A test pins
+the Degraded list to the CLI's (`TestArgoCDHealthChecks_EveryProblemPhaseIsDegraded`),
+so a refusal phase cannot be added to one and not the other.
 
 **Aura CRDs** key off the `Ready` **condition** instead. Their `status.phase`
 largely mirrors Aura's *own* API status (`AuraInstance` copies the live instance

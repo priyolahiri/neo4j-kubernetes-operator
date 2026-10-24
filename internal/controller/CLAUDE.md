@@ -13,7 +13,7 @@
 | `neo4jenterprisecluster_controller.go` | HA cluster reconciler. Owns the `{cluster}-server` StatefulSet, `mergeEnvVars`/`envVarsEqual`, `CollectDiagnostics`, fleet-management plugin merge. |
 | `neo4jenterprisestandalone_controller.go` | Single-node reconciler (shares helpers via `standaloneAsCluster` in `util.go`). |
 | `neo4jbackup_controller.go` | Job-per-`Neo4jBackup`-CR reconciler (invariant 5 — no long-running backup pod). `neo4jbackup_sharded.go`, `neo4jbackup_log_parser.go` support it. |
-| `neo4jrestore_controller.go` | Restore reconciler (heaviest user of `RetryOnConflict` status writes). |
+| `neo4jrestore_controller.go` | Restore reconciler (heaviest user of `RetryOnConflict` status writes). An all-databases restore's per-database events go through `ProgressRecorder`, an event source of its own, so they never spend the budget its outcome needs (knowledge `operations.md` id 166). |
 | `neo4jdatabase_controller.go` / `neo4jshardeddatabase_controller.go` | `Neo4jDatabase` / `Neo4jShardedDatabase` reconcilers. |
 | `neo4juser_controller.go` / `neo4jrole_controller.go` / `neo4jrolebinding_controller.go` / `neo4jauthrule_controller.go` | Auth-model reconcilers. |
 | `neo4jcompositedatabase_controller.go` / `neo4jdatabasealias_controller.go` / `neo4jreplicadatabase_controller.go` / `neo4jreplicapromotion_controller.go` | Composite DB, alias and cross-cluster replication reconcilers. |

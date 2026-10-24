@@ -126,7 +126,7 @@ func TestStandaloneRestore_ExactStorageFileIsNotGlobbed(t *testing.T) {
 func TestStandaloneRestore_DirectoryGlobsTheSourceDatabase(t *testing.T) {
 	restore := resolvedRename("restored", renamePVC, neo4jv1beta1.ResolvedRestoreSource{BackupRef: "old"})
 	restore.Spec.Source.SourceDatabase = "neo4j"
-	assert.Contains(t, restoreCmd(t, restore), "$(ls '/backup/nightly'/'neo4j'-*.backup | tail -1) 'restored'")
+	assert.Contains(t, restoreCmd(t, restore), "$(ls '/backup/nightly'/'neo4j'-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T*.backup | tail -1) 'restored'")
 }
 
 func TestStandaloneRestore_Cloud(t *testing.T) {

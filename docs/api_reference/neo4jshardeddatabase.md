@@ -161,7 +161,7 @@ spec:
 | `replaceExisting` | `boolean` | No | false | **Destructive.** Drops and recreates the sharded database from the seed (typically `seedBackupRef`). Runs `DROP DATABASE {name} DESTROY DATA WAIT` before CREATE — all existing data is lost. Requires `force: true`; mutually exclusive with `ifNotExists: true`; requires a seed source |
 | `force` | `boolean` | No | false | Confirms the destructive `replaceExisting` operation. The validator rejects `replaceExisting: true` without `force: true` so an accidental flip can't destroy data |
 | `seedURI` | `string` | No | - | Seed URI for creating the sharded database |
-| `seedURIs` | `map[string]string` | No | - | Seed URIs keyed by shard name |
+| `seedURIs` | `map[string]string` | No | - | Seed URIs keyed by shard name: `<spec.name>-g000` and `<spec.name>-p000` … `-p<N-1>`. Neo4j names the shards after the database name lower-cased and matches the keys exactly, so the operator sends every key lower-cased (`Products-g000` goes as `products-g000`), as it does for the keys it builds from `seedBackupRef` |
 | `seedBackupRef` | `string` | No | - | Names a `Neo4jBackup` CR (same namespace) whose most-recent Succeeded run seeds this database. Resolved to a concrete seed URI at reconcile time. Mutually exclusive with `seedURI` and `seedURIs`. If the referenced backup has no Succeeded run yet, the database stays in `Pending` and the reconciler requeues. From a PVC, every shard of that run must be a full backup: a run holding a differential shard fails the database until a full run lands ([why](../user_guide/property_sharding.md#restoring-a-sharded-database)). From cloud storage, differentials seed directly; the cluster needs the backup's credentials and endpoint, which the `neo4j.com/auto-inherit-seed-creds: "true"` annotation lets the operator add |
 | `seedSourceDatabase` | `string` | No | - | The source sharded database's logical name in the backup (`seedSourceDatabase` OPTION). Needed when seeding from **cloud storage** under a different `spec.name` — Neo4j matches the seed's shards by name — and to pick one family out of an all-databases backup. A PVC seed maps the shards to the new name itself |
 | `seedConfig` | `SeedConfiguration` | No | - | Seed configuration for initialization |
@@ -171,7 +171,7 @@ spec:
 **Seed URI Notes**:
 
 - `seedURI` is for a single backup location (expects shard-suffixed artifacts).
-- `seedURIs` is for per-shard URIs (e.g., dump files or multi-location backups).
+- `seedURIs` is for per-shard URIs (e.g., dump files or multi-location backups). Its keys are shard names, sent lower-cased.
 - `seedBackupRef` is mutually exclusive with both `seedURI` and `seedURIs`; the operator materialises it into a seed URI at reconcile time.
 - `seedConfig.restoreUntil` maps to the `seedRestoreUntil` CREATE DATABASE option for sharded databases.
 
