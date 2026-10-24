@@ -25,7 +25,7 @@
       {
         "key": "Ready",
         "name": "Ready",
-        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period. Plugin installs and anything else that rolls the servers wait while Degraded is True. A cluster whose upgrade is Paused or Failed half-way, its servers on two versions, is Ready once every server is available: the servers below the partition the upgrade kept are not a rollout in flight, and status.message names the held upgrade (operations.md id 149)."
+        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period. Plugin installs and anything else that rolls the servers wait while Degraded is True. A cluster whose upgrade is Paused or Failed half-way, its servers on two versions, is Ready once every server is available: the servers below the partition the upgrade kept are not a rollout in flight, and status.message names the held upgrade (operations.md id 149). While an upgrade is in progress, status.message says so (#553)."
       },
       {
         "key": "Degraded",
@@ -35,12 +35,12 @@
       {
         "key": "Paused",
         "name": "Paused",
-        "description": "A rolling-upgrade step failed with upgradeStrategy.autoPauseOnFailure set. It lasts one pass: the next runs the normal path again, which keeps the StatefulSet partition the upgrade left (the servers it has not rolled keep the version they run) and reports Ready, Forming or a server short as for any cluster. status.upgradeStatus.phase stays Paused until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149)."
+        "description": "A rolling-upgrade step failed with upgradeStrategy.autoPauseOnFailure set. It lasts one pass: the next runs the normal path again, which keeps the StatefulSet partition the upgrade left (the servers it has not rolled keep the version they run) and reports Ready, Forming or a server short as for any cluster. status.upgradeStatus.phase stays Paused until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149). A check that refuses an upgrade before it starts no longer sets it: the cluster stays Ready."
       },
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "A validation, resource-creation, storage-expansion, or rolling-upgrade error occurred; status.message and a Warning event carry the cause, and the next reconcile retries. After a rolling-upgrade failure the next pass keeps the partition the upgrade left, so the servers it has not rolled restart only when the upgrade state machine retries (operations.md id 149)."
+        "description": "A validation, resource-creation, storage-expansion, or rolling-upgrade error occurred; status.message and a Warning event carry the cause, and the next reconcile retries. After a rolling-upgrade failure the next pass keeps the partition the upgrade left, so the servers it has not rolled restart only when the upgrade state machine retries (operations.md id 149). Not after a check refuses an upgrade before it starts: nothing changed on the servers and the cluster stays Ready (operations.md id 149)."
       }
     ],
     "transitions": [
@@ -194,7 +194,7 @@
       {
         "key": "Staging",
         "name": "Staging",
-        "description": "Applies the full target-version pod template (image plus version-correct discovery env) with the StatefulSet partition frozen at replicas, then reconciles the ConfigMap under the same freeze."
+        "description": "Applies the full target-version pod template (image plus version-correct discovery env) with the StatefulSet partition frozen at replicas, then reconciles the ConfigMap under the same freeze. Keeps the StatefulSet's replica count (operations.md id 163), and freezes at the lowest restarted server that cannot start on its image instead, so it is replaced first (id 162)."
       },
       {
         "key": "Rolling",
@@ -219,12 +219,12 @@
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "Terminal failure state after a step's deadline or gate is exceeded. The StatefulSet keeps the partition the step left, so the servers not yet rolled stay on status.version; isUpgradeRequired re-enters once the cluster is Ready with every server available and the target and status.version still disagree, and the retry keeps the record's start time and progress (operations.md id 149)."
+        "description": "Terminal failure state after a step's deadline or gate is exceeded. The StatefulSet keeps the partition the step left, so the servers not yet rolled stay on status.version; isUpgradeRequired re-enters once the cluster is Ready with every server available and the target and status.version still disagree, and the retry keeps the record's start time and progress (operations.md id 149). A start a check refused before Staging is Failed too, and is tried again every minute while the cluster stays Ready."
       },
       {
         "key": "Paused",
         "name": "Paused",
-        "description": "Failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed. The StatefulSet keeps the partition the step left. It goes on when the user changes spec.image.tag (towards the new tag) or turns autoPauseOnFailure off (retried like Failed); a tag below the target is refused once the upgrade has restarted a server on it (operations.md id 149)."
+        "description": "Failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed. The StatefulSet keeps the partition the step left. It goes on when the user changes spec.image.tag (towards the new tag) or turns autoPauseOnFailure off (retried like Failed); a tag below the target is refused once the upgrade has restarted a server on it (operations.md id 149). A new tag goes on even while the servers it restarted cannot start on the target: they are replaced first (operations.md id 162)."
       },
       {
         "key": "InProgress",

@@ -697,18 +697,14 @@ func (cm *ConfigMapManager) HasMemoryConfigChanged(oldCluster, newCluster *neo4j
 	return oldHeap != newHeap || oldPageCache != newPageCache
 }
 
-// setOwnerReference sets the owner reference for the ConfigMap
+// setOwnerReference makes the cluster the ConfigMap's controller, for garbage
+// collection. The kind is the operator's own, never the object's TypeMeta: a
+// read through an uncached (API) reader leaves TypeMeta empty, and an owner
+// reference without an apiVersion and kind is refused by the API server
+// (#538).
 func setOwnerReference(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, configMap *corev1.ConfigMap) error {
-	// Set owner reference to ensure garbage collection
 	configMap.OwnerReferences = []metav1.OwnerReference{
-		{
-			APIVersion:         cluster.APIVersion,
-			Kind:               cluster.Kind,
-			Name:               cluster.Name,
-			UID:                cluster.UID,
-			Controller:         boolPtr(true),
-			BlockOwnerDeletion: boolPtr(true),
-		},
+		*metav1.NewControllerRef(cluster, neo4jv1beta1.GroupVersion.WithKind("Neo4jEnterpriseCluster")),
 	}
 	return nil
 }

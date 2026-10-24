@@ -563,11 +563,12 @@ func deployedOperatorVersion(d appsv1.Deployment) string {
 }
 
 // tagFromImage pulls the tag off an image reference, tolerating a registry port
-// (the colon in "registry:5000/img" is not a tag separator) and returning ""
-// for a digest pin, which names no release.
+// (the colon in "registry:5000/img" is not a tag separator) and a digest after
+// the tag ("img:v1.22.0@sha256:…" runs v1.22.0), and returning "" for an image
+// pinned by digest alone, which names no release.
 func tagFromImage(image string) string {
-	if image == "" || strings.Contains(image, "@") {
-		return ""
+	if at := strings.Index(image, "@"); at >= 0 {
+		image = image[:at]
 	}
 	i := strings.LastIndex(image, ":")
 	if i < 0 || strings.Contains(image[i+1:], "/") {
