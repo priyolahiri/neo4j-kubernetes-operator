@@ -225,7 +225,7 @@ func buildPerShardCloudURIs(storage neo4jv1beta1.StorageLocation, backupPath, ta
 		if suffix == "" {
 			return nil, fmt.Errorf("cloud per-shard seed: cannot parse shard suffix from %q — expected `<name>-(g|p)NNN`", a.ShardName)
 		}
-		targetShard := targetFamily + suffix
+		targetShard := shardSeedKey(targetFamily, suffix)
 		filePath := strings.TrimLeft(strings.TrimRight(dir, "/")+"/"+a.Filename, "/")
 		perShard[targetShard] = fmt.Sprintf("%s://%s/%s", scheme, storage.Bucket, filePath)
 	}
@@ -296,7 +296,7 @@ func (r *Neo4jShardedDatabaseReconciler) resolvePVCShardedSeed(
 		if suffix == "" {
 			return nil, fmt.Errorf("PVC seed: cannot parse shard suffix from %q — expected `<name>-(g|p)NNN`", a.ShardName)
 		}
-		targetShardName := shardedDB.Spec.Name + suffix
+		targetShardName := shardSeedKey(shardedDB.Spec.Name, suffix)
 		perShard[targetShardName] = pvcSeedProxyURLForShard(shardedDB.Name, shardedDB.Namespace, backupPath, a.Filename)
 	}
 
@@ -314,6 +314,18 @@ var shardSuffixRegex = regexp.MustCompile(`-(?:g|p)\d{3}$`)
 
 func shardSuffix(shardName string) string {
 	return shardSuffixRegex.FindString(shardName)
+}
+
+// shardSeedKey is the key of one shard in a per-shard seedURI map: the shard's
+// name as Neo4j names it, `<database>-g000` / `<database>-pNNN` with the
+// database name lower-cased. Neo4j derives the shard names from the
+// normalized (lower-case) database name and takes each one out of the map's
+// key set with an exact match (InputValidators.validateSharedSeedURI and
+// DatabaseSeedInputParams.seedURIForShard, 2025.12), so a key spelled with
+// the spec's capitals is refused: "entry is missing for 'products-g000'"
+// (knowledge operations.md id 146).
+func shardSeedKey(database, suffix string) string {
+	return strings.ToLower(database + suffix)
 }
 
 // buildSeedURIFromBackupStorage converts a backup's resolved StorageLocation

@@ -550,10 +550,6 @@ func renderPodStatus(p *corev1.Pod) string {
 	return b.String()
 }
 
-// yamlMarshal is a thin alias so tests can render an object exactly as the
-// bundle does, rather than approximating it with a different marshaller.
-func yamlMarshal(v interface{}) ([]byte, error) { return yaml.Marshal(v) }
-
 func writeArchive(target string, files []bundleFile) error {
 	f, err := os.Create(target)
 	if err != nil {

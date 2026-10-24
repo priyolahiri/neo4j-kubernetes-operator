@@ -283,6 +283,18 @@ func learnDesired(
 
 		if had && !relearnAll {
 			if p.ambiguous {
+				// A statement written in stored form is its own row, whatever
+				// case it names its databases in, so it is settled without a
+				// grant — which would be a no-op. A statement held ambiguous
+				// before the database names were compared ignoring case is
+				// settled on the first pass after the upgrade (#551).
+				if rows := storedFormRows(fallback, out.current); len(rows) > 0 {
+					out.state.renderings[stmt] = learnedRendering{rows: rows}
+					for _, row := range rows {
+						add(row, stmt)
+					}
+					continue
+				}
 				out.state.renderings[stmt] = p
 				out.ambiguous = append(out.ambiguous, stmt)
 				continue
@@ -341,9 +353,12 @@ func learnDesired(
 			}
 		}
 		// Everything already existed: if the statement is written in stored
-		// form, its own text is the row.
-		if len(rows) == 0 && a[fallback] {
-			rows[fallback] = true
+		// form, its own text is the row — in whatever case it names its
+		// databases (storedFormRows).
+		if len(rows) == 0 {
+			for _, row := range storedFormRows(fallback, a) {
+				rows[row] = true
+			}
 		}
 
 		if len(rows) == 0 {
@@ -371,6 +386,30 @@ func learnDesired(
 		}
 	}
 	return out, nil
+}
+
+// storedFormRows returns the rows of current that are the statement canon
+// itself, written in stored form: its own text, or that text with its database
+// names in another case. Neo4j lower-cases a database name when it stores a
+// privilege (knowledge rule 146), so `GRANT ACCESS ON DATABASE TOPODB TO r` is
+// stored as `... topodb ...`. Matched exactly, such a statement whose row
+// another statement had already granted (`ON DATABASES topodb, other`) was
+// ambiguous, and while any statement is ambiguous no unclaimed row is revoked:
+// foreign rows stayed unattributed for good (#551). Only the database names
+// are compared ignoring case; every other name is case-sensitive.
+func storedFormRows(canon string, current map[string]bool) []string {
+	if current[canon] {
+		return []string{canon}
+	}
+	key := neo4jclient.FoldPrivilegeDatabaseNames(canon)
+	var out []string
+	for row := range current {
+		if neo4jclient.FoldPrivilegeDatabaseNames(row) == key {
+			out = append(out, row)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // orphanedRows are rows learned for statements that are no longer in spec.

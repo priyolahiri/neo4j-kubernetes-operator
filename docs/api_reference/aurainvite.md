@@ -37,7 +37,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | `phase` | `string` | `Sent` (invite active, awaiting acceptance), `Accepted`, `Revoked`, `Expired`, `Declined` (mirroring the Aura invite status), `Gone` (the invite is no longer listed at all — accepted, declined, revoked or expired, and Aura does not say which), `Pending` (no matching invite exists and `managementPolicies` does not permit creating one), or `Error`. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
-| `lastSyncedTime` | `*metav1.Time` | When the invite was last observed from the Aura API. |
+| `lastSyncedTime` | `*metav1.Time` | When the operator last recorded the invite as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile. |
 
 ## Example
 

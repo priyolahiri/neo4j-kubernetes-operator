@@ -1166,7 +1166,11 @@ dev-cleanup: ## Clean up development environment completely
 .PHONY: dev-destroy
 dev-destroy: ## Completely destroy development environment
 	@echo "Destroying development environment..."
-	@hack/cleanup-dev.sh || true
+	@# No prompt: deleting the Kind cluster removes every Kubernetes resource the
+	@# dev environment has. hack/cleanup-dev.sh used to run first and ask on a
+	@# TTY (its resource pass acts on the CURRENT kubectl context, which need not
+	@# be the dev cluster, and its file pass removes bin/, tools and envtest
+	@# assets included); it is still `make dev-cleanup`.
 	@kind delete cluster --name neo4j-operator-dev || true
 	@echo "Development environment destroyed!"
 

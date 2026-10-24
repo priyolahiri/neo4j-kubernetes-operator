@@ -36,7 +36,7 @@ The `Neo4jUser` Custom Resource Definition (CRD) provides declarative management
 | `requirePasswordChange` | `boolean` | Force password change on next login (`SET PASSWORD CHANGE REQUIRED`). Default `false`. |
 | `accountStatus` | `string` | One of `active` (default), `suspended`. Maps to `SET STATUS ACTIVE|SUSPENDED`. Suspending a native user revokes role assignments client-side; reactivating restores them. |
 | `homeDatabase` | `string` | Sets `SET HOME DATABASE`. Removing this field after it was set issues `REMOVE HOME DATABASE`. |
-| `roles` | `[]string` | Role names to grant. Mix built-ins (`reader`, `editor`, `publisher`, `architect`, `admin`) and custom role names from `Neo4jRole` CRs. `PUBLIC` is implicit and need not be listed. |
+| `roles` | `[]string` | Role names to grant. Mix built-ins (`reader`, `editor`, `publisher`, `architect`, `admin`), custom role names from `Neo4jRole` CRs, and roles created in Neo4j directly (`CREATE ROLE` by an admin or another tool; the operator finds them with `SHOW ROLES`). Role names are case-sensitive. `PUBLIC` is implicit and need not be listed. |
 | `externalAuth` | [`[]ExternalAuthProvider`](#externalauthprovider) | Bind the user to non-native authentication providers (LDAP, OIDC, SSO). Translates to `SET AUTH 'provider' { SET ID 'id' }` clauses. |
 | `deletionPolicy` | `string` | One of `Delete` (default) or `Retain`. With `Retain`, deleting the CR releases the finalizer without dropping the user from Neo4j. |
 
@@ -72,10 +72,10 @@ Configures a single non-native authentication provider for the user. The provide
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `UserReady`, `RolesPending`, `SecretPending`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `UserSyncFailed`, `ValidationFailed` | True when user exists, password and roles are in sync. `SecretPending` (phase `Pending`) means the password Secret does not exist yet. |
+| `Ready` | `UserReady`, `RolesPending`, `SecretPending`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `UserSyncFailed`, `UserDeletionFailed`, `ValidationFailed` | True when user exists, password and roles are in sync. `SecretPending` (phase `Pending`) means the password Secret does not exist yet. A user that is `Ready` stays `Ready` while its target is not (a restart); `ClusterNotReady` here means the user was not yet `Ready` at its generation when the target went away. `UserDeletionFailed` (phase `Failed`): the deletion's `DROP USER` failed and is retried. |
 | `RolesSynced` | `RolesMatch`, `RolesPending` | True when granted roles equal `spec.roles` (PUBLIC excluded). |
 | `PasswordSynced` | `PasswordMatchesSecret` | True when the last-applied change token matches the current Secret. |
-| `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `spec.roles` reference a custom role that does not yet exist. |
+| `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `spec.roles` name a role that exists nowhere yet: not a built-in, not a `Neo4jRole`, not in `SHOW ROLES`. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
 | `RoleNamesResolved` | `RoleCRNamesResolved` | Present only while `spec.roles` names a `Neo4jRole` by its CR `metadata.name`; True, and the message maps each such name to the Neo4j role granted. A `RolesResolved` event announces the mapping when it appears or changes. |
 
@@ -98,10 +98,10 @@ Configures a single non-native authentication provider for the user. The provide
 | Create | `CREATE USER name [SET PASSWORD ...] [SET STATUS ...] [SET HOME DATABASE ...] [SET AUTH ...]`, then `GRANT ROLE r TO name` for each role |
 | Update (spec only) | One compound `ALTER USER` for changed fields (REMOVEs before SETs); incremental `GRANT/REVOKE ROLE` for role changes |
 | Update (Secret only) | `ALTER USER name SET PASSWORD $pw`, then update `passwordSecretHash` and `passwordLastRotated` |
-| Delete (`Delete` policy) | `DROP USER name IF EXISTS`, then remove finalizer |
+| Delete (`Delete` policy) | `DROP USER name IF EXISTS`, then remove finalizer. A failed drop is recorded in status (phase `Failed`, reason `UserDeletionFailed`), announced once, and retried for up to 5 minutes before the finalizer is released anyway |
 | Delete (`Retain` policy) | Remove finalizer only |
-| Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition |
-| Missing custom role | Skip the grant for that role; set `PendingDependencies` condition; reconcile triggers when the role lands (the user controller watches `Neo4jRole`) |
+| Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition. A `Ready` user stays `Ready` (a target restart announces nothing); any other waits in `Pending` |
+| Missing custom role | Skip the grant for that role; set `PendingDependencies` condition; reconcile triggers when a `Neo4jRole` lands (the user controller watches `Neo4jRole`), and every 30s for a role created in Neo4j directly |
 
 ## Examples
 

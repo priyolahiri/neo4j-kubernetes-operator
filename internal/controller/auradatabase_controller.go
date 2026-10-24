@@ -136,13 +136,28 @@ func (r *AuraDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		externalID = d.Status.DatabaseID
 	}
 	if externalID == "" {
+		// A refusal already on status for this spec and this Aura instance is not
+		// asked again: it would only repeat the list and, when the instance's
+		// verdict is unknown, the create Aura refuses (knowledge rule 156). The
+		// message names the instance's ID, so a replaced instance is looked at
+		// afresh.
+		if auraRefusalRecorded(d.Status.Conditions, d.Status.ObservedGeneration, d.Generation,
+			auraReasonInstanceNotMultiDatabase, notMultiDatabaseRefusal(d.Spec.InstanceRef, tgt.instanceID).Error()) {
+			return ctrl.Result{}, nil
+		}
 		allowCreate := managementAllows(d.Spec.ManagementPolicies, auraPolicyCreate)
 		id, adopted, err := r.observeOrCreate(ctx, req, d, apiClient, tgt, allowCreate)
 		if err != nil {
 			// A deliberate refusal (see auraRefusalError) describes a permanent
 			// property of the target, so name it as such and stop retrying.
 			if isAuraRefusal(err) {
-				return r.fail(ctx, req, d, "InstanceNotMultiDatabase", err)
+				return r.fail(ctx, req, d, auraReasonInstanceNotMultiDatabase, err)
+			}
+			// A 429, a 5xx or a transport failure of an Aura call is retried as it
+			// is, not recorded as a failure (knowledge rule 88).
+			if isRetryableAuraCall(err) {
+				logger.Info("Aura database create deferred by a transient API failure; retrying", "error", err.Error())
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
 			return r.fail(ctx, req, d, "CreateFailed", err)
 		}
@@ -166,13 +181,24 @@ func (r *AuraDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.fail(ctx, req, d, "ObserveFailed", err)
 	}
 
-	if err := r.syncStatus(ctx, req, observed); err != nil {
+	changed, err := r.syncStatus(ctx, req, observed)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Recorder.Event(d, corev1.EventTypeNormal, EventReasonAuraDatabaseReady,
-		fmt.Sprintf("Database %s reconciled", observed.ID))
+	// Announced when the database becomes Ready, not on every re-observe while
+	// it stays so (knowledge rule 136).
+	if changed {
+		r.Recorder.Event(d, corev1.EventTypeNormal, EventReasonAuraDatabaseReady,
+			fmt.Sprintf("Database %s reconciled", observed.ID))
+	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
+
+// auraReasonInstanceNotMultiDatabase is the Ready reason of the terminal
+// refusal to create a database on an instance that is not multi-database, and
+// what the refusal guard looks for (knowledge rule 91: guard and writer share
+// the name).
+const auraReasonInstanceNotMultiDatabase = "InstanceNotMultiDatabase"
 
 // observeOrCreate creates the database unless the external-ID annotation already
 // pins one.
@@ -190,7 +216,7 @@ func (r *AuraDatabaseReconciler) observeOrCreate(
 	name := r.dbName(d)
 	existing, err := apiClient.ListDatabases(ctx, tgt.orgID, tgt.projectID, tgt.instanceID)
 	if err != nil {
-		return "", false, fmt.Errorf("listing databases before create: %w", err)
+		return "", false, retryableAuraCall(fmt.Errorf("listing databases before create: %w", err))
 	}
 	if !allowCreate {
 		return "", false, nil
@@ -215,7 +241,7 @@ func (r *AuraDatabaseReconciler) observeOrCreate(
 		if aura.IsMultiDatabaseOnly(err) {
 			return "", false, notMultiDatabaseRefusal(d.Spec.InstanceRef, tgt.instanceID)
 		}
-		return "", false, err
+		return "", false, retryableAuraCall(err)
 	}
 	if err := r.setExternalID(ctx, req, created.ID); err != nil {
 		return "", false, err
@@ -292,23 +318,41 @@ func (r *AuraDatabaseReconciler) setCondition(ctx context.Context, req ctrl.Requ
 	})
 }
 
-func (r *AuraDatabaseReconciler) syncStatus(ctx context.Context, req ctrl.Request, observed *aura.Database) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+// syncStatus records the database as Ready, only when that changes the status
+// or the stored lastSyncedTime is due a refresh (auraSyncedTimeRefresh). It
+// reports whether the write changed the phase or the Ready condition, from the
+// attempt whose write succeeded, so the caller announces Ready once (knowledge
+// rule 136).
+func (r *AuraDatabaseReconciler) syncStatus(ctx context.Context, req ctrl.Request, observed *aura.Database) (bool, error) {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraDatabase{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
-		latest.Status.DatabaseID = observed.ID
-		latest.Status.Phase = "Ready"
-		now := metav1.Now()
-		latest.Status.LastSyncedTime = &now
-		latest.Status.ObservedGeneration = latest.Generation
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+		before := latest.Status.DeepCopy()
+		readyCond := metav1.Condition{
 			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Reconciled",
 			Message: "Database reconciled against the Aura API (v2beta1, beta)",
-		})
-		return r.Status().Update(ctx, latest)
+		}
+		wouldChange := latest.Status.Phase != neo4jv1beta1.PhaseReady || auraConditionChanged(latest.Status.Conditions, readyCond)
+		latest.Status.DatabaseID = observed.ID
+		latest.Status.Phase = neo4jv1beta1.PhaseReady
+		latest.Status.ObservedGeneration = latest.Generation
+		meta.SetStatusCondition(&latest.Status.Conditions, readyCond)
+		now := metav1.Now()
+		if !auraStatusWriteNeeded(*before, latest.Status, before.LastSyncedTime, now.Time) {
+			return nil
+		}
+		latest.Status.LastSyncedTime = &now
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	})
+	return changed, err
 }
 
 func (r *AuraDatabaseReconciler) fail(ctx context.Context, req ctrl.Request, d *neo4jv1beta1.AuraDatabase, reason string, cause error) (ctrl.Result, error) {

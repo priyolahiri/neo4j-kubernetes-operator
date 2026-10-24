@@ -18,15 +18,19 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/aura"
@@ -638,4 +642,59 @@ func TestFleetRegistration_ConsumesTheProvisionedSecret(t *testing.T) {
 		t.Errorf("status message = %q, want it to name the provisioned Secret %q — otherwise Phase 2 is "+
 			"reading the wrong Secret", msg, want)
 	}
+}
+
+// A minted token that cannot be stored is lost, so the next pass rotates again.
+// AuraFleetTokenRotated was emitted before the store, so a Secret write that
+// kept failing repeated it on every pass; and since that failure is a
+// Kubernetes error, which aura.IsTransient calls transient, nothing on status
+// said why. The rotation is now announced once its token is stored, and the
+// failure that keeps it from being stored is on status (knowledge rules 88 and
+// 136).
+func TestFleetProvision_ARotationIsAnnouncedOnceItsTokenIsStored(t *testing.T) {
+	p := fleetProvisionSpec()
+	p.TokenPolicy = "Rotate"
+	cl := fleetCluster("cluster", p)
+	cl.Annotations = map[string]string{AuraFleetDeploymentAnnotation: "dep-1"}
+	cl.Status.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementStatus{Registered: true}
+	api := &fakeFleetAPI{hasToken: true}
+
+	storeFails := true
+	scheme := auraTestScheme(t)
+	c := auraFakeClientBuilder(t, scheme, cl).WithInterceptorFuncs(interceptor.Funcs{
+		Create: func(ctx context.Context, cw client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			if _, ok := obj.(*corev1.Secret); ok && storeFails {
+				return errors.New(`admission webhook "policy.example.com" denied the request`)
+			}
+			return cw.Create(ctx, obj, opts...)
+		},
+	}).Build()
+	rec := record.NewFakeRecorder(50)
+	r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: scheme, Recorder: rec,
+		FleetClientFactory: func(auraCredentials) auraFleetAPI { return api }}
+	ctx := context.Background()
+	key := client.ObjectKeyFromObject(cl)
+	rotatedEvents := func() []string {
+		return eventsWithReason(drainEvents(rec), EventReasonAuraFleetTokenRotated)
+	}
+
+	for range 3 {
+		live := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+		require.NoError(t, c.Get(ctx, key, live))
+		require.NoError(t, r.newFleetProvisioner().reconcileAuraFleetProvision(ctx, live))
+	}
+	assert.Empty(t, rotatedEvents(), "a rotation whose token was lost is not announced")
+	got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	require.NoError(t, c.Get(ctx, key, got))
+	require.NotNil(t, got.Status.AuraFleetManagement)
+	assert.Contains(t, got.Status.AuraFleetManagement.Message, "rotated the token")
+	assert.Contains(t, got.Status.AuraFleetManagement.Message, "denied the request",
+		"the failure that loses each new token must be on status")
+
+	storeFails = false
+	require.NoError(t, r.newFleetProvisioner().reconcileAuraFleetProvision(ctx, got))
+	assert.Len(t, rotatedEvents(), 1, "the rotation that stored its token is announced, once")
+	tok, err := r.newFleetProvisioner().readTokenSecret(ctx, testNS, "cluster-aura-fleet-token")
+	require.NoError(t, err)
+	assert.Equal(t, "rotated-token", tok)
 }

@@ -412,7 +412,7 @@
         "name": "status.phase",
         "type": "string",
         "isNullable": true,
-        "note": "Current phase of the standalone deployment"
+        "note": "Current phase of the standalone deployment. Ready only when its one pod is ready on the StatefulSet's latest pod template (no rollout in flight); Pending while it restarts onto a new template, so its dependents do not act on the pod about to restart (operations.md id 141)."
       },
       {
         "id": "f-neo4jenterprisestandalone-status-ready",
@@ -522,7 +522,7 @@
         "name": "enabled",
         "type": "bool",
         "isNullable": true,
-        "note": "Default true An explicit false is kept in the stored spec: the operator writes the CR only as merge patches (operations.md id 150); releases before that turned it into true on the first pass."
+        "note": "Default true. false keeps the plugin off its target's servers: an installed plugin is removed by the same single StatefulSet write as a deletion's uninstall (its NEO4J_PLUGINS names, variables, list tokens, VerifiedDownload init container and volumes, records), and the CR stays, in phase Disabled; true installs it again (knowledge operations.md id 160). An explicit false is kept in the stored spec: the operator writes the CR only as merge patches (operations.md id 150); releases before that turned it into true on the first pass."
       },
       {
         "id": "f-neo4jplugin-install-mode",
@@ -564,14 +564,14 @@
         "name": "config",
         "type": "json",
         "isNullable": true,
-        "note": "map[string]string of plugin-specific configuration entries; each becomes a NEO4J_<setting> env var on the target's servers (on a standalone, security and startup-only keys go to neo4j.conf). The plugin records the vars it sets on the target StatefulSet (neo4j.com/plugin-env-vars.<plugin>) and removes a removed key's var (knowledge operations.md id 155)"
+        "note": "map[string]string of plugin-specific configuration entries; each becomes a NEO4J_<setting> env var on the target's servers (on a standalone, security and startup-only keys go to neo4j.conf); a shared procedure-list key adds to the list on a cluster instead of replacing it. The plugin records the vars it sets on the target StatefulSet (neo4j.com/plugin-env-vars.<plugin>) and removes a removed key's var. Nothing is set at runtime (no dbms.setConfigValue): every value reaches the servers at their start (knowledge operations.md ids 135, 155)"
       },
       {
         "id": "f-neo4jplugin-dependencies",
         "name": "dependencies",
         "type": "json",
         "isNullable": true,
-        "note": "List of {name, versionConstraint, optional} plugin dependencies; unsupported when installMode=VerifiedDownload"
+        "note": "List of {name, versionConstraint, optional} plugin dependencies; unsupported when installMode=VerifiedDownload In Managed mode their NEO4J_PLUGINS names are recorded with the plugin's own (neo4j.com/plugin-entries.<plugin>), so a dependency dropped from the list leaves NEO4J_PLUGINS in the plugin's next write (operations.md id 155)."
       },
       {
         "id": "f-neo4jplugin-security-allowed-procedures",
@@ -596,7 +596,8 @@
         "id": "f-neo4jplugin-status-phase",
         "name": "status.phase",
         "type": "string",
-        "isNullable": true
+        "isNullable": true,
+        "note": "Pending|Waiting|Installing|Ready|Failed|Invalid|Disabled. Disabled: spec.enabled false and nothing of the plugin on its target (Ready condition False, reason Disabled). A plugin whose procedures the target's effective dbms.security.procedures.allowlist loads none of stays Ready and carries the condition ProceduresHidden (True, reason NotInAllowlist) (operations.md ids 160, 161)."
       },
       {
         "id": "f-neo4jplugin-status-installed-version",
@@ -2024,7 +2025,7 @@
         "name": "status.phase",
         "type": "string",
         "isNullable": true,
-        "note": "Pending, Ready, Failed, or PendingDependencies."
+        "note": "Pending, Ready, Failed, or PendingDependencies (api/v1beta1 PhasePendingDependencies, in AllPhases)."
       },
       {
         "id": "f-neo4jauthrule-status-applied-roles",
@@ -2236,7 +2237,7 @@
         "id": "f-aurainstance-status-phase",
         "name": "status.phase",
         "type": "string",
-        "note": "Creating, Running, Pausing, Paused, Resuming, Updating, Restoring, Destroying, ..."
+        "note": "Creating, Running, Pausing, Paused, Resuming, Updating, Restoring, Destroying, ... (Aura's own status), or Error while the operator cannot reconcile the instance"
       },
       {
         "id": "f-aurainstance-status-connection-url",
@@ -2458,7 +2459,7 @@
         "id": "f-auracustomermanagedkey-status-phase",
         "name": "status.phase",
         "type": "string",
-        "note": "Pending, Ready, Deleting, Error."
+        "note": "Pending, Ready, Deleting, Error (Aura's own key status), or Error while the operator cannot reconcile the key"
       },
       {
         "id": "f-auracustomermanagedkey-status-conditions",
@@ -2468,7 +2469,8 @@
       {
         "id": "f-auracustomermanagedkey-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2552,7 +2554,8 @@
       {
         "id": "f-auraipfilter-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2619,7 +2622,8 @@
       {
         "id": "f-auradatabase-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2687,7 +2691,8 @@
       {
         "id": "f-auradatabasebackup-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2827,7 +2832,8 @@
       {
         "id": "f-auraorganizationmember-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2904,7 +2910,8 @@
       {
         "id": "f-auraprojectmember-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2986,7 +2993,8 @@
       {
         "id": "f-aurainvite-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   }

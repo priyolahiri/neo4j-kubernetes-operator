@@ -63,6 +63,35 @@ type Neo4jUserReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// newNeo4jClient connects to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newNeo4jClient func(ResolvedTarget) (userNeo4jClient, error)
+}
+
+// userNeo4jClient is what the Neo4jUser reconciler asks of Neo4j.
+// *neo4jclient.Client is one.
+type userNeo4jClient interface {
+	roleLister
+	ShowUser(ctx context.Context, username string) (*neo4jclient.UserInfo, error)
+	CreateUserAdvanced(ctx context.Context, username string, opts *neo4jclient.AlterUserOptions, ifNotExists bool) error
+	AlterUser(ctx context.Context, username string, opts *neo4jclient.AlterUserOptions) error
+	ListUserRoles(ctx context.Context, username string) ([]string, error)
+	GrantRoleToUser(ctx context.Context, roleName, username string) error
+	RevokeRoleFromUser(ctx context.Context, roleName, username string) error
+	DropUserIfExists(ctx context.Context, username string) error
+	Close() error
+}
+
+func (r *Neo4jUserReconciler) connect(target ResolvedTarget) (userNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jusers,verbs=get;list;watch;create;update;patch;delete
@@ -136,9 +165,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(user.Spec.ClusterRef))
-		r.setNamedCondition(ctx, user, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
-		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, nil, "", nil)
+		r.waitForTarget(ctx, user, fmt.Sprintf("%s is not Ready", targetRefDisplay(user.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	r.setNamedCondition(ctx, user, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
@@ -159,7 +186,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Connect
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connect(target)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (knowledge
@@ -262,7 +289,10 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		}
 	}
 
-	addRoles, dropRoles, missing := r.diffRoles(ctx, user, desiredRoles, currentRoles)
+	addRoles, dropRoles, missing, err := r.diffRoles(ctx, nc, user, desiredRoles, currentRoles)
+	if err != nil {
+		return r.fail(ctx, user, "role lookup failed", err, requeue)
+	}
 	for _, role := range addRoles {
 		if err := nc.GrantRoleToUser(ctx, role, username); err != nil {
 			return r.fail(ctx, user, fmt.Sprintf("grant %q failed", role), err, requeue)
@@ -314,15 +344,17 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	if overallReady {
-		// Emit UserReady once when the CR first transitions into Ready,
-		// not on every subsequent reconcile.
-		if user.Status.Phase != "Ready" {
+		// UserReady is announced when the write moves the persisted phase into
+		// Ready — never from this pass's copy, which the informer cache may
+		// hold from before the last write — so it is once per transition, and
+		// a restart of the target is not one (waitForTarget; knowledge rule
+		// 158).
+		if _, entered := r.writeStatus(ctx, user, "Ready", metav1.ConditionTrue, ConditionReasonUserReady,
+			fmt.Sprintf("user %q is in sync (%d roles)", username, len(finalRoles)),
+			finalRoles, passwordHash, rotated); entered {
 			r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserReady,
 				"User %q is ready (%d roles in sync)", username, len(finalRoles))
 		}
-		r.setStatus(ctx, user, "Ready", metav1.ConditionTrue, ConditionReasonUserReady,
-			fmt.Sprintf("user %q is in sync (%d roles)", username, len(finalRoles)),
-			finalRoles, passwordHash, rotated)
 	} else {
 		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, ConditionReasonRolesPending,
 			fmt.Sprintf("user %q reconciled with pending dependencies", username),
@@ -354,7 +386,7 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connect(target)
 	if err != nil {
 		logger.Error(err, "cannot connect during user deletion; releasing finalizer")
 		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
@@ -363,8 +395,14 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 
 	if err := nc.DropUserIfExists(ctx, username); err != nil {
 		if classifyFinalizerCleanup(user, err) == retryCleanup {
-			r.Recorder.Eventf(user, corev1.EventTypeWarning, EventReasonUserDeletionFailed,
-				"DROP USER %q failed, will retry: %v", username, err)
+			// Retried every RequeueAfter and on every status change of the
+			// target until the drop succeeds or the grace period ends. The
+			// failure is written to status and announced when it starts or
+			// its message changes, not on every retry (knowledge rule 145).
+			msg := fmt.Sprintf("DROP USER %q failed, will retry: %v", username, err)
+			if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserDeletionFailed, msg, nil, "", nil) {
+				r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonUserDeletionFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 		r.Recorder.Eventf(user, corev1.EventTypeWarning, EventReasonUserDeletionFailed,
@@ -451,9 +489,11 @@ func (r *Neo4jUserReconciler) computeAlter(
 }
 
 // diffRoles computes role grants/revokes and reports any desired roles that
-// do not yet exist (built-in or as a Neo4jRole CR). PUBLIC is implicit and
-// is never granted/revoked here.
-func (r *Neo4jUserReconciler) diffRoles(ctx context.Context, user *neo4jv1beta1.Neo4jUser, desired, current []string) (add []string, drop []string, missing []string) {
+// do not exist yet — neither built in, nor a Neo4jRole CR, nor a role in Neo4j
+// (missingRoles). PUBLIC is implicit and is never granted/revoked here.
+func (r *Neo4jUserReconciler) diffRoles(
+	ctx context.Context, roles roleLister, user *neo4jv1beta1.Neo4jUser, desired, current []string,
+) (add []string, drop []string, missing []string, err error) {
 	currentSet := map[string]struct{}{}
 	for _, c := range current {
 		currentSet[c] = struct{}{}
@@ -463,19 +503,9 @@ func (r *Neo4jUserReconciler) diffRoles(ctx context.Context, user *neo4jv1beta1.
 		desiredSet[d] = struct{}{}
 	}
 
-	// Existence pre-flight: built-ins always exist, otherwise check for a
-	// Neo4jRole CR with that name in the same namespace and matching cluster.
-	for _, role := range desired {
-		if validation.IsBuiltInRole(role) {
-			continue
-		}
-		if _, ok := currentSet[role]; ok {
-			continue
-		}
-		if r.roleResourceExists(ctx, user.Namespace, targetRefKey(user.Spec.ClusterRef), role) {
-			continue
-		}
-		missing = append(missing, role)
+	missing, err = missingRoles(ctx, r.Client, roles, user.Namespace, targetRefKey(user.Spec.ClusterRef), desired, currentSet)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	for _, d := range desired {
@@ -499,17 +529,7 @@ func (r *Neo4jUserReconciler) diffRoles(ctx context.Context, user *neo4jv1beta1.
 	}
 	sort.Strings(add)
 	sort.Strings(drop)
-	sort.Strings(missing)
-	return add, drop, missing
-}
-
-// roleResourceExists reports whether a Neo4jRole CR with .spec.name (or
-// metadata.name when spec.name is empty) equals roleName, in the same
-// namespace and pointing at the same clusterRef. Delegates to the shared
-// roleNameExists (see role_resolution.go) — same index used by #260
-// CR-name resolution.
-func (r *Neo4jUserReconciler) roleResourceExists(ctx context.Context, namespace, targetKey, roleName string) bool {
-	return roleNameExists(ctx, r.Client, namespace, targetKey, roleName)
+	return add, drop, missing, nil
 }
 
 // readPasswordSecret returns the password and a CHANGE TOKEN for it.
@@ -603,14 +623,31 @@ func (r *Neo4jUserReconciler) setStatus(
 	passwordHash string,
 	rotated *metav1.Time,
 ) bool {
-	transitioned := false
+	changed, _ := r.writeStatus(ctx, user, phase, readyStatus, readyReason, message, currentRoles, passwordHash, rotated)
+	return changed
+}
+
+// writeStatus is setStatus that also reports whether the write moved the
+// persisted phase into the one given (entered), the transition a phase event
+// such as UserReady announces.
+func (r *Neo4jUserReconciler) writeStatus(
+	ctx context.Context,
+	user *neo4jv1beta1.Neo4jUser,
+	phase string,
+	readyStatus metav1.ConditionStatus,
+	readyReason, message string,
+	currentRoles []string,
+	passwordHash string,
+	rotated *metav1.Time,
+) (transitioned, entered bool) {
 	update := func() error {
-		transitioned = false
+		transitioned, entered = false, false
 		latest := &neo4jv1beta1.Neo4jUser{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(user), latest); err != nil {
 			return err
 		}
-		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		phaseMoved := latest.Status.Phase != phase
+		changed := phaseMoved || latest.Status.Message != message
 		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message) {
 			changed = true
 		}
@@ -629,14 +666,36 @@ func (r *Neo4jUserReconciler) setStatus(
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
-		transitioned = changed
+		transitioned, entered = changed, phaseMoved
 		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jUser status")
-		return false
+		return false, false
 	}
-	return transitioned
+	return transitioned, entered
+}
+
+// waitForTarget records that the target is not Ready: the ClusterNotReady
+// condition, and phase Pending unless the user is already Ready at its
+// generation. A Ready user stays Ready while its target restarts — nothing
+// about the user changed, and the target announces its own state — so the
+// pass that finds the target back is not a transition and announces nothing.
+// Demoting it to Pending made every restart of a standalone a UserReady event
+// (28 in 40 minutes of restarts, v1.22.0 re-walk; knowledge rule 158).
+func (r *Neo4jUserReconciler) waitForTarget(ctx context.Context, user *neo4jv1beta1.Neo4jUser, msg string) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jUser{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(user), latest); err != nil {
+			return err
+		}
+		recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message, latest.Generation, msg)
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jUser")
+	}
 }
 
 // reportPendingRoles writes the PendingDependencies condition and announces

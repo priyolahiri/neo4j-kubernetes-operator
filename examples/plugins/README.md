@@ -7,7 +7,7 @@ This directory contains examples of how to use the Neo4jPlugin CRD with both Neo
 By default (`spec.installMode: Managed`) the Neo4jPlugin controller uses Neo4j's recommended `NEO4J_PLUGINS` environment variable approach with plugin-type-aware configuration:
 
 - **No External Jobs**: Plugins are configured via environment variables, not download jobs
-- **Automatic Installation**: Neo4j downloads and installs plugins on startup
+- **Automatic Installation**: the Neo4j entrypoint installs plugins on startup — copying those the image ships (APOC core, GenAI, GDS, Fleet Management), downloading the rest
 - **Rolling Restart**: StatefulSet pods restart to apply new plugin configuration
 - **Dependency Management**: Plugin dependencies are automatically included
 - **Smart Configuration**: Automatic plugin-specific configuration based on plugin type
@@ -17,7 +17,7 @@ By default (`spec.installMode: Managed`) the Neo4jPlugin controller uses Neo4j's
 ### Environment Variable Only Plugins
 **APOC & APOC Extended**: Configuration via environment variables only
 - **Reason**: APOC settings are not supported in `neo4j.conf` in Neo4j 5.26+
-- **Example**: `apoc.export.file.enabled` becomes `NEO4J_APOC_EXPORT_FILE_ENABLED`
+- **Example**: `apoc.export.file.enabled` becomes `NEO4J_apoc_export_file_enabled` (case kept, `_` doubled, `.` to `_`)
 
 ### Neo4j Config Plugins
 **Graph Data Science, Bloom, GenAI, etc.**: Configuration through neo4j.conf
@@ -116,7 +116,7 @@ metadata:
 spec:
   clusterRef: my-cluster
   name: genai
-  version: "1.0.0"
+  version: "2026.08.1"   # GenAI ships with Neo4j (products/): your server's version
   source:
     type: official
   # No config: provider credentials are procedure arguments
@@ -125,6 +125,10 @@ spec:
   # 2026.08.1 declares none, not even the documented genai.openai.baseurl — so
   # check SHOW SETTINGS on your version before adding one.
   security:
+    # The allowlist is the server's, shared by every plugin of the target:
+    # with only genai.* and ai.*, APOC's procedures are not loaded (the APOC
+    # plugin then carries the ProceduresHidden condition). Add apoc.* (or the
+    # namespaces of your other plugins) when they share the target.
     allowedProcedures: ["genai.*", "ai.*"]   # ai.* is the CalVer 2025.11+ prefix
 ```
 
@@ -190,7 +194,7 @@ source:
 
 `spec.installMode` selects how the plugin JAR reaches `/plugins`:
 
-- **`Managed`** (default) — the operator adds the plugin to `NEO4J_PLUGINS` and the Neo4j image entrypoint downloads it at pod start (APOC core is bundled and needs no download).
+- **`Managed`** (default) — the operator adds the plugin to `NEO4J_PLUGINS` and the Neo4j image entrypoint installs it at pod start: it copies a plugin the image ships (APOC core from `labs/`; GenAI, GDS and Fleet Management from `products/`) and downloads any other.
 - **`PreBaked`** — the operator does not touch `NEO4J_PLUGINS`; you ship the JAR in a custom image and the operator only applies the plugin's configuration.
 - **`VerifiedDownload`** — an init container downloads `source.url`, verifies `source.checksum`, and places the JAR before Neo4j starts (requires `source.type: url` or `custom`; no `dependencies`).
 

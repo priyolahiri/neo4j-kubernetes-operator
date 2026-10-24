@@ -152,11 +152,10 @@ type Neo4jPluginReconciler struct {
 	bolt *pluginBolt
 }
 
-// pluginBolt stands in, in tests, for the two steps of a pass that need a
-// running Neo4j.
+// pluginBolt stands in, in tests, for the one step of a pass that needs a
+// running Neo4j: the check, before a write, that the target answers.
 type pluginBolt struct {
 	functional func(ctx context.Context, deployment *DeploymentInfo) bool
-	configure  func(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error
 }
 
 func (r *Neo4jPluginReconciler) deploymentFunctional(ctx context.Context, deployment *DeploymentInfo) bool {
@@ -164,13 +163,6 @@ func (r *Neo4jPluginReconciler) deploymentFunctional(ctx context.Context, deploy
 		return r.bolt.functional(ctx, deployment)
 	}
 	return r.isDeploymentFunctional(ctx, deployment)
-}
-
-func (r *Neo4jPluginReconciler) configure(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
-	if r.bolt != nil && r.bolt.configure != nil {
-		return r.bolt.configure(ctx, plugin, deployment)
-	}
-	return r.configurePlugin(ctx, plugin, deployment)
 }
 
 // PluginFinalizer is the finalizer for Neo4j plugin resources
@@ -244,6 +236,9 @@ func (r *Neo4jPluginReconciler) checkForDuplicatePlugin(
 // Pods: read for the target's servers, and a standalone's pod deleted when its
 // OrderedReady StatefulSet will not replace it (replaceStuckPods).
 //+kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;delete
+// ConfigMaps: read the target's rendered neo4j.conf for its effective
+// procedure allowlist (effectiveAllowlist, operations.md id 161).
+//+kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 // Reconcile handles the reconciliation of Neo4jPlugin resources
 func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
@@ -327,6 +322,11 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Get target deployment (cluster or standalone)
 	deployment, err := r.getTargetDeployment(ctx, plugin)
+	if err != nil && !plugin.Spec.Enabled {
+		// Nothing of a disabled plugin can be on a target that does not exist.
+		r.reportDisabled(ctx, plugin, fmt.Sprintf("Plugin disabled (spec.enabled: false): its target %q does not exist", plugin.Spec.ClusterRef))
+		return ctrl.Result{}, nil
+	}
 	if err != nil {
 		logger.Error(err, "Failed to get target deployment",
 			"clusterRef", plugin.Spec.ClusterRef, "namespace", plugin.Namespace)
@@ -342,6 +342,18 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			),
 		)
 		return ctrl.Result{}, nil // Don't return error - status is set correctly
+	}
+
+	// Whether the target's allowlist hides the plugin's procedures (operations.md
+	// id 161): on every pass, settled ones included — another plugin's write,
+	// which wakes a Ready plugin (id 135), is what usually changes it. Written
+	// only when it changes.
+	r.reportHiddenProcedures(ctx, plugin, deployment)
+
+	// spec.enabled: false keeps the plugin off its target (#540): until this
+	// was read, a disabled plugin was installed all the same.
+	if !plugin.Spec.Enabled {
+		return r.reconcileDisabled(ctx, plugin, deployment)
 	}
 
 	// Standalone neo4j.conf (plugin security settings) is owned by the standalone
@@ -445,12 +457,14 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// on every server that is down (selfRepair). A pass with nothing to write
 	// — one waiting for the servers this install restarted, which turned the
 	// cluster Forming — carries on.
+	changes, changesErr := r.installChangesTarget(ctx, plugin, deployment)
+	if changesErr != nil {
+		// The install below reads the same StatefulSet and reports it.
+		logger.Error(changesErr, "Cannot tell whether installing the plugin would change its target")
+	}
 	if !deployment.IsReady {
-		changes, err := r.installChangesTarget(ctx, plugin, deployment)
 		switch {
-		case err != nil:
-			// The install below reads the same StatefulSet and reports it.
-			logger.Error(err, "Cannot tell whether installing the plugin would change its target")
+		case changesErr != nil:
 		case !changes:
 		case !mayWrite():
 			logger.Info("Target not fully available; deferring the plugin installation", "type", deployment.Type, "name", deployment.Name)
@@ -467,10 +481,13 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// standalone answers nothing until the pod is back.
 	r.replaceStuckPods(ctx, plugin, deployment)
 
-	// Check if deployment is actually functional, not just status reporting.
-	// Not before a repair: the servers it repairs are down, and a standalone
-	// whose one server is down answers nothing.
-	if repair == "" && !r.deploymentFunctional(ctx, deployment) {
+	// Check that the target answers before a write restarts its servers. Only
+	// before a write: a pass with nothing to write is waiting for the restart
+	// its own write caused, and a standalone whose one server restarts answers
+	// nothing, so the check flipped the plugin to Waiting and back to
+	// Installing on every pass while the pod came back (#548). Nor before a
+	// repair: the servers it repairs are down.
+	if repair == "" && (changes || changesErr != nil) && !r.deploymentFunctional(ctx, deployment) {
 		logger.Info("Target deployment not functional, requeuing", "type", deployment.Type, "name", deployment.Name)
 		r.updatePluginStatus(ctx, plugin, "Waiting", fmt.Sprintf("Waiting for %s %s to be functional", deployment.Type, deployment.Name))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -538,26 +555,21 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
-	// Configure plugin, once every server runs it. A server that cannot be
-	// reached even then (one restarting for another reason; before the wait
-	// above, the old pods still reported Ready while they stopped) is part of
-	// the install, not a failed one.
-	if err := r.configure(ctx, plugin, deployment); err != nil {
-		if retryablePluginError(err) {
-			logger.Info("Cannot reach the target to configure the plugin yet; retrying", "error", err.Error())
-			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling,
-				fmt.Sprintf("Waiting for %s %s to accept connections to configure the plugin", deployment.Type, deployment.Name))
-			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-		}
-		logger.Error(err, "Failed to configure plugin")
-		return r.installFailed(ctx, plugin, fmt.Sprintf("Plugin configuration failed: %v", err),
-			fmt.Sprintf("Plugin %s configuration failed: %v", plugin.Spec.Name, err))
-	}
+	// Nothing is set at runtime: every setting of the plugin reaches the
+	// servers when they start — an env var, or on a standalone its neo4j.conf
+	// — which the roll just waited for has done. The pass used to call
+	// dbms.setConfigValue for every spec.config key but APOC's: Neo4j accepts
+	// only a dynamic setting there, and on a cluster only on the server it runs
+	// against, so a static or unknown key turned the plugin Failed, retried
+	// every RequeueAfter, for a value the servers already had (#548).
 
-	// Update status to "Ready"
-	r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseReady, "Plugin installed and configured successfully")
-	r.Recorder.Eventf(plugin, corev1.EventTypeNormal, EventReasonPluginInstalled,
-		"Plugin %s version %s installed successfully", plugin.Spec.Name, plugin.Spec.Version)
+	// Announced on the transition only: a pass that read a copy from before
+	// the last Ready write (the informer cache lags) writes nothing and says
+	// nothing (operations.md id 136).
+	if r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseReady, "Plugin installed and configured successfully") {
+		r.Recorder.Eventf(plugin, corev1.EventTypeNormal, EventReasonPluginInstalled,
+			"Plugin %s version %s installed successfully", plugin.Spec.Name, plugin.Spec.Version)
+	}
 
 	logger.Info("Plugin reconciliation completed")
 	return ctrl.Result{}, nil
@@ -587,7 +599,10 @@ func (r *Neo4jPluginReconciler) installFailed(ctx context.Context, plugin *neo4j
 func (r *Neo4jPluginReconciler) deferInstall(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo, missing, caUpdate string) (ctrl.Result, error) {
 	until := targetAvailable(deployment)
 	what := "installing the plugin"
-	if caUpdate != "" {
+	switch {
+	case !plugin.Spec.Enabled:
+		what = "removing the disabled plugin"
+	case caUpdate != "":
 		what = "updating the plugin's trusted CAs"
 	}
 	message := "Waiting until " + until + ": " + what + " restarts every server"
@@ -635,9 +650,10 @@ func (r *Neo4jPluginReconciler) trustedCAUpdate(ctx context.Context, plugin *neo
 	return outdated
 }
 
-// installChangesTarget reports whether installing the plugin would change its
-// target's StatefulSet, which restarts the servers: the install's own edits
-// (applyPluginToTemplate) made on a copy of the live pod template.
+// installChangesTarget reports whether the plugin's next write would change
+// its target's StatefulSet, which restarts the servers: the plugin's edits
+// (desiredTarget) made on a copy of the live pod template — its install, or
+// for a disabled plugin its removal.
 func (r *Neo4jPluginReconciler) installChangesTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (bool, error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
@@ -646,17 +662,34 @@ func (r *Neo4jPluginReconciler) installChangesTarget(ctx context.Context, plugin
 	// The pod template only: the plugin's record is StatefulSet metadata, and
 	// writing it alone restarts nothing.
 	desired := sts.DeepCopy()
-	if _, err := r.applyPlugin(ctx, desired, plugin, deployment); err != nil {
+	if err := r.desiredTarget(ctx, desired, plugin, deployment); err != nil {
 		return false, err
 	}
 	return !equality.Semantic.DeepEqual(sts.Spec.Template, desired.Spec.Template), nil
 }
 
-// retryablePluginError reports whether an install or configuration step failed
-// for a reason to wait out rather than a failed install: the StatefulSet kept
-// changing under the write (its own controller rewrites its status at every
-// pod transition of a restart), or Neo4j could not be reached because the
-// servers are restarting to take the plugin.
+// desiredTarget makes on sts, a copy of the target's StatefulSet, what the
+// plugin's next write makes of it: its edits (applyPlugin), or, for a disabled
+// plugin (spec.enabled: false), its removal (withoutPlugin) — the write the
+// gate (id 141) and its repair exception (selfRepair, ids 152 and 155) judge.
+func (r *Neo4jPluginReconciler) desiredTarget(ctx context.Context, sts *appsv1.StatefulSet, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
+	if plugin.Spec.Enabled {
+		_, err := r.applyPlugin(ctx, sts, plugin, deployment)
+		return err
+	}
+	others, err := r.otherPlugins(ctx, plugin)
+	if err != nil {
+		return err
+	}
+	r.withoutPlugin(ctx, sts, plugin, deployment, others)
+	return nil
+}
+
+// retryablePluginError reports whether an install step failed for a reason to
+// wait out rather than a failed install: the StatefulSet kept changing under
+// the write (its own controller rewrites its status at every pod transition of
+// a restart), or Neo4j could not be reached because the servers are
+// restarting to take the plugin.
 func retryablePluginError(err error) bool {
 	return errors.IsConflict(err) ||
 		neo4jclient.IsConnectivityError(err) ||
@@ -774,86 +807,6 @@ func (r *Neo4jPluginReconciler) arePodsReady(ctx context.Context, deployment *De
 
 	logger.Info("All pods are ready")
 	return true
-}
-
-func (r *Neo4jPluginReconciler) configurePlugin(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
-	logger := log.FromContext(ctx)
-
-	// Check if plugin requires automatic security configuration even without user config
-	needsAutoSecurity := r.requiresAutomaticSecurityConfiguration(plugin.Spec.Name)
-
-	if len(plugin.Spec.Config) == 0 && plugin.Spec.Security == nil && !needsAutoSecurity {
-		logger.Info("No plugin configuration provided")
-		return nil
-	}
-
-	// For plugins that require environment variable configuration only
-	// APOC settings are no longer supported in neo4j.conf in Neo4j 5.26+
-	if r.isEnvironmentVariableOnlyPlugin(plugin.Spec.Name) {
-		logger.Info("Plugin configuration handled via environment variables only", "plugin", plugin.Spec.Name)
-		return r.applyAPOCSecurityConfiguration(ctx, plugin, deployment)
-	}
-
-	// For other plugins that require Neo4j client configuration
-	neo4jClientConfig := r.filterNeo4jClientConfig(plugin.Spec.Config)
-	if len(neo4jClientConfig) == 0 && plugin.Spec.Security == nil && !needsAutoSecurity {
-		logger.Info("No Neo4j client configuration required")
-		return nil
-	}
-
-	// Create Neo4j client based on deployment type
-	var neo4jClient *neo4jclient.Client
-	var err error
-
-	if deployment.Type == "cluster" {
-		cluster, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster)
-		if !ok {
-			return fmt.Errorf("deployment typed as cluster but object is %T", deployment.Object)
-		}
-		neo4jClient, err = neo4jclient.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
-	} else {
-		standalone, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
-		if !ok {
-			return fmt.Errorf("deployment typed as standalone but object is %T", deployment.Object)
-		}
-		neo4jClient, err = neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
-	}
-
-	if err != nil {
-		return fmt.Errorf("failed to create Neo4j client: %w", err)
-	}
-	defer neo4jClient.Close()
-
-	// Configure plugin settings that should go through Neo4j configuration system
-	for key, value := range neo4jClientConfig {
-		if err := neo4jClient.SetConfiguration(ctx, key, value); err != nil {
-			return fmt.Errorf("failed to set configuration %s=%s: %w", key, value, err)
-		}
-	}
-
-	// Apply security configuration if specified
-	// Only apply runtime security configuration for settings that are dynamic
-	if plugin.Spec.Security != nil && r.hasRuntimeSecurityConfiguration(plugin.Spec.Security) {
-		if err := r.applySecurityConfiguration(ctx, neo4jClient, plugin); err != nil {
-			return fmt.Errorf("failed to apply security configuration: %w", err)
-		}
-	}
-
-	logger.Info("Plugin configuration applied successfully")
-	return nil
-}
-
-func (r *Neo4jPluginReconciler) applySecurityConfiguration(ctx context.Context, neo4jClient *neo4jclient.Client, plugin *neo4jv1beta1.Neo4jPlugin) error {
-	logger := log.FromContext(ctx)
-
-	// In Neo4j 5.26+, most security settings (allowlist, denylist, unrestricted) are non-dynamic
-	// and must be applied as environment variables at startup, not at runtime
-	logger.Info("Skipping runtime security configuration - all security settings are applied as environment variables in Neo4j 5.26+")
-
-	// Future: If there are any dynamic security settings that can be applied at runtime,
-	// add them here. Currently, all common security settings are non-dynamic.
-
-	return nil
 }
 
 // uninstallPlugin takes the plugin off its target: everything it wrote to the
@@ -1151,6 +1104,13 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 		if standalone && pluginConfKey(key) {
 			continue
 		}
+		if resources.IsAdditiveConfKey(key) {
+			// A shared list (a cluster's: a standalone's are pluginConfKeys):
+			// the plugin adds its tokens below, with its security settings. Set
+			// here, the key replaced the list every other plugin of the target
+			// had added to (#548).
+			continue
+		}
 		envVarName := resources.Neo4jSettingEnvVarName(key)
 		// Check if environment variable already exists
 		exists := false
@@ -1174,8 +1134,14 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 		container.Env = removeStandalonePluginConfEnv(container.Env, plugin, r.pluginSecurityRemovalSettings(plugin))
 	} else {
 		// Apply security settings as environment variables, unioning additive
-		// allowlists across plugins (see mergePluginSecurityEnv).
-		container.Env = mergePluginSecurityEnv(container.Env, r.pluginSecuritySettings(plugin))
+		// allowlists across plugins (see mergePluginSecurityEnv), with the
+		// lists the plugin's spec.config sets. applyPlugin then makes each
+		// list exactly what the target's plugins put there (setClusterPluginLists).
+		settings := r.pluginSecuritySettings(plugin)
+		for k, v := range pluginListSettings(plugin) {
+			settings[k] = v
+		}
+		container.Env = mergePluginSecurityEnv(container.Env, settings)
 	}
 	return nil
 }
@@ -1292,26 +1258,41 @@ func pluginPodDrift(live, desired corev1.PodSpec) (missing, outdated []string) {
 // its target (live is the neo4j container's env, desired the same after the
 // plugin's edits):
 //   - one it sets that is absent;
-//   - NEO4J_PLUGINS when it no longer lists a name the plugin needs (the merge
-//     only ever adds names, so a different value is a missing name);
+//   - NEO4J_PLUGINS when it does not list a name the plugin needs (a name the
+//     plugin's write would take away, applyPluginEntries, is not a loss);
 //   - on a standalone, a copy of one of the plugin's neo4j.conf settings that
 //     an earlier operator left in the env (operations.md id 114).
 //
 // A value someone else gave a variable the plugin sets is left alone. Two
-// writers that disagree on it — two plugins setting one key, or one whose
-// spec.config overwrites another's list — would otherwise restart the servers
-// in turn for ever, each pass woken by the other's write.
+// writers that disagree on it — two plugins setting one key — would otherwise
+// restart the servers in turn for ever, each pass woken by the other's write.
+// So is a cluster's shared list that the plugins no longer put anything in
+// (setClusterPluginLists): the next write of a plugin takes it away, and a
+// settled plugin does not restart the servers for it — not on its first pass
+// after an operator upgrade either.
 func pluginEnvDrift(live, desired []corev1.EnvVar, standalone bool) []string {
 	have, want := envByName(live), envByName(desired)
 	var drift []string
 	for _, name := range changedEnvNames(live, desired) {
 		_, inLive := have[name]
 		_, inDesired := want[name]
-		// On a standalone the plugin only ever takes its tokens out of a
-		// list (no plugin writes one into a standalone's env), so a change
-		// there cannot be fought over.
-		if inLive && inDesired && name != "NEO4J_PLUGINS" &&
-			(!standalone || !resources.IsAdditiveConfEnvName(name)) {
+		additive := resources.IsAdditiveConfEnvName(name)
+		switch {
+		case name == "NEO4J_PLUGINS" && inLive && inDesired:
+			// Drift only when it lacks a name the plugin needs.
+			lists := neo4jPluginsList([]corev1.EnvVar{have[name]})
+			if !slices.ContainsFunc(neo4jPluginsList([]corev1.EnvVar{want[name]}), func(n string) bool { return !slices.Contains(lists, n) }) {
+				continue
+			}
+		case name == "NEO4J_PLUGINS":
+			// Absent where the plugin needs it: drift.
+		case inLive && inDesired && (!standalone || !additive):
+			// Someone else's value. On a standalone the plugin only ever takes
+			// its tokens out of a list (no plugin writes one into a
+			// standalone's env), so a change there cannot be fought over.
+			continue
+		case inLive && !inDesired && !standalone && additive:
+			// A cluster's list no plugin puts anything in any more.
 			continue
 		}
 		drift = append(drift, name)
@@ -1599,22 +1580,30 @@ func (r *Neo4jPluginReconciler) applyVerifiedDownload(template *corev1.PodTempla
 	}
 }
 
-// deploymentTrustedCASecrets is the target's spec.trustedCASecrets. The CA
+// deploymentTrustedCASecrets is the CA list the target's own JVM truststore
+// is built from: spec.trustedCASecrets with the legacy spec.auth.trustStore
+// folded in (resources.CollectTrustedCASecrets, operations.md id 28). The CA
 // bundle a VerifiedDownload init container trusts comes from the owning
 // cluster/standalone: the JAR fetch typically goes to an internal Artifactory
-// using the same corporate CA the rest of the deployment already trusts.
+// using the same corporate CA the rest of the deployment already trusts. The
+// plugin used to read spec.trustedCASecrets alone, so a target that named its
+// CA the legacy way trusted it everywhere but in the download (#530).
 func deploymentTrustedCASecrets(deployment *DeploymentInfo) []neo4jv1beta1.TrustedCASecret {
-	switch deployment.Type {
-	case "cluster":
-		if c, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok {
-			return c.Spec.TrustedCASecrets
-		}
-	case "standalone":
-		if s, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone); ok {
-			return s.Spec.TrustedCASecrets
-		}
+	switch target := deployment.Object.(type) {
+	case *neo4jv1beta1.Neo4jEnterpriseCluster:
+		return resources.CollectTrustedCASecrets(legacyTrustStore(target.Spec.Auth), target.Spec.TrustedCASecrets)
+	case *neo4jv1beta1.Neo4jEnterpriseStandalone:
+		return resources.CollectTrustedCASecrets(legacyTrustStore(target.Spec.Auth), target.Spec.TrustedCASecrets)
 	}
 	return nil
+}
+
+// legacyTrustStore is auth's spec.auth.trustStore, or nil.
+func legacyTrustStore(auth *neo4jv1beta1.AuthSpec) *neo4jv1beta1.SecretKeyRef {
+	if auth == nil {
+		return nil
+	}
+	return auth.TrustStore
 }
 
 // setPluginCAVolume brings the plugin-ca volume of podSpec in line with
@@ -2013,180 +2002,9 @@ func (r *Neo4jPluginReconciler) getExpectedReplicas(deployment *DeploymentInfo) 
 	return 1
 }
 
-// PluginType represents different categories of Neo4j plugins
-type PluginType int
-
-const (
-	PluginTypeEnvironmentOnly PluginType = iota // APOC, APOC Extended - environment variables only
-	PluginTypeNeo4jConfig                       // GDS, Bloom, GenAI - neo4j.conf configuration
-	PluginTypeHybrid                            // Plugins that use both methods
-)
-
-// getPluginType determines the configuration approach for a plugin
-func (r *Neo4jPluginReconciler) getPluginType(pluginName string) PluginType {
-	switch pluginName {
-	case "apoc", "apoc-extended":
-		// APOC and APOC Extended in Neo4j 5.26+ use environment variables only
-		// APOC-specific settings are no longer supported in neo4j.conf
-		return PluginTypeEnvironmentOnly
-	case "graph-data-science", "gds":
-		// GDS uses neo4j.conf for configuration (gds.*, dbms.security.procedures.*)
-		return PluginTypeNeo4jConfig
-	case "bloom":
-		// Bloom uses neo4j.conf for configuration (dbms.bloom.*, dbms.security.procedures.*)
-		return PluginTypeNeo4jConfig
-	case "genai":
-		// GenAI uses neo4j.conf for configuration and procedure security
-		return PluginTypeNeo4jConfig
-	case "n10s", "neosemantics":
-		// Neo Semantics uses neo4j.conf for configuration
-		return PluginTypeNeo4jConfig
-	case "graphql":
-		// GraphQL plugin uses neo4j.conf for configuration
-		return PluginTypeNeo4jConfig
-	case "fleet-management":
-		// Fleet management plugin requires procedure security configuration.
-		// NEO4J_PLUGINS=["fleet-management"] copies the pre-bundled jar from
-		// /var/lib/neo4j/products/ — no internet access required.
-		return PluginTypeNeo4jConfig
-	default:
-		// Default to neo4j.conf configuration for unknown plugins
-		return PluginTypeNeo4jConfig
-	}
-}
-
-// isEnvironmentVariableOnlyPlugin checks if the plugin requires environment variable configuration only
-func (r *Neo4jPluginReconciler) isEnvironmentVariableOnlyPlugin(pluginName string) bool {
-	return r.getPluginType(pluginName) == PluginTypeEnvironmentOnly
-}
-
-// requiresAutomaticSecurityConfiguration checks if the plugin needs automatic security settings even without user config
-func (r *Neo4jPluginReconciler) requiresAutomaticSecurityConfiguration(pluginName string) bool {
-	switch pluginName {
-	case "bloom":
-		// Bloom requires automatic security configuration:
-		// - dbms.security.procedures.unrestricted=bloom.*
-		// - dbms.security.http_auth_allowlist=/,/browser.*,/bloom.*
-		// - server.unmanaged_extension_classes=com.neo4j.bloom.server=/bloom
-		return true
-	case "graph-data-science", "gds":
-		// GDS requires automatic security configuration:
-		// - dbms.security.procedures.unrestricted=gds.* (or allowlist based on sandbox setting)
-		return true
-	case "fleet-management":
-		// Fleet management requires automatic security configuration:
-		// - dbms.security.procedures.unrestricted=fleetManagement.*
-		// - dbms.security.procedures.allowlist=fleetManagement.*
-		return true
-	default:
-		return false
-	}
-}
-
 // getAutomaticSecuritySettings returns the security settings a plugin requires.
 // Delegates to the shared helper so the env-var path and the standalone
 // ConfigMap owner (issue #146) agree on the exact set.
 func (r *Neo4jPluginReconciler) getAutomaticSecuritySettings(pluginName string) map[string]string {
 	return automaticPluginSecuritySettings(pluginName)
-}
-
-// filterNeo4jClientConfig filters out plugin-specific configurations that should be handled via environment variables
-func (r *Neo4jPluginReconciler) filterNeo4jClientConfig(config map[string]string) map[string]string {
-	filtered := make(map[string]string)
-
-	for key, value := range config {
-		// Skip APOC-specific settings - these must be handled via environment variables only in Neo4j 5.26+
-		if strings.HasPrefix(key, "apoc.") {
-			continue
-		}
-
-		// Skip non-dynamic GDS settings - these can only be set at startup, not runtime
-		if r.isNonDynamicSetting(key) {
-			continue
-		}
-
-		// Include settings that can be applied dynamically through Neo4j configuration system:
-		// - Dynamic GDS settings (gds.* except license_file)
-		// - Bloom settings (dbms.bloom.*, server.unmanaged_extension_classes, dbms.security.http_auth_allowlist)
-		// - GenAI settings (provider configurations, procedure security)
-		// - General Neo4j settings (dbms.*, server.*)
-		// - Plugin procedure security settings (dbms.security.procedures.*)
-		filtered[key] = value
-	}
-
-	return filtered
-}
-
-// isNonDynamicSetting determines if a configuration setting can only be applied at startup
-func (r *Neo4jPluginReconciler) isNonDynamicSetting(key string) bool {
-	nonDynamicSettings := []string{
-		// Plugin license files (must be available at startup)
-		"gds.enterprise.license_file",
-		"dbms.bloom.license_file",
-		// Security settings (must be applied at startup via environment variables)
-		"dbms.security.procedures.allowlist",
-		"dbms.security.procedures.denylist",
-		"dbms.security.procedures.unrestricted",
-		// Add other non-dynamic settings as needed
-	}
-
-	for _, nonDynamic := range nonDynamicSettings {
-		if key == nonDynamic {
-			return true
-		}
-	}
-
-	return false
-}
-
-// hasRuntimeSecurityConfiguration checks if security configuration contains settings that can be applied at runtime
-// Most security settings (allowlist, denylist, unrestricted) are non-dynamic and must be applied as environment variables
-func (r *Neo4jPluginReconciler) hasRuntimeSecurityConfiguration(security *neo4jv1beta1.PluginSecurity) bool {
-	// Currently, all common security settings are non-dynamic in Neo4j 5.26+
-	// They must be applied as environment variables at StatefulSet creation time
-	// Future: if there are any dynamic security settings, check for them here
-	return false
-}
-
-// applyAPOCSecurityConfiguration applies APOC security configuration without using Neo4j client configuration
-// APOC security is handled via environment variables and procedure allowlists in Neo4j configuration
-func (r *Neo4jPluginReconciler) applyAPOCSecurityConfiguration(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
-	logger := log.FromContext(ctx)
-
-	if plugin.Spec.Security == nil {
-		return nil
-	}
-
-	// For APOC security configuration, we need to set procedure allowlists via Neo4j configuration
-	// but not APOC-specific settings
-	if len(plugin.Spec.Security.AllowedProcedures) > 0 || len(plugin.Spec.Security.DeniedProcedures) > 0 {
-		var neo4jClient *neo4jclient.Client
-		var err error
-
-		if deployment.Type == "cluster" {
-			cluster, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseCluster)
-			if !ok {
-				return fmt.Errorf("deployment typed as cluster but object is %T", deployment.Object)
-			}
-			neo4jClient, err = neo4jclient.NewClientForEnterprise(cluster, r.Client, getClusterAdminSecretName(cluster))
-		} else {
-			standalone, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
-			if !ok {
-				return fmt.Errorf("deployment typed as standalone but object is %T", deployment.Object)
-			}
-			neo4jClient, err = neo4jclient.NewClientForEnterpriseStandalone(standalone, r.Client, getStandaloneAdminSecretName(standalone))
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to create Neo4j client for security configuration: %w", err)
-		}
-		defer neo4jClient.Close()
-
-		// In Neo4j 5.26+, all security settings are applied as environment variables
-		// Skip runtime security configuration for consistency
-		logger.Info("Skipping APOC runtime security configuration - all security settings are applied as environment variables in Neo4j 5.26+")
-	}
-
-	logger.Info("APOC security configuration applied successfully")
-	return nil
 }

@@ -37,7 +37,7 @@
     "id": "su-rolling-upgrade",
     "name": "Rolling Upgrade State Machine",
     "kind": "worker",
-    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149).",
+    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149). A start one of its checks refuses changes nothing on the servers: the cluster stays Ready, the refusal is announced once, and a Failed one is tried again every minute (operations.md id 149). A held upgrade whose restarted servers cannot start on its target goes on towards a new tag, replacing them first (id 162), and a change of spec.topology.servers waits while an upgrade is in flight or keeps a partition (id 163).",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],
@@ -50,7 +50,10 @@
       "internal/controller/rolling_upgrade_statemachine.go",
       "internal/controller/upgrade_database_gate.go",
       "internal/controller/upgrade_diagnostics.go",
-      "internal/controller/upgrade_hold.go"
+      "internal/controller/upgrade_hold.go",
+      "internal/controller/upgrade_start.go",
+      "internal/controller/upgrade_repair.go",
+      "internal/controller/upgrade_topology.go"
     ]
   },
   {
@@ -73,7 +76,7 @@
     "id": "su-storage-expansion",
     "name": "Storage Expansion Worker",
     "kind": "worker",
-    "description": "Detects a spec.storage.size increase, patches the affected PVCs, and orphan-deletes the owning StatefulSet so it is recreated with the enlarged VolumeClaimTemplates, for both cluster and standalone deployments; rejects any shrink attempt outright.",
+    "description": "Detects a spec.storage.size increase, patches the affected PVCs, and orphan-deletes the owning StatefulSet so it is recreated with the enlarged VolumeClaimTemplates, for both cluster and standalone deployments; rejects any shrink attempt outright. A StorageClass cannot change the same way: while spec.storage.className names a class the existing volumes do not use, it raises an advisory ValidationWarning.",
     "entityIds": [
       "ent-neo4jenterprisecluster",
       "ent-neo4jenterprisestandalone"
@@ -85,7 +88,8 @@
     "moduleId": "mod-cluster",
     "paths": [
       "internal/controller/storage_expansion.go",
-      "internal/controller/standalone_storage_expansion.go"
+      "internal/controller/standalone_storage_expansion.go",
+      "internal/controller/storage_class_change.go"
     ]
   },
   {
@@ -245,7 +249,7 @@
     "id": "su-neo4jrestore",
     "name": "Neo4jRestore Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jRestore CRD: drives a standalone offline neo4j-admin restore Job, a cluster in-place Cypher dbms.recreateDatabase, or a per-database all-databases restore loop, from a resolved backup artifact.",
+    "description": "Reconciler for the Neo4jRestore CRD: drives a standalone offline neo4j-admin restore Job, a cluster in-place Cypher dbms.recreateDatabase, or a per-database all-databases restore loop, from a resolved backup artifact. Its per-database events go through a second recorder, ProgressRecorder (source neo4j-restore-progress), so they keep their own event budget.",
     "entityIds": [
       "ent-neo4jrestore"
     ],
@@ -304,7 +308,8 @@
     "moduleId": "mod-security",
     "paths": [
       "internal/controller/neo4juser_controller.go",
-      "internal/controller/role_resolution.go"
+      "internal/controller/role_resolution.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {
@@ -324,7 +329,8 @@
     "paths": [
       "internal/controller/neo4jrole_normalise.go",
       "internal/controller/neo4jrole_learn.go",
-      "internal/controller/neo4jrole_controller.go"
+      "internal/controller/neo4jrole_controller.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {
@@ -343,7 +349,8 @@
     "moduleId": "mod-security",
     "paths": [
       "internal/controller/neo4jrolebinding_controller.go",
-      "internal/controller/role_resolution.go"
+      "internal/controller/role_resolution.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {
@@ -361,7 +368,8 @@
     ],
     "moduleId": "mod-security",
     "paths": [
-      "internal/controller/neo4jauthrule_controller.go"
+      "internal/controller/neo4jauthrule_controller.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {
@@ -398,7 +406,9 @@
       "internal/validation/setting_values.go",
       "internal/validation/memory_validator.go",
       "internal/validation/cluster_validator.go",
-      "internal/validation/upgrade_validator.go"
+      "internal/validation/upgrade_validator.go",
+      "internal/validation/shardeddatabase_validator.go",
+      "internal/validation/storage_validator.go"
     ]
   },
   {
@@ -421,7 +431,7 @@
     "id": "su-aurainstance",
     "name": "AuraInstance Reconciler",
     "kind": "controller",
-    "description": "Provisions and manages a Neo4j Aura cloud instance via the Aura REST API as a status-poll state machine: idempotent create/adopt (external-name annotation), observe, drift-patch (memory/storage/name/secondariesCount/cdcEnrichmentMode), tier upgrade, pause/resume, and orphan-or-delete on CR deletion (AuraInstanceReconciler).",
+    "description": "Provisions and manages a Neo4j Aura cloud instance via the Aura REST API as a status-poll state machine: idempotent create/adopt (external-name annotation), observe, drift-patch (memory/storage/name/secondariesCount/cdcEnrichmentMode), tier upgrade, pause/resume, and orphan-or-delete on CR deletion, resolving credentials only when the deletion calls Aura (AuraInstanceReconciler).",
     "entityIds": [
       "ent-aurainstance"
     ],
@@ -477,7 +487,7 @@
     "id": "su-auracustomermanagedkey",
     "name": "AuraCustomerManagedKey Reconciler",
     "kind": "controller",
-    "description": "Registers and manages a customer-managed encryption key with Aura: idempotent create/adopt by matching keyId/region/cloudProvider/instanceType, polls to Ready, and on deletion either orphans (default) or deregisters (refused by the API while any instance still uses the key) (AuraCustomerManagedKeyReconciler).",
+    "description": "Registers and manages a customer-managed encryption key with Aura: idempotent create/adopt by matching keyId/region/cloudProvider/instanceType, polls to Ready, and on deletion either orphans (default) or deregisters (refused by the API while any instance still uses the key), resolving credentials only when the deletion calls Aura (AuraCustomerManagedKeyReconciler).",
     "entityIds": [
       "ent-auracustomermanagedkey"
     ],
@@ -631,7 +641,7 @@
     "id": "su-neo4jplugin",
     "name": "Neo4jPlugin Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jPlugin CRD; live-patches NEO4J_PLUGINS via MergeNeo4jPluginList (or injects a checksum-verified init container for installMode=VerifiedDownload) without clobbering env vars owned by other controllers, folds plugin-specific settings into neo4j.conf, and triggers a controlled rolling restart of the target.",
+    "description": "Reconciler for the Neo4jPlugin CRD; live-patches NEO4J_PLUGINS via MergeNeo4jPluginList (or injects a checksum-verified init container for installMode=VerifiedDownload) without clobbering env vars owned by other controllers, sets the plugin's settings as env vars (a standalone's security settings go to its neo4j.conf through the standalone controller), makes a cluster's shared procedure lists what the target's plugins ask for, and triggers a controlled rolling restart of the target. Nothing is set at runtime. spec.enabled false takes the plugin off its target and keeps the CR (phase Disabled); a plugin whose procedures the target's allowlist hides carries the ProceduresHidden condition.",
     "entityIds": [
       "ent-neo4jplugin"
     ],
@@ -645,7 +655,9 @@
       "internal/controller/plugin_controller.go",
       "internal/controller/plugin_conf_settings.go",
       "internal/controller/plugin_target_gate.go",
-      "internal/controller/plugin_env_ownership.go"
+      "internal/controller/plugin_env_ownership.go",
+      "internal/controller/plugin_disabled.go",
+      "internal/controller/plugin_allowlist.go"
     ]
   },
   {
@@ -708,7 +720,9 @@
     ],
     "moduleId": "mod-cli",
     "paths": [
-      "cmd/kubectl-neo4j/main.go"
+      "cmd/kubectl-neo4j/main.go",
+      "cmd/kubectl-neo4j/validate_schema_defaults.go",
+      "config/crd/embed.go"
     ]
   }
 ]

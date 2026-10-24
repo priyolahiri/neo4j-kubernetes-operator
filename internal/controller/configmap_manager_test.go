@@ -490,6 +490,32 @@ func TestReconcileConfigMap_Creates(t *testing.T) {
 	}
 }
 
+// The ConfigMap's owner reference names the operator's own kind. It was built
+// from the cluster's TypeMeta, which a read through an uncached reader leaves
+// empty, and the API server refuses an owner reference without an apiVersion
+// and a kind (#538).
+func TestSetOwnerReference_NeedsNoTypeMeta(t *testing.T) {
+	cluster := minimalCluster("c", "default")
+	cluster.UID = "cluster-uid"
+	cluster.TypeMeta = metav1.TypeMeta{} // as an uncached read leaves it
+	cm := &corev1.ConfigMap{}
+
+	if err := setOwnerReference(cluster, cm); err != nil {
+		t.Fatal(err)
+	}
+	if len(cm.OwnerReferences) != 1 {
+		t.Fatalf("want one owner reference, got %v", cm.OwnerReferences)
+	}
+	ref := cm.OwnerReferences[0]
+	if ref.APIVersion != neo4jv1beta1.GroupVersion.String() || ref.Kind != "Neo4jEnterpriseCluster" ||
+		ref.Name != "c" || ref.UID != "cluster-uid" {
+		t.Errorf("owner reference %+v does not name the cluster", ref)
+	}
+	if ref.Controller == nil || !*ref.Controller || ref.BlockOwnerDeletion == nil || !*ref.BlockOwnerDeletion {
+		t.Errorf("the cluster must be the controlling owner: %+v", ref)
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Small string helpers (avoid importing strings in test without adding to prod)
 // ---------------------------------------------------------------------------

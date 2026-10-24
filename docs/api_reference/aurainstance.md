@@ -43,7 +43,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `connectionSecretName` | `string` | Secret the operator writes connection details (URI + one-time credentials) to. Defaults to `<name>-conn`. |
 | `connectionSecretFormat` | `string` | Enum `neo4j-driver` / `aura-dotenv` / `jdbc` / `servicebinding` / `custom`. Default `neo4j-driver`. Selects the connection Secret's key layout. **`custom` is reserved — accepted but not acted on:** it has no key template of its own and writes the same keys as `neo4j-driver`. A `ValidationWarning` event is raised when it is set to `custom`. |
 | `publishConnectionDetailsTo` | `string` | Name of a ConfigMap to receive the non-secret endpoint details (URI, instanceId, region, type). Credentials stay in the connection Secret. |
-| `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (keep the running instance on CR delete). |
+| `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (keep the running instance on CR delete). `Orphan` needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). `Delete` needs them: while they cannot be read it waits, with `Ready=False`, reason `CredentialsUnavailable`, and after 5 minutes it removes the CR anyway and raises a Warning `AuraInstanceOrphaned` — the cloud instance keeps running, so delete it in the Aura console. |
 | `deletionProtection` | `bool` | Blocks deletion of the cloud instance even when `deletionPolicy: Delete`, until cleared. |
 | `managementPolicies` | `[]string` | Items enum `Observe` / `Create` / `Update` / `Delete` / `*`. Default `["*"]` (full management). Use a subset to observe only, never delete, etc. |
 
@@ -62,13 +62,13 @@ Clones a new instance from an existing one at create time (immutable). Exactly o
 | Field | Type | Description |
 |---|---|---|
 | `instanceId` | `string` | Aura instance ID (mirror of the external-name annotation). |
-| `phase` | `string` | Mirrors the Aura instance status (`Creating`, `Running`, `Pausing`, `Paused`, `Resuming`, `Updating`, `Restoring`, `Destroying`, …). |
+| `phase` | `string` | Mirrors the Aura instance status (`Creating`, `Running`, `Pausing`, `Paused`, `Resuming`, `Updating`, `Restoring`, `Destroying`, …), or `Error` while the operator cannot reconcile the instance — the `Ready` condition says why, and the next observation of the instance writes Aura's status back. |
 | `connectionUrl` | `string` | Bolt routing URL (`neo4j+s://…`). Aura returns this as **null while an instance is resuming**, so the operator keeps the last known value rather than blanking it — a pause/resume cycle will not clear this field. |
 | `metricsIntegrationUrl` | `string` | Prometheus scrape endpoint, when available. |
 | `binding` | `object` | Service Binding "Provisioned Service" pointer (`{name}` — the connection Secret). |
 | `conditions` | `[]metav1.Condition` | `Ready` (instance usable) and `Synced` (operator reconciled spec). |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
-| `lastSyncedTime` | `*metav1.Time` | When the instance was last observed from the Aura API. |
+| `lastSyncedTime` | `*metav1.Time` | When the operator last recorded the instance as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile. |
 | `atProvider` | `object` | Full instance state last observed from the Aura API. See [AuraInstanceObservation](#aurainstanceobservation). |
 
 ### AuraInstanceObservation
@@ -109,7 +109,7 @@ This has consequences worth knowing before you rely on it:
 - **Only two tiers support it**: `business-critical` and `enterprise-db` (Virtual Dedicated Cloud). `free-db` and `professional-db` are rejected by Aura outright (`multi-database-tier-not-supported`), so the CRD rejects them on write.
 - **It needs an organization ID**, because the v2beta1 paths are organization-scoped. Set `spec.organizationId` or `defaultOrganizationId` on the [`AuraProviderConfig`](auraproviderconfig.md).
 - **A smaller set of fields applies.** The v2beta1 create takes name, type, cloudProvider, region, memory, `storage`, `graphAnalytics` (including `serverless`) and, for a serverless-only instance, `vectorOptimized`. `vectorOptimized: true` is **rejected** together with `multiDatabase`, because Aura refuses the combination. `secondariesCount`, `cdcEnrichmentMode`, `customerManagedKeyId` and `source` have no v2beta1 equivalent and are rejected too. `version` is not sent either — Aura picks the version — although the CRD still requires it.
-- **A create the operator can already tell Aura will refuse is stopped before the API call**, and stays stopped (the cause is in the spec, so retrying cannot help). The condition `Ready=False` carries one of two reasons: `MultiDatabaseUnsupported` for a `multiDatabase` instance, and `ServerlessGraphAnalyticsUnsupported` for a `graphAnalytics: serverless` one. The message names the cause — usually a missing organization ID, or a tier or field combination Aura rejects. Fix the spec and re-apply.
+- **A create the operator can already tell Aura will refuse is stopped before the API call**, and stays stopped (the cause is in the spec, so retrying cannot help). The condition `Ready=False` carries one of two reasons: `MultiDatabaseUnsupported` for a `multiDatabase` instance, and `ServerlessGraphAnalyticsUnsupported` for a `graphAnalytics: serverless` one. The message names the cause — usually a missing organization ID, or a tier or field combination Aura rejects. Fix the spec and re-apply. Until then the operator does not ask Aura again (phase `Error`); a missing organization ID is also looked at again once `defaultOrganizationId` on the `AuraProviderConfig` supplies one.
 - **Instances created without it are not multi-database**, and cannot be made so. An `AuraDatabase` against one is refused with `Ready=False`, reason `InstanceNotMultiDatabase`; the fix is a new `AuraInstance` (and a data migration), not a spec edit.
 
 ```yaml
