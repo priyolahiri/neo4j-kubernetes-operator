@@ -85,3 +85,28 @@ func TestCanonicalisePrivilegeStatement_Idempotent(t *testing.T) {
 		require.Equal(t, once, CanonicalisePrivilegeStatement(once), in)
 	}
 }
+
+// Neo4j stores a database name lower-cased, so a statement naming it in
+// capitals and its stored row are one privilege; every other name keeps its
+// case, and so does the difference it makes (#551).
+func TestFoldPrivilegeDatabaseNames(t *testing.T) {
+	same := [][2]string{
+		{"GRANT ACCESS ON DATABASE TOPODB TO r", "GRANT ACCESS ON DATABASE `topodb` TO `r`"},
+		{"GRANT ACCESS ON DATABASES Sales, `My-DB` TO r", "GRANT ACCESS ON DATABASES sales, `my-db` TO r"},
+		{"GRANT MATCH {*} ON GRAPH Sales NODE Person TO r", "GRANT MATCH {*} ON GRAPH sales NODE Person TO r"},
+		{"GRANT WRITE ON GRAPH `My-Comp`.Latest TO r", "GRANT WRITE ON GRAPH `my-comp`.latest TO r"},
+	}
+	for _, p := range same {
+		require.Equal(t, FoldPrivilegeDatabaseNames(p[0]), FoldPrivilegeDatabaseNames(p[1]), "%q and %q", p[0], p[1])
+	}
+	different := [][2]string{
+		{"GRANT READ {Name} ON GRAPH sales NODE Person TO r", "GRANT READ {name} ON GRAPH sales NODE Person TO r"},
+		{"GRANT TRAVERSE ON GRAPH sales NODE person TO r", "GRANT TRAVERSE ON GRAPH sales NODE Person TO r"},
+		{"GRANT ACCESS ON DATABASE sales TO Reader", "GRANT ACCESS ON DATABASE sales TO reader"},
+		{"GRANT ACCESS ON DATABASES sales TO r", "GRANT ACCESS ON DATABASE sales TO r"},
+		{"GRANT ACCESS ON DATABASE sales TO r", "DENY ACCESS ON DATABASE sales TO r"},
+	}
+	for _, p := range different {
+		require.NotEqual(t, FoldPrivilegeDatabaseNames(p[0]), FoldPrivilegeDatabaseNames(p[1]), "%q and %q", p[0], p[1])
+	}
+}

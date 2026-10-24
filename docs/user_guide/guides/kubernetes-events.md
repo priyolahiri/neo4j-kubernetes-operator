@@ -182,25 +182,25 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 |---|---|---|
 | `UserCreated` | Normal | User created in Neo4j |
 | `UserUpdated` | Normal | User updated (or its password recorded as already applied) |
-| `UserReady` | Normal | User exists and its roles are in sync |
+| `UserReady` | Normal | User exists and its roles are in sync. When the user becomes `Ready` — first, or back from a failure of its own — not on a restart of its target: a `Ready` user stays `Ready` (with `ClusterNotReady=True`) while the target is down |
 | `UserDeleted` | Normal | User dropped |
-| `UserDeletionFailed` | Warning | `DROP USER` failed; retried, and the finalizer is released if it keeps failing so deletion is not wedged |
+| `UserDeletionFailed` | Warning | `DROP USER` failed; the user is `Failed` with the error in `status.message`, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes so deletion is not wedged. Once per failure, not on every retry |
 | `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed. Once per failure |
 | `PasswordRotated` | Normal | Password updated from the referenced Secret |
 | `RolesGranted` / `RolesRevoked` | Normal | Roles granted to / revoked from a user, role binding or auth rule |
 | `RolesResolved` | Normal | `spec.roles` names `Neo4jRole` resources by their CR name, and those were granted as the Neo4j roles they manage; the message maps each, as the `RoleNamesResolved` condition does. Once when the mapping appears or changes, not on every reconcile. Emitted by `Neo4jUser` and `Neo4jRoleBinding` |
-| `RolePending` | Warning | Waiting for referenced roles to exist; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
+| `RolePending` | Warning | Waiting for referenced roles to exist — not built in, not a `Neo4jRole`, not in `SHOW ROLES`; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `RoleCreated` | Normal | Role created in Neo4j |
-| `RoleReady` | Normal | Role exists and its privileges are in sync |
+| `RoleReady` | Normal | Role exists and its privileges are in sync. When the role becomes `Ready`, not on a restart of its target |
 | `RoleDeleted` | Normal | Role dropped |
-| `RoleDeletionFailed` | Warning | `DROP ROLE` failed; retried, finalizer released if it keeps failing |
+| `RoleDeletionFailed` | Warning | `DROP ROLE` failed; the role is `Failed` with the error in `status.message`, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes. Once per failure, not on every retry |
 | `RoleSyncFailed` | Warning | Reconciling the role against Neo4j failed. Once per failure |
 | `PrivilegesApplied` | Normal | Privileges were added to and/or revoked from the role. Only grants that created a privilege row count: learn mode re-grants every statement after an alias change on the cluster or a new image, and grants that change nothing are not reported |
 | `PrivilegesDriftKept` | Warning | A drifting privilege was not revoked (it is immutable, or no `REVOKE` could be derived). Advisory, one per kept privilege |
 | `PrivilegeNamesUnknownDatabase` | Warning | A privilege names a database that does not exist on the cluster and is not an alias for one (it is skipped), or grants graph privileges on a composite database (accepted by Neo4j but inert); see `PrivilegesResolve` on the role |
 | `PrivilegeTargetDropped` | Warning | A `Neo4jDatabase` was dropped while a `Neo4jRole` on the same cluster still grants on it; emitted on both objects |
-| `BindingCreated` / `BindingUpdated` / `BindingDeleted` | Normal | `Neo4jRoleBinding` granted its roles, changed the granted set, or revoked its roles on deletion |
-| `BindingFailed` | Warning | A role binding grant or revoke failed. Once per failure |
+| `BindingCreated` / `BindingUpdated` / `BindingDeleted` | Normal | `Neo4jRoleBinding` granted its roles, changed the granted set, or revoked its roles on deletion. `BindingCreated` is not repeated on a restart of the target |
+| `BindingFailed` | Warning | A role binding grant or revoke failed (on deletion: retried, and the finalizer is released if it keeps failing for 5 minutes). Once per failure |
 | `UserNotFound` | Warning | The user a `Neo4jRoleBinding` names does not exist; the binding waits in `Pending`. Once per wait |
 
 ### Auth Rules
@@ -208,7 +208,7 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | Reason | Type | Description |
 |---|---|---|
 | `AuthRuleCreated` / `AuthRuleUpdated` / `AuthRuleDeleted` | Normal | `Neo4jAuthRule` created, its condition or enabled flag updated, or the rule dropped |
-| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed. Once per failure |
+| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed (a failed drop on deletion is retried, and the finalizer released if it keeps failing for 5 minutes). Once per failure |
 | `AuthRuleVersionTooOld` | Warning | Auth rules need Neo4j 2026.03 or later on the referenced cluster. Once per failure |
 | `OIDCProviderNotConfigured` | Warning | The referenced cluster's `spec.config` lists no OIDC provider for attribute-based access control; the rule stays `Pending`. Once per wait |
 
@@ -238,7 +238,7 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 |---|---|---|
 | `CompositeDatabaseCreated` | Normal | Composite database created |
 | `CompositeDatabaseReady` | Normal | Composite database is ready, with its observed constituent count |
-| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed. Once per failure |
+| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed. Once per failure. On deletion, a drop Neo4j refuses is retried for 5 minutes, then a second `CompositeDatabaseFailed` says the finalizer is released and the composite left in Neo4j |
 | `CompositeDatabaseDropped` | Normal | Composite dropped (constituent aliases removed; their target databases kept) |
 | `CompositeConstituentAdded` | Normal | A constituent alias now resolves to its target |
 | `CompositeConstituentRetargeted` | Normal | A constituent alias was re-pointed to a different target |

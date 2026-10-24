@@ -530,13 +530,13 @@
   {
     "id": "ev-user-ready",
     "name": "UserReady",
-    "description": "Emitted the first time a Neo4jUser's granted roles fully match spec.roles with no pending dependencies (neo4juser_controller.go).",
+    "description": "Emitted when a Neo4jUser becomes Ready — granted roles match spec.roles with no pending dependencies — the first time, or back from a failure of its own (neo4juser_controller.go). Announced from the status write that moved the persisted phase into Ready (writeStatus reports entered), never from the pass's copy; a Ready user stays Ready while its target restarts, so a restart is not announced (knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-user-deletion-failed",
     "name": "UserDeletionFailed",
-    "description": "Emitted when DROP USER fails during Neo4jUser deletion; a retryable failure requeues, otherwise the finalizer is released to avoid wedging deletion (neo4juser_controller.go).",
+    "description": "Emitted when DROP USER fails during Neo4jUser deletion (neo4juser_controller.go). A retryable failure is written to status (phase Failed, Ready reason UserDeletionFailed) and announced when that write changed it — once per failure, not on every retry; the drop is retried until it succeeds or finalizerDeletionGracePeriod ends, when the finalizer is released with one more Warning (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -572,7 +572,7 @@
   {
     "id": "ev-role-pending",
     "name": "RolePending",
-    "description": "Emitted when a desired role name matches neither a built-in nor any Neo4jRole CR, deferring the grant until the role exists (neo4juser_controller.go, neo4jrolebinding_controller.go, neo4jauthrule_controller.go). Emitted after the PendingDependencies condition write, which names the missing roles sorted, and only when that write changed it: once per wait, and again when the missing set changes (knowledge operations.md id 145).",
+    "description": "Emitted when a desired role name exists nowhere — not a built-in, not a Neo4jRole CR, not a role in Neo4j (SHOW ROLES, read only when needed; missingRoles in role_resolution.go) — deferring the grant until the role exists (neo4juser_controller.go, neo4jrolebinding_controller.go, neo4jauthrule_controller.go). Emitted after the PendingDependencies condition write, which names the missing roles sorted, and only when that write changed it: once per wait, and again when the missing set changes (knowledge operations.md ids 17, 145).",
     "moduleId": "mod-security"
   },
   {
@@ -590,13 +590,13 @@
   {
     "id": "ev-role-ready",
     "name": "RoleReady",
-    "description": "Emitted the first time a Neo4jRole's privileges fully match spec.privileges (neo4jrole_controller.go).",
+    "description": "Emitted when a Neo4jRole becomes Ready — privileges match spec.privileges — the first time, or back from a failure of its own (reportReady, neo4jrole_controller.go). Announced from the status write that moved the persisted phase into Ready, never from the pass's copy; a Ready role stays Ready while its target restarts (knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-role-deletion-failed",
     "name": "RoleDeletionFailed",
-    "description": "Emitted when DROP ROLE fails during Neo4jRole deletion; retryable failures requeue, otherwise the finalizer is released (neo4jrole_controller.go).",
+    "description": "Emitted when DROP ROLE fails during Neo4jRole deletion (neo4jrole_controller.go). A retryable failure is written to status (phase Failed, Ready reason RoleDeletionFailed) and announced once per failure, not on every retry; after finalizerDeletionGracePeriod the finalizer is released (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -620,13 +620,13 @@
   {
     "id": "ev-binding-created",
     "name": "BindingCreated",
-    "description": "Emitted the first time a Neo4jRoleBinding reaches Ready with all desired roles granted to its target user (neo4jrolebinding_controller.go).",
+    "description": "Emitted when a Neo4jRoleBinding becomes Ready with all desired roles granted to its target user, the first time or back from a failure of its own (neo4jrolebinding_controller.go). Announced from the status write that moved the persisted phase into Ready, never from the pass's copy; a Ready binding stays Ready while its target restarts (knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-binding-updated",
     "name": "BindingUpdated",
-    "description": "Emitted when an already-Ready Neo4jRoleBinding's granted-role set changes on a subsequent reconcile (neo4jrolebinding_controller.go).",
+    "description": "Emitted when an already-Ready Neo4jRoleBinding's granted-role set changes on a subsequent reconcile, as the status write that records it reports (neo4jrolebinding_controller.go; knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
@@ -638,7 +638,7 @@
   {
     "id": "ev-binding-failed",
     "name": "BindingFailed",
-    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart — a revoke the deletion retries included (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -668,7 +668,7 @@
   {
     "id": "ev-authrule-failed",
     "name": "AuthRuleFailed",
-    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation, and on a failed DROP AUTH RULE during deletion (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {

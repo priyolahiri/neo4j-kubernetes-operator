@@ -81,10 +81,10 @@ type Neo4jUserSpec struct {
 	HomeDatabase string `json:"homeDatabase,omitempty"`
 
 	// Roles is the desired set of Neo4j role names to grant to this user.
-	// Names may be either built-in (reader, editor, publisher, architect,
-	// admin) or correspond to a Neo4jRole CR managing the role in this
-	// cluster. PUBLIC is implicit and need not be listed; the controller
-	// will never attempt to revoke PUBLIC.
+	// Names may be built-in (reader, editor, publisher, architect, admin),
+	// correspond to a Neo4jRole CR managing the role in this cluster, or name
+	// a role created in Neo4j directly. PUBLIC is implicit and need not be
+	// listed; the controller will never attempt to revoke PUBLIC.
 	// +optional
 	Roles []string `json:"roles,omitempty"`
 
