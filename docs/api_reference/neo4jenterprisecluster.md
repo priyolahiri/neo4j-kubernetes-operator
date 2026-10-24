@@ -160,7 +160,7 @@ Specifies role constraints for individual servers.
 
 | Field | Type | Description |
 |---|---|---|
-| `className` | `string` | Storage class for the data PVCs. **Optional** — if omitted, the PVCs inherit the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a `StorageClassNotFound` event and `Failed` status) rather than leaving server pods `Pending`. Immutable after creation. |
+| `className` | `string` | Storage class for the data PVCs. **Optional** — if omitted, the PVCs inherit the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a `StorageClassNotFound` event and `Failed` status) rather than leaving server pods `Pending`. Immutable after creation: a volume keeps the StorageClass it was created with, and so does the StatefulSet's claim template, so a later edit changes nothing, and while it names a class the data volumes do not use the cluster raises a `ValidationWarning` naming each volume and its class. |
 | `size` | `string` | **Required.** Storage size (e.g., `"10Gi"`). Must be a valid Kubernetes quantity greater than zero, the same rule as a standalone: `"1.5Gi"` is fine; `"0"`, `"fifty"`, `"10 Gi"` and a capital `K` suffix (`"5K"`, not a Kubernetes suffix — use `Ki`, or lowercase `k`) are refused by validation. Can be increased after creation — the operator automatically expands PVCs and recreates the StatefulSet with zero downtime. **Cannot be decreased** (PVC shrink is not supported by Kubernetes). Requires the StorageClass to have `allowVolumeExpansion: true`. |
 | `retentionPolicy` | `string` | PVC retention policy: `"Delete"` (default) permanently removes PVCs on deletion; `"Retain"` preserves them. **Use `Retain` for production to prevent data loss.** See [Storage and PVC Retention](../user_guide/configuration.md#storage-and-pvc-retention). |
 
@@ -817,7 +817,7 @@ Configures an Ingress resource for HTTP(S) access to Neo4j Browser.
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | Enable OpenShift Route creation |
-| `host` | `string` | Hostname for the Route (optional) |
+| `host` | `string` | Hostname for the Route (optional). Without it OpenShift generates one, which the operator keeps; removing `host` later keeps the Route's current host, since OpenShift ignores an update that clears it |
 | `path` | `string` | Path for the Route (default: `"/"`) |
 | `annotations` | `map[string]string` | Route annotations |
 | `tls` | [`*RouteTLSSpec`](#routetlsspec) | TLS settings for the Route |
@@ -829,7 +829,7 @@ Configures an Ingress resource for HTTP(S) access to Neo4j Browser.
 |---|---|---|
 | `termination` | `string` | TLS termination: `"edge"`, `"reencrypt"`, `"passthrough"` |
 | `insecureEdgeTerminationPolicy` | `string` | `"None"`, `"Allow"`, `"Redirect"` |
-| `secretName` | `string` | Secret containing certificate (reencrypt/passthrough) |
+| `secretName` | `string` | **Reserved — no effect today.** Intended for the Route's certificate, but no Route the operator writes names one: the OpenShift router serves its default certificate (`edge`, `reencrypt`) or the server's own (`passthrough`). A `ValidationWarning` event is raised when it is set. To serve another certificate at the router, add it to the Route itself (`spec.tls.certificate` and `key`, or `spec.tls.externalCertificate`); the operator keeps what it does not render |
 
 ### MCPServerSpec
 
@@ -913,10 +913,10 @@ Configures how the operator handles Neo4j version upgrades.
 | `strategy` | `string` | `"RollingUpgrade"` (default) or `"Recreate"`. A cluster is upgraded one server at a time with either, the only way Neo4j documents for upgrading a cluster; `Recreate` raises a `ValidationWarning` (see [Upgrade Strategy](../user_guide/guides/upgrades.md#upgrade-strategy)). A standalone's one pod is replaced with either |
 | `preUpgradeHealthCheck` | `bool` | Enable health validation before upgrade (default: `true`) |
 | `maxUnavailableDuringUpgrade` | `*int32` | Accepted but has no effect: the operator restarts one server at a time, as Neo4j's rolling upgrade requires, and waits for its databases to catch up before the next. A value other than `1` (the default) raises a `ValidationWarning` |
-| `upgradeTimeout` | `string` | Budget for staging and for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: `"30m"`). A Go duration above zero (`30m`, `1h30m`, `90s`); one that does not parse, or is zero or less, is refused |
-| `postUpgradeHealthCheck` | `bool` | Enable health validation after upgrade (default: `true`) |
-| `healthCheckTimeout` | `string` | Timeout for post-upgrade version verification (default: `"5m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused |
-| `stabilizationTimeout` | `string` | Wait time for cluster stabilization (default: `"3m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused |
+| `upgradeTimeout` | `string` | Budget for staging and for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: `"30m"`). A Go duration above zero (`30m`, `1h30m`, `90s`); one that does not parse, or is zero or less, is refused. A standalone's upgrade has no such step: there a value other than the default raises a `ValidationWarning` |
+| `postUpgradeHealthCheck` | `bool` | Enable health validation after upgrade (default: `true`). A standalone runs no check after its upgrade, whatever the value |
+| `healthCheckTimeout` | `string` | Timeout for post-upgrade version verification (default: `"5m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused. A standalone runs no such check: there a value other than the default raises a `ValidationWarning` |
+| `stabilizationTimeout` | `string` | Wait time for cluster stabilization (default: `"3m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused. A standalone has no such wait: there a value other than the default raises a `ValidationWarning` |
 | `autoPauseOnFailure` | `bool` | Pause upgrade on failure for manual intervention (default: `true`) |
 
 ## Status

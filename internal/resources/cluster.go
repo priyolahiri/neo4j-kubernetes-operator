@@ -20,7 +20,6 @@ package resources
 import (
 	"fmt"
 	"net"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -201,13 +200,6 @@ dbms.ssl.policy.cluster.client_auth=NONE
 `
 }
 
-func OperatorUDCPackagingValue() string {
-	if v := os.Getenv(operatorVersionEnv); v != "" {
-		return "k8s-" + v
-	}
-	return "k8s-development"
-}
-
 func podSecurityContextForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.PodSecurityContext {
 	if cluster.Spec.SecurityContext != nil && cluster.Spec.SecurityContext.PodSecurityContext != nil {
 		return cluster.Spec.SecurityContext.PodSecurityContext
@@ -229,23 +221,6 @@ func BuildServerStatefulSetForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCl
 	// Create single StatefulSet with replicas equal to number of servers
 	sts := buildStatefulSetForEnterprise(cluster, "server", cluster.Spec.Topology.Servers)
 	return sts
-}
-
-// BuildServerStatefulSetsForEnterprise creates individual StatefulSets for each Neo4j server
-//
-// Deprecated: Use BuildServerStatefulSetForEnterprise for the unified StatefulSet approach.
-// Each server has its own StatefulSet with a replica count of 1
-// First server uses bootstrapping_strategy=me, others use bootstrapping_strategy=other
-func BuildServerStatefulSetsForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []*appsv1.StatefulSet {
-	var statefulSets []*appsv1.StatefulSet
-
-	for i := int32(0); i < cluster.Spec.Topology.Servers; i++ {
-		// Create individual StatefulSet for each server
-		sts := buildStatefulSetForEnterprise(cluster, fmt.Sprintf("server-%d", i), 1)
-		statefulSets = append(statefulSets, sts)
-	}
-
-	return statefulSets
 }
 
 // BuildBackupFromAddresses returns a comma-separated list of

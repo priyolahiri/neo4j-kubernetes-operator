@@ -226,8 +226,7 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 		if err := r.reconcileScaleDownDrain(ctx, cluster); err != nil {
 			logger.Error(err, "Scale-down drain step failed while deferring upgrade (non-fatal)")
 		}
-		r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonUpgradeDeferred,
-			"Rolling upgrade deferred until the in-progress scale-down drain completes")
+		r.announceUpgradeDeferredByDrain(cluster)
 		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
 	}
 

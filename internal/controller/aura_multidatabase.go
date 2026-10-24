@@ -360,7 +360,8 @@ func (r *AuraInstanceReconciler) createMultiDatabaseInstance(
 	}
 	resp, err := resolveInstanceV2Client(r.InstanceV2ClientFactory, creds).CreateInstanceV2(ctx, orgID, projectID, createReq)
 	if err != nil {
-		return "", false, err
+		// Aura's tier refusal is a 400, never marked: the caller stops on it.
+		return "", false, retryableAuraCall(err)
 	}
 
 	id = resp.ID

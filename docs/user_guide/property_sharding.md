@@ -193,7 +193,10 @@ spec:
 
 Use `seedURI` for a single backup location that contains shard-suffixed artifacts
 (for example, `products-g000` and `products-p000`). Use `seedURIs` for per-shard
-URIs when seeding from dumps or multiple locations.
+URIs when seeding from dumps or multiple locations. Its keys are the shard names,
+which Neo4j derives from the database name lower-cased and matches exactly; the
+operator sends them lower-cased, so `spec.name: Products` seeds from keys
+`products-g000`, `products-p000`, … however the spec spells them.
 
 ```yaml
 spec:

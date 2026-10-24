@@ -137,19 +137,21 @@ func TestResourceStatus_EveryPhaseInTheVocabularyIsClassified(t *testing.T) {
 		neo4jv1beta1.PhaseUnknown:          true,
 	}
 	notProblems := map[string]bool{
-		neo4jv1beta1.PhaseReady:      true,
-		neo4jv1beta1.PhaseInstalled:  true,
-		neo4jv1beta1.PhaseCompleted:  true,
-		neo4jv1beta1.PhaseSuspended:  true, // a deliberate pause, not a fault
-		neo4jv1beta1.PhasePending:    true,
-		neo4jv1beta1.PhaseValidating: true,
-		neo4jv1beta1.PhaseCreating:   true,
-		neo4jv1beta1.PhaseForming:    true,
-		neo4jv1beta1.PhaseInstalling: true,
-		neo4jv1beta1.PhaseRunning:    true,
-		neo4jv1beta1.PhaseWaiting:    true,
-		neo4jv1beta1.PhaseUpgrading:  true,
-		neo4jv1beta1.PhaseExpanding:  true,
+		neo4jv1beta1.PhaseReady:     true,
+		neo4jv1beta1.PhaseInstalled: true,
+		neo4jv1beta1.PhaseCompleted: true,
+		neo4jv1beta1.PhaseSuspended: true, // a deliberate pause, not a fault
+		neo4jv1beta1.PhasePending:   true,
+		// A Neo4jAuthRule waiting for roles to exist: "not yet", like Pending.
+		neo4jv1beta1.PhasePendingDependencies: true,
+		neo4jv1beta1.PhaseValidating:          true,
+		neo4jv1beta1.PhaseCreating:            true,
+		neo4jv1beta1.PhaseForming:             true,
+		neo4jv1beta1.PhaseInstalling:          true,
+		neo4jv1beta1.PhaseRunning:             true,
+		neo4jv1beta1.PhaseWaiting:             true,
+		neo4jv1beta1.PhaseUpgrading:           true,
+		neo4jv1beta1.PhaseExpanding:           true,
 		// The resting phase of a CronJob-backed Neo4jBackup. A string key on
 		// purpose: it is only in AllPhases once the shared vocabulary carries
 		// PhaseScheduled, and this must pass whether or not it does yet.

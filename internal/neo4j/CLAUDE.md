@@ -12,7 +12,7 @@ management, and error classification.
 | `client.go` | `Client` (driver + circuit breaker + pool metrics); constructors `NewClientForEnterprise`, `NewClientForEnterpriseStandalone`, `NewClientForPod`; `VerifyConnectivity`, `CreateDatabase*`, `DropDatabase`, `ExecuteCypher*`, fleet-management calls. |
 | `version.go` | `Version` struct + `ParseVersion`, `IsSupported`, `Compare`, `GetImageVersion`, the `Supports*` capability gates, and `GetBackupCommand`/`GetRestoreCommand`. |
 | `users.go` | `Client` methods for users & roles: `ShowUser`, `CreateUserAdvanced`, `AlterUser` (+ `AlterUserOptions` builder), `ShowRole`, `CreateRoleAdvanced`, `DropRoleIfExists`, `ListUsers`/`ListRoles`, `ShowRolePrivileges`. |
-| `privileges.go` | Pure string helpers: `CanonicalisePrivilegeStatement`, `DerivePrivilegeRevoke`, `PrivilegeStatementMatchesRole`, `PrivilegeStatementVerb`. No I/O. |
+| `privileges.go` | Pure string helpers: `CanonicalisePrivilegeStatement`, `DerivePrivilegeRevoke`, `PrivilegeStatementMatchesRole`, `PrivilegeStatementVerb`, `FoldPrivilegeDatabaseNames` (a comparison key with only the database names lower-cased, as Neo4j stores them). No I/O. |
 | `auth_rules.go` | ABAC `Neo4jAuthRule` DDL: `ShowAuthRule`, `ListAuthRules`, `CreateOrReplaceAuthRule`, `AlterAuthRule`, `DropAuthRuleIfExists`, `Grant/RevokeRolesFromAuthRule`. |
 | `server_management.go` | Cluster scale-down: `CordonServer`, `DeallocateServers` (supports `DRYRUN`), `DropServer`, `MinimumSystemPrimaries`. |
 | `cypher25.go` | `Cypher25()` / `Cypher5()` / `HasCypher25Prefix` — the ONLY places a `CYPHER 25` / `CYPHER 5` directive is spelled (knowledge `operations.md` ids 30, 97; `TestCypher25Guard`). |

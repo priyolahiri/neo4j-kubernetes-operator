@@ -48,7 +48,7 @@ const (
 // classifyFinalizerCleanup decides whether a Neo4j drop/revoke performed during
 // deletion lets the finalizer be released. It is the single shared policy used
 // by every CR whose deletion runs Cypher against Neo4j (user, role,
-// rolebinding, authrule, database):
+// rolebinding, authrule, database, composite database):
 //
 //   - err == nil ...................... release (cleanup succeeded)
 //   - target already gone ............. release (idempotent — desired end state)

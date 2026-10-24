@@ -52,7 +52,7 @@ func collectUsersAndRoles(
 ) {
 	rawUsers, err := nc.ListUsers(ctx)
 	if err != nil {
-		logger.Error(err, "Failed to collect SHOW USERS")
+		logDiagnosticsQueryFailure(logger, "SHOW USERS", err)
 		appendCollectionError(collectionError, fmt.Sprintf("SHOW USERS failed: %v", err))
 	} else {
 		*userCount = len(rawUsers)
@@ -76,7 +76,7 @@ func collectUsersAndRoles(
 
 	rawRoles, err := nc.ListRoles(ctx)
 	if err != nil {
-		logger.Error(err, "Failed to collect SHOW ROLES")
+		logDiagnosticsQueryFailure(logger, "SHOW ROLES", err)
 		appendCollectionError(collectionError, fmt.Sprintf("SHOW ROLES failed: %v", err))
 	} else {
 		*roleCount = len(rawRoles)
@@ -94,6 +94,21 @@ func collectUsersAndRoles(
 		}
 		*roles = out
 	}
+}
+
+// logDiagnosticsQueryFailure logs a diagnostics query that failed. A server
+// that cannot be reached — its pod deleted or restarting, the connection cut
+// mid-query ("ConnectivityError: EOF") — is part of a restart the cluster's
+// status already reports, so it is logged at info; any other failure is an
+// error. Either way it is in status.diagnostics.collectionError and the pass
+// carries on (#549).
+func logDiagnosticsQueryFailure(logger logr.Logger, query string, err error) {
+	if neo4jclient.IsConnectivityError(err) {
+		logger.Info("Could not collect "+query+": a server could not be reached; the next pass tries again",
+			"error", err.Error())
+		return
+	}
+	logger.Error(err, "Failed to collect "+query)
 }
 
 func appendCollectionError(target *string, msg string) {

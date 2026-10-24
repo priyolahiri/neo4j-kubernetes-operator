@@ -40,13 +40,12 @@ is met on many passes. It is announced once:
 
 | Reason | Type | Description |
 |---|---|---|
-| `ClusterFormationStarted` | Normal | Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it) |
-| `ClusterFormationFailed` | Warning | Cluster formation verification failed |
+| `ClusterFormationStarted` | Normal | Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it). Once per cluster: it is announced by the status write that enters `Forming`, so a pass that reads the cluster from before that write does not raise it again. There is no `ClusterFormationFailed`: formation waits rather than fails, and a cluster that cannot be reached for long raises `ConnectivityDegraded` |
 | `ClusterReady` | Normal | Cluster has reached Ready phase |
 | `ValidationFailed` | Warning | The spec failed validation; the message names what to fix and is also in `status.message`. Emitted when the failure starts or its message changes, not on every retry while the spec stays invalid (a cluster or replica also announces it again after an edit that leaves the spec invalid). Also emitted by `Neo4jEnterpriseStandalone`, `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase`, `Neo4jPlugin`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `TopologyWarning` | Warning | Topology validation produced warnings |
-| `ValidationWarning` | Warning | A spec field the schema accepts but nothing reads is set (`spec.<path> is accepted but has no effect today: <what to do instead>`). Advisory: the resource is still reconciled. Also emitted by `Neo4jEnterpriseStandalone`, `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jDatabase` and `AuraInstance` |
-| `TopologyPlacementCalculated` | Normal | Topology placement constraints calculated successfully |
+| `ValidationWarning` | Warning | A spec field the schema accepts but nothing reads is set (`spec.<path> is accepted but has no effect today: <what to do instead>`), or `spec.storage.className` names a StorageClass the existing data volumes do not use (a volume keeps the class it was created with; the message names each volume and its class). Advisory: the resource is still reconciled. Also emitted by `Neo4jEnterpriseStandalone` (there also for `spec.upgradeStrategy` `upgradeTimeout`, `healthCheckTimeout` or `stabilizationTimeout` other than their defaults), `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jDatabase` and `AuraInstance` |
+| `TopologyPlacementCalculated` | Normal | Topology placement of a zoned cluster calculated; names the zones. Announced when first calculated and when the zones change, not on every pass (an operator restart announces it once more) |
 | `TopologyPlacementFailed` | Warning | Topology placement constraint calculation failed; the cluster is `Failed` and retried with backoff. Once per failure |
 | `TopologyZoneDiscoveryDegraded` | Warning | Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set `spec.topology.availabilityZones` to enumerate zones explicitly. Advisory |
 | `PropertyShardingValidationFailed` | Warning | Property sharding configuration validation failed; the cluster is `Failed`. Once per failure |
@@ -78,7 +77,7 @@ is met on many passes. It is announced once:
 | `UpgradeCompleted` | Normal | Rolling upgrade finished successfully |
 | `UpgradePaused` | Warning | Upgrade paused after a failed check or step (`autoPauseOnFailure`); the servers stay where it stopped until you change `spec.image.tag` or turn `autoPauseOnFailure` off |
 | `UpgradeFailed` | Warning | Upgrade failed. On a `Neo4jEnterpriseStandalone` with `upgradeStrategy.preUpgradeHealthCheck` and `autoPauseOnFailure`, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked |
-| `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready`, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards |
+| `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready`, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards. Once per held target, not on every check (a drain's deferral names the target, and each drain announces it once) |
 
 ### Backups and Restores
 
@@ -88,9 +87,9 @@ is met on many passes. It is announced once:
 | `BackupStarted` | Normal | Backup job has started |
 | `BackupCompleted` | Normal | Backup job completed successfully |
 | `BackupFailed` | Warning | Backup job failed, or the spec is invalid (phase `Invalid`, once per refusal) |
-| `RestoreStarted` | Normal | Restore operation has started. A standalone restore that runs offline with `neo4j-admin` (a point in time, a `source.type: storage` path) first says why, once its checks have passed — never for a restore that is then refused; with `stopCluster: false` it says the standalone is already stopped |
-| `RestoreCompleted` | Normal | Restore operation completed |
-| `RestoreFailed` | Warning | Restore operation failed |
+| `RestoreStarted` | Normal | Restore operation has started. A standalone restore that runs offline with `neo4j-admin` (a point in time, a `source.type: storage` path) first says why, once its checks have passed — never for a restore that is then refused: with `stopCluster: true` when it stops the instance, with `stopCluster: false` (saying the standalone is already stopped) when the restore Job starts, so a restore that waits in `Pending` first does not say it twice. "Restore job … started" is emitted when the restore turns `Running`, once. Each database of an all-databases restore has its own, from the source `neo4j-restore-progress` |
+| `RestoreCompleted` | Normal | Restore operation completed. Also once at the end of an all-databases restore ("All-databases restore completed: Restored N databases") |
+| `RestoreFailed` | Warning | Restore operation failed. Also once at the end of an all-databases restore in which a database failed |
 | `RestoreFromChainParent` | Warning | `source.backupRef` points at a FULL+DIFF chain parent; the restore seeds from its latest full snapshot, not the latest chain state. Advisory, so a restore that waits (for seed credentials, a rollout, the seed proxy) does not repeat it on every check |
 | `DatabaseCreateFailed` | Warning | Database creation failed during a restore operation |
 | `BackupRetentionCaveat` | Warning | Retention pruning is configured on a CR whose chain may contain differential artifacts; pruning can orphan DIFFs whose parent FULL ages out (prefer `backupType: FULL` with retention) |
@@ -99,7 +98,7 @@ is met on many passes. It is announced once:
 | `BackupValidateUnsupported` | Warning | `options.validate` has no effect: `neo4j-admin backup validate` needs a CalVer (2025.x+) image. Advisory |
 | `ServiceAccountAnnotationConflict` | Warning | A backup/restore CR overwrote different workload-identity annotations on the namespace's shared `neo4j-backup-sa` / `neo4j-restore-sa`; the last CR reconciled wins and the others' cloud access breaks. On a `Neo4jBackup` it is advisory: two backups that disagree overwrite each other on every pass, and each says so once |
 | `SeedEndpointNotProjected` | Warning | An online restore's server pods (cluster or standalone) lack the cloud credentials or custom S3 endpoint (`AWS_ENDPOINT_URL_S3`) the seed fetch needs, and the target is not opted in to `neo4j.com/auto-inherit-seed-creds`. The restore waits in `Pending` with the missing items named, and carries on once the target has them or is opted in. Emitted when the restore starts waiting (or what it waits for changes), once |
-| `RestoreSeedProgress` | Normal | One poll of an all-databases restore's per-database seed (emitted on every non-terminal poll; the apiserver aggregates repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck) |
+| `RestoreSeedProgress` | Normal | The progress of one database's seed in an all-databases restore (allocations online, or the last poll's error). Emitted when it changes and every 10 minutes while it does not; the API server aggregates the repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck. From the source `neo4j-restore-progress`, which has an event budget of its own (client-go: a burst of 25 per source, object and type, then one every five minutes), so a long seed cannot crowd out the restore's `RestoreCompleted` or `RestoreFailed`. The per-database record is `status.databaseResults` |
 | `RestoreShardedDatabasesNotCovered` | Warning | An all-databases restore's source backup recorded property-sharded databases it does not recreate; restore each via its `Neo4jShardedDatabase` CR. Advisory |
 
 ### Databases
@@ -146,12 +145,12 @@ is met on many passes. It is announced once:
 |---|---|---|
 | `AuraFleetManagementRegistered` | Normal | Successfully registered with Aura Fleet Management |
 | `AuraFleetManagementFailed` | Warning | Aura Fleet Management token registration failed. Raised when a failure first appears or its message changes, not on every retry; the current message is in `status.auraFleetManagement.message` |
-| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet |
+| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the pass that finds it adds the plugin |
 | `AuraFleetDeploymentCreated` | Normal | Operator-driven provisioning (`spec.auraFleetManagement.provision`) registered a Fleet Manager deployment in Aura |
 | `AuraFleetDeploymentAdopted` | Normal | Provisioning adopted an existing Aura fleet deployment of the same name instead of creating one |
 | `AuraFleetDeploymentDeleted` | Normal | The Aura fleet deployment was unregistered |
 | `AuraFleetTokenProvisioned` | Normal | The fleet registration token was stored in a Secret |
-| `AuraFleetTokenRotated` | Warning | The fleet token was rotated; any previous registration is now invalid |
+| `AuraFleetTokenRotated` | Warning | The fleet token was rotated and the new one stored in its Secret; any previous registration is now invalid. Raised once the new token is stored: while the Secret cannot be written, each attempt rotates again and `status.auraFleetManagement.message` says why |
 
 ### Storage Expansion
 
@@ -182,25 +181,25 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 |---|---|---|
 | `UserCreated` | Normal | User created in Neo4j |
 | `UserUpdated` | Normal | User updated (or its password recorded as already applied) |
-| `UserReady` | Normal | User exists and its roles are in sync |
+| `UserReady` | Normal | User exists and its roles are in sync. When the user becomes `Ready` — first, or back from a failure of its own — not on a restart of its target: a `Ready` user stays `Ready` (with `ClusterNotReady=True`) while the target is down |
 | `UserDeleted` | Normal | User dropped |
-| `UserDeletionFailed` | Warning | `DROP USER` failed; retried, and the finalizer is released if it keeps failing so deletion is not wedged |
+| `UserDeletionFailed` | Warning | `DROP USER` failed; the user is `Failed` with the error in `status.message`, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes so deletion is not wedged. Once per failure, not on every retry |
 | `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed. Once per failure |
 | `PasswordRotated` | Normal | Password updated from the referenced Secret |
 | `RolesGranted` / `RolesRevoked` | Normal | Roles granted to / revoked from a user, role binding or auth rule |
 | `RolesResolved` | Normal | `spec.roles` names `Neo4jRole` resources by their CR name, and those were granted as the Neo4j roles they manage; the message maps each, as the `RoleNamesResolved` condition does. Once when the mapping appears or changes, not on every reconcile. Emitted by `Neo4jUser` and `Neo4jRoleBinding` |
-| `RolePending` | Warning | Waiting for referenced roles to exist; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
+| `RolePending` | Warning | Waiting for referenced roles to exist — not built in, not a `Neo4jRole`, not in `SHOW ROLES`; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `RoleCreated` | Normal | Role created in Neo4j |
-| `RoleReady` | Normal | Role exists and its privileges are in sync |
+| `RoleReady` | Normal | Role exists and its privileges are in sync. When the role becomes `Ready`, not on a restart of its target |
 | `RoleDeleted` | Normal | Role dropped |
-| `RoleDeletionFailed` | Warning | `DROP ROLE` failed; retried, finalizer released if it keeps failing |
+| `RoleDeletionFailed` | Warning | `DROP ROLE` failed; the role is `Failed` with the error in `status.message`, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes. Once per failure, not on every retry |
 | `RoleSyncFailed` | Warning | Reconciling the role against Neo4j failed. Once per failure |
 | `PrivilegesApplied` | Normal | Privileges were added to and/or revoked from the role. Only grants that created a privilege row count: learn mode re-grants every statement after an alias change on the cluster or a new image, and grants that change nothing are not reported |
 | `PrivilegesDriftKept` | Warning | A drifting privilege was not revoked (it is immutable, or no `REVOKE` could be derived). Advisory, one per kept privilege |
 | `PrivilegeNamesUnknownDatabase` | Warning | A privilege names a database that does not exist on the cluster and is not an alias for one (it is skipped), or grants graph privileges on a composite database (accepted by Neo4j but inert); see `PrivilegesResolve` on the role |
 | `PrivilegeTargetDropped` | Warning | A `Neo4jDatabase` was dropped while a `Neo4jRole` on the same cluster still grants on it; emitted on both objects |
-| `BindingCreated` / `BindingUpdated` / `BindingDeleted` | Normal | `Neo4jRoleBinding` granted its roles, changed the granted set, or revoked its roles on deletion |
-| `BindingFailed` | Warning | A role binding grant or revoke failed. Once per failure |
+| `BindingCreated` / `BindingUpdated` / `BindingDeleted` | Normal | `Neo4jRoleBinding` granted its roles, changed the granted set, or revoked its roles on deletion. `BindingCreated` is not repeated on a restart of the target |
+| `BindingFailed` | Warning | A role binding grant or revoke failed (on deletion: retried, and the finalizer is released if it keeps failing for 5 minutes). Once per failure |
 | `UserNotFound` | Warning | The user a `Neo4jRoleBinding` names does not exist; the binding waits in `Pending`. Once per wait |
 
 ### Auth Rules
@@ -208,7 +207,7 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | Reason | Type | Description |
 |---|---|---|
 | `AuthRuleCreated` / `AuthRuleUpdated` / `AuthRuleDeleted` | Normal | `Neo4jAuthRule` created, its condition or enabled flag updated, or the rule dropped |
-| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed. Once per failure |
+| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed (a failed drop on deletion is retried, and the finalizer released if it keeps failing for 5 minutes). Once per failure |
 | `AuthRuleVersionTooOld` | Warning | Auth rules need Neo4j 2026.03 or later on the referenced cluster. Once per failure |
 | `OIDCProviderNotConfigured` | Warning | The referenced cluster's `spec.config` lists no OIDC provider for attribute-based access control; the rule stays `Pending`. Once per wait |
 
@@ -238,7 +237,7 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 |---|---|---|
 | `CompositeDatabaseCreated` | Normal | Composite database created |
 | `CompositeDatabaseReady` | Normal | Composite database is ready, with its observed constituent count |
-| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed. Once per failure |
+| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed. Once per failure. On deletion, a drop Neo4j refuses is retried for 5 minutes, then a second `CompositeDatabaseFailed` says the finalizer is released and the composite left in Neo4j |
 | `CompositeDatabaseDropped` | Normal | Composite dropped (constituent aliases removed; their target databases kept) |
 | `CompositeConstituentAdded` | Normal | A constituent alias now resolves to its target |
 | `CompositeConstituentRetargeted` | Normal | A constituent alias was re-pointed to a different target |
@@ -252,31 +251,31 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 
 ### Aura Orchestration
 
-Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, `AuraRestore`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore`, `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite`). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place.
+Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, `AuraRestore`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore`, `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite`). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The `…Ready` events and `AuraCredentialsValidated` are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call.
 
 | Reason | Type | Description |
 |---|---|---|
-| `AuraCredentialsValidated` / `AuraCredentialsInvalid` | Normal / Warning | The provider config's Aura API credentials were accepted / rejected (the Warning once per failure) |
-| `AuraInstanceCreated`, `AuraInstanceAdopted`, `AuraInstanceUpdated`, `AuraInstancePaused`, `AuraInstanceResumed`, `AuraInstanceUpgraded`, `AuraInstanceDeleted`, `AuraInstanceOrphaned` | Normal | Lifecycle of the Aura instance |
-| `AuraInstanceFailed` | Warning | Aura instance reconcile failed (also: deletion refused while `deletionProtection` is set, recorded on the `Synced` condition, reason `DeletionProtected`). Once per failure |
+| `AuraCredentialsValidated` / `AuraCredentialsInvalid` | Normal / Warning | The provider config's Aura API credentials were accepted / rejected. Each once per change: valid again after a failure is announced again |
+| `AuraInstanceCreated`, `AuraInstanceAdopted`, `AuraInstanceUpdated`, `AuraInstancePaused`, `AuraInstanceResumed`, `AuraInstanceUpgraded`, `AuraInstanceDeleted`, `AuraInstanceOrphaned` | Normal | Lifecycle of the Aura instance. `AuraInstanceOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials stayed unavailable for 5 minutes after deletion was requested: the cloud instance keeps running, so delete it in the Aura console |
+| `AuraInstanceFailed` | Warning | Aura instance reconcile failed (also: deletion refused while `deletionProtection` is set, recorded on the `Synced` condition, reason `DeletionProtected`; a `Delete` waiting for credentials it cannot read, reason `CredentialsUnavailable`). Once per failure |
 | `AuraSnapshotCreated` | Normal | Aura snapshot requested |
 | `AuraRestoreStarted`, `AuraRestoreCompleted` | Normal | Instance restore from a snapshot started / completed |
 | `AuraRestoreFailed` | Warning | The instance entered a failed status during restore |
-| `AuraCustomerManagedKeyCreated`, `AuraCustomerManagedKeyAdopted`, `AuraCustomerManagedKeyReady`, `AuraCustomerManagedKeyDeleted`, `AuraCustomerManagedKeyOrphaned` | Normal | Lifecycle of the customer-managed key |
+| `AuraCustomerManagedKeyCreated`, `AuraCustomerManagedKeyAdopted`, `AuraCustomerManagedKeyReady`, `AuraCustomerManagedKeyDeleted`, `AuraCustomerManagedKeyOrphaned` | Normal | Lifecycle of the customer-managed key (`AuraCustomerManagedKeyReady` once when the key becomes ready). `AuraCustomerManagedKeyOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials stayed unavailable for 5 minutes: the key stays registered in Aura |
 | `AuraCustomerManagedKeyDeleteBlocked` | Warning | The key cannot be deleted: still in use by one or more instances. Once per refusal |
-| `AuraCustomerManagedKeyFailed` | Warning | Customer-managed key reconcile failed. Once per failure |
-| `AuraIPFilterCreated`, `AuraIPFilterAdopted`, `AuraIPFilterUpdated`, `AuraIPFilterReady`, `AuraIPFilterDeleted`, `AuraIPFilterOrphaned` | Normal | Lifecycle of the IP filter |
-| `AuraIPFilterFailed` | Warning | IP filter reconcile failed. Once per failure |
-| `AuraDatabaseCreated`, `AuraDatabaseAdopted`, `AuraDatabaseReady`, `AuraDatabaseDeleted`, `AuraDatabaseOrphaned` | Normal | Lifecycle of the Aura database (`AuraDatabaseCreated` is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created) |
+| `AuraCustomerManagedKeyFailed` | Warning | Customer-managed key reconcile failed (also: a `Delete` waiting for credentials, reason `CredentialsUnavailable`). Once per failure |
+| `AuraIPFilterCreated`, `AuraIPFilterAdopted`, `AuraIPFilterUpdated`, `AuraIPFilterReady`, `AuraIPFilterDeleted`, `AuraIPFilterOrphaned` | Normal | Lifecycle of the IP filter (`AuraIPFilterReady` once when it becomes Ready). `AuraIPFilterOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials or organization stayed unavailable for 5 minutes: the filter stays in place in Aura |
+| `AuraIPFilterFailed` | Warning | IP filter reconcile failed (also: a `Delete` waiting for credentials, reason `CredentialsUnavailable`). Once per failure |
+| `AuraDatabaseCreated`, `AuraDatabaseAdopted`, `AuraDatabaseReady`, `AuraDatabaseDeleted`, `AuraDatabaseOrphaned` | Normal | Lifecycle of the Aura database (`AuraDatabaseReady` once when it becomes Ready; `AuraDatabaseCreated` is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created) |
 | `AuraDatabaseFailed` | Warning | Aura database reconcile failed. Once per failure |
 | `AuraDatabaseBackupCreated` | Normal | Per-database backup created |
-| `AuraDatabaseBackupFailed` | Warning | Per-database backup failed. Once per failure |
+| `AuraDatabaseBackupFailed` | Warning | Per-database backup failed. Once per failure. Not raised while Aura is briefly unavailable or busy with another operation: the backup is retried |
 | `AuraDatabaseRestoreStarted`, `AuraDatabaseRestoreCompleted` | Normal | Per-database restore started / submitted |
 | `AuraDatabaseRestoreFailed` | Warning | Per-database restore failed. Once per failure |
-| `AuraMemberRoleUpdated`, `AuraMemberReady`, `AuraMemberRemoved` | Normal | Organization/project member role set or member added/removed, reconciled, or removed on CR deletion |
+| `AuraMemberRoleUpdated`, `AuraMemberReady`, `AuraMemberRemoved` | Normal | Organization/project member role set or member added/removed, reconciled (`AuraMemberReady` once when the membership becomes Ready), or removed on CR deletion |
 | `AuraMemberNotFound` | Warning | The person is not an organization member; invite them with an `AuraInvite`. Once per wait |
 | `AuraMemberFailed` | Warning | Member reconcile failed. Once per failure |
-| `AuraInviteCreated`, `AuraInviteAdopted`, `AuraInviteReady`, `AuraInviteDeleted`, `AuraInviteOrphaned` | Normal | Lifecycle of the invite |
+| `AuraInviteCreated`, `AuraInviteAdopted`, `AuraInviteReady`, `AuraInviteDeleted`, `AuraInviteOrphaned` | Normal | Lifecycle of the invite (`AuraInviteReady` names the invite's state, once per state: sent, accepted, declined, expired, revoked) |
 | `AuraInviteFailed` | Warning | Invite reconcile failed. Once per failure |
 
 ## Using Events in Alerting

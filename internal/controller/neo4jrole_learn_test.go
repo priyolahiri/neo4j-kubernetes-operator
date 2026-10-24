@@ -297,6 +297,126 @@ func TestLearnDesired_OverlapSurvivesRemovalOfTheOtherStatement(t *testing.T) {
 	assert.Empty(t, after.ambiguous, "and now it is attributed")
 }
 
+// A statement that names a database in capitals is stored with the name
+// lower-cased. When another statement had already granted its row
+// (`ON DATABASES topodb, other` before `ON DATABASE TOPODB`), its grant was a
+// no-op and its own text did not match the stored row exactly, so it was
+// ambiguous — and while a statement is ambiguous no unclaimed row is revoked,
+// so a foreign row stayed unattributed for good (#551, v1.22.0 journey). Its
+// stored form is matched with the database names compared ignoring case, as
+// Neo4j compares them.
+func TestLearnDesired_ACaseVariantOverlapIsAttributed(t *testing.T) {
+	s := newFakeRoleServer(t)
+	s.rendered = func(stmt string) []string {
+		switch stmt {
+		case "GRANT ACCESS ON DATABASES topodb, other TO r":
+			return []string{"GRANT ACCESS ON DATABASE `topodb` TO `r`", "GRANT ACCESS ON DATABASE `other` TO `r`"}
+		case "GRANT ACCESS ON DATABASE TOPODB TO r":
+			return []string{"GRANT ACCESS ON DATABASE `topodb` TO `r`"}
+		case "GRANT WRITE ON GRAPH topodb TO r":
+			return []string{"GRANT WRITE ON GRAPH `topodb` TO `r`"}
+		}
+		return nil
+	}
+	stmts := []string{"GRANT ACCESS ON DATABASES topodb, other TO r", "GRANT ACCESS ON DATABASE TOPODB TO r"}
+
+	first := learn(t, s, stmts, learnState{}, "scope")
+	require.Empty(t, first.ambiguous, "TOPODB is the stored topodb row")
+	assert.Equal(t, []string{"GRANT ACCESS ON DATABASE topodb TO r"}, first.state.renderings[stmts[1]].rows)
+
+	// An admin grants something the spec does not ask for: it is foreign.
+	s.rows["GRANT WRITE ON GRAPH `topodb` TO `r`"] = true
+	lo := learn(t, s, stmts, first.state, "scope")
+	assert.Equal(t, []string{"GRANT WRITE ON GRAPH topodb TO r"}, revocable(lo, s.current()))
+	assert.Empty(t, lo.state.baseline, "and not held as unattributed")
+
+	// Other names keep their case: a label or a property in another case is
+	// another privilege, so its stored row is not the statement's.
+	assert.Empty(t, storedFormRows("GRANT READ {Name} ON GRAPH topodb NODE Person TO r",
+		map[string]bool{"GRANT READ {name} ON GRAPH topodb NODE Person TO r": true}))
+	assert.Empty(t, storedFormRows("GRANT TRAVERSE ON GRAPH topodb NODE person TO r",
+		map[string]bool{"GRANT TRAVERSE ON GRAPH topodb NODE Person TO r": true}))
+}
+
+// A role learned by an operator that compared exactly holds the case-variant
+// statement as ambiguous in status, and an ambiguous statement is not granted
+// again until something re-learns the role. It is settled on the first pass
+// after the upgrade, without a grant; an out-of-band row granted after that is
+// revocable. A row absorbed while it was ambiguous stays unattributed, like
+// every row learn mode could not attribute: removing it by hand is the way out.
+func TestLearnDesired_AnAmbiguousCaseVariantIsSettledWithoutAGrant(t *testing.T) {
+	s := newFakeRoleServer(t)
+	s.rendered = func(string) []string { return nil }
+	s.rows["GRANT ACCESS ON DATABASE `topodb` TO `r`"] = true
+	s.rows["GRANT ACCESS ON DATABASE `other` TO `r`"] = true
+	s.rows["GRANT WRITE ON GRAPH `topodb` TO `r`"] = true // absorbed while ambiguous
+	stmts := []string{"GRANT ACCESS ON DATABASES topodb, other TO r", "GRANT ACCESS ON DATABASE TOPODB TO r"}
+	before := newLearnState(scopeDigest("scope"))
+	before.renderings[stmts[0]] = learnedRendering{rows: []string{
+		"GRANT ACCESS ON DATABASE other TO r", "GRANT ACCESS ON DATABASE topodb TO r"}}
+	before.renderings[stmts[1]] = learnedRendering{ambiguous: true}
+	before.baseline["GRANT WRITE ON GRAPH topodb TO r"] = true
+
+	lo := learn(t, s, stmts, before, "scope")
+
+	assert.Zero(t, s.grants, "settled from the stored rows, not by granting")
+	assert.Empty(t, lo.ambiguous)
+	assert.Equal(t, []string{"GRANT ACCESS ON DATABASE topodb TO r"}, lo.state.renderings[stmts[1]].rows)
+	assert.True(t, lo.state.baseline["GRANT WRITE ON GRAPH topodb TO r"], "what was absorbed stays unattributed")
+
+	s.rows["GRANT WRITE ON GRAPH `other` TO `r`"] = true
+	lo = learn(t, s, stmts, lo.state, "scope")
+	assert.Equal(t, []string{"GRANT WRITE ON GRAPH other TO r"}, revocable(lo, s.current()),
+		"a row granted after it is settled is out-of-band")
+}
+
+// The journey also saw one row attributed to a spec statement although an
+// admin had granted it. A learning grant reads the role's rows before and
+// after it, in one session; a GRANT another session commits between those
+// two reads is indistinguishable from the statement's own row, and is learned
+// as one. Nothing else attributes a foreign row without a concurrent write.
+// That is a limit of learning from the operator's own grants (probe mode is
+// exact), not reproduced live. What must hold is the way out: removing the row
+// by hand drops it from the statement's rendering, and once granted again it
+// is foreign.
+func TestLearnDesired_ARowGrantedDuringALearningGrantGoesWhenRemoved(t *testing.T) {
+	s := newFakeRoleServer(t)
+	const foreign = "GRANT WRITE ON GRAPH `sales` TO `r`"
+	stmts := []string{spec(t, "GRANT MATCH {*} ON GRAPH sales NODES * TO probe")}
+	racing := &racingGrantServer{fakeRoleServer: s, row: foreign}
+
+	lo, err := learnDesired(context.Background(), racing, learnRole, stmts, nil, learnState{}, "scope", s.list(), false)
+	require.NoError(t, err)
+	require.Contains(t, lo.state.renderings[stmts[0]].rows, "GRANT WRITE ON GRAPH sales TO r",
+		"the row committed between the two reads is learned as the statement's")
+
+	s.revokeCanonical("GRANT WRITE ON GRAPH sales TO r") // an admin removes it
+	lo = learn(t, s, stmts, lo.state, "scope")
+	assert.NotContains(t, lo.state.renderings[stmts[0]].rows, "GRANT WRITE ON GRAPH sales TO r")
+
+	s.rows[foreign] = true
+	lo = learn(t, s, stmts, lo.state, "scope")
+	assert.Equal(t, []string{"GRANT WRITE ON GRAPH sales TO r"}, revocable(lo, s.current()))
+}
+
+// racingGrantServer commits row, as another session would, between the two
+// reads of the first learning grant.
+type racingGrantServer struct {
+	*fakeRoleServer
+	row  string
+	done bool
+}
+
+func (s *racingGrantServer) GrantAndReadPrivileges(ctx context.Context, role, stmt string) ([]string, []string, error) {
+	before, after, err := s.fakeRoleServer.GrantAndReadPrivileges(ctx, role, stmt)
+	if err == nil && !s.done {
+		s.done = true
+		s.rows[s.row] = true
+		after = s.list()
+	}
+	return before, after, err
+}
+
 // A pre-existing row going away may unhide a statement's row: re-learn.
 func TestLearnDesired_VanishedPreexistingRowTriggersRelearn(t *testing.T) {
 	s := newFakeRoleServer(t)

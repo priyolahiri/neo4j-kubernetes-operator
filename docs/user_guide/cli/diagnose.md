@@ -40,9 +40,26 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | No workload at all | a cluster or standalone with neither StatefulSet nor pods. If the operator has written its status, it reconciled the resource and chose not to build it (a refused spec, a missing StorageClass): the hint points at that status message and `explain`. With no status, the operator may not be running or watching the namespace, and the hint says how to check |
 | Backup Job failed | the Job's `Failed` condition being `True` (including a missed `activeDeadlineSeconds`, where no pod failed), plus its pods, container by container. The verdict is the Job's conditions, not its `status.failed` count: that counts failed *attempts* and never goes down, so a backup that retried and then completed is a success — it gets a `⚠` line noting the retries, and one still retrying gets `…`, neither of which changes the exit code |
 | Nothing ever reconciled | a CR with no status at all after two minutes |
-| Operator warnings | the three most recent `Warning` events on the resource |
+| Operator warnings | the three most recent `Warning` events on the resource that still describe its current state (see below) |
 
 That last-but-one row is worth calling out. A resource with **no status at all** has no other signal — nothing is broken, the CR simply sits there. That is what you see when the operator is not running, has no RBAC for the kind, or is namespace-scoped and not watching this namespace.
+
+### Which Warning events are marked
+
+An event lives for an hour, and most outlive what they report: a `ClusterQuorumLost` stays listed long after the cluster is `Ready` again. A `Warning` is marked `⚠` only while it describes the state the resource is in now:
+
+- it was last seen at or after the resource's `Ready` condition last changed — it was raised in the current state, or in the same reconcile pass that entered it; or
+- it is an advisory the operator announces again every 30 minutes for as long as it applies — `ValidationWarning` (a field that has no effect, a `spec.storage.className` the volumes do not use, …), `TopologyWarning`, `RouteAPINotFound`, `MCPApocMissing` and the like — and was seen within that time.
+
+Older ones are not listed; one line counts them and says where to read them:
+
+```
+Neo4jEnterpriseCluster/prod — Ready · 3/3 pods ready
+  nothing to report below the resource level
+  (1 earlier Warning event(s), from before its Ready condition last changed 35m ago; kubectl describe Neo4jEnterpriseCluster prod lists them)
+```
+
+They are not findings: `--quiet` leaves such a resource out, and they never change the exit code. A resource that has no `Ready` condition gives no way to tell its states apart, so every recent `Warning` on it is marked.
 
 The pod and PVC checks apply to `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone`; the Job checks apply to `Neo4jBackup`. Every other kind gets only the Warning-events and no-status checks.
 

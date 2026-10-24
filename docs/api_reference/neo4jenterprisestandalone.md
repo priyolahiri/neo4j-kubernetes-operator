@@ -87,7 +87,7 @@ Defines storage configuration for the Neo4j data volume.
 
 | Field | Type | Description |
 |---|---|---|
-| `className` | `string` | Storage class for the data PVC. **Optional** — if omitted, the PVC inherits the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a `StorageClassNotFound` event and `Failed` status) rather than leaving the pod `Pending`. Immutable after creation. |
+| `className` | `string` | Storage class for the data PVC. **Optional** — if omitted, the PVC inherits the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a `StorageClassNotFound` event and `Failed` status) rather than leaving the pod `Pending`. Immutable after creation: a volume keeps the StorageClass it was created with, and so does the StatefulSet's claim template, so a later edit changes nothing, and while it names a class the data volume does not use the standalone raises a `ValidationWarning` naming the volume and its class. |
 | `size` | `string` | **Required**. Storage size (e.g., `"10Gi"`). Must be a valid Kubernetes quantity greater than zero (`"1.5Gi"` is fine; `"fifty"` or `"10 Gi"` is refused by validation). Can be increased after creation — the operator automatically expands the PVC and recreates the StatefulSet with zero downtime. **Cannot be decreased.** Requires `allowVolumeExpansion: true` on the StorageClass. |
 | `retentionPolicy` | `string` | PVC retention policy: `"Delete"` (default) permanently removes PVCs on deletion; `"Retain"` preserves them. **Use `Retain` for production to prevent data loss.** See [Storage and PVC Retention](../user_guide/configuration.md#storage-and-pvc-retention). |
 
@@ -266,6 +266,8 @@ upgradeStrategy:
 ```
 
 With either strategy the StatefulSet deletes the standalone's pod and creates it again on the new image. `Recreate` used to give the StatefulSet the `OnDelete` strategy, under which a new image, a configuration change or a plugin never reached the running server, while `status.version` already named the new tag.
+
+Only `strategy`, `preUpgradeHealthCheck` and `autoPauseOnFailure` act on a standalone. The rest bound or check steps of a cluster's rolling upgrade that a standalone's upgrade does not have: `upgradeTimeout`, `healthCheckTimeout` and `stabilizationTimeout` raise a `ValidationWarning` when set to anything but their defaults, and so does `maxUnavailableDuringUpgrade` other than `1`. `postUpgradeHealthCheck` raises none: no check runs after a standalone's upgrade, whatever its value.
 
 For the full type definition see [`UpgradeStrategySpec`](neo4jenterprisecluster.md#upgradestrategyspec).
 
