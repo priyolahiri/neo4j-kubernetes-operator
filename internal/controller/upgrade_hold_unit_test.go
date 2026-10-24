@@ -344,6 +344,13 @@ func TestClusterReadyMessage(t *testing.T) {
 	failed := heldCluster(upgradePhaseFailed, false)
 	assert.Contains(t, clusterReadyMessage(failed), "its upgrade to "+holdTarget+" failed (status.upgradeStatus)")
 
+	// Written when the machine starts or retargets one (#553).
+	for _, phase := range []string{upgradePhaseStaging, upgradePhaseRolling, upgradePhaseVerifying} {
+		active := heldCluster(phase, true)
+		assert.Equal(t, "Neo4j cluster is fully formed and ready; its upgrade to "+holdTarget+" is in progress (status.upgradeStatus)",
+			clusterReadyMessage(active), phase)
+	}
+
 	for _, c := range []*neo4jv1beta1.Neo4jEnterpriseCluster{
 		heldCluster(upgradePhaseCompleted, true),
 		{Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{}},

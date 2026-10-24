@@ -140,27 +140,21 @@ func (v *Version) String() string {
 	return fmt.Sprintf("%d.%d", v.Major, v.Minor)
 }
 
-// GetImageVersion extracts the version from a Neo4j image tag
+// GetImageVersion extracts the version from a Neo4j image reference
+// ("neo4j:5.26.0-enterprise", "registry:5000/neo4j:2025.01.0-enterprise"). A
+// digest after the tag ("neo4j:2026.08.1-enterprise@sha256:…", which the
+// image validation accepts) is not part of the version: splitting on every
+// colon took the digest's hex for the tag and refused the image (#531).
 func GetImageVersion(image string) (*Version, error) {
-	// Extract tag from image
-	// Format: neo4j:5.26.0-enterprise or neo4j:2025.01.0-enterprise
-	parts := strings.Split(image, ":")
-	if len(parts) < 2 {
+	name := image
+	if at := strings.Index(image, "@"); at >= 0 {
+		name = image[:at]
+	}
+	i := strings.LastIndex(name, ":")
+	if i <= 0 || strings.Contains(name[i+1:], "/") {
 		return nil, fmt.Errorf("invalid image format: %s", image)
 	}
-
-	tag := parts[len(parts)-1]
-	return ParseVersion(tag)
-}
-
-// GetKubernetesDiscoveryParameter returns the correct discovery parameter based on version
-func GetKubernetesDiscoveryParameter(version *Version) string {
-	if version.IsCalver {
-		// CalVer versions (2025.x) use the new parameter without v2
-		return "dbms.kubernetes.discovery.service_port_name"
-	}
-	// SemVer versions (5.x) use the v2 parameter
-	return "dbms.kubernetes.discovery.v2.service_port_name"
+	return ParseVersion(name[i+1:])
 }
 
 // GetBackupCommand generates the correct neo4j-admin database backup command.

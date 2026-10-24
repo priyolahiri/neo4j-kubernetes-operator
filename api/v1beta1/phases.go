@@ -49,6 +49,10 @@ const (
 	PhaseDegraded         = "Degraded"
 	PhaseSuspended        = "Suspended"
 
+	// Resting, as asked: a Neo4jPlugin with spec.enabled: false, which the
+	// operator keeps off its target's servers. Not a fault.
+	PhaseDisabled = "Disabled"
+
 	// In progress.
 	PhasePending    = "Pending"
 	PhaseValidating = "Validating"
@@ -59,6 +63,12 @@ const (
 	PhaseWaiting    = "Waiting"
 	PhaseUpgrading  = "Upgrading"
 	PhaseExpanding  = "Expanding"
+
+	// PhasePendingDependencies is Pending as a Neo4jAuthRule names it: the
+	// rule is applied with the roles that exist, and waits for the rest. It
+	// was a literal in that controller alone, so `kubectl neo4j explain` said
+	// the phase "may be newer than this CLI".
+	PhasePendingDependencies = "PendingDependencies"
 
 	// Set when nothing has been able to determine the state.
 	PhaseUnknown = "Unknown"
@@ -86,6 +96,7 @@ var AllPhases = []string{
 	PhaseValidationFailed,
 	PhaseDegraded,
 	PhaseSuspended,
+	PhaseDisabled,
 	PhasePending,
 	PhaseValidating,
 	PhaseCreating,
@@ -95,5 +106,6 @@ var AllPhases = []string{
 	PhaseWaiting,
 	PhaseUpgrading,
 	PhaseExpanding,
+	PhasePendingDependencies,
 	PhaseUnknown,
 }

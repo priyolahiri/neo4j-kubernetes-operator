@@ -374,21 +374,7 @@ func (v *ClusterValidator) ValidateWithWarnings(ctx context.Context, cluster *ne
 // status.upgradeStatus.resolvedTargetVersion for the upgrade's target
 // (operations.md id 153).
 func (v *ClusterValidator) validateAgainstRunning(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
-	tag := cluster.Spec.Image.Tag
-	if v.upgradeValidator.parseVersion(tag) == nil {
-		// A tag the image rule already refuses.
-		return nil
-	}
-	if cluster.Status.Version != "" {
-		if errs := v.upgradeValidator.ValidateVersionUpgrade(cluster.Status.Version, tag); len(errs) > 0 {
-			return errs
-		}
-	}
-	if errs := v.upgradeValidator.validateTagAgainstRunningVersion(
-		cluster.Status.RunningVersion, cluster.Status.Version, tag, "the servers run"); len(errs) > 0 {
-		return errs
-	}
-	return v.upgradeValidator.validateTagAgainstUpgrade(cluster.Status.UpgradeStatus, tag)
+	return v.upgradeValidator.ValidateTagAgainstRunning(cluster)
 }
 
 // validatePropertySharding validates property sharding configuration and version requirements.

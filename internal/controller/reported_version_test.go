@@ -161,6 +161,18 @@ func TestReportedVersionsToRecord(t *testing.T) {
 		rec := reportedVersionsToRecord(c, rolled(pinned), showServers("5.26.31", "5.26.31", "5.26.31"))
 		assert.Nil(t, rec.resolvedTargetVersion)
 	})
+	// A check refused it before Staging: every server runs status.version, and
+	// a floating one is recorded as for any cluster. It was left alone for as
+	// long as the record stayed Paused or Failed (#550).
+	t.Run("a held upgrade that had not staged, from a floating status.version: recorded", func(t *testing.T) {
+		c := paused(0)
+		c.Status.Version = floating
+		c.Status.UpgradeStatus.TargetVersion = "2026.08.1-enterprise"
+		c.Status.UpgradeStatus.Progress = &neo4jv1beta1.UpgradeProgress{Total: 3, Pending: 3}
+		rec := reportedVersionsToRecord(c, rolled(floating), showServers(resolved, resolved, resolved))
+		require.NotNil(t, rec.runningVersion)
+		assert.Equal(t, resolved, *rec.runningVersion)
+	})
 	t.Run("a held upgrade to a tag with a patch: the tag says it", func(t *testing.T) {
 		c := paused(2)
 		c.Status.UpgradeStatus.TargetVersion = "5.26.32-enterprise"

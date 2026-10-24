@@ -54,7 +54,7 @@ The `pullSecrets` field accepts a list of secret names. Secrets must exist in th
 > [Monitoring Guide](guides/monitoring.md#live-cluster-diagnostics) for full details.
 > This is on by default; only `spec.monitoring.enabled: false` turns it off.
 
-*   **Plugin management**: Use separate Neo4jPlugin CRDs to install plugins like APOC, GDS, Bloom, GenAI, and N10s. The operator automatically handles Neo4j 5.26+ compatibility requirements (see [Neo4jPlugin API Reference](../api_reference/neo4jplugin.md)).
+*   **Plugin management**: Use separate Neo4jPlugin CRDs to install plugins like APOC, GDS, Bloom, GenAI, and N10s (by name on 5.26 only; a JAR on CalVer). The operator automatically handles Neo4j 5.26+ compatibility requirements, and refuses a plugin name the target's image cannot install (see [Neo4jPlugin API Reference](../api_reference/neo4jplugin.md)).
 *   `spec.mcp`: Optional Neo4j MCP server deployment for client integrations (HTTP or STDIO). Requires the APOC plugin via Neo4jPlugin; HTTP uses per-request auth and supports Service/Ingress/Route exposure with optional TLS.
 *   `spec.tls`: Configure TLS/SSL encryption. Set mode to `cert-manager` and provide an issuerRef for automatic certificate management.
 *   `spec.config`: Add custom Neo4j configuration settings as key-value pairs. These are added to neo4j.conf.

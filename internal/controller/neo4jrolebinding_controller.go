@@ -39,6 +39,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
@@ -65,6 +66,32 @@ type Neo4jRoleBindingReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// newNeo4jClient connects to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newNeo4jClient func(ResolvedTarget) (roleBindingNeo4jClient, error)
+}
+
+// roleBindingNeo4jClient is what the Neo4jRoleBinding reconciler asks of
+// Neo4j. *neo4jclient.Client is one.
+type roleBindingNeo4jClient interface {
+	roleLister
+	ShowUser(ctx context.Context, username string) (*neo4jclient.UserInfo, error)
+	ListUserRoles(ctx context.Context, username string) ([]string, error)
+	GrantRoleToUser(ctx context.Context, roleName, username string) error
+	RevokeRoleFromUser(ctx context.Context, roleName, username string) error
+	Close() error
+}
+
+func (r *Neo4jRoleBindingReconciler) connect(target ResolvedTarget) (roleBindingNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jrolebindings,verbs=get;list;watch;create;update;patch;delete
@@ -129,15 +156,13 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(rb.Spec.ClusterRef))
-		r.setNamedCondition(ctx, rb, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
-		r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, nil)
+		r.waitForTarget(ctx, rb, fmt.Sprintf("%s is not Ready", targetRefDisplay(rb.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	r.setNamedCondition(ctx, rb, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Connect
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connect(target)
 	if err != nil {
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (knowledge
@@ -168,7 +193,10 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	r.reportResolvedRoles(ctx, rb, resolvedRoles)
 	currentRoles := normaliseRoles(info.Roles)
 
-	addRoles, dropRoles, missing := r.diffRoles(ctx, rb, desiredRoles, currentRoles)
+	addRoles, dropRoles, missing, err := r.diffRoles(ctx, nc, rb, desiredRoles, currentRoles)
+	if err != nil {
+		return r.fail(ctx, rb, "role lookup failed", err, requeue)
+	}
 	for _, role := range addRoles {
 		if err := nc.GrantRoleToUser(ctx, role, rb.Spec.Username); err != nil {
 			return r.fail(ctx, rb, fmt.Sprintf("grant %q failed", role), err, requeue)
@@ -216,25 +244,27 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 
 	if allDesiredGranted && len(missing) == 0 {
 		// Distinguish first-time success ("Created") from a subsequent
-		// successful reconcile after a spec change ("Updated"). Both
-		// previously went unannounced.
+		// successful reconcile after a spec change ("Updated"), each from what
+		// the write changed — never from this pass's copy, which the informer
+		// cache may hold from before the last write. A restart of the target
+		// is neither (waitForTarget; knowledge rule 158).
+		_, entered, grantedChanged := r.writeStatus(ctx, rb, "Ready", metav1.ConditionTrue, "BindingReady",
+			fmt.Sprintf("user %q has all %d desired roles", rb.Spec.Username, len(granted)),
+			granted)
 		switch {
-		case rb.Status.Phase != "Ready":
-			// First time this binding has reached Ready (either fresh CR
-			// or recovering from a previous failure). EventReasonBindingCreated
-			// names the initial-grant transition.
+		case entered:
+			// This binding has reached Ready (a fresh CR, or recovering from a
+			// failure of its own). EventReasonBindingCreated names the
+			// initial-grant transition.
 			r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingCreated,
 				"RoleBinding for user %q ready with %d roles", rb.Spec.Username, len(granted))
-		case !stringSlicesEqualSorted(rb.Status.GrantedRoles, granted):
+		case grantedChanged:
 			// Already Ready before, but the granted-role set has changed —
 			// either spec.roles edited, or an externally granted/revoked role
 			// has been reconciled.
 			r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingUpdated,
 				"RoleBinding for user %q updated; granted roles now %v", rb.Spec.Username, granted)
 		}
-		r.setStatus(ctx, rb, "Ready", metav1.ConditionTrue, "BindingReady",
-			fmt.Sprintf("user %q has all %d desired roles", rb.Spec.Username, len(granted)),
-			granted)
 	} else {
 		r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, ConditionReasonRolesPending,
 			fmt.Sprintf("user %q has %d of %d desired roles", rb.Spec.Username, len(granted), len(desiredRoles)),
@@ -266,7 +296,7 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connect(target)
 	if err != nil {
 		logger.Error(err, "cannot connect during binding deletion; releasing finalizer")
 		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
@@ -289,8 +319,14 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 			continue
 		}
 		if classifyFinalizerCleanup(rb, err) == retryCleanup {
-			r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonBindingFailed,
-				"revoke %q from %q failed, will retry: %v", role, rb.Spec.Username, err)
+			// Retried every RequeueAfter and on every status change of the
+			// target until the revoke succeeds or the grace period ends. The
+			// failure is written to status and announced when it starts or
+			// its message changes, not on every retry (knowledge rule 145).
+			msg := fmt.Sprintf("revoke %q from %q failed, will retry: %v", role, rb.Spec.Username, err)
+			if r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonBindingFailed, msg, nil) {
+				r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonBindingFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 		// Host gone or grace period exceeded: the remaining revokes would fail
@@ -305,25 +341,20 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 	return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
 }
 
-// diffRoles returns the role grants to add and revoke. When EnforceExclusive
-// is false (default), only the desired roles are considered for revoke;
-// extra roles granted by other means are left alone. PUBLIC is always
-// excluded from both directions.
-func (r *Neo4jRoleBindingReconciler) diffRoles(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, desired, current []string) (add, drop, missing []string) {
+// diffRoles returns the role grants to add and revoke, and the desired roles
+// that do not exist yet (missingRoles). When EnforceExclusive is false
+// (default), only the desired roles are considered for revoke; extra roles
+// granted by other means are left alone. PUBLIC is always excluded from both
+// directions.
+func (r *Neo4jRoleBindingReconciler) diffRoles(
+	ctx context.Context, roles roleLister, rb *neo4jv1beta1.Neo4jRoleBinding, desired, current []string,
+) (add, drop, missing []string, err error) {
 	currentSet := stringSet(current)
 	desiredSet := stringSet(desired)
 
-	for _, role := range desired {
-		if validation.IsBuiltInRole(role) {
-			continue
-		}
-		if _, ok := currentSet[role]; ok {
-			continue
-		}
-		if r.roleResourceExists(ctx, rb.Namespace, targetRefKey(rb.Spec.ClusterRef), role) {
-			continue
-		}
-		missing = append(missing, role)
+	missing, err = missingRoles(ctx, r.Client, roles, rb.Namespace, targetRefKey(rb.Spec.ClusterRef), desired, currentSet)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 
 	for _, d := range desired {
@@ -365,14 +396,7 @@ func (r *Neo4jRoleBindingReconciler) diffRoles(ctx context.Context, rb *neo4jv1b
 
 	sort.Strings(add)
 	sort.Strings(drop)
-	sort.Strings(missing)
-	return add, drop, missing
-}
-
-// roleResourceExists delegates to the shared roleNameExists (role_resolution.go)
-// — same index used by #260 CR-name resolution.
-func (r *Neo4jRoleBindingReconciler) roleResourceExists(ctx context.Context, namespace, targetKey, roleName string) bool {
-	return roleNameExists(ctx, r.Client, namespace, targetKey, roleName)
+	return add, drop, missing, nil
 }
 
 func (r *Neo4jRoleBindingReconciler) requeueAfter() time.Duration {
@@ -419,34 +443,72 @@ func (r *Neo4jRoleBindingReconciler) setStatus(
 	readyReason, message string,
 	grantedRoles []string,
 ) bool {
-	transitioned := false
+	changed, _, _ := r.writeStatus(ctx, rb, phase, readyStatus, readyReason, message, grantedRoles)
+	return changed
+}
+
+// writeStatus is setStatus that also reports whether the write moved the
+// persisted phase into the one given (entered) and whether it changed
+// status.grantedRoles — the transitions BindingCreated and BindingUpdated
+// announce.
+func (r *Neo4jRoleBindingReconciler) writeStatus(
+	ctx context.Context,
+	rb *neo4jv1beta1.Neo4jRoleBinding,
+	phase string,
+	readyStatus metav1.ConditionStatus,
+	readyReason, message string,
+	grantedRoles []string,
+) (transitioned, entered, grantedChanged bool) {
 	update := func() error {
-		transitioned = false
+		transitioned, entered, grantedChanged = false, false, false
 		latest := &neo4jv1beta1.Neo4jRoleBinding{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(rb), latest); err != nil {
 			return err
 		}
-		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		phaseMoved := latest.Status.Phase != phase
+		changed := phaseMoved || latest.Status.Message != message
 		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message) {
 			changed = true
 		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
+		granted := false
 		if grantedRoles != nil {
+			granted = !stringSlicesEqualSorted(latest.Status.GrantedRoles, grantedRoles)
 			latest.Status.GrantedRoles = grantedRoles
 		}
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
-		transitioned = changed
+		transitioned, entered, grantedChanged = changed, phaseMoved, granted
 		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jRoleBinding status")
-		return false
+		return false, false, false
 	}
-	return transitioned
+	return transitioned, entered, grantedChanged
+}
+
+// waitForTarget records that the target is not Ready: the ClusterNotReady
+// condition, and phase Pending unless the binding is already Ready at its
+// generation, which it stays while the target restarts — so the pass that
+// finds the target back announces nothing (recordTargetWait; knowledge rule
+// 158).
+func (r *Neo4jRoleBindingReconciler) waitForTarget(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, msg string) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jRoleBinding{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(rb), latest); err != nil {
+			return err
+		}
+		recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message, latest.Generation, msg)
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jRoleBinding")
+	}
 }
 
 // reportUserNotFound records that the bound user does not exist (yet) and

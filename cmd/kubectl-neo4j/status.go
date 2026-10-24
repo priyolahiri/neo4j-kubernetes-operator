@@ -56,8 +56,9 @@ type resourceStatus struct {
 // api/v1beta1.AllPhases fails when a new phase is added without a decision
 // about which side of this list it belongs on.
 //
-// Suspended is deliberately absent — it is a pause the user asked for — as is
-// every in-progress or terminal-healthy phase.
+// Suspended is deliberately absent — it is a pause the user asked for — and so
+// is Disabled, a plugin kept off its target as asked, as is every in-progress
+// or terminal-healthy phase.
 var problemPhases = []string{
 	neo4jv1beta1.PhaseFailed,
 	neo4jv1beta1.PhaseError,

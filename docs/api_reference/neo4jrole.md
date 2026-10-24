@@ -55,7 +55,7 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `RoleReady`, `RoleSyncFailed`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `ValidationFailed` | True when role exists and privileges are reconciled. |
+| `Ready` | `RoleReady`, `RoleSyncFailed`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `RoleDeletionFailed`, `ValidationFailed` | True when role exists and privileges are reconciled. A role that is `Ready` stays `Ready` while its target is not (a restart); `ClusterNotReady` here means the role was not yet `Ready` at its generation when the target went away. `RoleDeletionFailed` (phase `Failed`): the deletion's `DROP ROLE` failed and is retried. |
 | `PrivilegesSynced` | `PrivilegesMatch`, `PrivilegesDrifted`, `UnattributedPrivileges` | True when live privileges match `spec.privileges`. `Unknown`/`UnattributedPrivileges` (learn mode, the default) means the role holds rows the operator cannot attribute to a spec statement and so will not revoke; the message lists them. |
 | `PrivilegesResolve` | `AllDatabasesResolve`, `NoDatabaseScopedPrivileges`, `DatabaseNotFound`, `GraphPrivilegeOnComposite` | True when every database named by a privilege exists on this cluster (or is an alias for one). **False means those privileges are not on the role**: Neo4j refuses a grant on a database that does not exist, and drops a role's privileges along with a dropped database, so the operator skips them — the rest of the role is applied. The usual cause on a DR cluster is the replica's name: a replica of `foo` is called `foo-replica`, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. `GraphPrivilegeOnComposite` is the same class of silent failure on a [composite database](neo4jcompositedatabase.md): a GRAPH privilege on a composite is accepted and shown back by `SHOW ROLE PRIVILEGES`, but graph privileges attach to the constituents' target databases, so it does nothing. (`ACCESS ON DATABASE <composite>` is correct and is not flagged.) |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
@@ -111,7 +111,7 @@ remove the rule — a name is a spelling, not ownership.
 The controller treats `spec.privileges` as the source of truth and reconciles drift on every loop:
 
 1. **Read live**: `SHOW ROLE <name> PRIVILEGES AS COMMANDS YIELD command, immutable`.
-2. **Normalise** the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. By default (**learn mode**) each statement's stored rows are learned from the operator's own grant to the role and kept in `status.privilegeRenderings`; rows it cannot attribute are kept in `status.unattributedPrivileges` and never revoked. With `--privilege-normalisation=probe`, each statement is instead granted once to a short-lived `operator_privilege_probe_<random>` role and read back, cached per server version and alias layout. Either way, a statement that names a missing database falls back to textual canonicalisation. Both sides are then canonicalised:
+2. **Normalise** the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. By default (**learn mode**) each statement's stored rows are learned from the operator's own grant to the role and kept in `status.privilegeRenderings`; rows it cannot attribute are kept in `status.unattributedPrivileges` and never revoked. With `--privilege-normalisation=probe`, each statement is instead granted once to a short-lived `operator_privilege_probe_<random>` role and read back, cached per server version and alias layout. Either way, a statement that names a missing database falls back to textual canonicalisation. In learn mode, a statement whose grant added no row (another statement had already granted it) is attributed when its own text is a stored row, comparing the database names it names ignoring case, as Neo4j stores them lower-cased. Both sides are then canonicalised:
    - Whitespace runs collapsed to a single space (outside quoted strings).
    - Reserved keywords upper-cased (`grant` → `GRANT`, `database` → `DATABASE`, etc.).
    - Trailing semicolons stripped.
@@ -131,8 +131,8 @@ When `enforcePrivileges: false`, step 3's revoke pass is skipped — adds still 
 | Update | Privilege diff + apply |
 | Delete (`Delete` policy, custom role) | `DROP ROLE name IF EXISTS`, then remove finalizer |
 | Delete (built-in or `Retain`) | Remove finalizer only |
-| Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition |
-| Drop refused (role still in use) | Reconcile fails with the Neo4j error; remove the role from each `Neo4jUser.spec.roles` first |
+| Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition. A `Ready` role stays `Ready` (a target restart announces nothing); any other waits in `Pending` |
+| Drop refused | Recorded in status (phase `Failed`, reason `RoleDeletionFailed`) and announced once; the drop is retried for up to 5 minutes, then the finalizer is released and the role is left for an admin to drop |
 
 ## Examples
 
@@ -245,7 +245,7 @@ PBAC privileges flow through the same diff-and-reconcile loop as standard privil
 
 **`drop role failed: role X is assigned to user Y`**: Neo4j refuses to drop a role still in use. Remove the role from each `Neo4jUser.spec.roles` first; once the operator has revoked the role from all users, deletion succeeds.
 
-**`Pending` phase, `ClusterNotReady=True`**: the referenced `Neo4jEnterpriseCluster`/`Neo4jEnterpriseStandalone` is not yet `Ready`. The role controller will reconcile automatically when the cluster transitions.
+**`Pending` phase, `ClusterNotReady=True`**: the referenced `Neo4jEnterpriseCluster`/`Neo4jEnterpriseStandalone` is not yet `Ready`. The role controller will reconcile automatically when the cluster transitions. A role that was already `Ready` keeps phase `Ready` with `ClusterNotReady=True` while its target restarts.
 
 ## See also
 

@@ -13,7 +13,9 @@ spec:
   clusterRef: my-cluster
 
   name: genai
-  version: "1.0.0"
+  # The GenAI plugin ships with Neo4j (products/neo4j-genai-plugin-<version>.jar)
+  # and the entrypoint copies it from there: its version is your server's.
+  version: "2026.08.1"
   enabled: true
 
   source:
@@ -36,6 +38,11 @@ spec:
 
   # Security configuration. CalVer 2025.11+ also exposes the procedures as
   # ai.* (genai.* is the deprecated prefix there); 5.26 has genai.* only.
+  # allowedProcedures becomes the server's dbms.security.procedures.allowlist,
+  # shared by every plugin of the target: with only genai.* and ai.*, another
+  # plugin's procedures (APOC's) are not loaded, and that plugin carries the
+  # ProceduresHidden condition. Add their namespaces (apoc.*) here when they
+  # share the target.
   security:
     allowedProcedures:
       - "genai.*"

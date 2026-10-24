@@ -272,7 +272,9 @@ func TestApplyPlugin_LeavesWhatSomeoneElseOwns(t *testing.T) {
 	mine := genaiPlugin("c", neo4jv1beta1.PhaseReady)
 	mine.Spec.Config = map[string]string{"genai.openai.baseurl": "https://llm-proxy.internal"}
 	other := selfHealPlugin("apoc", "c", neo4jv1beta1.PhaseReady, "")
-	other.Spec.Config = map[string]string{"genai.azure.openai.baseurl": "https://azure.internal"}
+	// A shared list stays while a plugin of the target puts tokens in it,
+	// whatever a record says (setClusterPluginLists).
+	other.Spec.Config = map[string]string{"genai.azure.openai.baseurl": "https://azure.internal", "dbms.security.procedures.unrestricted": "genai.*"}
 	deleting := selfHealPlugin("gds", "c", neo4jv1beta1.PhaseReady, "")
 	deleting.Spec.Name = "graph-data-science"
 	deleting.Spec.Config = map[string]string{"genai.mine.only": "x"}
@@ -661,7 +663,7 @@ func TestUninstall_LeavesWhatOthersNeed(t *testing.T) {
 			return p
 		}(), nil, func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
 			c.Spec.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementSpec{Enabled: true}
-		}, nil, `["fleet-management","graph-data-science"]`, "gds.*,apoc.load.*"},
+		}, nil, `["fleet-management","graph-data-science"]`, ""}, // no plugin of the target puts gds.*,apoc.load.* there
 		{"NEO4J_PLUGINS and a list the cluster renders", gds(""), nil, nil, func(s *appsv1.StatefulSet) {
 			s.Annotations = map[string]string{ownedEnvVarsAnnotation: "NEO4J_PLUGINS," + unrestricted}
 		}, `["fleet-management","graph-data-science","apoc"]`, "gds.*,apoc.load.*"},
@@ -800,7 +802,6 @@ func TestPluginEnvFollowsItsConfig_APIServer(t *testing.T) {
 	plugins := &Neo4jPluginReconciler{Client: c, Scheme: scheme, Recorder: rec, RequeueAfter: time.Second,
 		bolt: &pluginBolt{
 			functional: func(context.Context, *DeploymentInfo) bool { return true },
-			configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return nil },
 		}}
 	genai := genaiPlugin("c", "")
 	genai.Namespace, genai.Generation, genai.Finalizers, genai.Status = ns, 0, nil, neo4jv1beta1.Neo4jPluginStatus{}

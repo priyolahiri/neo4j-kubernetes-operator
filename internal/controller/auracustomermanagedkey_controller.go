@@ -85,6 +85,12 @@ func (r *AuraCustomerManagedKeyReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
+	// Deletion first: it resolves the credentials only when it calls Aura
+	// (knowledge rule 157).
+	if !cmk.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, req, cmk)
+	}
+
 	creds, err := resolveAuraCredentials(ctx, r.Client, cmk.Namespace, cmk.Spec.ProviderConfigRef, cmk.Spec.CredentialsSecretRef)
 	if err != nil {
 		return r.fail(ctx, req, cmk, "CredentialsUnavailable", err)
@@ -94,10 +100,6 @@ func (r *AuraCustomerManagedKeyReconciler) Reconcile(ctx context.Context, req ct
 		projectID = creds.projectID
 	}
 	apiClient := resolveCMKClient(r.ClientFactory, creds)
-
-	if !cmk.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, req, cmk, apiClient)
-	}
 
 	if !controllerutil.ContainsFinalizer(cmk, AuraCMKFinalizer) {
 		if err := r.patchCMK(ctx, req, func(o *neo4jv1beta1.AuraCustomerManagedKey) {
@@ -122,6 +124,12 @@ func (r *AuraCustomerManagedKeyReconciler) Reconcile(ctx context.Context, req ct
 		allowCreate := managementAllows(cmk.Spec.ManagementPolicies, auraPolicyCreate)
 		id, adopted, err := r.observeOrCreate(ctx, req, cmk, apiClient, projectID, allowCreate)
 		if err != nil {
+			// A 429, a 5xx or a transport failure of an Aura call is retried as it
+			// is, not recorded as a failure (knowledge rule 88).
+			if isRetryableAuraCall(err) {
+				logger.Info("customer-managed key create deferred by a transient API failure; retrying", "error", err.Error())
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+			}
 			return r.fail(ctx, req, cmk, "CreateFailed", err)
 		}
 		if id == "" {
@@ -149,12 +157,17 @@ func (r *AuraCustomerManagedKeyReconciler) Reconcile(ctx context.Context, req ct
 		return r.fail(ctx, req, cmk, "ObserveFailed", err)
 	}
 
-	if err := r.syncStatus(ctx, req, cmk, observed); err != nil {
+	changed, err := r.syncStatus(ctx, req, cmk, observed)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
 	if aura.IsCMKReady(observed.Status) {
-		r.Recorder.Event(cmk, corev1.EventTypeNormal, EventReasonAuraCMKReady,
-			fmt.Sprintf("Customer-managed key %s is ready", observed.ID))
+		// Announced when the key becomes ready, not on every re-observe while it
+		// stays so (knowledge rule 136).
+		if changed {
+			r.Recorder.Event(cmk, corev1.EventTypeNormal, EventReasonAuraCMKReady,
+				fmt.Sprintf("Customer-managed key %s is ready", observed.ID))
+		}
 		// Ready is terminal; re-observe periodically to catch out-of-band drift.
 		return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 	}
@@ -172,7 +185,7 @@ func (r *AuraCustomerManagedKeyReconciler) observeOrCreate(
 ) (id string, adopted bool, err error) {
 	existing, err := apiClient.ListCustomerManagedKeys(ctx, projectID)
 	if err != nil {
-		return "", false, fmt.Errorf("listing customer-managed keys before create: %w", err)
+		return "", false, retryableAuraCall(fmt.Errorf("listing customer-managed keys before create: %w", err))
 	}
 	// The v1 LIST endpoint returns summaries (id/name/tenant_id only), so the
 	// key_id/region/cloud_provider/instance_type comparison CANNOT be made from
@@ -192,7 +205,7 @@ func (r *AuraCustomerManagedKeyReconciler) observeOrCreate(
 			if aura.IsNotFound(err) {
 				continue // raced with a delete
 			}
-			return "", false, fmt.Errorf("reading candidate key %q for adoption: %w", existing[i].ID, err)
+			return "", false, retryableAuraCall(fmt.Errorf("reading candidate key %q for adoption: %w", existing[i].ID, err))
 		}
 		if detail.KeyID == cmk.Spec.KeyID && detail.Region == cmk.Spec.Region &&
 			detail.CloudProvider == cmk.Spec.CloudProvider && detail.InstanceType == cmk.Spec.InstanceType {
@@ -225,7 +238,7 @@ func (r *AuraCustomerManagedKeyReconciler) observeOrCreate(
 	}
 	created, err := apiClient.CreateCustomerManagedKey(ctx, createReq)
 	if err != nil {
-		return "", false, err
+		return "", false, retryableAuraCall(err)
 	}
 	// Persist the external ID BEFORE status — the idempotency guard.
 	if err := r.setExternalID(ctx, req, created.ID); err != nil {
@@ -240,8 +253,12 @@ func (r *AuraCustomerManagedKeyReconciler) observeOrCreate(
 // registered in Aura; Delete deregisters it — which the API refuses (400
 // encryption-key-is-active) while any instance still uses it, so we surface a
 // blocking condition and requeue rather than dropping the finalizer.
+//
+// Only Delete calls Aura, so only it resolves the credentials; one that cannot
+// resolve them waits finalizerDeletionGracePeriod, then orphans the key and says
+// so (knowledge rule 157).
 func (r *AuraCustomerManagedKeyReconciler) handleDeletion(
-	ctx context.Context, req ctrl.Request, cmk *neo4jv1beta1.AuraCustomerManagedKey, apiClient auraCMKAPI,
+	ctx context.Context, req ctrl.Request, cmk *neo4jv1beta1.AuraCustomerManagedKey,
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(cmk, AuraCMKFinalizer) {
 		return ctrl.Result{}, nil
@@ -253,8 +270,23 @@ func (r *AuraCustomerManagedKeyReconciler) handleDeletion(
 	}
 
 	deleteCloud := cmk.Spec.DeletionPolicy == "Delete" && managementAllows(cmk.Spec.ManagementPolicies, auraPolicyDelete)
+	var (
+		creds    auraCredentials
+		credsErr error
+	)
 	if deleteCloud && externalID != "" {
-		if err := apiClient.DeleteCustomerManagedKey(ctx, externalID); err != nil {
+		creds, credsErr = resolveAuraCredentials(ctx, r.Client, cmk.Namespace, cmk.Spec.ProviderConfigRef, cmk.Spec.CredentialsSecretRef)
+		if credsErr != nil && !deletionGracePeriodExceeded(cmk) {
+			return r.fail(ctx, req, cmk, "CredentialsUnavailable",
+				auraDeletionNeedsCredentials(cmk, "customer-managed key", externalID, credsErr))
+		}
+	}
+	switch {
+	case deleteCloud && externalID != "" && credsErr != nil:
+		r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKOrphaned,
+			auraOrphanedWithoutCredentials("customer-managed key", externalID, "it stays registered in Aura", credsErr))
+	case deleteCloud && externalID != "":
+		if err := resolveCMKClient(r.ClientFactory, creds).DeleteCustomerManagedKey(ctx, externalID); err != nil {
 			if aura.IsCMKActive(err) {
 				// Announced when the deletion starts being blocked, not on every
 				// requeue while the key stays in use (knowledge rule 145).
@@ -274,7 +306,7 @@ func (r *AuraCustomerManagedKeyReconciler) handleDeletion(
 		}
 		r.Recorder.Event(cmk, corev1.EventTypeNormal, EventReasonAuraCMKDeleted,
 			fmt.Sprintf("Deregistered customer-managed key %s", externalID))
-	} else if externalID != "" {
+	case externalID != "":
 		r.Recorder.Event(cmk, corev1.EventTypeNormal, EventReasonAuraCMKOrphaned,
 			fmt.Sprintf("Orphaning customer-managed key %s; it stays registered in Aura", externalID))
 	}
@@ -353,30 +385,47 @@ func (r *AuraCustomerManagedKeyReconciler) setConditionChanged(ctx context.Conte
 	return changed, err
 }
 
-// syncStatus writes observed key state + conditions.
-func (r *AuraCustomerManagedKeyReconciler) syncStatus(ctx context.Context, req ctrl.Request, cmk *neo4jv1beta1.AuraCustomerManagedKey, observed *aura.CustomerManagedKey) error {
+// syncStatus writes observed key state + conditions, only when they changed or
+// the stored lastSyncedTime is due a refresh (auraSyncedTimeRefresh). It reports
+// whether the write changed the phase or the Ready condition's status, reason or
+// message, from the attempt whose write succeeded, so the caller announces the
+// key becoming ready once (knowledge rule 136).
+func (r *AuraCustomerManagedKeyReconciler) syncStatus(ctx context.Context, req ctrl.Request, cmk *neo4jv1beta1.AuraCustomerManagedKey, observed *aura.CustomerManagedKey) (bool, error) {
 	ready := aura.IsCMKReady(observed.Status)
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraCustomerManagedKey{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
-		latest.Status.CustomerManagedKeyID = observed.ID
-		latest.Status.Phase = observed.Status
-		now := metav1.Now()
-		latest.Status.LastSyncedTime = &now
-		latest.Status.ObservedGeneration = latest.Generation
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+		before := latest.Status.DeepCopy()
+		readyCond := metav1.Condition{
 			Type: "Ready", Status: auraCondStatus(ready),
 			Reason:  cmkReadyReason(observed.Status),
 			Message: fmt.Sprintf("Customer-managed key status: %s", observed.Status),
-		})
+		}
+		wouldChange := latest.Status.Phase != observed.Status || auraConditionChanged(latest.Status.Conditions, readyCond)
+		latest.Status.CustomerManagedKeyID = observed.ID
+		latest.Status.Phase = observed.Status
+		latest.Status.ObservedGeneration = latest.Generation
+		meta.SetStatusCondition(&latest.Status.Conditions, readyCond)
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Synced", Status: metav1.ConditionTrue, Reason: "Observed",
 			Message: "Reconciled against the Aura API",
 		})
-		return r.Status().Update(ctx, latest)
+		now := metav1.Now()
+		if !auraStatusWriteNeeded(*before, latest.Status, before.LastSyncedTime, now.Time) {
+			return nil
+		}
+		latest.Status.LastSyncedTime = &now
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	})
+	return changed, err
 }
 
 func cmkReadyReason(status string) string {
@@ -390,8 +439,10 @@ func cmkReadyReason(status string) string {
 	}
 }
 
-// fail records a failure on status and requeues without a hard error when the
-// cause is external (missing creds/config), so we don't hot-loop on user error.
+// fail records a failure on status — phase Error and the Ready condition — and
+// requeues without a hard error when the cause is external (missing
+// creds/config), so we don't hot-loop on user error. The phase used to stay as
+// it was, so a failing key read as healthy wherever the phase is the signal.
 func (r *AuraCustomerManagedKeyReconciler) fail(ctx context.Context, req ctrl.Request, cmk *neo4jv1beta1.AuraCustomerManagedKey, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraCustomerManagedKey reconcile deferred", "reason", reason, "error", cause.Error())
 	announce := false
@@ -402,8 +453,9 @@ func (r *AuraCustomerManagedKeyReconciler) fail(ctx context.Context, req ctrl.Re
 			return client.IgnoreNotFound(err)
 		}
 		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
-		changed := auraConditionChanged(latest.Status.Conditions, want)
+		changed := auraConditionChanged(latest.Status.Conditions, want) || latest.Status.Phase != neo4jv1beta1.PhaseError
 		meta.SetStatusCondition(&latest.Status.Conditions, want)
+		latest.Status.Phase = neo4jv1beta1.PhaseError
 		latest.Status.ObservedGeneration = latest.Generation
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err

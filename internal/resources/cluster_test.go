@@ -345,14 +345,11 @@ func TestBuildStatefulSetForEnterprise_WithFeatures(t *testing.T) {
 		},
 	}
 
-	statefulSets := resources.BuildServerStatefulSetsForEnterprise(cluster)
-	require.Len(t, statefulSets, 3, "should create 3 StatefulSets for 3 servers")
+	sts := resources.BuildServerStatefulSetForEnterprise(cluster)
+	require.Equal(t, int32(3), *sts.Spec.Replicas, "one StatefulSet with a replica per server")
 
-	// Test the first StatefulSet as a representative
-	sts := statefulSets[0]
-
-	// Test StatefulSet metadata (first StatefulSet should be server-0)
-	assert.Equal(t, cluster.Name+"-server-0", sts.Name)
+	// Test StatefulSet metadata: the one {cluster}-server StatefulSet
+	assert.Equal(t, cluster.Name+"-server", sts.Name)
 	assert.Equal(t, cluster.Namespace, sts.Namespace)
 
 	// Test that pod template has the features
@@ -478,11 +475,8 @@ func TestBuildStatefulSetForEnterprise_ParallelManagement(t *testing.T) {
 	}
 
 	// Test server StatefulSets
-	serverStatefulSets := resources.BuildServerStatefulSetsForEnterprise(cluster)
-	require.Len(t, serverStatefulSets, 3, "should create 3 StatefulSets for 3 servers")
-
-	// Test the first StatefulSet as representative
-	serverSts := serverStatefulSets[0]
+	serverSts := resources.BuildServerStatefulSetForEnterprise(cluster)
+	require.Equal(t, int32(3), *serverSts.Spec.Replicas, "one StatefulSet with a replica per server")
 	assert.Equal(t, appsv1.ParallelPodManagement, serverSts.Spec.PodManagementPolicy, "server StatefulSet should use parallel pod management")
 
 	// Test that server configuration is set correctly in the ConfigMap startup script
