@@ -100,6 +100,21 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// the server reported, so it is read again only when the container runs
 	// another image.
 	runningVersionReads sync.Map
+	// deletedStatefulSets keeps the StatefulSet a storage expansion
+	// orphan-deleted until the pass that creates it again, which takes its
+	// template (statefulset_recreate.go, operations.md id 171).
+	deletedStatefulSets deletedStatefulSets
+	// APIReader reads the ControllerRevision a StatefulSet created again takes
+	// its template from after an operator restart. nil uses Client.
+	APIReader client.Reader
+}
+
+// apiReader is APIReader, or Client when none is set.
+func (r *Neo4jEnterpriseStandaloneReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 func podSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
@@ -200,13 +215,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
 	r.advisoryWarnings.record(r.Recorder, standalone, EventReasonValidationWarning, r.Validator.NoEffectWarnings(standalone))
 	if len(validationErrs) > 0 {
-		logger.Error(fmt.Errorf("validation failed: %v", validationErrs), "Validation failed")
 		msg := fmt.Sprintf("Validation failed: %v", validationErrs)
 
-		// Update status to reflect validation failure. Announced when the
-		// failure starts or its message changes, not on every RequeueAfter
-		// while the spec stays invalid (knowledge rule 136).
-		if r.setFailedStatus(ctx, standalone, msg) {
+		// Update status to reflect validation failure. Announced — and logged
+		// at info — when the failure starts or its message changes, not on
+		// every RequeueAfter while the spec stays invalid (knowledge rule 136).
+		announced := r.setFailedStatus(ctx, standalone, msg)
+		logRefusal(logger, announced, "Validation failed", validationErrs.ToAggregate())
+		if announced {
 			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -221,11 +237,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{}, scErr
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", standalone.Spec.Storage.ClassName)
-		logger.Error(fmt.Errorf("storage class not found"), msg)
 		// Announced when the failure starts or its message changes, not on
 		// every RequeueAfter while the class stays missing (knowledge rule
 		// 145).
-		if r.setFailedStatus(ctx, standalone, msg) {
+		announced := r.setFailedStatus(ctx, standalone, msg)
+		logRefusal(logger, announced, "StorageClass not found", fmt.Errorf("%s", msg))
+		if announced {
 			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -283,6 +300,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 
 	neo4jclient.ForgetStandalone(standalone.Namespace, standalone.Name)
 	r.runningVersionReads.Delete(standalone.Namespace + "/" + standalone.Name)
+	r.deletedStatefulSets.forget(standalone.Namespace, standalone.Name)
 
 	// Remove finalizer
 	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); err != nil {
@@ -1124,9 +1142,26 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 		desiredEnv = desiredSpec.Template.Spec.Containers[0].Env
 	}
 
+	// Created again after a storage expansion deleted it: start from the
+	// StatefulSet as it was — its template with the plugins' writes, and from
+	// memory its records — so the apply below sees the template it had, keeps
+	// what other controllers wrote, and restarts nothing that has not changed
+	// (operations.md id 171).
+	existing := &appsv1.StatefulSet{}
+	if getErr := r.Get(ctx, client.ObjectKeyFromObject(statefulSet), existing); errors.IsNotFound(getErr) {
+		if src := r.deletedStatefulSets.source(ctx, r.Client, r.apiReader(), statefulSet.Namespace, statefulSet.Name,
+			standalone.UID, resources.StandalonePodSelector(standalone.Name)); src != nil {
+			src.applyTo(statefulSet)
+			logger.Info("Creating the StatefulSet again as it was, with the new volume claim templates",
+				"statefulSet", statefulSet.Name, "from", src.from)
+		}
+	}
+
 	// Create or update StatefulSet with retry logic to handle resource version conflicts
+	var op controllerutil.OperationResult
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, statefulSet, func() error {
+		var err error
+		op, err = controllerutil.CreateOrUpdate(ctx, r.Client, statefulSet, func() error {
 			// On update, CreateOrUpdate's Get has replaced `statefulSet` with the
 			// stored object (carrying our previously-stamped tracking annotations);
 			// on create it still holds the freshly-built desired object (no
@@ -1228,6 +1263,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create or update StatefulSet: %w", err)
+	}
+	if op == controllerutil.OperationResultCreated {
+		r.deletedStatefulSets.forget(statefulSet.Namespace, statefulSet.Name)
 	}
 	logger.Info("Successfully created or updated StatefulSet", "name", statefulSet.Name)
 

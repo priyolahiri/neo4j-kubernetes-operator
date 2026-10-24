@@ -173,11 +173,14 @@ func TestHoldImageDriftUntilReady_ATagWithADigestIsPinnedWhole(t *testing.T) {
 	}
 }
 
-// heldServerPod is a server pod of cluster "c", Ready or not, running image.
+// heldServerPod is a server pod of cluster "c", Ready or not, running image;
+// a Ready one's neo4j container is running.
 func heldServerPod(ordinal int, image string, ready bool) *corev1.Pod {
 	status := corev1.ConditionFalse
+	var state corev1.ContainerState
 	if ready {
 		status = corev1.ConditionTrue
+		state.Running = &corev1.ContainerStateRunning{}
 	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
@@ -188,7 +191,7 @@ func heldServerPod(ordinal int, image string, ready bool) *corev1.Pod {
 		Status: corev1.PodStatus{
 			Phase:             corev1.PodRunning,
 			Conditions:        []corev1.PodCondition{{Type: corev1.PodReady, Status: status}},
-			ContainerStatuses: []corev1.ContainerStatus{{Name: "neo4j", Ready: ready}},
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "neo4j", Ready: ready, State: state}},
 		},
 	}
 }

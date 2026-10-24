@@ -292,6 +292,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) orphanDeleteStandaloneStatefulSet(
 	logger.Info("Orphan-deleting StatefulSet for storage expansion",
 		"statefulSet", name, "namespace", namespace)
 
+	// Kept for the pass that creates it again, which starts from it
+	// (operations.md id 171).
+	r.deletedStatefulSets.remember(sts)
 	propagation := metav1.DeletePropagationOrphan
 	return r.Delete(ctx, sts, &client.DeleteOptions{
 		PropagationPolicy: &propagation,

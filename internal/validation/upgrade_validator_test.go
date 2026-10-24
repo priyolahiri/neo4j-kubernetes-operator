@@ -53,6 +53,8 @@ func TestValidateVersionUpgrade(t *testing.T) {
 		{"recorded version does not parse", "latest", "2026.08.1-enterprise", 0},
 		{"tag without a patch floats to the newest one", "5.26.12-enterprise", "5.26-enterprise", 0},
 		{"from a floating tag to a named patch", "2026.08-enterprise", "2026.08.0-enterprise", 0},
+		{"the same tag pinned to its digest", "2026.08.1-enterprise", "2026.08.1-enterprise@sha256:0123abcd", 0},
+		{"a tag pinned to a digest names its patch", "5.26.31-enterprise", "5.26.30@sha256:0123abcd", 1},
 
 		// Invalid upgrades
 		{"CalVer to SemVer downgrade rejected", "2025.01.0-enterprise", "5.26.0-enterprise", 1},

@@ -16,7 +16,8 @@
       "internal/controller/live_config.go",
       "internal/controller/restart_pending.go",
       "internal/controller/tls_reload.go",
-      "internal/controller/reconcile_cadence.go"
+      "internal/controller/reconcile_cadence.go",
+      "internal/controller/refusal_log.go"
     ]
   },
   {
@@ -37,7 +38,7 @@
     "id": "su-rolling-upgrade",
     "name": "Rolling Upgrade State Machine",
     "kind": "worker",
-    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149). A start one of its checks refuses changes nothing on the servers: the cluster stays Ready, the refusal is announced once, and a Failed one is tried again every minute (operations.md id 149). A held upgrade whose restarted servers cannot start on its target goes on towards a new tag, replacing them first (id 162), and a change of spec.topology.servers waits while an upgrade is in flight or keeps a partition (id 163).",
+    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149). A start one of its checks refuses changes nothing on the servers: the cluster stays Ready, the refusal is announced once, and a Failed one is tried again every minute (operations.md id 149). A held upgrade whose restarted servers cannot start on its target goes on towards a new tag, replacing them first (id 162), and a change of spec.topology.servers waits while an upgrade is in flight or keeps a partition (id 163). What the upgrade's servers have started on is read from their containers into status.upgradeStatus.startedTargetVersion, and the tag is held to it, not to the target, so an image that could not be pulled can be replaced by an earlier fixed one; the record of an upgrade nothing started on that the tag no longer names is dropped (id 149).",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],
@@ -53,7 +54,8 @@
       "internal/controller/upgrade_hold.go",
       "internal/controller/upgrade_start.go",
       "internal/controller/upgrade_repair.go",
-      "internal/controller/upgrade_topology.go"
+      "internal/controller/upgrade_topology.go",
+      "internal/controller/upgrade_started_target.go"
     ]
   },
   {
@@ -76,7 +78,7 @@
     "id": "su-storage-expansion",
     "name": "Storage Expansion Worker",
     "kind": "worker",
-    "description": "Detects a spec.storage.size increase, patches the affected PVCs, and orphan-deletes the owning StatefulSet so it is recreated with the enlarged VolumeClaimTemplates, for both cluster and standalone deployments; rejects any shrink attempt outright. A StorageClass cannot change the same way: while spec.storage.className names a class the existing volumes do not use, it raises an advisory ValidationWarning.",
+    "description": "Detects a spec.storage.size increase, patches the affected PVCs, and orphan-deletes the owning StatefulSet so it is recreated with the enlarged VolumeClaimTemplates, for both cluster and standalone deployments; rejects any shrink attempt outright. A StorageClass cannot change the same way: while spec.storage.className names a class the existing volumes do not use, it raises an advisory ValidationWarning. The StatefulSet is created again as it was — its pod template with every other controller's writes, replica count, update strategy and annotations — with the new claim templates, so nothing restarts; from memory, or after an operator restart from the ControllerRevision the orphaned pods run (operations.md id 171).",
     "entityIds": [
       "ent-neo4jenterprisecluster",
       "ent-neo4jenterprisestandalone"
@@ -89,7 +91,8 @@
     "paths": [
       "internal/controller/storage_expansion.go",
       "internal/controller/standalone_storage_expansion.go",
-      "internal/controller/storage_class_change.go"
+      "internal/controller/storage_class_change.go",
+      "internal/controller/statefulset_recreate.go"
     ]
   },
   {

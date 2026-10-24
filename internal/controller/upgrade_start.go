@@ -165,9 +165,29 @@ func (r *Neo4jEnterpriseClusterReconciler) refuseUpgradeStart(
 // a resumed upgrade said "is paused" for the whole of its walk (#553). A
 // cluster that is not Ready, or short of a server, keeps the message that
 // says so.
+//
+// A walk that replaces servers which could not start (id 162) runs on a
+// cluster that is short of them — Ready with the Degraded condition, Degraded,
+// or Forming once it lost a majority. Its message, written by the normal pass
+// before the walk, named those servers unavailable, and kept naming them after
+// they had been replaced (#562 walk). While the machine is active it says the
+// upgrade is in progress there too, and keeps the phase, which the next normal
+// pass judges again.
 func (r *Neo4jEnterpriseClusterReconciler) noteUpgradeInClusterMessage(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
-	if cluster.Status.Phase != neo4jv1beta1.PhaseReady || serversUnavailableSince(cluster) != nil {
-		return
+	phase := cluster.Status.Phase
+	switch {
+	case phase == neo4jv1beta1.PhaseReady && serversUnavailableSince(cluster) == nil:
+		_ = r.updateClusterStatus(ctx, cluster, neo4jv1beta1.PhaseReady, clusterReadyMessage(cluster))
+	case upgradeStateMachineActive(cluster) && clusterHasFormed(cluster) &&
+		(phase == neo4jv1beta1.PhaseReady || phase == neo4jv1beta1.PhaseDegraded || phase == neo4jv1beta1.PhaseForming):
+		_ = r.updateClusterStatus(ctx, cluster, phase, clusterShortUpgradeMessage(cluster))
 	}
-	_ = r.updateClusterStatus(ctx, cluster, neo4jv1beta1.PhaseReady, clusterReadyMessage(cluster))
+}
+
+// clusterShortUpgradeMessage is the message of a formed cluster short of
+// servers while the upgrade machine walks it: what the walk does, which stays
+// true while it does it, rather than which server was down when it started.
+func clusterShortUpgradeMessage(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	return fmt.Sprintf("Neo4j cluster's upgrade to %s is in progress (status.upgradeStatus): the servers that could not start are replaced first, then the rest one at a time",
+		cluster.Status.UpgradeStatus.TargetVersion)
 }

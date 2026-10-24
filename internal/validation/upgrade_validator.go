@@ -156,14 +156,23 @@ func (v *UpgradeValidator) validateVersionMove(currentVersion, targetVersion, ru
 }
 
 // validateTagAgainstUpgrade checks spec.image.tag against an upgrade that has
-// restarted a server on its target and has not completed: in flight, Paused or
-// Failed. status.version stays at the version the servers ran before the
-// upgrade until the upgrade verifies the new one, but the servers it rolled
-// run its target, so a tag below the target would roll them back — a
-// downgrade, which Neo4j does not support. A tag at or above the target, or
-// one the upgrade has not restarted a server for yet, is not refused here
-// (the tag may then go back to status.version). The patch is ordered only
-// when both tags name one, as in ValidateVersionUpgrade.
+// not completed — in flight, Paused or Failed — whose servers have started on
+// a version above the one they ran before it. status.version stays at that
+// version until the upgrade verifies the new one, but a server that has run a
+// target has had its store opened by it, so a tag below would roll it back — a
+// downgrade, which Neo4j does not support. The patch is ordered only when both
+// tags name one, as in ValidateVersionUpgrade.
+//
+// What a server has run is status.upgradeStatus.startedTargetVersion, which
+// the operator records when a restarted server's Neo4j container starts on a
+// target (operations.md id 149). A server that never started on it — its image
+// could not be pulled, its container could not be created — has not run it,
+// so a Paused upgrade to an unpublished tag can be pointed at an earlier fixed
+// one, or back to status.version. It was held to targetVersion as soon as the
+// walk released a server (progress), which refused exactly that (#562 walk:
+// "2026.09.9-enterprise", ErrImagePull, refused "2026.09.0-enterprise"). A
+// record an earlier operator wrote has no startedTargetVersion and keeps that
+// rule.
 //
 // A target without a patch ("5.26-enterprise") floats to the newest patch of
 // its line, so the tag alone does not say what the restarted servers run, and
@@ -174,17 +183,29 @@ func (v *UpgradeValidator) validateVersionMove(currentVersion, targetVersion, ru
 // before, and the operator rolled the restarted server down from 5.26.32 to
 // 5.26.31. Without a recorded version the patch is not checked.
 func (v *UpgradeValidator) validateTagAgainstUpgrade(us *neo4jv1beta1.UpgradeStatus, tag string) field.ErrorList {
-	if !upgradeRestartedAServer(us) {
+	if !upgradeUnfinished(us) {
+		return nil
+	}
+	floor := upgradeFloor(us)
+	if floor == "" || floor == us.PreviousVersion {
+		// No server has started on anything newer than what they ran before
+		// the upgrade, which the status.version rule already holds the tag to.
 		return nil
 	}
 	tagPath := field.NewPath("spec", "image", "tag")
-	if us.TargetVersion != tag {
-		target, current := v.parseVersion(tag), v.parseVersion(us.TargetVersion)
+	if floor != tag {
+		target, current := v.parseVersion(tag), v.parseVersion(floor)
 		if target != nil && current != nil && v.isDowngrade(current, target) {
+			if floor == us.TargetVersion {
+				return field.ErrorList{field.Invalid(tagPath, tag, fmt.Sprintf(
+					"downgrades are not supported: the upgrade to %s (status.upgradeStatus.targetVersion) has already restarted "+
+						"servers on it, and Neo4j cannot go back to an earlier version. Set the tag to %s or later; running an "+
+						"earlier version means restoring a backup taken before the upgrade", us.TargetVersion, us.TargetVersion))}
+			}
 			return field.ErrorList{field.Invalid(tagPath, tag, fmt.Sprintf(
-				"downgrades are not supported: the upgrade to %s (status.upgradeStatus.targetVersion) has already restarted "+
-					"servers on it, and Neo4j cannot go back to an earlier version. Set the tag to %s or later; running an "+
-					"earlier version means restoring a backup taken before the upgrade", us.TargetVersion, us.TargetVersion))}
+				"downgrades are not supported: servers this upgrade restarted have run %s "+
+					"(status.upgradeStatus.startedTargetVersion), and Neo4j cannot go back to an earlier version. Set the tag "+
+					"to %s or later; running an earlier version means restoring a backup taken before the upgrade", floor, floor))}
 		}
 	}
 	if v.belowReported(us.ResolvedTargetVersion, tag) {
@@ -195,6 +216,22 @@ func (v *UpgradeValidator) validateTagAgainstUpgrade(us *neo4jv1beta1.UpgradeSta
 				"before the upgrade", us.TargetVersion, us.ResolvedTargetVersion, us.ResolvedTargetVersion))}
 	}
 	return nil
+}
+
+// upgradeFloor returns the newest version an unfinished upgrade's servers may
+// have started on: status.upgradeStatus.startedTargetVersion, which the
+// operator records from the servers' containers; for a record an earlier
+// operator wrote, without it, targetVersion once the walk has released a
+// server (progress); "" when nothing says a server has started on anything
+// newer than previousVersion.
+func upgradeFloor(us *neo4jv1beta1.UpgradeStatus) string {
+	if us.StartedTargetVersion != "" {
+		return us.StartedTargetVersion
+	}
+	if upgradeRestartedAServer(us) {
+		return us.TargetVersion
+	}
+	return ""
 }
 
 // validateTagAgainstRunningVersion checks spec.image.tag against
@@ -228,18 +265,27 @@ func (v *UpgradeValidator) belowReported(reported, tag string) bool {
 	return current != nil && target != nil && v.isDowngrade(current, target)
 }
 
-// upgradeRestartedAServer reports whether an upgrade that has not completed —
-// in flight, Paused or Failed — has restarted a server on its target. The
-// walk records it in status.upgradeStatus.progress when it lowers the
-// partition for the first server (inProgress, then upgraded), and an attempt
-// that takes up a held upgrade keeps that progress, so a retarget does not
-// forget servers an earlier target restarted.
-func upgradeRestartedAServer(us *neo4jv1beta1.UpgradeStatus) bool {
-	if us == nil || us.TargetVersion == "" || us.Progress == nil {
+// upgradeUnfinished reports whether an upgrade record names a target and has
+// not completed: in flight, Paused or Failed.
+func upgradeUnfinished(us *neo4jv1beta1.UpgradeStatus) bool {
+	if us == nil || us.TargetVersion == "" {
 		return false
 	}
 	switch us.Phase {
 	case "", "Completed", "Pending":
+		return false
+	}
+	return true
+}
+
+// upgradeRestartedAServer reports whether an unfinished upgrade has released a
+// server onto its target: the walk records it in status.upgradeStatus.progress
+// when it lowers the partition for the first server (inProgress, then
+// upgraded). It says the server was released, not that it started; it is the
+// rule for a record without startedTargetVersion, which an earlier operator
+// wrote.
+func upgradeRestartedAServer(us *neo4jv1beta1.UpgradeStatus) bool {
+	if !upgradeUnfinished(us) || us.Progress == nil {
 		return false
 	}
 	return us.Progress.Upgraded > 0 || us.Progress.InProgress > 0
@@ -373,6 +419,11 @@ func (v *UpgradeValidator) validateSemVerToCalVerUpgrade(current *VersionInfo, c
 func (v *UpgradeValidator) parseVersion(version string) *VersionInfo {
 	// Remove any prefix like "v" and suffixes like "-enterprise"
 	version = strings.TrimPrefix(version, "v")
+	// A digest the tag was pinned to says nothing about the version
+	// ("5.26.31@sha256:…" is 5.26.31, not a tag without a patch).
+	if idx := strings.Index(version, "@"); idx != -1 {
+		version = version[:idx]
+	}
 	if idx := strings.Index(version, "-"); idx != -1 {
 		version = version[:idx]
 	}
