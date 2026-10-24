@@ -2024,7 +2024,7 @@
         "name": "status.phase",
         "type": "string",
         "isNullable": true,
-        "note": "Pending, Ready, Failed, or PendingDependencies."
+        "note": "Pending, Ready, Failed, or PendingDependencies (api/v1beta1 PhasePendingDependencies, in AllPhases)."
       },
       {
         "id": "f-neo4jauthrule-status-applied-roles",
@@ -2236,7 +2236,7 @@
         "id": "f-aurainstance-status-phase",
         "name": "status.phase",
         "type": "string",
-        "note": "Creating, Running, Pausing, Paused, Resuming, Updating, Restoring, Destroying, ..."
+        "note": "Creating, Running, Pausing, Paused, Resuming, Updating, Restoring, Destroying, ... (Aura's own status), or Error while the operator cannot reconcile the instance"
       },
       {
         "id": "f-aurainstance-status-connection-url",
@@ -2458,7 +2458,7 @@
         "id": "f-auracustomermanagedkey-status-phase",
         "name": "status.phase",
         "type": "string",
-        "note": "Pending, Ready, Deleting, Error."
+        "note": "Pending, Ready, Deleting, Error (Aura's own key status), or Error while the operator cannot reconcile the key"
       },
       {
         "id": "f-auracustomermanagedkey-status-conditions",
@@ -2468,7 +2468,8 @@
       {
         "id": "f-auracustomermanagedkey-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2552,7 +2553,8 @@
       {
         "id": "f-auraipfilter-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2619,7 +2621,8 @@
       {
         "id": "f-auradatabase-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2687,7 +2690,8 @@
       {
         "id": "f-auradatabasebackup-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2827,7 +2831,8 @@
       {
         "id": "f-auraorganizationmember-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2904,7 +2909,8 @@
       {
         "id": "f-auraprojectmember-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   },
@@ -2986,7 +2992,8 @@
       {
         "id": "f-aurainvite-status-last-synced-time",
         "name": "status.lastSyncedTime",
-        "type": "timestamp"
+        "type": "timestamp",
+        "note": "When the operator last recorded what it observed from the Aura API: written with every change to the status, and refreshed at least every 15 minutes (auraSyncedTimeRefresh) while nothing changes — not on every poll, since each status write starts another reconcile (operations.md id 156)."
       }
     ]
   }

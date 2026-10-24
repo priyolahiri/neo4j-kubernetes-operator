@@ -67,15 +67,27 @@ func rolledImageTag(sts *appsv1.StatefulSet) string {
 // an image without a tag (one pinned by digest alone). A registry port
 // ("registry:5000/neo4j") is not a tag separator.
 func imageTag(image string) string {
+	_, tag, _ := splitImage(image)
+	return tag
+}
+
+// splitImage splits a "<repo>:<tag>" image reference, the way the operator
+// builds one from spec.image, back into the repo and the tag: the tag keeps a
+// digest it carries ("2026.08.1-enterprise@sha256:…"), and a registry port
+// ("registry:5000/neo4j") is part of the repo. ok is false for an image
+// without a tag. The colon of the digest is not the tag's: splitting on the
+// last colon read "neo4j:2026.08.1-enterprise@sha256" as the repo and the
+// digest's hex as the tag (#531).
+func splitImage(image string) (repo, tag string, ok bool) {
 	name, digest := image, ""
 	if at := strings.Index(image, "@"); at >= 0 {
 		name, digest = image[:at], image[at:]
 	}
 	i := strings.LastIndex(name, ":")
 	if i <= 0 || strings.Contains(name[i+1:], "/") {
-		return ""
+		return "", "", false
 	}
-	return name[i+1:] + digest
+	return name[:i], name[i+1:] + digest, true
 }
 
 // clusterVersionToRecord decides what a pass that finds the cluster Ready

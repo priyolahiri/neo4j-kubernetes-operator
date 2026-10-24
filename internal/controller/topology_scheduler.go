@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
@@ -23,6 +24,32 @@ const (
 // TopologyScheduler handles topology-aware placement of Neo4j cluster pods
 type TopologyScheduler struct {
 	client.Client
+	// placementEvents remembers, per cluster, the TopologyPlacementCalculated
+	// message last announced (placementAnnouncement).
+	placementEvents lastAnnounced
+}
+
+// placementAnnouncement returns the TopologyPlacementCalculated message for a
+// cluster's placement, and whether it is news: a zoned placement calculated
+// for the first time, or with other zones than the last one announced. The
+// placement is calculated on every pass, and announcing it on every pass spent
+// the cluster's event budget on a steady state (#527; operations.md id 136).
+// A placement without zones announces nothing and is forgotten, so zones that
+// come back are announced again.
+func (ts *TopologyScheduler) placementAnnouncement(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, placement *TopologyPlacement) (string, bool) {
+	key := clusterKey(cluster)
+	if placement == nil || len(placement.AvailabilityZones) == 0 {
+		ts.placementEvents.forget(key)
+		return "", false
+	}
+	message := fmt.Sprintf("Calculated topology placement across %d zones (%s)",
+		len(placement.AvailabilityZones), strings.Join(placement.AvailabilityZones, ", "))
+	return message, ts.placementEvents.changed(key, message)
+}
+
+// forgetCluster drops what the scheduler remembers about a deleted cluster.
+func (ts *TopologyScheduler) forgetCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
+	ts.placementEvents.forget(clusterKey(cluster))
 }
 
 // NewTopologyScheduler creates a new topology scheduler

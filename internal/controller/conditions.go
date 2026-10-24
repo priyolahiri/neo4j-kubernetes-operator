@@ -35,6 +35,14 @@ const (
 	// yet auto-drain them (#173).
 	ConditionTypeServersPendingDrain = "ServersPendingDrain"
 
+	// ConditionTypeTopologyChangeDeferred indicates spec.topology.servers asks
+	// for another server count than the server StatefulSet keeps, because an
+	// upgrade is in flight or keeps a partition (Paused or Failed): Neo4j's
+	// rolling upgrade changes no topology, and servers added then would start
+	// on the upgrade's target. The change is applied once the upgrade
+	// completes (operations.md id 163).
+	ConditionTypeTopologyChangeDeferred = "TopologyChangeDeferred"
+
 	// ConditionTypeCrossClusterProxySecure reports whether anything
 	// authenticates the tx-shipping port that spec.crossClusterReplication
 	// publishes through a load balancer. The proxy is a TCP passthrough, so
@@ -87,10 +95,13 @@ const (
 	ConditionReasonServersPendingDrain   = "ServersPendingDrain"
 	ConditionReasonNoServersPendingDrain = "NoServersPendingDrain"
 	ConditionReasonScaleDownBlocked      = "ScaleDownBlocked"
-	// ConditionReasonScaleDownDeferredByUpgrade — a topology shrink was
-	// requested while a rolling upgrade is mid-flight; the drain starts
-	// after the upgrade completes (#173/#174 mutual exclusion).
-	ConditionReasonScaleDownDeferredByUpgrade = "ScaleDownDeferredByUpgrade"
+	// ConditionReasonWaitsForUpgrade / ConditionReasonNoTopologyChangeWaits
+	// are the TopologyChangeDeferred condition's reasons: a change of
+	// spec.topology.servers waits while an upgrade is in flight or keeps a
+	// partition, and is applied once it completes (#173/#174 mutual
+	// exclusion; operations.md id 163).
+	ConditionReasonWaitsForUpgrade       = "WaitsForUpgrade"
+	ConditionReasonNoTopologyChangeWaits = "NoTopologyChangeWaits"
 )
 
 // SetReadyCondition sets the standard "Ready" condition on a conditions slice.
@@ -165,7 +176,8 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 	case neo4jv1beta1.PhaseForming, neo4jv1beta1.PhaseCreating:
 		return metav1.ConditionUnknown, ConditionReasonForming
 	case neo4jv1beta1.PhaseInstalling, neo4jv1beta1.PhaseRunning,
-		neo4jv1beta1.PhaseValidating, neo4jv1beta1.PhasePending, neo4jv1beta1.PhaseWaiting:
+		neo4jv1beta1.PhaseValidating, neo4jv1beta1.PhasePending, neo4jv1beta1.PhaseWaiting,
+		neo4jv1beta1.PhasePendingDependencies:
 		return metav1.ConditionUnknown, ConditionReasonPending
 	default:
 		return metav1.ConditionUnknown, ConditionReasonPending

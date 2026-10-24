@@ -54,12 +54,18 @@ package controller
 // is held.
 
 import (
+	"context"
 	"fmt"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 // upgradeHeld reports whether the cluster's upgrade stopped Paused or Failed,
@@ -107,6 +113,14 @@ func keptUpgradePartition(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *app
 		return p
 	}
 	return 0
+}
+
+// upgradeStaged reports whether the server StatefulSet's template carries the
+// upgrade's target, which Staging writes: a record that names no target, or
+// one a check refused before Staging, has rolled no server.
+func upgradeStaged(us *neo4jv1beta1.UpgradeStatus, sts *appsv1.StatefulSet) bool {
+	return us != nil && us.TargetVersion != "" && len(sts.Spec.Template.Spec.Containers) > 0 &&
+		imageTag(sts.Spec.Template.Spec.Containers[0].Image) == us.TargetVersion
 }
 
 // heldRolloutPending reports whether a StatefulSet whose partition a held
@@ -194,17 +208,129 @@ func newUpgradeRecord(held *neo4jv1beta1.UpgradeStatus, previousVersion, targetV
 }
 
 // clusterReadyMessage is the status message of a Ready cluster; it says so
-// when an upgrade is held, which status.upgradeStatus details.
+// when an upgrade is in progress or held, which status.upgradeStatus details.
+// The machine writes it when it starts or retargets an upgrade
+// (noteUpgradeInClusterMessage): a resumed upgrade used to say "is paused"
+// until it completed (#553).
 func clusterReadyMessage(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	const ready = "Neo4j cluster is fully formed and ready"
 	us := cluster.Status.UpgradeStatus
-	if !upgradeHeld(cluster) || us.TargetVersion == "" || us.TargetVersion == cluster.Status.Version {
+	if us == nil || us.TargetVersion == "" || us.TargetVersion == cluster.Status.Version {
 		return ready
 	}
-	if us.Phase == upgradePhasePaused {
+	switch {
+	case upgradeStateMachineActive(cluster):
+		return fmt.Sprintf("%s; its upgrade to %s is in progress (status.upgradeStatus)", ready, us.TargetVersion)
+	case us.Phase == upgradePhasePaused:
 		return fmt.Sprintf("%s; its upgrade to %s is paused (status.upgradeStatus): the servers it has not rolled keep the version they run until spec.image.tag changes or spec.upgradeStrategy.autoPauseOnFailure is set to false",
 			ready, us.TargetVersion)
+	case us.Phase == upgradePhaseFailed:
+		return fmt.Sprintf("%s; its upgrade to %s failed (status.upgradeStatus), and the operator takes it up again while every server is available",
+			ready, us.TargetVersion)
 	}
-	return fmt.Sprintf("%s; its upgrade to %s failed (status.upgradeStatus), and the operator takes it up again while every server is available",
-		ready, us.TargetVersion)
+	return ready
+}
+
+// imageInPlace is the image a cluster's servers run where the image hold reads
+// it, and how many of them are ready.
+type imageInPlace struct {
+	image string
+	ready int32
+}
+
+// serverImageInPlace returns the image the server StatefulSet's template
+// carries and how many of its replicas are ready. While the StatefulSet does
+// not exist but its pods do — a storage expansion orphan-deletes it and the
+// next pass creates it again — it reads the orphaned server pods: the image of
+// the highest ordinal, which carries the template the StatefulSet rolled out
+// last (it updates pods from the highest ordinal down), and how many are
+// ready. found is false when there is neither (a new cluster) or they cannot
+// be read.
+//
+// Reading only the StatefulSet let a held image change through after an
+// expansion: the hold found nothing, so the StatefulSet was created again with
+// the spec's image and no partition, and every server rolled onto it with
+// only the readiness probe between them, on a cluster that was not Ready
+// (#538).
+func (r *Neo4jEnterpriseClusterReconciler) serverImageInPlace(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (imageInPlace, bool) {
+	stsName := fmt.Sprintf("%s-server", cluster.Name)
+	sts := &appsv1.StatefulSet{}
+	err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}, sts)
+	switch {
+	case err == nil:
+		if len(sts.Spec.Template.Spec.Containers) == 0 {
+			return imageInPlace{}, false
+		}
+		return imageInPlace{image: sts.Spec.Template.Spec.Containers[0].Image, ready: sts.Status.ReadyReplicas}, true
+	case !apierrors.IsNotFound(err):
+		return imageInPlace{}, false
+	}
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(cluster.Namespace), client.MatchingLabels{
+		"neo4j.com/cluster":    cluster.Name,
+		"neo4j.com/clustering": "true",
+	}); err != nil {
+		return imageInPlace{}, false
+	}
+	var place imageInPlace
+	highest := -1
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		ordinal, ok := statefulSetOrdinal(stsName, pod.Name)
+		if !ok || pod.DeletionTimestamp != nil {
+			continue
+		}
+		if isPodReady(pod) {
+			place.ready++
+		}
+		if ordinal < highest {
+			continue
+		}
+		for _, c := range pod.Spec.Containers {
+			if c.Name == resources.Neo4jContainer {
+				highest, place.image = ordinal, c.Image
+			}
+		}
+	}
+	return place, place.image != ""
+}
+
+// heldImageChange is what deferredUpgradeTargets keeps per cluster (under
+// clusterKey): the image change last held back, why (holdCause*), and whether
+// its UpgradeDeferred event is out. A drain's deferral is kept under
+// drainDeferralKey (announceUpgradeDeferredByDrain).
+type heldImageChange struct {
+	image, cause string
+	announced    bool
+}
+
+// holdCauseNotReady: the cluster is not Ready with every server available
+// (holdImageDriftUntilReady).
+const holdCauseNotReady = "not-ready"
+
+// announceHeldImageChange emits the UpgradeDeferred event for an image change
+// the normal pass holds back until the cluster is Ready with every server
+// available, once per change, and only from the second pass that holds it.
+// A hold the pass that met it ends is not a deferral worth an event: after a
+// refused tag is fixed, the cluster's phase is still the refusal's Failed, so
+// the first pass holds the new image, writes Ready, and the next pass starts
+// the upgrade — it used to announce a deferral every time (#550). Nor is a
+// change an upgrade the machine stopped already explains: its record names
+// that target, announced with its UpgradePaused or UpgradeFailed.
+func (r *Neo4jEnterpriseClusterReconciler) announceHeldImageChange(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, desiredImage string) {
+	key := clusterKey(cluster)
+	if upgradeHeld(cluster) && cluster.Status.UpgradeStatus.TargetVersion == cluster.Spec.Image.Tag {
+		r.deferredUpgradeTargets.Store(key, heldImageChange{image: desiredImage, cause: holdCauseNotReady, announced: true})
+		return
+	}
+	prev, _ := r.deferredUpgradeTargets.Load(key)
+	held, _ := prev.(heldImageChange)
+	switch {
+	case held.image != desiredImage || held.cause != holdCauseNotReady:
+		r.deferredUpgradeTargets.Store(key, heldImageChange{image: desiredImage, cause: holdCauseNotReady})
+	case !held.announced:
+		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeDeferred,
+			"Image change to %s deferred until the cluster is Ready with every server available; the rolling-upgrade state machine will perform it", desiredImage)
+		r.deferredUpgradeTargets.Store(key, heldImageChange{image: desiredImage, cause: holdCauseNotReady, announced: true})
+	}
 }

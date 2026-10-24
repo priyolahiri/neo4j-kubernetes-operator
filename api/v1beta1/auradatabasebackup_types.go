@@ -67,7 +67,9 @@ type AuraDatabaseBackupStatus struct {
 	// +optional
 	Exportable bool `json:"exportable,omitempty"`
 
-	// LastSyncedTime is when the backup was last observed from the Aura API.
+	// LastSyncedTime is when the operator last recorded the backup as
+	// observed from the Aura API: written with every change to the status,
+	// and at least every 15 minutes while nothing changes.
 	// +optional
 	LastSyncedTime *metav1.Time `json:"lastSyncedTime,omitempty"`
 }

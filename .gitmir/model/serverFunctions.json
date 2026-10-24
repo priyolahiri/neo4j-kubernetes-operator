@@ -33,7 +33,8 @@
       "sf-reconcile-ccdr-proxy",
       "sf-reconcile-server-shortfall",
       "sf-reload-renewed-tls",
-      "sf-hold-stopped-upgrade"
+      "sf-hold-stopped-upgrade",
+      "sf-reconcile-route"
     ],
     "emitsEventIds": [
       "ev-topology-warning",
@@ -98,11 +99,26 @@
     "moduleId": "mod-cluster"
   },
   {
+    "id": "sf-reconcile-route",
+    "name": "Reconcile OpenShift Route",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Creates or updates the OpenShift Route of a cluster or standalone (spec.service.route: {name}-client-route or {name}-route) and of its MCP server ({name}-mcp-route), shared by both reconcilers (reconcileRoute, reconcileMCPRoute). The mutate step (applyDesiredRoute) writes what the operator renders — labels, annotations, spec.to, spec.port, spec.path, spec.host when the user names one, and spec.tls termination and insecureEdgeTerminationPolicy — and keeps the rest: the wildcardPolicy and generated host (with its openshift.io/host.generated annotation) OpenShift's API server fills in, and a certificate added to the Route by hand, so a Route that is already right is not written again (#536). tls.secretName is not rendered and raises a ValidationWarning. Without the Route API it skips the Route and raises an advisory RouteAPINotFound (knowledge operations.md ids 102, 145, 148).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-route-api-not-found"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
     "id": "sf-reconcile-standalone",
     "name": "Reconcile Standalone",
     "serverUnitId": "su-neo4jenterprisestandalone",
     "operation": "business_action",
-    "description": "Top-level standalone reconcile: validates the spec on every pass with StandaloneValidator.Validate (the spec rules, the admin-secret password shape, and spec.image.tag against status.version: a downgrade turns it Failed with a ValidationFailed event and leaves the pod on the version it runs), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check and announces UpgradeStarted on the pass that applies a new image (the StatefulSet's template does not carry it yet), and updates status once the StatefulSet reports one ready replica. status.version is the image tag of a StatefulSet whose pod is ready on the current template, never spec.image.tag. Both upgrade strategies give the StatefulSet RollingUpdate, which replaces the one pod; Recreate used to select OnDelete, under which a new image, config or plugin never reached the server (operations.md id 144). A Ready standalone requeues after --ready-poll-interval (default 30s); otherwise RequeueAfter. With spec.podServiceAccountAnnotations it creates the `<name>-neo4j` ServiceAccount before the StatefulSet and runs the pod under it, and deletes it once the field is removed and no pod uses it. The pod template carries a hash of the raw neo4j.conf, so a changed conf restarts the pod; a change only in comments or blank lines keeps the running pod's hash (the normalised conf hash is recorded on the StatefulSet) and restarts nothing. A neo4j.conf change of dynamic settings only is applied to the running pod with dbms.setConfigValue before the conf is written, and the pod keeps its hash. With cert-manager TLS on CalVer 2025.03+, its conf enables TLS reload (applied at the next restart, ignored by the restart decision) and a renewed certificate is reloaded on the running pod. On deletion it deletes the {name}-tls-secret cert-manager issued for its {name}-tls-cert Certificate (#479). With spec.monitoring.logs.stdout it writes server-logs.xml into its ConfigMap (deleting it when no log is listed) and points server.logs.config at /conf/server-logs.xml, so Neo4j's listed logs reach standard output as JSON. The finalizer is added and released, and the Aura fleet deployment annotation set, as merge patches of what changed, never as an Update, which wrote the spec back as the Go types encode it (an explicit monitoring.enabled: false came back true); the stored spec stays the one the user applied (operations.md id 150). For a status.version without a patch it records status.runningVersion, the version the server reports, with one SHOW SERVERS once Ready and again only when its container runs another image; updateStatus clears it when status.version moves (operations.md id 153).",
+    "description": "Top-level standalone reconcile: validates the spec on every pass with StandaloneValidator.Validate (the spec rules, the admin-secret password shape, and spec.image.tag against status.version: a downgrade turns it Failed with a ValidationFailed event and leaves the pod on the version it runs), reconciles TLS/ConfigMap/Service/StatefulSet/Ingress, runs a pre-upgrade health check and announces UpgradeStarted on the pass that applies a new image (the StatefulSet's template does not carry it yet), and updates status once the StatefulSet reports one ready replica. status.version is the image tag of a StatefulSet whose pod is ready on the current template, never spec.image.tag. Both upgrade strategies give the StatefulSet RollingUpdate, which replaces the one pod; Recreate used to select OnDelete, under which a new image, config or plugin never reached the server (operations.md id 144). A Ready standalone requeues after --ready-poll-interval (default 30s); otherwise RequeueAfter. With spec.podServiceAccountAnnotations it creates the `<name>-neo4j` ServiceAccount before the StatefulSet and runs the pod under it, and deletes it once the field is removed and no pod uses it. The pod template carries a hash of the raw neo4j.conf, so a changed conf restarts the pod; a change only in comments or blank lines keeps the running pod's hash (the normalised conf hash is recorded on the StatefulSet) and restarts nothing. A neo4j.conf change of dynamic settings only is applied to the running pod with dbms.setConfigValue before the conf is written, and the pod keeps its hash. With cert-manager TLS on CalVer 2025.03+, its conf enables TLS reload (applied at the next restart, ignored by the restart decision) and a renewed certificate is reloaded on the running pod. On deletion it deletes the {name}-tls-secret cert-manager issued for its {name}-tls-cert Certificate (#479). With spec.monitoring.logs.stdout it writes server-logs.xml into its ConfigMap (deleting it when no log is listed) and points server.logs.config at /conf/server-logs.xml, so Neo4j's listed logs reach standard output as JSON. The finalizer is added and released, and the Aura fleet deployment annotation set, as merge patches of what changed, never as an Update, which wrote the spec back as the Go types encode it (an explicit monitoring.enabled: false came back true); the stored spec stays the one the user applied (operations.md id 150). For a status.version without a patch it records status.runningVersion, the version the server reports, with one SHOW SERVERS once Ready and again only when its container runs another image; updateStatus clears it when status.version moves (operations.md id 153). Its OpenShift Route is written once per pass at most, at the end of the Service step (a second, unconditional write later in the pass was removed, #536). status.observedGeneration and the Ready condition's are the generation the pass acted on, not the one its write re-reads (#550; operations.md id 153).",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -116,7 +132,8 @@
       "sf-validate-spec-config",
       "sf-expand-standalone-storage",
       "sf-collect-standalone-diagnostics",
-      "sf-reload-renewed-tls"
+      "sf-reload-renewed-tls",
+      "sf-reconcile-route"
     ],
     "emitsEventIds": [
       "ev-validation-failed",
@@ -166,7 +183,7 @@
     "name": "Collect Cluster Diagnostics",
     "serverUnitId": "su-diagnostics",
     "operation": "business_action",
-    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down —, fills the address of a server that is down from the per-cluster address book (SHOW SERVERS reports none for it), and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475).",
+    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down —, fills the address of a server that is down from the per-cluster address book (SHOW SERVERS reports none for it), and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475). A query that fails because a server could not be reached (a pod deleted or restarting, ConnectivityError: EOF) is logged at info; any other failure is logged as an error (#549; knowledge operations.md id 164).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -181,7 +198,7 @@
     "name": "Collect Standalone Diagnostics",
     "serverUnitId": "su-diagnostics",
     "operation": "business_action",
-    "description": "Runs SHOW DATABASES (plus users/roles) against a Ready standalone instance and writes status.diagnostics; non-fatal, mirroring the cluster path's collectionError-only error handling. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475).",
+    "description": "Runs SHOW DATABASES (plus users/roles) against a Ready standalone instance and writes status.diagnostics; non-fatal, mirroring the cluster path's collectionError-only error handling. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475). A query that fails because the server could not be reached is logged at info; any other failure as an error (#549).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -209,7 +226,7 @@
     "name": "Advance Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight (a new target below status.version, or below the current target once a server runs it, is refused by the validation that runs before it), so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime. In Rolling it lowers the partition only after the server it just restarted is Available and every database copy on it has caught up (statusCheck APPLYING, SHOW DATABASES at requested status), naming the lagging databases in status.upgradeStatus.message (#488). The availability check reads the restarted server's SHOW SERVERS row, version included: for a target without a patch it records that version in status.upgradeStatus.resolvedTargetVersion once the server is available (operations.md id 153). Completed writes status.version (the tag) with status.runningVersion, the highest version the servers reported to Verifying for a tag without a patch, cleared for one that names its patch. After each step, the pass collects the cluster's diagnostics (SHOW SERVERS, SHOW DATABASES → status.diagnostics, ServersHealthy, DatabasesHealthy, server_health) at most once per --ready-poll-interval, so they follow the servers through the upgrade; nothing else of the normal pass runs while an upgrade is active. Before an upgrade starts it checks the upgrade path with the same rule the validation runs (ValidateVersionUpgrade against status.version). Every image change on a Ready cluster goes through it, whatever spec.upgradeStrategy.strategy says: Recreate is accepted with a ValidationWarning and does what RollingUpgrade does (it used to return before the machine started, so a Ready cluster kept its old image and no other spec change was applied while the tag differed), and the server StatefulSet is always RollingUpdate, never OnDelete. A step's timeout is a Go duration above zero; one at or below zero is refused by validation, and the getters fall back to the default (operations.md id 144). A Paused or Failed upgrade taken up again keeps its start time and progress (operations.md id 149).",
+    "description": "Dispatches exactly one non-blocking state-machine step per reconcile (Staging, Rolling, Stabilizing, Verifying) and re-stages from any active phase if the target image tag changes mid-flight (a new target below status.version, or below the current target once a server runs it, is refused by the validation that runs before it), so an in-flight upgrade never blocks reconciliation of other clusters. Each phase transition restarts status.upgradeStatus.phaseStartTime and records the ended phase's duration in neo4j_operator_upgrade_duration_seconds exactly once, derived from the persisted phaseStartTime. In Rolling it lowers the partition only after the server it just restarted is Available and every database copy on it has caught up (statusCheck APPLYING, SHOW DATABASES at requested status), naming the lagging databases in status.upgradeStatus.message (#488). The availability check reads the restarted server's SHOW SERVERS row, version included: for a target without a patch it records that version in status.upgradeStatus.resolvedTargetVersion once the server is available (operations.md id 153). Completed writes status.version (the tag) with status.runningVersion, the highest version the servers reported to Verifying for a tag without a patch, cleared for one that names its patch. After each step, the pass collects the cluster's diagnostics (SHOW SERVERS, SHOW DATABASES → status.diagnostics, ServersHealthy, DatabasesHealthy, server_health) at most once per --ready-poll-interval, so they follow the servers through the upgrade; nothing else of the normal pass runs while an upgrade is active. Before an upgrade starts it checks the upgrade path with the same rule the validation runs (ValidateVersionUpgrade against status.version). Every image change on a Ready cluster goes through it, whatever spec.upgradeStrategy.strategy says: Recreate is accepted with a ValidationWarning and does what RollingUpgrade does (it used to return before the machine started, so a Ready cluster kept its old image and no other spec change was applied while the tag differed), and the server StatefulSet is always RollingUpdate, never OnDelete. A step's timeout is a Go duration above zero; one at or below zero is refused by validation, and the getters fall back to the default (operations.md id 144). A Paused or Failed upgrade taken up again keeps its start time and progress (operations.md id 149). An upgrade a scale-down drain holds back is announced (UpgradeDeferred) once per target, not on each 15s check (#527). Staging keeps the StatefulSet's replica count, whatever spec.topology.servers says, and freezes the partition at the lowest of the restarted servers that cannot start on the image they run, when the new template changes it, so the StatefulSet replaces them first (operations.md ids 162, 163). Rolling reports a topology change in either direction in the TopologyChangeDeferred condition. Starting, resuming or retargeting an upgrade on a cluster that is Ready with every server available writes its status.message: the upgrade is in progress (#553).",
     "readsFieldIds": [
       "status.upgradeStatus.phase",
       "status.upgradeStatus.phaseStartTime"
@@ -224,7 +241,10 @@
     "callsFunctionIds": [
       "sf-verify-version-upgrade",
       "sf-pause-rolling-upgrade",
-      "sf-validate-cluster"
+      "sf-validate-cluster",
+      "sf-refuse-upgrade-start",
+      "sf-repair-held-upgrade",
+      "sf-hold-topology-during-upgrade"
     ],
     "emitsEventIds": [
       "ev-upgrade-started",
@@ -239,7 +259,7 @@
     "name": "Pause Or Fail Rolling Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "Routes a failed upgrade step to Paused (manual intervention required, never auto-resumed: the user changes spec.image.tag or turns autoPauseOnFailure off) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so the operator retries the upgrade once the cluster is Ready with every server available. Either way the StatefulSet keeps the partition the step left, so no server the upgrade has not rolled restarts onto the target outside the state machine. An attempt refused before Staging records the target it was for. The phase that was active when the step failed is recorded in neo4j_operator_upgrade_duration_seconds (operations.md id 149).",
+    "description": "Routes a failed upgrade step to Paused (manual intervention required, never auto-resumed: the user changes spec.image.tag or turns autoPauseOnFailure off) when upgradeStrategy.autoPauseOnFailure is set, or to Failed so the operator retries the upgrade once the cluster is Ready with every server available. Either way the StatefulSet keeps the partition the step left, so no server the upgrade has not rolled restarts onto the target outside the state machine. An attempt refused before Staging records the target it was for. The phase that was active when the step failed is recorded in neo4j_operator_upgrade_duration_seconds (operations.md id 149). A refusal by a check before Staging goes through Refuse Upgrade Start instead, which leaves the cluster Ready.",
     "readsFieldIds": [],
     "writesFieldIds": [
       "status.upgradeStatus.phase",
@@ -258,7 +278,7 @@
     "name": "Hold A Stopped Upgrade",
     "serverUnitId": "su-rolling-upgrade",
     "operation": "business_action",
-    "description": "While an upgrade is Paused or Failed (upgradeHeld), keeps the server StatefulSet's RollingUpdate partition where the state machine left it: every normal-path apply keeps the live partition, and a StatefulSet created again (storage expansion) starts at status.upgradeStatus.currentPartition, or frozen at replicas if nothing was staged. The servers below it are not a rollout in flight, so the cluster can be Ready (or a server short) while its servers run two versions, and users, roles, databases and backups keep working. Only the state machine moves the partition: a Failed upgrade is retried once every server is available; a Paused one waits while upgradeWaitsForUser (autoPauseOnFailure set and spec.image.tag the record's target) (internal/controller/upgrade_hold.go, operations.md id 149). For a target without a patch, the held cluster's next Ready pass records what the servers at or above the partition report in status.upgradeStatus.resolvedTargetVersion, so a tag below it is refused even when the upgrade paused before its availability check saw the restarted server (operations.md id 153).",
+    "description": "While an upgrade is Paused or Failed (upgradeHeld), keeps the server StatefulSet's RollingUpdate partition where the state machine left it: every normal-path apply keeps the live partition, and a StatefulSet created again (storage expansion) starts at status.upgradeStatus.currentPartition, or frozen at replicas if nothing was staged. The servers below it are not a rollout in flight, so the cluster can be Ready (or a server short) while its servers run two versions, and users, roles, databases and backups keep working. Only the state machine moves the partition: a Failed upgrade is retried once every server is available; a Paused one waits while upgradeWaitsForUser (autoPauseOnFailure set and spec.image.tag the record's target) (internal/controller/upgrade_hold.go, operations.md id 149). For a target without a patch, the held cluster's next Ready pass records what the servers at or above the partition report in status.upgradeStatus.resolvedTargetVersion, so a tag below it is refused even when the upgrade paused before its availability check saw the restarted server (operations.md id 153). While it keeps a partition, a change of spec.topology.servers waits (Hold Topology During Upgrade, operations.md id 163).",
     "readsFieldIds": [
       "status.upgradeStatus.phase",
       "status.upgradeStatus.currentPartition",
@@ -402,7 +422,7 @@
     "name": "Calculate Topology Placement",
     "serverUnitId": "su-topology-scheduler",
     "operation": "business_action",
-    "description": "Determines whether topology-spread and/or anti-affinity should be applied, auto-discovers availability zones from cluster-scoped Nodes when none are configured, and degrades to best-effort zone spread (rather than failing) when node listing is unavailable in namespace-scoped installs.",
+    "description": "Determines whether topology-spread and/or anti-affinity should be applied, auto-discovers availability zones from cluster-scoped Nodes when none are configured, and degrades to best-effort zone spread (rather than failing) when node listing is unavailable in namespace-scoped installs. The TopologyPlacementCalculated event is announced when the zones change, not on every pass (#527).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -434,7 +454,7 @@
     "name": "Verify Cluster Formation",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Checks Bolt connectivity (tracking a consecutive-failure streak for outage forensics), then runs split-brain detection with a legacy SHOW SERVERS count fallback to decide whether the cluster has formed with the expected number of Enabled+Available servers. On a Ready cluster the full split-brain check is skipped, and the cluster counted formed from SHOW SERVERS through the client Service, when that lists every expected server Enabled and Available and a full check found the cluster whole within --split-brain-check-interval (default 5m) against the same server pods: none deleted, recreated, restarted or changed readiness since. Only such a clean check is recorded (in memory, per cluster); any other outcome clears the record, so the next pass checks in full. Returns the SHOW SERVERS list it saw and whether the shortfall is a split-brain, for the shortfall assessment. Its SHOW SERVERS yields each server's version too, which the Ready pass records for a tag without a patch (status.runningVersion, status.upgradeStatus.resolvedTargetVersion while an upgrade is held) without a query of its own (operations.md id 153).",
+    "description": "Checks Bolt connectivity (tracking a consecutive-failure streak for outage forensics), then runs split-brain detection with a legacy SHOW SERVERS count fallback to decide whether the cluster has formed with the expected number of Enabled+Available servers. On a Ready cluster the full split-brain check is skipped, and the cluster counted formed from SHOW SERVERS through the client Service, when that lists every expected server Enabled and Available and a full check found the cluster whole within --split-brain-check-interval (default 5m) against the same server pods: none deleted, recreated, restarted or changed readiness since. Only such a clean check is recorded (in memory, per cluster); any other outcome clears the record, so the next pass checks in full. Returns the SHOW SERVERS list it saw and whether the shortfall is a split-brain, for the shortfall assessment. Its SHOW SERVERS yields each server's version too, which the Ready pass records for a tag without a patch (status.runningVersion, status.upgradeStatus.resolvedTargetVersion while an upgrade is held) without a query of its own (operations.md id 153). It has no error to return: every way the check comes back short — no connection, no server list, a split-brain — is a formationCheck the shortfall assessment reads (the ClusterFormationFailed branch it fed could never run, #531).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -442,7 +462,6 @@
       "sf-restart-orphan-pod"
     ],
     "emitsEventIds": [
-      "ev-cluster-formation-failed",
       "ev-connectivity-degraded"
     ],
     "subscribesEventIds": [],
@@ -453,7 +472,7 @@
     "name": "Hold Image Drift Until Ready",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "While the cluster is not Ready, pins the in-memory spec image back to whatever the live StatefulSet currently runs so the normal reconcile path can't apply a version change outside the upgrade state machine, unless zero replicas are ready (nothing to protect: a first deploy wedged on a bad tag, or a cluster that has lost every server). The tag has already been checked against status.version, and the Ready pass records the new version once every server runs it (operations.md id 144).",
+    "description": "While the cluster is not Ready, pins the in-memory spec image back to whatever the live StatefulSet currently runs so the normal reconcile path can't apply a version change outside the upgrade state machine, unless zero replicas are ready (nothing to protect: a first deploy wedged on a bad tag, or a cluster that has lost every server). The tag has already been checked against status.version, and the Ready pass records the new version once every server runs it (operations.md id 144). The image in place is the server StatefulSet's, or, while a storage expansion has orphan-deleted it, the image the highest-ordinal orphaned server pod runs, so the StatefulSet created again does not roll every server onto the held image ungated (#538). The image is split as the operator built it: a tag may carry a digest (#531). Its UpgradeDeferred is announced on the second pass that holds the same image, once, and not for a change a stopped upgrade's record already names (#550).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -466,7 +485,7 @@
     "name": "Is Upgrade Required",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Detects image drift on the server StatefulSet (or a Failed upgrade, or a Paused one whose autoPauseOnFailure has been turned off, whose target is still spec.image.tag while status.version disagrees) to decide whether a rolling upgrade should start or be taken up again; never fires while a Paused upgrade still waits for the user (autoPauseOnFailure set and the tag unchanged), already mid-flight, or while a server is unavailable (Degraded condition True), since rolling the others could cost the cluster its majority (operations.md id 149).",
+    "description": "Detects image drift on the server StatefulSet (or a Failed upgrade, or a Paused one whose autoPauseOnFailure has been turned off, whose target is still spec.image.tag while status.version disagrees) to decide whether a rolling upgrade should start or be taken up again; never fires while a Paused upgrade still waits for the user (autoPauseOnFailure set and the tag unchanged), already mid-flight, or while a server is unavailable (Degraded condition True), since rolling the others could cost the cluster its majority (operations.md id 149). Exception: a held upgrade whose restarted servers cannot start on its target, with spec.image.tag moved to another image, is taken up although servers are down (operations.md id 162). An attempt at the same image a check refused before Staging is tried again only once a minute has passed, so the normal pass runs in between (id 149).",
     "readsFieldIds": [
       "status.phase",
       "status.upgradeStatus.phase"
@@ -707,10 +726,11 @@
     "name": "Reconcile Neo4jShardedDatabase",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. shardCreateNeeded decides whether CREATE DATABASE is sent: always on the destructive replaceExisting pass and while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard); for a listed family only under ifNotExists: false when this CR did not create it (status.virtualDatabase does not name spec.name), so Neo4j's 'already exists' refusal surfaces instead of the family being adopted. ShardedDatabaseReady, SeedBackupPending, SeedProxyStarting and ValidationFailed are emitted only when the status write (transitionStatus) changes the phase or message. A clusterRef that names no cluster is phase Pending (ev-cluster-not-found, once); any other read error is retried with backoff. Every Warning about a lasting condition (cluster without property sharding, client creation, seedBackupRef resolution, a failed reconcile) is emitted only when the status write that records it changed the phase or message (knowledge operations.md id 145). Each pass reads the CR through the uncached APIReader (reader()), so the phase steps, shardedSeedConsumable and the destructive-restore generation guard decide from the last pass's write rather than a stale cache copy (knowledge operations.md ids 94, 136). A refused spec reads \"Validation failed\" once, in status and in the ValidationFailed event.",
+    "description": "Main reconcile loop: validates the spec, resolves the referenced cluster, checks property-sharding readiness, opens a Neo4j client, and drives seed resolution plus create/status refresh. shardCreateNeeded decides whether CREATE DATABASE is sent: always on the destructive replaceExisting pass and while the readiness SHOW DATABASES lists no family (the virtual database and its -g000 graph shard); for a listed family only under ifNotExists: false when this CR did not create it (status.virtualDatabase does not name spec.name), so Neo4j's 'already exists' refusal surfaces instead of the family being adopted. ShardedDatabaseReady, SeedBackupPending, SeedProxyStarting and ValidationFailed are emitted only when the status write (transitionStatus) changes the phase or message. A clusterRef that names no cluster is phase Pending (ev-cluster-not-found, once), with the operator's validator wired in too: the validator reports the missing cluster as Pending, not as an error (#532); any other read error is retried with backoff. Every Warning about a lasting condition (cluster without property sharding, client creation, seedBackupRef resolution, a failed reconcile) is emitted only when the status write that records it changed the phase or message (knowledge operations.md id 145). Each pass reads the CR through the uncached APIReader (reader()), so the phase steps, shardedSeedConsumable and the destructive-restore generation guard decide from the last pass's write rather than a stale cache copy (knowledge operations.md ids 94, 136). A refused spec reads \"Validation failed\" once, in status and in the ValidationFailed event. transitionStatus copies the status its write stored into the pass's own copy, so a new CR's first pass writes Validating, Creating, then Ready (or the wait it meets); from its own copy it kept no phase after writing Validating and never wrote Creating (#549). From a Ready status an earlier operator left, the first pass writes and announces nothing (#553; knowledge operations.md id 136).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
+      "sf-validate-sharded-database",
       "sf-create-sharded-database",
       "sf-drop-sharded-database",
       "sf-seed-shard",
@@ -732,7 +752,7 @@
     "name": "Create Sharded Database",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "create",
-    "description": "createShardedDatabase() executes the statement buildCreateShardedDatabaseCypher() renders: `CYPHER 25 CREATE DATABASE ... SET DEFAULT LANGUAGE CYPHER 25 SET GRAPH SHARD {...} SET PROPERTY SHARDS {...} OPTIONS {...}`, binding every seed/user-supplied value as a driver parameter. The language clause is always emitted: shard sub-databases inherit the parent's language, and the server no longer forces CYPHER_25 for sharding. Called on the destructive replaceExisting pass, while SHOW DATABASES does not list the family, or under ifNotExists: false for a family this CR did not create: without IF NOT EXISTS Neo4j refuses CREATE on an existing name, which is what ifNotExists: false asks for.",
+    "description": "createShardedDatabase() executes the statement buildCreateShardedDatabaseCypher() renders: `CYPHER 25 CREATE DATABASE ... SET DEFAULT LANGUAGE CYPHER 25 SET GRAPH SHARD {...} SET PROPERTY SHARDS {...} OPTIONS {...}`, binding every seed/user-supplied value as a driver parameter. The language clause is always emitted: shard sub-databases inherit the parent's language, and the server no longer forces CYPHER_25 for sharding. Called on the destructive replaceExisting pass, while SHOW DATABASES does not list the family, or under ifNotExists: false for a family this CR did not create: without IF NOT EXISTS Neo4j refuses CREATE on an existing name, which is what ifNotExists: false asks for. The keys of a per-shard seedURI map (spec.seedURIs, or the map resolved from seedBackupRef) are sent lower-cased, as Neo4j names the shards.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -779,7 +799,7 @@
     "name": "Resolve And Serve Sharded Seed",
     "serverUnitId": "su-neo4jshardeddatabase",
     "operation": "business_action",
-    "description": "resolveShardedSeed()/resolvePVCShardedSeed() turn spec.seedBackupRef into either per-shard cloud seedURIs or an operator-managed PVC seed-proxy Deployment+Service serving each shard's .backup file over HTTP. A PVC run with a shard recorded as DIFF is refused before the proxy starts (Neo4j seeds a sharded database over HTTP only from full backups, and merging drops the sharding header); the requeue seeds once a full run lands. For a cloud seed, ensureClusterSeedConfig() projects the backup's credentials and custom endpoint onto the cluster under the auto-inherit annotation and waits for the rollout. Without the annotation the database waits in phase Pending with one ev-seed-creds-missing, naming what is missing, and seeds once the cluster has it (knowledge operations.md id 145).",
+    "description": "resolveShardedSeed()/resolvePVCShardedSeed() turn spec.seedBackupRef into either per-shard cloud seedURIs or an operator-managed PVC seed-proxy Deployment+Service serving each shard's .backup file over HTTP. A PVC run with a shard recorded as DIFF is refused before the proxy starts (Neo4j seeds a sharded database over HTTP only from full backups, and merging drops the sharding header); the requeue seeds once a full run lands. For a cloud seed, ensureClusterSeedConfig() projects the backup's credentials and custom endpoint onto the cluster under the auto-inherit annotation and waits for the rollout. Without the annotation the database waits in phase Pending with one ev-seed-creds-missing, naming what is missing, and seeds once the cluster has it (knowledge operations.md id 145). The per-shard seedURI keys it builds, cloud and PVC, are the target's shard names lower-cased (shardSeedKey): Neo4j derives the shard names from the lower-cased database name and matches the keys exactly, so keys built from a capitalised spec.name were refused (knowledge operations.md id 146).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -908,7 +928,7 @@
     "name": "Reconcile Neo4jBackup",
     "serverUnitId": "su-neo4jbackup",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec (including replication-source chain rules), resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight, and branches to the scheduled or one-time backup path. A one-time backup that is Completed or Failed returns before the target lookup, so a restarting target cannot reopen it. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned a cloud identity's autoCreate.enabled: false into true and re-spelled resource quantities (operations.md id 150).",
+    "description": "Main reconcile loop: validates the spec (including replication-source chain rules), resolves the target cluster/standalone, checks readiness/suspend, runs sharded preflight, and branches to the scheduled or one-time backup path. A one-time backup that is Completed or Failed returns before the target lookup, so a restarting target cannot reopen it. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned a cloud identity's autoCreate.enabled: false into true and re-spelled resource quantities (operations.md id 150). A spec.chainFromBackup parent must name the same target; a database name matches it in any case (validateChainParent; knowledge operations.md id 146).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1026,7 +1046,7 @@
     "name": "Start Restore",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startRestore() validates the request, pins the resolved backup source onto status, and routes it: online (Cypher recreate/create with a seedURI, or the all-databases loop) for every cluster and for most standalone restores; the offline neo4j-admin Job (stopping the instance first when spec.stopCluster is set) only for a standalone restore that cannot be seeded online — point-in-time, a source.type storage path, cloud storage by pod identity, or a Job restore already holding the instance (rule 108). The offline path emits a RestoreStarted event naming the reason once its checks have passed (existence check, pre-restore hooks, and the stop or, with stopCluster false, the refusal of a running standalone), never for a restore it then refuses; with stopCluster false it says the standalone is already stopped (knowledge operations.md id 145). With source.pointInTime it pins the earliest run that started at or after it (restoreRunIndex) and decides the point-in-time path before routing.",
+    "description": "startRestore() validates the request, pins the resolved backup source onto status, and routes it: online (Cypher recreate/create with a seedURI, or the all-databases loop) for every cluster and for most standalone restores; the offline neo4j-admin Job (stopping the instance first when spec.stopCluster is set) only for a standalone restore that cannot be seeded online — point-in-time, a source.type storage path, cloud storage by pod identity, or a Job restore already holding the instance (rule 108). The offline path emits a RestoreStarted event naming the reason once its checks have passed (existence check, pre-restore hooks, and the stop or, with stopCluster false, the refusal of a running standalone), never for a restore it then refuses; with stopCluster true it is announced at the stop, which marks the standalone as this restore's; with stopCluster false, where nothing marks it, it is announced with the Job's start and says the standalone is already stopped, so a restore that waits in Pending after its checks does not announce twice. \"Restore job … started\" is emitted when the status write that makes the restore Running changed it, so a pass on a stale copy that finds the Job (AlreadyExists) announces nothing (knowledge operations.md id 145). With source.pointInTime it pins the earliest run that started at or after it (restoreRunIndex) and decides the point-in-time path before routing.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1065,7 +1085,7 @@
     "name": "Create Offline Standalone Restore Job",
     "serverUnitId": "su-neo4jrestore",
     "operation": "job",
-    "description": "createRestoreJob() builds and creates the offline `neo4j-admin database restore` Job used only for a Neo4jEnterpriseStandalone restore that cannot run online (rule 108: point-in-time, a source.type storage path, cloud storage by pod identity) (neo4j-admin restore --overwrite-destination is documented as unsafe on clusters). --from-path names the exact artifact whenever it is known (backupPath ending in .backup, or the pinned snapshot's recorded file or per-database entry for the source database) — the only form neo4j-admin restores under a different name; otherwise it globs the source database's newest file (PVC) or passes the cloud directory (same name only).",
+    "description": "createRestoreJob() builds and creates the offline `neo4j-admin database restore` Job used only for a Neo4jEnterpriseStandalone restore that cannot run online (rule 108: point-in-time, a source.type storage path, cloud storage by pod identity) (neo4j-admin restore --overwrite-destination is documented as unsafe on clusters). --from-path names the exact artifact whenever it is known (backupPath ending in .backup, or the pinned snapshot's recorded file or per-database entry for the source database) — the only form neo4j-admin restores under a different name; otherwise it globs the source database's newest file (PVC) — `<database>-<yyyy-MM-dd'T'HH-mm-ss>.backup` with the name lower-cased, as neo4j-admin writes it, so a capitalised spec.database finds its artifacts and another database whose name begins with it is never taken (latestArtifactSubstitution; knowledge operations.md id 146) — or passes the cloud directory (same name only).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1097,7 +1117,7 @@
     "name": "All-Databases Restore Loop",
     "serverUnitId": "su-neo4jrestore",
     "operation": "business_action",
-    "description": "startAllDatabasesRestore() drives one per-database CREATE/recreate-with-seedURI action per reconcile pass from the resolved backup's per-database artifact map, on clusters and standalones, tracking progress in status.databaseResults; runs pre-restore hooks once per attempt (neo4j.com/restore-pre-hooks-ran) and post-restore hooks before Completed, has the seed proxy merge each database's PVC chain that is not recorded as FULL, and stamps status.completionTime. Property-sharded families are excluded and must restore via their own Neo4jShardedDatabase CR. Into a standalone by pod identity, awaitSeedIdentity() holds the seed until the pod runs under its identity ServiceAccount. Missing cloud seed credentials or endpoint hold it Pending (awaitSeedConfig()) before the first database is seeded, and it carries on once they are there.",
+    "description": "startAllDatabasesRestore() drives one per-database CREATE/recreate-with-seedURI action per reconcile pass from the resolved backup's per-database artifact map, on clusters and standalones, tracking progress in status.databaseResults; runs pre-restore hooks once per attempt (neo4j.com/restore-pre-hooks-ran) and post-restore hooks before Completed, has the seed proxy merge each database's PVC chain that is not recorded as FULL, and stamps status.completionTime. Property-sharded families are excluded and must restore via their own Neo4jShardedDatabase CR. Into a standalone by pod identity, awaitSeedIdentity() holds the seed until the pod runs under its identity ServiceAccount. Missing cloud seed credentials or endpoint hold it Pending (awaitSeedConfig()) before the first database is seeded, and it carries on once they are there. Each database's RestoreStarted and RestoreSeedProgress go through ProgressRecorder (source neo4j-restore-progress), an event budget of its own; RestoreSeedProgress is announced when a database's progress changes and every 10 minutes while it does not (seedProgressEvents). The outcome is one RestoreCompleted or RestoreFailed from the status write that changed the phase (finishAllDatabasesRestore), which the per-database events cannot crowd out of the restore's budget (knowledge operations.md id 166). The Neo4j client is reached through allDatabasesRestoreClient so a test can script it.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1106,7 +1126,8 @@
       "ev-restore-started",
       "ev-restore-seed-progress",
       "ev-seed-endpoint-not-projected",
-      "ev-restore-failed"
+      "ev-restore-failed",
+      "ev-restore-completed"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-backup-restore"
@@ -1158,7 +1179,7 @@
     "name": "Reconcile Neo4jUser",
     "serverUnitId": "su-neo4juser",
     "operation": "business_action",
-    "description": "Drives a Neo4jUser to its desired state each loop: validates the spec (routing a not-yet-applied password Secret to Pending, not Failed), resolves the clusterRef target, creates or ALTERs the Neo4j user over Bolt (the home database compared with SHOW USERS ignoring case), diffs granted vs. desired roles and issues GRANT/REVOKE ROLE, then records RolesSynced/PasswordSynced conditions and the Ready phase. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). CR names in spec.roles that resolve to another Neo4j role name are recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when that mapping appears or changes (operations.md id 136).",
+    "description": "Drives a Neo4jUser to its desired state each loop: validates the spec (routing a not-yet-applied password Secret to Pending, not Failed), resolves the clusterRef target, creates or ALTERs the Neo4j user over Bolt (the home database compared with SHOW USERS ignoring case), diffs granted vs. desired roles and issues GRANT/REVOKE ROLE, then records RolesSynced/PasswordSynced conditions and the Ready phase. A desired role counts as existing when it is built in, granted, a Neo4jRole CR or listed by SHOW ROLES (a role created in Neo4j directly), so such a role is granted (missingRoles; operations.md id 17). While the target is not Ready a Ready user stays Ready with ClusterNotReady=True (waitForTarget), and UserReady is announced from the write that enters Ready (operations.md id 158). A retried DROP USER on deletion is written to status and announced once (id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). CR names in spec.roles that resolve to another Neo4j role name are recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when that mapping appears or changes (operations.md id 136). Its Neo4j calls go through the userNeo4jClient seam, which tests script.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1190,7 +1211,7 @@
     "name": "Reconcile Neo4jRole",
     "serverUnitId": "su-neo4jrole",
     "operation": "business_action",
-    "description": "Drives a Neo4jRole to its desired state each loop: validates the spec, creates the role if absent (refusing built-ins without adoptBuiltin), normalises spec.privileges to Neo4j's stored rendering (sf-normalise-role-privileges) and diffs that against live SHOW ROLE PRIVILEGES AS COMMANDS output, applies missing GRANT/DENY statements verbatim, and derives REVOKE statements textually for privileges no longer desired (never revoking immutable ones). Before applying, it resolves each missing grant's database names against SHOW DATABASES and aliases (case-insensitively) and skips grants naming a database that does not exist, reporting them via PrivilegesResolve=False instead of failing the reconcile; they apply once the database exists. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforcePrivileges: false into true, so privileges added outside the spec were revoked (operations.md id 150).",
+    "description": "Drives a Neo4jRole to its desired state each loop: validates the spec, creates the role if absent (refusing built-ins without adoptBuiltin), normalises spec.privileges to Neo4j's stored rendering (sf-normalise-role-privileges) and diffs that against live SHOW ROLE PRIVILEGES AS COMMANDS output, applies missing GRANT/DENY statements verbatim, and derives REVOKE statements textually for privileges no longer desired (never revoking immutable ones). Before applying, it resolves each missing grant's database names against SHOW DATABASES and aliases (case-insensitively) and skips grants naming a database that does not exist, reporting them via PrivilegesResolve=False instead of failing the reconcile; they apply once the database exists. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforcePrivileges: false into true, so privileges added outside the spec were revoked (operations.md id 150). While the target is not Ready a Ready role stays Ready with ClusterNotReady=True (waitForTarget), and RoleReady is announced from the write that enters Ready (reportReady; operations.md id 158). A missing built-in role, and a learn-mode status write the API server will not keep, are retried on the fixed interval, not left unrequeued or to error backoff (operations.md id 95). A retried DROP ROLE on deletion is written to status and announced once (id 145). Database names in its warnings are de-duplicated ignoring case (distinctPrivilegeTargets; id 146).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1237,7 +1258,7 @@
     "name": "Reconcile Neo4jRoleBinding",
     "serverUnitId": "su-neo4jrolebinding",
     "operation": "business_action",
-    "description": "Drives a Neo4jRoleBinding to its desired state each loop: verifies the target Neo4j user already exists (bindings never create/drop users), resolves Neo4jRole CR names to Neo4j role names, and diffs/grants/revokes role membership — non-exclusive by default, but always revoking roles this binding previously granted that were removed from spec.roles. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). The resolved CR-name mapping is recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when it appears or changes (operations.md id 136).",
+    "description": "Drives a Neo4jRoleBinding to its desired state each loop: verifies the target Neo4j user already exists (bindings never create/drop users), resolves Neo4jRole CR names to Neo4j role names, and diffs/grants/revokes role membership — non-exclusive by default, but always revoking roles this binding previously granted that were removed from spec.roles. A role created in Neo4j directly (SHOW ROLES) counts as existing and is granted (missingRoles; operations.md id 17). While the target is not Ready a Ready binding stays Ready with ClusterNotReady=True, and BindingCreated / BindingUpdated are announced from the write that records the change (operations.md id 158). A retried revoke on deletion is written to status and announced once (id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). The resolved CR-name mapping is recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when it appears or changes (operations.md id 136). Its Neo4j calls go through the roleBindingNeo4jClient seam, which tests script.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1264,7 +1285,7 @@
     "name": "Reconcile Neo4jAuthRule",
     "serverUnitId": "su-neo4jauthrule",
     "operation": "business_action",
-    "description": "Drives a Neo4jAuthRule to its desired state each loop: gates on the cluster running Neo4j 2026.03+ and configuring an OIDC authorization provider, then CREATE OR REPLACEs the rule's condition/enabled flag (which clears prior grants) and re-grants the desired role set via GRANT/REVOKE ROLES ... TO/FROM AUTH RULE. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforceRoles: false into true (operations.md id 150).",
+    "description": "Drives a Neo4jAuthRule to its desired state each loop: gates on the cluster running Neo4j 2026.03+ and configuring an OIDC authorization provider, then CREATE OR REPLACEs the rule's condition/enabled flag (which clears prior grants) and re-grants the desired role set via GRANT/REVOKE ROLES ... TO/FROM AUTH RULE. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforceRoles: false into true (operations.md id 150). While the target is not Ready a Ready rule stays Ready with ClusterNotReady=True (operations.md id 158), and a retried DROP AUTH RULE on deletion is written to status and announced once (id 145).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1540,7 +1561,7 @@
     "name": "Reconcile AuraInstance",
     "serverUnitId": "su-aurainstance",
     "operation": "job",
-    "description": "Top-level AuraInstanceReconciler.Reconcile loop: resolves credentials, handles the paused annotation and finalizer, dispatches to create/adopt, drift, tier-upgrade, pause/resume and deletion, then writes status.atProvider plus the Ready/Synced conditions. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150).",
+    "description": "Top-level AuraInstanceReconciler.Reconcile loop: handles the paused annotation, then deletion (which resolves the credentials only to call Aura, operations.md id 157), then resolves credentials and the finalizer; a terminal create refusal already on status for the current generation stops the pass before Aura is called (refusalStands, id 156); dispatches to create/adopt, drift, tier-upgrade, pause/resume and deletion, then writes status.atProvider plus the Ready/Synced conditions. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150). Status is written only when it changes or its lastSyncedTime is auraSyncedTimeRefresh (15 minutes) old, since a status write starts another reconcile (operations.md id 156). fail() writes phase Error with the Ready condition.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1564,7 +1585,7 @@
     "name": "Create or adopt Aura instance",
     "serverUnitId": "su-aurainstance",
     "operation": "create",
-    "description": "observeOrCreate: lists instances by name to adopt before creating (avoiding a duplicate paid instance), validates the type/region/cloudProvider combo against the project's instance_configurations, and creates via v1 CreateInstance or, when spec.multiDatabase is true, via v2beta1 CreateInstanceV2 (createMultiDatabaseInstance in aura_multidatabase.go).",
+    "description": "observeOrCreate: lists instances by name to adopt before creating (avoiding a duplicate paid instance), validates the type/region/cloudProvider combo against the project's instance_configurations, and creates via v1 CreateInstance or, when spec.multiDatabase is true, via v2beta1 CreateInstanceV2 (createMultiDatabaseInstance in aura_multidatabase.go). A 429, a 5xx or a transport failure of the list or the create is marked where the call failed (retryableAuraCall) and retried without a status write; everything else, the operator's own errors included, is recorded as CreateFailed (operations.md id 88).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1649,7 +1670,7 @@
     "name": "Delete/orphan Aura instance",
     "serverUnitId": "su-aurainstance",
     "operation": "delete",
-    "description": "handleDeletion: honours deletionPolicy (Delete calls DeleteInstance unless deletionProtection is set; Orphan, the default, leaves the cloud instance running) before releasing the finalizer.",
+    "description": "handleDeletion: honours deletionPolicy before releasing the finalizer. Orphan, the default, leaves the cloud instance running and needs no credentials; Delete calls DeleteInstance unless deletionProtection is set, resolving the credentials only then. A Delete that cannot resolve them records CredentialsUnavailable and retries, and after finalizerDeletionGracePeriod (5 minutes) releases the finalizer with a Warning AuraInstanceOrphaned (operations.md id 157).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1704,7 +1725,7 @@
     "name": "Reconcile AuraDatabase",
     "serverUnitId": "su-auradatabase",
     "operation": "job",
-    "description": "AuraDatabaseReconciler.Reconcile: resolves org/project/instance coordinates from the referenced AuraInstance (which must have been created with multiDatabase:true), refuses creation when the instance's probed multiDatabase verdict is explicitly false, and otherwise creates/adopts the database by the external-database-id annotation since the v2beta1 API returns no database names to adopt by. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150).",
+    "description": "AuraDatabaseReconciler.Reconcile: resolves org/project/instance coordinates from the referenced AuraInstance (which must have been created with multiDatabase:true), refuses creation when the instance's probed multiDatabase verdict is explicitly false, and otherwise creates/adopts the database by the external-database-id annotation since the v2beta1 API returns no database names to adopt by. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150). The InstanceNotMultiDatabase refusal, once on status for the current generation and the same Aura instance ID, is not asked again; a transient failure of the list or the create is retried without a status write; AuraDatabaseReady is announced when the database becomes Ready (ids 88, 136, 156). Status is written only when it changes or its lastSyncedTime is auraSyncedTimeRefresh (15 minutes) old, since a status write starts another reconcile (operations.md id 156).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1726,7 +1747,7 @@
     "name": "Reconcile AuraDatabaseBackup",
     "serverUnitId": "su-auradatabasebackup",
     "operation": "job",
-    "description": "AuraDatabaseBackupReconciler.Reconcile: resolves the target database via spec.databaseRef, takes the backup exactly once via CreateDatabaseBackup, then polls GetDatabaseBackup, treating only Completed/Failed as terminal and never inferring completion from an empty just-scheduled status. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150).",
+    "description": "AuraDatabaseBackupReconciler.Reconcile: resolves the target database via spec.databaseRef, takes the backup exactly once via CreateDatabaseBackup, then polls GetDatabaseBackup, treating only Completed/Failed as terminal and never inferring completion from an empty just-scheduled status. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150). A 429, a 5xx, a transport failure or a 409 of the backup create is retried, not recorded as BackupFailed (id 88). Status is written only when it changes or its lastSyncedTime is auraSyncedTimeRefresh (15 minutes) old, since a status write starts another reconcile (operations.md id 156).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1763,7 +1784,7 @@
     "name": "Reconcile Aura org/project member",
     "serverUnitId": "su-auraorganizationmember",
     "operation": "job",
-    "description": "AuraOrganizationMemberReconciler.Reconcile and its AuraProjectMemberReconciler counterpart find an existing Aura console user by email (ListOrgMembers/ListProjectMembers), update their org or project role when it drifts from spec.role, and remove membership on CR deletion; a project member with no project membership yet but an existing org membership is added via AddProjectMember rather than requiring a fresh invite. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150).",
+    "description": "AuraOrganizationMemberReconciler.Reconcile and its AuraProjectMemberReconciler counterpart find an existing Aura console user by email (ListOrgMembers/ListProjectMembers), update their org or project role when it drifts from spec.role, and remove membership on CR deletion; a project member with no project membership yet but an existing org membership is added via AddProjectMember rather than requiring a fresh invite. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150). AuraMemberReady is announced when the membership becomes Ready, not on every re-observe (id 136). Status is written only when it changes or its lastSyncedTime is auraSyncedTimeRefresh (15 minutes) old, since a status write starts another reconcile (operations.md id 156).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1784,7 +1805,7 @@
     "name": "Reconcile AuraInvite",
     "serverUnitId": "su-aurainvite",
     "operation": "job",
-    "description": "AuraInviteReconciler.Reconcile: builds the two-slot invite body (an organization-* role plus an optional namespace-* project role, refusing a project-only invite since Aura requires an organization role on every invite), adopts a matching pending invite by email+project scope, and since v2beta1 has no GET /invites/{id}, observes status via FindInvite over the LIST endpoint, reporting Sent/Accepted/Revoked/Expired/Declined/Gone. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150).",
+    "description": "AuraInviteReconciler.Reconcile: builds the two-slot invite body (an organization-* role plus an optional namespace-* project role, refusing a project-only invite since Aura requires an organization role on every invite), adopts a matching pending invite by email+project scope, and since v2beta1 has no GET /invites/{id}, observes status via FindInvite over the LIST endpoint, reporting Sent/Accepted/Revoked/Expired/Declined/Gone. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150). The OrganizationRoleRequired refusal, once on status for the current generation, is not asked again; a transient failure of the list or the create is retried without a status write; AuraInviteReady is announced once per invite state (ids 88, 136, 156). Status is written only when it changes or its lastSyncedTime is auraSyncedTimeRefresh (15 minutes) old, since a status write starts another reconcile (operations.md id 156).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1806,7 +1827,7 @@
     "name": "Validate Aura credentials",
     "serverUnitId": "su-aura-client",
     "operation": "business_action",
-    "description": "AuraProviderConfigReconciler.Reconcile: resolves the referenced credentials Secret, forces a token exchange and a real ListInstances call to prove the credentials work, and reports CredentialsValidated/CredentialsInvalid on the Ready condition every 10 minutes.",
+    "description": "AuraProviderConfigReconciler.Reconcile: resolves the referenced credentials Secret, forces a token exchange and a real ListInstances call to prove the credentials work, and reports CredentialsValidated/CredentialsInvalid on the Ready condition, re-checking every RequeueAfter (30s as deployed, 10 minutes when unset). Each event is announced when the Ready condition changes, not on every re-check (operations.md ids 136 and 145).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1843,7 +1864,7 @@
     "name": "Validate Neo4jEnterpriseStandalone spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "StandaloneValidator.Validate, called on every standalone reconcile pass and by `kubectl neo4j validate`: the spec rules (ValidateCreate: name length, licence, image, storage, TLS, auth, spec.config, memory, MCP, Aura Fleet Management, trusted CAs, extra volumes), the admin password's shape read from its Secret (skipped without a client, as offline), and spec.image.tag against status.version, the version the standalone runs, with the cluster's rule: a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26 and 4.x are refused, saying 'the standalone runs'. An empty status.version is not judged. For a status.version without a patch the tag is also held to status.runningVersion, the version the server reports (operations.md id 153). There is no update-only method: ValidateUpdate, which compared an old spec with a new one, was never called (no webhook, no old object) and was deleted (internal/validation/standalone_validator.go; operations.md id 144).",
+    "description": "StandaloneValidator.Validate, called on every standalone reconcile pass and by `kubectl neo4j validate`: the spec rules (ValidateCreate: name length, licence, image, storage, TLS, auth, spec.config, memory, MCP, Aura Fleet Management, trusted CAs, extra volumes), the admin password's shape read from its Secret (skipped without a client, as offline), and spec.image.tag against status.version, the version the standalone runs, with the cluster's rule: a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26 and 4.x are refused, saying 'the standalone runs'. An empty status.version is not judged. For a status.version without a patch the tag is also held to status.runningVersion, the version the server reports (operations.md id 153). There is no update-only method: ValidateUpdate, which compared an old spec with a new one, was never called (no webhook, no old object) and was deleted (internal/validation/standalone_validator.go; operations.md id 144). Its NoEffectWarnings (ValidationWarning, never an error) include spec.upgradeStrategy.upgradeTimeout, healthCheckTimeout and stabilizationTimeout set to anything but their CRD defaults: they bound steps of a cluster's rolling upgrade that a standalone's upgrade does not have (postUpgradeHealthCheck has no warning: false says what happens, true is the default; operations.md id 102).",
     "readsFieldIds": [
       "f-neo4jenterprisestandalone-image-tag",
       "f-neo4jenterprisestandalone-status-version",
@@ -1860,7 +1881,7 @@
     "name": "Call Aura API (shared client)",
     "serverUnitId": "su-aura-client",
     "operation": "business_action",
-    "description": "auraClientForCreds / resolveClient family: returns a shared *aura.Client per credential (keyed by baseURL+clientID+sha256(secret)[:8]) with one OAuth token cache and rate-limit budget (default 25/min), instrumented via metrics.RecordAuraAPICall, that every Aura reconciler's ClientFactory wraps to call ListInstances/CreateInstance/PatchInstance/GetSnapshot/etc.",
+    "description": "auraClientForCreds / resolveClient family: returns a shared *aura.Client per credential (keyed by baseURL+clientID+sha256(secret)[:8]) with one OAuth token cache and rate-limit budget (default 25/min), instrumented via metrics.RecordAuraAPICall, that every Aura reconciler's ClientFactory wraps to call ListInstances/CreateInstance/PatchInstance/GetSnapshot/etc. A caller that gets one error back from several steps retries quietly only what retryableAuraCall marked at the Aura call (aura.IsTransient also calls the operator's own errors transient; operations.md id 88).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1873,7 +1894,7 @@
     "name": "Reconcile AuraCustomerManagedKey",
     "serverUnitId": "su-auracustomermanagedkey",
     "operation": "job",
-    "description": "AuraCustomerManagedKeyReconciler.Reconcile: adopts an existing key by matching keyId/region/cloudProvider/instanceType (the LIST endpoint returns only summaries, so each name-matched candidate is fetched by GetCustomerManagedKey to confirm before adopting), otherwise creates one, then polls to Ready and on deletion either orphans or deregisters (refused with KeyInUse while any instance still uses it). Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150).",
+    "description": "AuraCustomerManagedKeyReconciler.Reconcile: adopts an existing key by matching keyId/region/cloudProvider/instanceType (the LIST endpoint returns only summaries, so each name-matched candidate is fetched by GetCustomerManagedKey to confirm before adopting), otherwise creates one, then polls to Ready and on deletion either orphans or deregisters (refused with KeyInUse while any instance still uses it). Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150). Deletion is handled before the credentials are resolved and resolves them only to deregister; a Delete that cannot waits finalizerDeletionGracePeriod, then orphans the key with a Warning (id 157). A transient failure of the list, the adoption read or the create is retried without a status write (id 88); fail() writes phase Error; AuraCustomerManagedKeyReady is announced when the key becomes ready (ids 136, 156). Status is written only when it changes or its lastSyncedTime is auraSyncedTimeRefresh (15 minutes) old, since a status write starts another reconcile (operations.md id 156).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1896,7 +1917,7 @@
     "name": "Reconcile AuraIPFilter",
     "serverUnitId": "su-auraipfilter",
     "operation": "job",
-    "description": "AuraIPFilterReconciler.Reconcile: resolves spec.instanceRefs to Aura instance IDs, adopts an existing filter by name or creates one via CreateIPFilter, then converges allow_list/filtered_entities/name/filteringDisabled drift via UpdateIPFilter, and on deletion deletes or orphans the filter. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150).",
+    "description": "AuraIPFilterReconciler.Reconcile: resolves spec.instanceRefs to Aura instance IDs, adopts an existing filter by name or creates one via CreateIPFilter, then converges allow_list/filtered_entities/name/filteringDisabled drift via UpdateIPFilter, and on deletion deletes or orphans the filter. Every write of its own CR (finalizer, external-ID and probe annotations) goes through one helper that applies the change to a fresh copy and writes it as a merge patch, never an Update (operations.md id 150). Deletion is handled before the credentials are resolved and resolves them (and the organization) only to delete; a Delete that cannot waits finalizerDeletionGracePeriod, then orphans the filter with a Warning (id 157). A transient failure of the list or the create is retried without a status write (id 88); AuraIPFilterReady is announced when the filter becomes Ready (ids 136, 156). Status is written only when it changes or its lastSyncedTime is auraSyncedTimeRefresh (15 minutes) old, since a status write starts another reconcile (operations.md id 156).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -2064,14 +2085,15 @@
     "name": "CLI Validate",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. A Neo4jEnterpriseCluster runs the same ApplyDefaults and ValidateWithWarnings the operator runs on every pass, the defaults applied only to the copy it validates (a tls block without a mode is held to the cert-manager rules, as the API server stores it, and an authorization provider list is judged as written; operations.md id 150); a Neo4jEnterpriseStandalone runs the operator's StandaloneValidator.Validate (no defaults: the operator applies none). For both, offline it drops any status in the manifest and its summary says the image-tag rule needs --connect; with --connect it copies in the live deployment's status, so a downgrade below the version it runs is refused (status.version, and for a tag without a patch status.runningVersion and status.upgradeStatus.resolvedTargetVersion, operations.md id 153), and one it cannot read is a warning. Its usage text says each validator reports every error it finds, except Neo4jShardedDatabase's, which stops when its clusterRef cannot be read (operations.md id 144). Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names. With --connect a Neo4jBackup's spec.shardedDatabase is resolved through ResolveBackupShardedDatabase, the function the backup controller's sharded preflight calls: a name that is no Neo4jShardedDatabase CR (naming the CR when it is that CR's logical name) or a CR on another cluster is an error, as the operator fails the backup for it (operations.md id 116).",
+    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. A Neo4jEnterpriseCluster runs the same ApplyDefaults and ValidateWithWarnings the operator runs on every pass, the defaults applied only to the copy it validates (a tls block without a mode is held to the cert-manager rules, as the API server stores it, and an authorization provider list is judged as written; operations.md id 150); a Neo4jEnterpriseStandalone runs the operator's StandaloneValidator.Validate (no defaults of the operator's own). Before any kind's validator runs, every default its CRD declares is applied to the document, as the API server stores it (withSchemaDefaults over the CRDs embedded from config/crd/bases, with the API server's structural defaulting; operations.md id 150): a standalone's tls: {} is judged as cert-manager and needs an issuerRef, a bool the CRD defaults to true reads true. For both, offline it drops any status in the manifest and its summary says the image-tag rule needs --connect; with --connect it copies in the live deployment's status, so a downgrade below the version it runs is refused (status.version, and for a tag without a patch status.runningVersion and status.upgradeStatus.resolvedTargetVersion, operations.md id 153), and one it cannot read is a warning. Each validator reports every error it finds, Neo4jShardedDatabase's included: its errors keep their own field paths, a clusterRef that names no cluster yet is Pending (as the operator waits for it), and a cluster it cannot read is a warning that the rules needing it were not checked (operations.md ids 144, 145). Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names. With --connect a Neo4jBackup's spec.shardedDatabase is resolved through ResolveBackupShardedDatabase, the function the backup controller's sharded preflight calls: a name that is no Neo4jShardedDatabase CR (naming the CR when it is that CR's logical name) or a CR on another cluster is an error, as the operator fails the backup for it (operations.md id 116).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
       "sf-validate-spec-config",
       "sf-validate-cluster",
       "sf-validate-standalone",
-      "sf-resolve-backup-sharded-database"
+      "sf-resolve-backup-sharded-database",
+      "sf-validate-sharded-database"
     ],
     "emitsEventIds": [],
     "subscribesEventIds": [],
@@ -2108,7 +2130,7 @@
     "name": "CLI Diagnose",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Explains why a resource is unhealthy at the Kubernetes level: unschedulable pods, OOMKills (kubelet reason or exit code 137) and non-zero exits, read from both the previous and the current container state so a Job pod under RestartPolicyNever (which never restarts, leaving its last state empty) is reported with the plain log command and, for a backup, the Neo4jBackup's own spec.options.resources, image-pull and crash-loop states (a crash-looping container is not reported twice), unbound PVCs, failed backup Jobs (judged by the Job's Failed and Complete conditions rather than the cumulative status.failed attempt count, so a backup that retried and then completed is not an error; the leftover failed pods of a Job that did not fail are softened to warning or waiting findings), warning events, and custom resources the operator has never written status to. Finds workloads through the operator's exported selectors and anchors rules to Kubernetes API constants where they exist. Exits 1 when a problem is found. A cluster or standalone with neither StatefulSet nor pods is told to check the operator only when the operator has written no status; with a status (a refused spec, a missing StorageClass) the hint (noWorkloadAction) points at the status message, or the conditions and events, and at explain (operations.md id 154).",
+    "description": "Explains why a resource is unhealthy at the Kubernetes level: unschedulable pods, OOMKills (kubelet reason or exit code 137) and non-zero exits, read from both the previous and the current container state so a Job pod under RestartPolicyNever (which never restarts, leaving its last state empty) is reported with the plain log command and, for a backup, the Neo4jBackup's own spec.options.resources, image-pull and crash-loop states (a crash-looping container is not reported twice), unbound PVCs, failed backup Jobs (judged by the Job's Failed and Complete conditions rather than the cumulative status.failed attempt count, so a backup that retried and then completed is not an error; the leftover failed pods of a Job that did not fail are softened to warning or waiting findings), warning events that still describe the resource's current state (seen at or after its Ready condition last changed, or an advisory in controller.AdvisoryWarningReasons seen within the 30-minute refresh; earlier ones are counted in one line, not marked, and change neither --quiet nor the exit code; operations.md id 168), and custom resources the operator has never written status to. Finds workloads through the operator's exported selectors and anchors rules to Kubernetes API constants where they exist. Exits 1 when a problem is found. A cluster or standalone with neither StatefulSet nor pods is told to check the operator only when the operator has written no status; with a status (a refused spec, a missing StorageClass) the hint (noWorkloadAction) points at the status message, or the conditions and events, and at explain (operations.md id 154).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -2121,7 +2143,7 @@
     "name": "CLI Explain",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Decodes a status condition, phase or condition REASON into what it means and what to do, keyed off the operator's exported condition constants so a rename breaks the build rather than leaving the explanation stale. A live resource's conditions are printed with their reason, explained after the condition's general guidance since the reason is the more specific signal; only reasons that are not guessable from the string itself get an entry. Negative-polarity conditions (ClusterNotReady, Degraded, ServersPendingDrain, UserNotFound, PendingDependencies, AuthRuleVersionTooOld) are marked healthy when False, and their problem guidance is shown only when True. Reports unrecognised terms as unrecognised, naming its own version.",
+    "description": "Decodes a status condition, phase or condition REASON into what it means and what to do, keyed off the operator's exported condition constants so a rename breaks the build rather than leaving the explanation stale. A live resource's conditions are printed with their reason, explained after the condition's general guidance since the reason is the more specific signal; only reasons that are not guessable from the string itself get an entry. Negative-polarity conditions (ClusterNotReady, Degraded, ServersPendingDrain, UserNotFound, PendingDependencies, AuthRuleVersionTooOld) are marked healthy when False, and their problem guidance is shown only when True. Every phase of the shared vocabulary (api/v1beta1 AllPhases) has guidance, Neo4jAuthRule's PendingDependencies included (it was a controller literal, so explain called it newer than the CLI; operations.md id 154). Reports unrecognised terms as unrecognised, naming its own version.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -2201,7 +2223,7 @@
     "name": "Learn Role Privileges",
     "serverUnitId": "su-neo4jrole",
     "operation": "business_action",
-    "description": "Learn mode (--privilege-normalisation=learn, the default; the probe is opt-in): reconcileLearned()/learnDesired() learn each spec statement's stored rows from the operator's own grant (before/after diff), persist them in status.privilegeRenderings BEFORE any revoke, never revoke status.unattributedPrivileges, and re-learn on scope change, a vanished unattributed row, or revocation of a removed statement's rows. Fails loudly when the installed CRD prunes these status fields (internal/controller/neo4jrole_learn.go). The rendering scope (roleRenderingScope) covers the target UID, its image and only the aliases the role's statements name, so an alias change elsewhere on the cluster re-learns nothing; statements on *, HOME, DEFAULT and DBMS name no alias, and only a role with a statement whose targets cannot be read stays on every alias. Names are read as Neo4j lists them: a constituent by its qualified name however its parts are quoted, a doubled backtick as one literal backtick. A pass that cannot list databases or aliases keeps the learned scope instead of re-learning. Only grants that created a row count toward PrivilegesApplied, so a re-learn's no-op grants are not reported (knowledge operations.md ids 136, 142).",
+    "description": "Learn mode (--privilege-normalisation=learn, the default; the probe is opt-in): reconcileLearned()/learnDesired() learn each spec statement's stored rows from the operator's own grant (before/after diff), persist them in status.privilegeRenderings BEFORE any revoke, never revoke status.unattributedPrivileges, and re-learn on scope change, a vanished unattributed row, or revocation of a removed statement's rows. Fails loudly when the installed CRD prunes these status fields (internal/controller/neo4jrole_learn.go). The rendering scope (roleRenderingScope) covers the target UID, its image and only the aliases the role's statements name, so an alias change elsewhere on the cluster re-learns nothing; statements on *, HOME, DEFAULT and DBMS name no alias, and only a role with a statement whose targets cannot be read stays on every alias. Names are read as Neo4j lists them: a constituent by its qualified name however its parts are quoted, a doubled backtick as one literal backtick. A pass that cannot list databases or aliases keeps the learned scope instead of re-learning. Only grants that created a row count toward PrivilegesApplied, so a re-learn's no-op grants are not reported (knowledge operations.md ids 136, 142). A statement whose grant added no row is attributed to the stored row its own text is, with only the database and graph names compared ignoring case (storedFormRows, FoldPrivilegeDatabaseNames), so `ACCESS ON DATABASE TOPODB` next to `ON DATABASES topodb, other` is no longer ambiguous and out-of-band rows stay revocable (operations.md ids 20, 146). A statement already held ambiguous whose stored row is now found is settled from it without a grant, so a role learned before the fix settles on the first pass after the upgrade. A row another session grants between the two reads of one learning grant is learned as that statement's — a known limit; removing it by hand re-learns the statement without it.",
     "readsFieldIds": [
       "f-neo4jrole-privileges",
       "f-neo4jrole-status-privilege-renderings",
@@ -2240,7 +2262,7 @@
     "name": "Reconcile Server Shortfall",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Sets the status of a cluster that is not fully formed. Feeds the formation result, the ClusterFormed memory, whether a template rollout is in flight and the Degraded condition's lastTransitionTime to the shortfall assessment, then writes Ready (Degraded condition True) within the grace period, Degraded past it, or Forming — for first formation, rollouts, scale-ups, split-brain or the loss of a majority (#444). When Neo4j could not be queried it also feeds the number of Ready server pods and when the connection-failure streak began; an Unmeasured verdict writes nothing. ClusterDegraded and ClusterQuorumLost are deduplicated in memory, since the informer cache can return the previous phase.",
+    "description": "Sets the status of a cluster that is not fully formed. Feeds the formation result, the ClusterFormed memory, whether a template rollout is in flight and the Degraded condition's lastTransitionTime to the shortfall assessment, then writes Ready (Degraded condition True) within the grace period, Degraded past it, or Forming — for first formation, rollouts, scale-ups, split-brain or the loss of a majority (#444). When Neo4j could not be queried it also feeds the number of Ready server pods and when the connection-failure streak began; an Unmeasured verdict writes nothing. ClusterDegraded and ClusterQuorumLost are deduplicated in memory, since the informer cache can return the previous phase. Its messages for a formed cluster short of a server (within the grace, Degraded, a lost majority) say what Neo4j reports and, while Neo4j still lists every server available, which server pods Kubernetes does not report ready (terminating, not ready, missing) — never the formation or rollout check's detail, which is kept for a cluster that is Forming (#553). ClusterFormationStarted is announced from what the write entering Forming replaced, as the API server held it (knowledge operations.md ids 105, 136).",
     "readsFieldIds": [
       "status.phase"
     ],
@@ -2284,5 +2306,86 @@
     "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "sf-validate-sharded-database",
+    "name": "Validate Neo4jShardedDatabase spec",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "ShardedDatabaseValidator.Validate runs every rule on the spec (name, clusterRef present, property shard count, seed options, replaceExisting gates, topology, Cypher 25) whatever happens to the cluster read, then the rules that need the referenced Neo4jEnterpriseCluster (property sharding enabled, room for the shards) when it can be read. A cluster that does not exist yet is Pending, never an error, so the reconciler reaches its documented wait (phase Pending, ClusterNotFound); any other read failure is ClusterReadErr. ValidateShardedDatabase, the reconciler's entry point, returns the field errors and a read failure as one error. Before #532 a failed read returned alone, dropping the spec errors, and a missing cluster made the database Failed (internal/validation/shardeddatabase_validator.go; operations.md id 145).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
+  },
+  {
+    "id": "sf-record-storage-class-change",
+    "name": "Warn On An Unapplied StorageClass",
+    "serverUnitId": "su-storage-expansion",
+    "operation": "business_action",
+    "description": "recordStorageClassChange, on every storage pass of a cluster and a standalone: lists the data PVCs and, while spec.storage.className names a StorageClass some of them do not use, raises an advisory ValidationWarning naming each volume and its class (validation.StorageClassChangeWarning). A volume keeps the class it was created with and the StatefulSet's claim template cannot change, so an edit of className reaches no existing volume. An empty className (the cluster default) and a deployment without volumes say nothing; the warning is recorded in its own advisoryWarnings scope, apart from the validator's ValidationWarning set (internal/controller/storage_class_change.go; operations.md id 102).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-validation-warning"
+    ],
+    "id": "sf-refuse-upgrade-start",
+    "name": "Refuse Upgrade Start",
+    "serverUnitId": "su-rolling-upgrade",
+    "operation": "business_action",
+    "description": "Records an upgrade that a check refused before anything was written to the server StatefulSet — the version rule (the whole tag rule against status, ValidateTagAgainstRunning) or the pre-upgrade check (health, consensus, a leader, and the target not below the highest version SHOW SERVERS reports): Paused with autoPauseOnFailure, Failed otherwise, with the cause in lastError. The UpgradeFailed or UpgradePaused Warning and the failure metric follow only a write that changed the record's phase, target or error. The cluster stays Ready and its status.message names the stopped upgrade; a Failed one is tried again after one minute, with the normal pass running in between. It used to fail the cluster too, flipping it between Failed and Ready with an UpgradeFailed and a ClusterReady every cycle (#538, #531; operations.md id 149).",
+    "readsFieldIds": [
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.lastError"
+    ],
+    "writesFieldIds": [
+      "status.upgradeStatus.phase",
+      "status.upgradeStatus.lastError"
+    ],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-upgrade-failed",
+      "ev-upgrade-paused"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-repair-held-upgrade",
+    "name": "Replace Servers That Cannot Start On The Target",
+    "serverUnitId": "su-rolling-upgrade",
+    "operation": "business_action",
+    "description": "Takes up a Paused or Failed upgrade towards a new spec.image.tag although the cluster is short of servers, when the servers down are exactly the ones it restarted, each unable to start on its image (an image pull that fails, a container that keeps exiting, a failing init container), the highest ordinals at or above the partition, every server below them up, and Neo4j's last view names no other server unavailable. It skips the every-replica-ready gate and the pre-upgrade health check, and Staging freezes at the lowest of those servers so the StatefulSet replaces them on the new template first; the walk goes on from there through its gates. Changing the tag did nothing before, towards any tag (#538; operations.md id 162).",
+    "readsFieldIds": [
+      "status.upgradeStatus.phase"
+    ],
+    "writesFieldIds": [
+      "status.upgradeStatus.currentPartition"
+    ],
+    "callsFunctionIds": [],
+    "emitsEventIds": [
+      "ev-upgrade-started"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-hold-topology-during-upgrade",
+    "name": "Hold Topology During Upgrade",
+    "serverUnitId": "su-rolling-upgrade",
+    "operation": "business_action",
+    "description": "Keeps the server count where it is while an upgrade is in flight or a Paused or Failed one keeps a partition: Staging writes the StatefulSet's own replica count, and the normal pass of a held upgrade works on that count in memory, so no server is added on the target, no drain runs mid-upgrade, and the formation check expects the servers there are. The TopologyChangeDeferred condition names both counts and the upgrade; the change is applied once the upgrade completes. Staging used to apply spec.topology.servers, removing servers with no drain on a scale-down in the same apply as an image change (#538; operations.md id 163).",
+    "readsFieldIds": [
+      "f-neo4jenterprisecluster-topology-servers",
+      "status.upgradeStatus.phase"
+    ],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
   }
 ]
