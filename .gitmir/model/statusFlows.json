@@ -396,12 +396,12 @@
       {
         "key": "Running",
         "name": "Running",
-        "description": "A backup Job is currently executing neo4j-admin database backup."
+        "description": "A backup Job is currently executing neo4j-admin database backup, or has succeeded and its artifact names are being read from its Pod's log (at most 5 minutes after the Job finished). lastRunTime is stamped when the backup enters Running."
       },
       {
         "key": "Completed",
         "name": "Completed",
-        "description": "The most recent backup Job reached JobComplete and its run was recorded in status.history."
+        "description": "The most recent backup Job reached JobComplete and its run was recorded in status.history. Final for a one-time backup: read from the API server when a pass's cached copy is not terminal."
       },
       {
         "key": "Failed",

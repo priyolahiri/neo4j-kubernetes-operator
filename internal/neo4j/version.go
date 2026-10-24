@@ -167,6 +167,18 @@ func GetImageVersion(image string) (*Version, error) {
 // shell strips the outer double quotes before invoking neo4j-admin, so quoting
 // is transparent for plain names.
 func GetBackupCommand(version *Version, databaseName string, backupPath string, allDatabases bool, fromAddresses string) string {
+	var names []string
+	if databaseName != "" {
+		names = []string{databaseName}
+	}
+	return GetBackupCommandForDatabases(version, names, backupPath, allDatabases, fromAddresses)
+}
+
+// GetBackupCommandForDatabases is GetBackupCommand for several database names
+// or patterns, which neo4j-admin takes in one run (`[<database>...]`): a
+// sharded backup names its graph and property shards with one pattern each.
+// Every name is double-quoted, as in GetBackupCommand.
+func GetBackupCommandForDatabases(version *Version, databaseNames []string, backupPath string, allDatabases bool, fromAddresses string) string {
 	cmd := "neo4j-admin database backup"
 
 	if fromAddresses != "" {
@@ -183,8 +195,12 @@ func GetBackupCommand(version *Version, databaseName string, backupPath string, 
 
 	if allDatabases {
 		cmd += ` "*"`
-	} else if databaseName != "" {
-		cmd += ` "` + databaseName + `"`
+	} else {
+		for _, name := range databaseNames {
+			if name != "" {
+				cmd += ` "` + name + `"`
+			}
+		}
 	}
 
 	return cmd

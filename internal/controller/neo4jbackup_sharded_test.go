@@ -404,8 +404,8 @@ func TestBuildBackupCommand_ShardedDatabase_EmitsFlagsWithNilOptions(t *testing.
 	if !strings.Contains(cmd, "--remote-address-resolution=true") {
 		t.Errorf("expected --remote-address-resolution=true in cmd, got: %q", cmd)
 	}
-	if !strings.Contains(cmd, `"products*"`) {
-		t.Errorf("expected quoted glob \"products*\" in cmd, got: %q", cmd)
+	if !strings.Contains(cmd, `"products-g*" "products-p*"`) {
+		t.Errorf("expected the quoted shard patterns \"products-g*\" \"products-p*\" in cmd, got: %q", cmd)
 	}
 	// AUTO (here: no options at all) takes a full backup of a sharded
 	// database on a PVC — a differential could never seed one (rule 110).
@@ -640,16 +640,16 @@ func TestShardedLogicalNameForBackup_ResolvesSpecName(t *testing.T) {
 		t.Fatalf("logical name = %q, want products (the CR's spec.name)", got)
 	}
 
-	// The backup command must glob the LOGICAL name.
+	// The backup command must name the LOGICAL name's shards.
 	cmd, err := r.buildBackupCommand(ctx, backup, fieldFindingsCluster("2026.04-enterprise"))
 	if err != nil {
 		t.Fatalf("buildBackupCommand: %v", err)
 	}
-	if !strings.Contains(cmd, `"products*"`) {
-		t.Fatalf("backup command must glob the logical name, got %q", cmd)
+	if !strings.Contains(cmd, `"products-g*" "products-p*"`) {
+		t.Fatalf("backup command must name the logical name's shards, got %q", cmd)
 	}
-	if strings.Contains(cmd, "basic-sharded-db*") {
-		t.Fatalf("backup command must NOT glob the CR name, got %q", cmd)
+	if strings.Contains(cmd, "basic-sharded-db") {
+		t.Fatalf("backup command must NOT name the CR, got %q", cmd)
 	}
 
 	// Artifact stubs carry the logical prefix.
