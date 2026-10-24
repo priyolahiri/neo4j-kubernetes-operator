@@ -29,6 +29,7 @@ import (
 
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,6 +58,14 @@ type Neo4jBackupReconciler struct {
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
 	RequeueAfter            time.Duration
+
+	// APIReader reads straight from the API server, bypassing the informer
+	// cache. A one-time backup whose cached copy is not Completed or Failed is
+	// read through it before anything else is decided: from a cached copy
+	// that predated the Completed write, a pass that found the Job gone
+	// started a new one and wrote Failed over Completed (knowledge rule 94;
+	// backup-restore.md Rule 113). nil falls back to the cached copy.
+	APIReader client.Reader
 
 	// Clientset is the typed Kubernetes client used for pod-log fetches
 	// (BackupRun.ShardArtifacts filename/size population, BackupRun.Validation
@@ -220,9 +229,10 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// that before looking at the target: a target that is restarting or gone
 	// would otherwise overwrite the terminal phase with Waiting, and once the
 	// finished Job had been garbage-collected the next pass ran the backup
-	// again. A leftover CronJob (the schedule was removed) still goes.
-	if backup.Spec.Schedule == "" &&
-		(backup.Status.Phase == neo4jv1beta1.PhaseCompleted || backup.Status.Phase == neo4jv1beta1.PhaseFailed) {
+	// again. A leftover CronJob (the schedule was removed) still goes. The
+	// phase is the API server's when the cached copy is not terminal
+	// (oneTimeBackupDone).
+	if r.oneTimeBackupDone(ctx, backup) {
 		if err := r.cleanupOrphanedCronJob(ctx, backup); err != nil {
 			logger.Error(err, "Failed to delete orphaned backup CronJob")
 			return ctrl.Result{}, err
@@ -629,6 +639,33 @@ func backupRunAlreadyRecorded(history []neo4jv1beta1.BackupRun, run neo4jv1beta1
 	return false
 }
 
+// oneTimeBackupDone reports whether a backup without spec.schedule is
+// Completed or Failed, which is final for it (#116, Rule 113). The pass's own
+// copy comes from the informer cache, which can still hold the copy from
+// before the write that ended the run: the v1.22.x walk saw a pass on such a
+// copy find the finished Job gone (TTL), start a new one, and write Failed
+// over Completed right after BackupCompleted. So a copy that is not terminal
+// is checked against the API server (knowledge operations.md id 94) — one
+// read per pass of an unfinished one-time backup. A failed read falls back to
+// the copy.
+func (r *Neo4jBackupReconciler) oneTimeBackupDone(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) bool {
+	terminal := func(b *neo4jv1beta1.Neo4jBackup) bool {
+		return b.Spec.Schedule == "" &&
+			(b.Status.Phase == neo4jv1beta1.PhaseCompleted || b.Status.Phase == neo4jv1beta1.PhaseFailed)
+	}
+	if backup.Spec.Schedule != "" {
+		return false
+	}
+	if terminal(backup) || r.APIReader == nil {
+		return terminal(backup)
+	}
+	fresh := &neo4jv1beta1.Neo4jBackup{}
+	if err := r.APIReader.Get(ctx, client.ObjectKeyFromObject(backup), fresh); err != nil {
+		return false
+	}
+	return terminal(fresh)
+}
+
 func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 
@@ -733,9 +770,13 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 			r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseRunning, "Backup completed; capturing artifact metadata from the backup Pod")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
-		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseCompleted, "Backup completed successfully")
-		r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupCompleted, "Backup completed successfully")
-		backupM.RecordBackup(ctx, true, jobDuration(job))
+		// Announced from the write that makes it Completed (knowledge rule
+		// 136): a pass on a stale copy that comes through here again says
+		// nothing.
+		if r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseCompleted, "Backup completed successfully") {
+			r.Recorder.Event(backup, corev1.EventTypeNormal, EventReasonBackupCompleted, "Backup completed successfully")
+			backupM.RecordBackup(ctx, true, jobDuration(job))
+		}
 		return ctrl.Result{}, nil
 	}
 
@@ -746,9 +787,10 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		// in history, so the only signal of past failures was the metrics
 		// counter and the transient Job object (which TTL'd out after 5
 		// minutes).
-		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, "Backup job failed")
-		r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, "Backup job failed")
-		backupM.RecordBackup(ctx, false, jobDuration(job))
+		if r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, "Backup job failed") {
+			r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, "Backup job failed")
+			backupM.RecordBackup(ctx, false, jobDuration(job))
+		}
 		r.recordOneShotBackupRun(ctx, backup, job)
 		return ctrl.Result{}, nil
 	}
@@ -1567,23 +1609,29 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 		fromAddresses = resources.BuildStandaloneBackupFromAddress(standalone)
 	}
 	allDatabases := backup.Spec.Scope() == neo4jv1beta1.BackupTargetKindCluster
-	dbName := ""
+	var dbNames []string
+	// validateDBArg is the --database of the optional validate step below.
+	validateDBArg := ""
 	switch backup.Spec.Scope() {
 	case neo4jv1beta1.BackupTargetKindDatabase:
-		dbName = backup.Spec.ScopedName()
+		dbNames = []string{backup.Spec.ScopedName()}
+		validateDBArg = backup.Spec.ScopedName()
 	case neo4jv1beta1.BackupTargetKindShardedDatabase:
-		// Property-sharded DBs are backed up as a glob across all shards:
-		// {name}-g000 (graph) + {name}-p000…p{N-1} (property shards). The
-		// argument is wrapped in single quotes by GetBackupCommand so the
-		// shell doesn't expand "*" before reaching neo4j-admin. The glob
-		// prefix is the LOGICAL database name resolved from the referenced
-		// Neo4jShardedDatabase CR — target.name is the CR reference, and a
-		// glob built from the CR name matches zero databases whenever the
-		// two differ.
-		dbName = r.shardedLogicalNameForBackup(ctx, backup) + "*"
+		// Property-sharded DBs are backed up as patterns across all shards:
+		// {name}-g* (graph, {name}-g000) and {name}-p* (property shards,
+		// {name}-p000…p{N-1}), in one neo4j-admin run (shardedBackupPatterns).
+		// Each is double-quoted by GetBackupCommandForDatabases so the shell
+		// doesn't expand "*" before reaching neo4j-admin. The prefix is the
+		// LOGICAL database name resolved from the referenced
+		// Neo4jShardedDatabase CR, lower-cased — target.name is the CR
+		// reference, and patterns built from the CR name match zero databases
+		// whenever the two differ.
+		logical := r.shardedLogicalNameForBackup(ctx, backup)
+		dbNames = shardedBackupPatterns(logical)
+		validateDBArg = logical
 	}
 
-	cmd := neo4j.GetBackupCommand(version, dbName, toPath, allDatabases, fromAddresses)
+	cmd := neo4j.GetBackupCommandForDatabases(version, dbNames, toPath, allDatabases, fromAddresses)
 
 	if t := effectiveBackupType(backup); t != "" {
 		cmd += " --type=" + t
@@ -1654,14 +1702,12 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 	// stdout into BackupRun.Validation after the Job completes (see the
 	// post-Job hook in recordOneShotBackupRun / reconcileScheduledHistory).
 	//
-	// **Sharded validate takes the LITERAL DB name, not the backup-side glob**:
-	// per the sharded admin-operations docs, `neo4j-admin backup validate
-	// --database="foo"` auto-discovers and validates every shard (foo-g000,
-	// foo-p000, …) under the parent name. Passing the `foo*` glob (which
-	// the backup command needs to capture all shards in one invocation)
-	// makes validate try to evaluate `foo*-g000` literally and emit
-	//   "Unable to find valid backup chain for database 'foo*-g000'"
-	// — unparseable. Strip the trailing `*` here so validate sees the
+	// **Sharded validate takes the LITERAL DB name, not the backup-side
+	// patterns**: per the sharded admin-operations docs, `neo4j-admin backup
+	// validate --database="foo"` auto-discovers and validates every shard
+	// (foo-g000, foo-p000, …) under the parent name. A pattern makes validate
+	// try to evaluate it literally (`foo*` gave "Unable to find valid backup
+	// chain for database 'foo*-g000'") — unparseable. So validate gets the
 	// canonical parent name.
 	if backup.Spec.Options != nil && backup.Spec.Options.Validate != nil && *backup.Spec.Options.Validate {
 		// `neo4j-admin backup validate` exists only on CalVer images — on
@@ -1676,11 +1722,8 @@ func (r *Neo4jBackupReconciler) buildBackupCommand(ctx context.Context, backup *
 			// warnValidateUnsupported.
 			log.FromContext(ctx).Info("options.validate skipped: not supported on this Neo4j version", "tag", cluster.Spec.Image.Tag)
 		} else {
-			validateDBArg := dbName
 			if allDatabases {
 				validateDBArg = "*"
-			} else {
-				validateDBArg = strings.TrimSuffix(validateDBArg, "*")
 			}
 			// toPath carries user-controlled spec fields — quote it (#219). The
 			// database arg is double-quoted by design (validated name or literal
@@ -2297,17 +2340,27 @@ func (r *Neo4jBackupReconciler) updateBackupStatus(ctx context.Context, backup *
 			return err
 		}
 		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		before := latest.Status.DeepCopy()
+		// The run's times are stamped when the phase enters Running or
+		// Completed, not on every write of it: lastRunTime written on each
+		// pass of a Running backup changed status every pass, and every
+		// status write is a watch event that reconciles the backup again (a
+		// write about every 27s in the v1.22.x walk; knowledge
+		// operations.md id 122).
+		now := metav1.Now()
+		switch {
+		case phase == neo4jv1beta1.PhaseRunning && latest.Status.Phase != phase:
+			latest.Status.LastRunTime = &now
+		case phase == neo4jv1beta1.PhaseCompleted && latest.Status.Phase != phase:
+			latest.Status.LastSuccessTime = &now
+		}
 		latest.Status.Phase = phase
 		latest.Status.Message = message
 		latest.Status.ObservedGeneration = latest.Generation
 		condStatus, condReason := PhaseToConditionStatus(phase)
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
-		now := metav1.Now()
-		switch phase {
-		case neo4jv1beta1.PhaseRunning:
-			latest.Status.LastRunTime = &now
-		case neo4jv1beta1.PhaseCompleted:
-			latest.Status.LastSuccessTime = &now
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
 		}
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
@@ -2545,14 +2598,19 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 				}
 			}
 		}
-		if missing && r.backupPodExists(ctx, job.Name, job.Namespace) {
+		// Bounded by artifactCaptureGrace after the Job finished, not by the
+		// Pod's life: a log that does not name the artifacts by then never
+		// will, and waiting for the Job's 30-minute TTL kept the backup
+		// Running for that long, then let the Job vanish under it (v1.22.x
+		// walk, a sharded backup whose shard names did not match the log).
+		if missing && r.backupPodExists(ctx, job.Name, job.Namespace) && time.Since(jobFinishedAt(job)) < artifactCaptureGrace {
 			logger.Info("backup Succeeded but restore-critical artifact metadata not yet captured from Pod log; deferring history record to retry before Pod GC",
 				"job", job.Name, "kind", backup.Spec.Scope())
 			return false
 		}
 		if missing {
-			logger.Info("backup Pod gone before artifact metadata was captured; recording run best-effort (a CR-path restore of this run may need source.type=storage with an explicit backupPath)",
-				"job", job.Name)
+			logger.Info("artifact metadata not captured from the backup Pod's log; recording run best-effort (a CR-path restore of this run may need source.type=storage with an explicit backupPath)",
+				"job", job.Name, "grace", artifactCaptureGrace.String())
 		}
 	}
 
@@ -2605,6 +2663,28 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 	// for non-Succeeded runs.
 	r.updateShardedDBLastBackup(ctx, backup, run)
 	return true
+}
+
+// artifactCaptureGrace is how long after its Job finished a Succeeded
+// one-time run waits for its artifact names to be read from the Pod's log.
+// The log is complete once the Pod has finished; the wait covers a log read
+// that failed on the way (an API server hiccup), several passes at the 30s
+// requeue, and ends long before the Job's TTL (30 minutes) deletes it.
+const artifactCaptureGrace = 5 * time.Minute
+
+// jobFinishedAt is when a finished Job finished: its completionTime (set on
+// success), else the time its Complete or Failed condition turned true, else
+// the zero time (nothing to measure from, so the caller does not wait).
+func jobFinishedAt(job *batchv1.Job) time.Time {
+	if job.Status.CompletionTime != nil {
+		return job.Status.CompletionTime.Time
+	}
+	for _, c := range job.Status.Conditions {
+		if (c.Type == batchv1.JobComplete || c.Type == batchv1.JobFailed) && c.Status == corev1.ConditionTrue && !c.LastTransitionTime.IsZero() {
+			return c.LastTransitionTime.Time
+		}
+	}
+	return time.Time{}
 }
 
 // backupPodExists reports whether at least one Pod spawned by the given backup

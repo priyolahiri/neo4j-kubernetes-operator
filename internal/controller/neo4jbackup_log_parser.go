@@ -565,15 +565,24 @@ func truncateForRaw(s string) string {
 // are left as-is, so consumers always see at least the expected shard
 // names even if log parsing failed partway through.
 //
+// Shard names are matched ignoring case: the log carries them as neo4j-admin
+// writes them, lower-cased, and an expected name from a spec spelled
+// `Products` matched nothing, so the run never had its file names (knowledge
+// operations.md id 146).
+//
 // Returns the merged slice. Caller assigns into BackupRun.ShardArtifacts.
 func mergeShardArtifactsFromLog(expected []neo4jv1beta1.ShardArtifact, fromLog map[string]neo4jv1beta1.ShardArtifact) []neo4jv1beta1.ShardArtifact {
 	if len(fromLog) == 0 {
 		return expected
 	}
+	byName := make(map[string]neo4jv1beta1.ShardArtifact, len(fromLog))
+	for name, a := range fromLog {
+		byName[strings.ToLower(name)] = a
+	}
 	out := make([]neo4jv1beta1.ShardArtifact, len(expected))
 	copy(out, expected)
 	for i := range out {
-		if a, ok := fromLog[out[i].ShardName]; ok {
+		if a, ok := byName[strings.ToLower(out[i].ShardName)]; ok {
 			if a.Filename != "" {
 				out[i].Filename = a.Filename
 			}
