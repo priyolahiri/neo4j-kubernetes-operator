@@ -165,22 +165,25 @@ func TestReconcile_NEO4JPluginsFollowsThePlugin(t *testing.T) {
 	})
 
 	t.Run("a switch to VerifiedDownload", func(t *testing.T) {
+		// A name the image's entrypoint installs: a custom one is refused in
+		// Managed mode, and never reaches NEO4J_PLUGINS (operations.md id 170).
 		plugin := verifiedDownloadSelfHeal("", "")
+		plugin.Name, plugin.Spec.Name, plugin.Spec.Config = "apoc-extended", "apoc-extended", nil
 		plugin.Spec.InstallMode = PluginInstallModeManaged
 		r, _, writes, _ := gateReconciler(t, nil, append([]client.Object{plugin, readyCluster(), selfHealSTS()}, readyClusterPods()...)...)
-		installAndRoll(t, r, "custom", "c-server")
+		installAndRoll(t, r, "apoc-extended", "c-server")
 		v, _ := envValueOf(t, r, "c-server", "NEO4J_PLUGINS")
-		require.Equal(t, `["custom"]`, v)
+		require.Equal(t, `["apoc-extended"]`, v)
 
-		editPlugin(t, r.Client, "custom", func(p *neo4jv1beta1.Neo4jPlugin) { p.Spec.InstallMode = PluginInstallModeVerifiedDownload })
-		reconcilePlugin(t, r, "custom")
+		editPlugin(t, r.Client, "apoc-extended", func(p *neo4jv1beta1.Neo4jPlugin) { p.Spec.InstallMode = PluginInstallModeVerifiedDownload })
+		reconcilePlugin(t, r, "apoc-extended")
 
 		assert.Equal(t, 2, *writes, "the init container and the name go in one write")
 		live := liveSTS(t, r.Client, "c-server")
 		v, _ = findEnv(neo4jContainer(&live.Spec.Template.Spec), "NEO4J_PLUGINS")
 		assert.Equal(t, `[]`, v, "the entrypoint does not install it beside the verified JAR")
-		assert.Contains(t, initContainerNames(live), "plugin-init-custom")
-		assert.NotContains(t, live.Annotations, pluginEntriesAnnotation("custom"))
+		assert.Contains(t, initContainerNames(live), "plugin-init-apoc-extended")
+		assert.NotContains(t, live.Annotations, pluginEntriesAnnotation("apoc-extended"))
 	})
 
 	t.Run("a name another plugin adds stays", func(t *testing.T) {

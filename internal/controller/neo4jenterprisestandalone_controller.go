@@ -583,7 +583,8 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 }
 
 // collectPluginConfSettings returns the union of neo4j.conf settings derived from
-// every enabled Neo4jPlugin targeting this standalone (#146). A list error is
+// every Neo4jPlugin on this standalone (#146): enabled, and not refused by its
+// image (operations.md id 170). A list error is
 // returned (not swallowed) so the caller can requeue without pruning plugin-owned
 // keys from neo4j.conf.
 func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (map[string]string, error) {
@@ -604,7 +605,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx cont
 	if err := r.List(ctx, plugins, client.InNamespace(standalone.Namespace)); err != nil {
 		return nil, fmt.Errorf("listing Neo4jPlugins in %s: %w", standalone.Namespace, err)
 	}
-	return unionPluginConfSettings(plugins.Items, standalone.Name), nil
+	return unionPluginConfSettings(plugins.Items, standalone.Name, standalone.Spec.Image.Tag), nil
 }
 
 // standaloneConfigHashAnnotation carries a hash of the rendered neo4j.conf on the
