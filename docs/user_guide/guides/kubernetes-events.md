@@ -40,13 +40,12 @@ is met on many passes. It is announced once:
 
 | Reason | Type | Description |
 |---|---|---|
-| `ClusterFormationStarted` | Normal | Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it) |
-| `ClusterFormationFailed` | Warning | Cluster formation verification failed |
+| `ClusterFormationStarted` | Normal | Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it). Once per cluster: it is announced by the status write that enters `Forming`, so a pass that reads the cluster from before that write does not raise it again. There is no `ClusterFormationFailed`: formation waits rather than fails, and a cluster that cannot be reached for long raises `ConnectivityDegraded` |
 | `ClusterReady` | Normal | Cluster has reached Ready phase |
 | `ValidationFailed` | Warning | The spec failed validation; the message names what to fix and is also in `status.message`. Emitted when the failure starts or its message changes, not on every retry while the spec stays invalid (a cluster or replica also announces it again after an edit that leaves the spec invalid). Also emitted by `Neo4jEnterpriseStandalone`, `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase`, `Neo4jPlugin`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `TopologyWarning` | Warning | Topology validation produced warnings |
 | `ValidationWarning` | Warning | A spec field the schema accepts but nothing reads is set (`spec.<path> is accepted but has no effect today: <what to do instead>`), or `spec.storage.className` names a StorageClass the existing data volumes do not use (a volume keeps the class it was created with; the message names each volume and its class). Advisory: the resource is still reconciled. Also emitted by `Neo4jEnterpriseStandalone` (there also for `spec.upgradeStrategy` `upgradeTimeout`, `healthCheckTimeout` or `stabilizationTimeout` other than their defaults), `Neo4jBackup`, `Neo4jRestore`, `Neo4jPlugin`, `Neo4jDatabase` and `AuraInstance` |
-| `TopologyPlacementCalculated` | Normal | Topology placement constraints calculated successfully |
+| `TopologyPlacementCalculated` | Normal | Topology placement of a zoned cluster calculated; names the zones. Announced when first calculated and when the zones change, not on every pass (an operator restart announces it once more) |
 | `TopologyPlacementFailed` | Warning | Topology placement constraint calculation failed; the cluster is `Failed` and retried with backoff. Once per failure |
 | `TopologyZoneDiscoveryDegraded` | Warning | Availability-zone auto-discovery is unavailable (the operator cannot list cluster-scoped nodes, as in namespace-scoped installs); best-effort zone spread is applied via the topology key — set `spec.topology.availabilityZones` to enumerate zones explicitly. Advisory |
 | `PropertyShardingValidationFailed` | Warning | Property sharding configuration validation failed; the cluster is `Failed`. Once per failure |
@@ -78,7 +77,7 @@ is met on many passes. It is announced once:
 | `UpgradeCompleted` | Normal | Rolling upgrade finished successfully |
 | `UpgradePaused` | Warning | Upgrade paused after a failed check or step (`autoPauseOnFailure`); the servers stay where it stopped until you change `spec.image.tag` or turn `autoPauseOnFailure` off |
 | `UpgradeFailed` | Warning | Upgrade failed. On a `Neo4jEnterpriseStandalone` with `upgradeStrategy.preUpgradeHealthCheck` and `autoPauseOnFailure`, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked |
-| `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready`, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards |
+| `UpgradeDeferred` | Normal | An image change was held back — the cluster is not yet `Ready`, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards. Once per held target, not on every check (a drain's deferral names the target, and each drain announces it once) |
 
 ### Backups and Restores
 
@@ -146,7 +145,7 @@ is met on many passes. It is announced once:
 |---|---|---|
 | `AuraFleetManagementRegistered` | Normal | Successfully registered with Aura Fleet Management |
 | `AuraFleetManagementFailed` | Warning | Aura Fleet Management token registration failed. Raised when a failure first appears or its message changes, not on every retry; the current message is in `status.auraFleetManagement.message` |
-| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet |
+| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the pass that finds it adds the plugin |
 | `AuraFleetDeploymentCreated` | Normal | Operator-driven provisioning (`spec.auraFleetManagement.provision`) registered a Fleet Manager deployment in Aura |
 | `AuraFleetDeploymentAdopted` | Normal | Provisioning adopted an existing Aura fleet deployment of the same name instead of creating one |
 | `AuraFleetDeploymentDeleted` | Normal | The Aura fleet deployment was unregistered |

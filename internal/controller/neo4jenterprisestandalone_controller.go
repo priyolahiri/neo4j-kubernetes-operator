@@ -378,21 +378,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile NetworkPolicy: %w", err)
 	}
 
-	// Reconcile OpenShift Route (if configured via spec.service.route)
-	if standalone.Spec.Service != nil && standalone.Spec.Service.Route != nil && standalone.Spec.Service.Route.Enabled {
-		route := resources.BuildRouteForStandalone(standalone)
-		if route != nil {
-			route.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(standalone, neo4jv1beta1.GroupVersion.WithKind("Neo4jEnterpriseStandalone"))})
-
-			if err := r.createOrUpdateUnstructured(ctx, route); err != nil {
-				if meta.IsNoMatchError(err) {
-					logger.Info("Route API not available; skipping Route creation")
-				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile Route: %w", err)
-				}
-			}
-		}
-	}
+	// The OpenShift Route (spec.service.route) is reconciled once, at the end
+	// of reconcileService. A second write here, an unconditional Get+Update,
+	// sent the Route to the API server again on every pass (#536).
 
 	// Reconcile ServiceMonitor for Prometheus scraping (non-fatal if Prometheus Operator not installed)
 	if standalone.Spec.Monitoring != nil && standalone.Spec.Monitoring.Enabled {
@@ -1357,9 +1345,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context
 	desired := route.DeepCopy()
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-		route.SetLabels(desired.GetLabels())
-		route.SetAnnotations(desired.GetAnnotations())
-		route.Object["spec"] = desired.Object["spec"]
+		applyDesiredRoute(route, desired)
 		return nil
 	})
 	// An advisory warning, announced when it starts to apply, not on every
@@ -1428,9 +1414,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Cont
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-			route.SetLabels(desired.GetLabels())
-			route.SetAnnotations(desired.GetAnnotations())
-			route.Object["spec"] = desired.Object["spec"]
+			applyDesiredRoute(route, desired)
 			return nil
 		})
 		return err
@@ -2322,7 +2306,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx c
 
 	databases, dbErr := neo4jClient.GetDatabases(ctx)
 	if dbErr != nil {
-		logger.Error(dbErr, "Failed to collect SHOW DATABASES")
+		logDiagnosticsQueryFailure(logger, "SHOW DATABASES", dbErr)
 		diagnostics.CollectionError = fmt.Sprintf("SHOW DATABASES failed: %v", dbErr)
 	} else {
 		diagnostics.Databases = append(diagnostics.Databases, toDatabaseDiagnostics(databases)...)
@@ -2966,6 +2950,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 	// --- Phase 1: ensure the plugin jar is loaded ---
 	// The standalone StatefulSet name is the same as the standalone resource name.
 	if err := r.mergeFleetManagementPlugin(ctx, standalone.Name, standalone.Namespace); err != nil {
+		if errors.IsNotFound(err) {
+			// The pass that creates the StatefulSet reads it back from a cache
+			// that has not seen it yet. Nothing failed: the next pass adds the
+			// plugin. A Warning here greeted every new standalone (#531).
+			logger.V(1).Info("StatefulSet not in the cache yet; fleet-management is added on a later pass",
+				"statefulSet", standalone.Name)
+			return nil
+		}
 		logger.Error(err, "Failed to patch StatefulSet NEO4J_PLUGINS for fleet-management")
 		if r.Recorder != nil {
 			r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,

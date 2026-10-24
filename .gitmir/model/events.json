@@ -2,13 +2,7 @@
   {
     "id": "ev-cluster-formation-started",
     "name": "ClusterFormationStarted",
-    "description": "Fires when a cluster that has never formed enters Forming. A formed cluster that rolls, scales up or loses servers does not raise it (#444).",
-    "moduleId": "mod-cluster"
-  },
-  {
-    "id": "ev-cluster-formation-failed",
-    "name": "ClusterFormationFailed",
-    "description": "Fires when the SHOW SERVERS / split-brain check used to verify cluster formation itself errors, distinct from the cluster simply not being formed yet.",
+    "description": "Fires when a cluster that has never formed enters Forming. A formed cluster that rolls, scales up or loses servers does not raise it (#444). Announced by the status write that enters Forming, judged from the status that write replaced (writeClusterStatus), never from the pass's own copy: a pass that read the cluster from a cache that had not seen the previous pass's write announced it a second time for every new cluster (#553; knowledge operations.md id 136). There is no ClusterFormationFailed event: formation waits rather than fails, and a cluster that stays unreachable raises ConnectivityDegraded.",
     "moduleId": "mod-cluster"
   },
   {
@@ -38,7 +32,7 @@
   {
     "id": "ev-topology-placement-calculated",
     "name": "TopologyPlacementCalculated",
-    "description": "Fires after a successful topology placement calculation that found at least one availability zone to spread servers across.",
+    "description": "Fires after a topology placement calculation that found at least one availability zone to spread servers across, naming the zones. Announced when the placement is first calculated and when its zones change, from a per-cluster memory in the topology scheduler, not on every pass (#527; knowledge operations.md id 136); an operator restart announces it once more.",
     "moduleId": "mod-cluster"
   },
   {
@@ -50,7 +44,7 @@
   {
     "id": "ev-property-sharding-validation-failed",
     "name": "PropertyShardingValidationFailed",
-    "description": "Fires when spec.propertySharding is enabled but fails version, cluster-size, required-config-key, or resource-minimum validation. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Fires when spec.propertySharding is enabled but fails version, cluster-size, required-config-key, or resource-minimum validation. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The message says \"validation failed\" once: the version check's error no longer carries a prefix of its own (#549).",
     "moduleId": "mod-cluster"
   },
   {
@@ -110,7 +104,7 @@
   {
     "id": "ev-upgrade-deferred",
     "name": "UpgradeDeferred",
-    "description": "Fires when a rolling upgrade is deferred because a scale-down drain is still in progress (mutual exclusion — the drain must finish first).",
+    "description": "Fires when an image change is held back: the cluster is not Ready with every server available (holdImageDriftUntilReady), or a scale-down drain is in progress (mutual exclusion — the drain must finish first). Announced once per held target from a per-cluster memory, not on every check: the drain's deferral names the target and was emitted every 15s while the drain ran (#527); the memory is forgotten when the drain releases its hold, so a later drain announces again (knowledge operations.md id 136).",
     "moduleId": "mod-cluster"
   },
   {
@@ -176,7 +170,7 @@
   {
     "id": "ev-aura-fleet-management-plugin-patch-failed",
     "name": "AuraFleetManagementPluginPatchFailed",
-    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails.",
+    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the pass that finds it adds the plugin (#531; knowledge operations.md id 164).",
     "moduleId": "mod-cluster"
   },
   {
@@ -188,7 +182,7 @@
   {
     "id": "ev-validation-warning",
     "name": "ValidationWarning",
-    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set, or a value that has no effect (upgradeStrategy.strategy Recreate on a cluster; a standalone's upgradeStrategy timeouts other than their defaults); and while spec.storage.className names a StorageClass the existing data volumes do not use. Raised on Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore and AuraInstance. Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
+    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set, or a value that has no effect (upgradeStrategy.strategy Recreate on a cluster; a standalone's upgradeStrategy timeouts other than their defaults; an OpenShift Route's tls.secretName, which no Route the operator writes names, #536); and while spec.storage.className names a StorageClass the existing data volumes do not use. Raised on Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore and AuraInstance. Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
     "moduleId": "mod-database"
   },
   {
@@ -1070,13 +1064,13 @@
   {
     "id": "ev-cluster-degraded",
     "name": "ClusterDegraded",
-    "description": "Warning, once per transition: a formed cluster has been short of one or more servers for longer than the grace period (--server-unavailable-grace, default 5m) while a majority keeps it serving, and its phase turns Degraded (#444).",
+    "description": "Warning, once per transition: a formed cluster has been short of one or more servers for longer than the grace period (--server-unavailable-grace, default 5m) while a majority keeps it serving, and its phase turns Degraded (#444). Its message, like the Degraded condition's, says what Neo4j and Kubernetes report about the servers (outageDetail), never the formation check's words (#553).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-cluster-quorum-lost",
     "name": "ClusterQuorumLost",
-    "description": "Warning, once per transition: a formed cluster has half or fewer of its servers available; its phase goes to Forming and dependents pause until a majority is back (#444).",
+    "description": "Warning, once per transition: a formed cluster has half or fewer of its servers available; its phase goes to Forming and dependents pause until a majority is back (#444). Its message, like the Degraded condition's, says what Neo4j and Kubernetes report about the servers (outageDetail), never the formation check's words (#553).",
     "moduleId": "mod-cluster"
   },
   {
