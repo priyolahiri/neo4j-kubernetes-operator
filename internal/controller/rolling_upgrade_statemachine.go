@@ -242,6 +242,10 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 	}
 	previousVersion := cluster.Status.Version
 	targetVersion := cluster.Spec.Image.Tag
+	// What the held upgrade's servers started on, read now: the version rule
+	// below holds the tag to it, and validation may have read it before a
+	// server started (an image that became pullable meanwhile).
+	r.recordStartedTarget(ctx, cluster)
 	// The record this attempt writes, also when a gate below refuses it: a
 	// Paused or Failed record names the target it stopped on, which is what
 	// the user changes to resume a Paused one (upgradeWaitsForUser). An
@@ -425,6 +429,9 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeRolling(
 ) (ctrl.Result, error) {
 	logger := log.FromContext(ctx).WithName("rolling-upgrade")
 	orch := NewRollingUpgradeOrchestrator(r.Client, cluster.Name, cluster.Namespace)
+	// Whether a server has started on the target yet: from then on a tag
+	// below it is refused (operations.md id 149).
+	r.recordStartedTarget(ctx, cluster)
 	us := cluster.Status.UpgradeStatus
 	// Mid-flight target changes are handled centrally in handleRollingUpgrade
 	// (re-stage from any active phase) before this step is dispatched.

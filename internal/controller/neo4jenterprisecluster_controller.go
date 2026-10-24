@@ -141,6 +141,14 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// (writtenGeneration), so a cached read that predates the write is a
 	// rollout in flight, not the rolled-out template it replaced.
 	serverStatefulSetWrites sync.Map
+	// deletedServerStatefulSets keeps the server StatefulSet a storage
+	// expansion orphan-deleted until the pass that creates it again, which
+	// takes its template (statefulset_recreate.go, operations.md id 171).
+	deletedServerStatefulSets deletedStatefulSets
+	// APIReader reads what the cache does not hold (the ControllerRevision a
+	// StatefulSet created again takes its template from after an operator
+	// restart). nil uses Client.
+	APIReader client.Reader
 
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
@@ -373,11 +381,12 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			if !clusterEverAccepted(cluster) {
 				event, status = "Cluster validation failed", "Validation failed"
 			}
-			logger.Error(err, event)
-			// Announced when the failure starts or its message changes, not
-			// on every RequeueAfter while the spec stays invalid (knowledge
-			// rule 136).
-			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err)) {
+			// Announced — and logged at info — when the failure starts or its
+			// message changes, not on every RequeueAfter while the spec stays
+			// invalid (knowledge rule 136).
+			announced := r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err))
+			logRefusal(logger, announced, event, err)
+			if announced {
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "%s: %v", event, err)
 			}
 			// A spec the user must fix is not a reconcile error: it is
@@ -391,12 +400,11 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		// Validate server role hints for both create and update
 		roleHintErrors := resources.ValidateServerRoleHints(cluster)
 		if len(roleHintErrors) > 0 {
-			for _, roleError := range roleHintErrors {
-				logger.Error(fmt.Errorf("server role validation error"), roleError)
-			}
 			// Announced when the failure starts or its message changes, not
 			// on every RequeueAfter while it stays (knowledge rule 145).
-			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors)) {
+			announced := r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors))
+			logRefusal(logger, announced, "Server role validation failed", fmt.Errorf("%s", strings.Join(roleHintErrors, "; ")))
+			if announced {
 				for _, roleError := range roleHintErrors {
 					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonServerRoleFailed, "Server role hint validation failed: %s", roleError)
 				}
@@ -408,8 +416,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// Validate property sharding configuration if enabled
 	if cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Enabled {
 		if err := r.validatePropertyShardingConfiguration(ctx, cluster); err != nil {
-			logger.Error(err, "Property sharding validation failed")
-			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err)) {
+			announced := r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err))
+			logRefusal(logger, announced, "Property sharding validation failed", err)
+			if announced {
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonPropertyShardingFailed, "Property sharding validation failed: %v", err)
 			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -425,8 +434,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", cluster.Spec.Storage.ClassName)
-		logger.Error(fmt.Errorf("storage class not found"), msg)
-		if r.updateClusterStatus(ctx, cluster, "Failed", msg) {
+		announced := r.updateClusterStatus(ctx, cluster, "Failed", msg)
+		logRefusal(logger, announced, "StorageClass not found", fmt.Errorf("%s", msg))
+		if announced {
 			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -443,6 +453,14 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
+	}
+
+	// A held upgrade: record what its servers have started on (an image that
+	// was not pullable may be now), and drop the record of one nothing started
+	// on that spec.image.tag no longer names (operations.md id 149).
+	if upgradeHeld(cluster) {
+		r.recordStartedTarget(ctx, cluster)
+		r.forgetAbandonedUpgrade(ctx, cluster)
 	}
 
 	// Check if this is an upgrade scenario. A mid-flight state machine
@@ -864,6 +882,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	r.upgradeDiagnostics.Delete(clusterKey(cluster))
 	r.serverStatefulSetWrites.Delete(clusterKey(cluster))
+	r.deletedServerStatefulSets.forget(cluster.Namespace, cluster.Name+"-server")
 	r.forgetDeferredUpgrades(cluster)
 	if r.TopologyScheduler != nil {
 		r.TopologyScheduler.forgetCluster(cluster)
@@ -1056,7 +1075,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 		"name", obj.GetName(),
 		"namespace", obj.GetNamespace())
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 		if sts, ok := obj.(*appsv1.StatefulSet); ok {
 			// Check if this is an update (object already exists in cluster)
 			// CRITICAL FIX: Use UID to determine if this is an existing object, not ResourceVersion
@@ -1209,30 +1228,51 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					"statefulSet", sts.Name,
 					"namespace", sts.Namespace)
 				sts.Spec = desiredSpec
+				ownerCluster, isCluster := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster)
+				// Created again after a storage expansion deleted it: as it was —
+				// its template with the plugins' and other controllers' writes,
+				// replica count, strategy and records — with the new claim
+				// templates, so no pod restarts (operations.md id 171).
+				var recreate *recreateSource
+				if isCluster {
+					recreate = r.deletedServerStatefulSets.source(ctx, r.Client, r.apiReader(), sts.Namespace, sts.Name,
+						ownerCluster.UID, map[string]string{"neo4j.com/cluster": ownerCluster.Name, "neo4j.com/clustering": "true"})
+				}
+				if recreate != nil {
+					recreate.applyTo(sts)
+					logger.Info("Creating the server StatefulSet again as it was, with the new volume claim templates",
+						"statefulSet", sts.Name, "from", recreate.from)
+				}
 				// Created again while an upgrade is held (a storage expansion
 				// deletes the StatefulSet and orphans its pods): start with the
 				// upgrade's partition, or the new StatefulSet would restart
 				// every server below it onto its template (operations.md id 149).
-				if ownerCluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok &&
-					sts.Spec.UpdateStrategy.RollingUpdate != nil && sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
+				if isCluster && sts.Spec.UpdateStrategy.RollingUpdate != nil && sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
 					sts.Spec.UpdateStrategy.RollingUpdate.Partition = partitionForNewServerStatefulSet(ownerCluster, sts.Spec.Replicas)
 				}
-				writeOwnedTemplateItems(sts, desiredSpec.Template)
-				// Stamp on create as well as on update. The stamp is what lets a
-				// cluster that never finishes forming still accept a corrected
-				// template (see isTemplateChangeSignificant); a StatefulSet that
-				// only ever got stamped once it went stable could not be repaired
-				// before it got there, which is precisely when it needs to be.
-				setClusterTemplateHash(sts, desiredSpec.Template)
+				switch {
+				case recreate == nil:
+					writeOwnedTemplateItems(sts, desiredSpec.Template)
+					// Stamp on create as well as on update. The stamp is what lets a
+					// cluster that never finishes forming still accept a corrected
+					// template (see isTemplateChangeSignificant); a StatefulSet that
+					// only ever got stamped once it went stable could not be repaired
+					// before it got there, which is precisely when it needs to be.
+					setClusterTemplateHash(sts, desiredSpec.Template)
+				case recreate.annotations == nil:
+					// Read from a revision: what the operator renders is recorded,
+					// and no template hash, so the next pass's apply converges.
+					writeOwnedTemplateItems(sts, desiredSpec.Template)
+				}
 				// A cluster with Aura Fleet Management starts its servers with
 				// the plugin. Merged here, into the StatefulSet being created and
 				// after the record of the env the cluster owns and its template
 				// hash, NEO4J_PLUGINS stays out of the static template and out of
 				// that record, as every pass's fleet merge leaves it. Merged by
 				// the next pass instead, it rolled every server of a new cluster
-				// during its first formation (operations.md id 175).
-				if ownerCluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok &&
-					sts.Name == ownerCluster.Name+"-server" && clusterInstallsFleetManagement(ownerCluster) {
+				// during its first formation (operations.md id 175). A template
+				// recreated as it was already carries it; the merge is idempotent.
+				if isCluster && sts.Name == ownerCluster.Name+"-server" && clusterInstallsFleetManagement(ownerCluster) {
 					sts.Spec.Template = *sts.Spec.Template.DeepCopy()
 					if _, err := addFleetManagementPlugin(&sts.Spec.Template); err != nil {
 						return fmt.Errorf("%w in StatefulSet %s", err, sts.Name)
@@ -1242,8 +1282,19 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 		}
 		return nil
 	})
+	if sts, ok := obj.(*appsv1.StatefulSet); ok && err == nil && op == controllerutil.OperationResultCreated {
+		r.deletedServerStatefulSets.forget(sts.Namespace, sts.Name)
+	}
 
 	return err
+}
+
+// apiReader is APIReader, or Client when none is set.
+func (r *Neo4jEnterpriseClusterReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 // isTemplateChangeSignificant determines if StatefulSet template changes warrant pod restarts
@@ -2345,6 +2396,15 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 	// Staging below regardless, and its TargetVersion may predate the field.)
 	if upgradeStateMachineActive(cluster) && phase != upgradePhaseLegacyInProgress &&
 		cluster.Status.UpgradeStatus.TargetVersion != cluster.Spec.Image.Tag {
+		// What the current target started a server on, read before it is left
+		// behind; and the new tag held to it, since validation may have read the
+		// record before that server started (operations.md id 149). A refused
+		// tag waits: the next pass's validation reports it.
+		r.recordStartedTarget(ctx, cluster)
+		if errs := validation.NewUpgradeValidator().ValidateTagAgainstRunning(cluster); len(errs) > 0 {
+			logger.Info("Not re-staging: the new target is below what a server has started on", "reason", errs.ToAggregate().Error())
+			return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+		}
 		logger.Info("Upgrade target changed mid-flight; re-staging",
 			"previousTarget", cluster.Status.UpgradeStatus.TargetVersion, "newTarget", cluster.Spec.Image.Tag)
 		now := metav1.Now()

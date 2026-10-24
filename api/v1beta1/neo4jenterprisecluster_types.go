@@ -1406,6 +1406,17 @@ type UpgradeStatus struct {
 	// +optional
 	ResolvedTargetVersion string `json:"resolvedTargetVersion,omitempty"`
 
+	// StartedTargetVersion is the newest version a server of this upgrade has
+	// started on: previousVersion until a restarted server's Neo4j container
+	// starts on a target, then that target. A server whose container never
+	// started on the target — its image could not be pulled, its container
+	// could not be created — has not run it. A spec.image.tag below it is
+	// refused, since that server would be rolled back; a tag between it and
+	// targetVersion is allowed. Empty on an upgrade an earlier operator
+	// started, which is held to targetVersion once it has restarted a server.
+	// +optional
+	StartedTargetVersion string `json:"startedTargetVersion,omitempty"`
+
 	// Progress shows upgrade progress statistics
 	Progress *UpgradeProgress `json:"progress,omitempty"`
 

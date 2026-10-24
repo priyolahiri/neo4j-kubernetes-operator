@@ -190,9 +190,21 @@ func newUpgradeRecord(held *neo4jv1beta1.UpgradeStatus, previousVersion, targetV
 		PreviousVersion: previousVersion,
 		TargetVersion:   targetVersion,
 		Progress:        &neo4jv1beta1.UpgradeProgress{Total: servers, Pending: servers},
+		// No server has started on anything newer yet (recordStartedTarget).
+		StartedTargetVersion: previousVersion,
 	}
 	if !sameHeldUpgrade(held, previousVersion) {
 		return record
+	}
+	// The servers the held upgrade started still run what they started on: a
+	// tag below it stays refused. A record an earlier operator wrote says only
+	// that the walk released a server, which is taken as having run the
+	// target, as that operator's rule did.
+	switch {
+	case held.StartedTargetVersion != "":
+		record.StartedTargetVersion = held.StartedTargetVersion
+	case progressReleasedAServer(held):
+		record.StartedTargetVersion = held.TargetVersion
 	}
 	if held.StartTime != nil {
 		start := *held.StartTime

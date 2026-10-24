@@ -1031,7 +1031,7 @@ func getLabelsForEnterpriseServer(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, 
 	labels := map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   cluster.Name,
-		"app.kubernetes.io/version":    cluster.Spec.Image.Tag,
+		"app.kubernetes.io/version":    VersionLabelValue(cluster.Spec.Image.Tag),
 		"app.kubernetes.io/component":  "database",
 		"app.kubernetes.io/part-of":    "neo4j-cluster",
 		"app.kubernetes.io/managed-by": "neo4j-operator",
@@ -1109,7 +1109,7 @@ func getLabelsForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, role s
 	labels := map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   cluster.Name,
-		"app.kubernetes.io/version":    cluster.Spec.Image.Tag,
+		"app.kubernetes.io/version":    VersionLabelValue(cluster.Spec.Image.Tag),
 		"app.kubernetes.io/component":  "database",
 		"app.kubernetes.io/part-of":    "neo4j-cluster",
 		"app.kubernetes.io/managed-by": "neo4j-operator",

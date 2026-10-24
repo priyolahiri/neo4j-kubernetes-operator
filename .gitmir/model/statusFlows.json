@@ -189,7 +189,7 @@
       {
         "key": "None",
         "name": "No Upgrade Active",
-        "description": "status.upgradeStatus is nil or its phase is a terminal Completed/Failed/Paused; the normal reconcile path runs and isUpgradeRequired watches for image drift. After Failed or Paused the normal path keeps the StatefulSet partition the upgrade left (operations.md id 149)."
+        "description": "status.upgradeStatus is nil or its phase is a terminal Completed/Failed/Paused; the normal reconcile path runs and isUpgradeRequired watches for image drift. After Failed or Paused the normal path keeps the StatefulSet partition the upgrade left (operations.md id 149). A Paused or Failed record no server started on, whose target spec.image.tag no longer names and the template does not carry, is dropped (status.upgradeStatus nil)."
       },
       {
         "key": "Staging",
@@ -224,7 +224,7 @@
       {
         "key": "Paused",
         "name": "Paused",
-        "description": "Failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed. The StatefulSet keeps the partition the step left. It goes on when the user changes spec.image.tag (towards the new tag) or turns autoPauseOnFailure off (retried like Failed); a tag below the target is refused once the upgrade has restarted a server on it (operations.md id 149). A new tag goes on even while the servers it restarted cannot start on the target: they are replaced first (operations.md id 162)."
+        "description": "Failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed. The StatefulSet keeps the partition the step left. It goes on when the user changes spec.image.tag (towards the new tag) or turns autoPauseOnFailure off (retried like Failed); a tag below what a restarted server has started on (status.upgradeStatus.startedTargetVersion) is refused; one whose image could not be pulled never started, so the tag may go back to an earlier fixed one (operations.md id 149). A new tag goes on even while the servers it restarted cannot start on the target: they are replaced first (operations.md id 162)."
       },
       {
         "key": "InProgress",

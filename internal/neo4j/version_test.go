@@ -47,6 +47,10 @@ func TestParseVersion(t *testing.T) {
 		// CalVer year advance
 		{"2026.03.1-enterprise", false, 2026, 3, 1, true},
 
+		// A tag pinned to a digest is the tag's version (#562 walk)
+		{"2026.08.1-enterprise@sha256:0123abcd", false, 2026, 8, 1, true},
+		{"5.26.31@sha256:0123abcd", false, 5, 26, 31, false},
+
 		// Error cases
 		{"", true, 0, 0, 0, false},
 		{"not-a-version", true, 0, 0, 0, false},

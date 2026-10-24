@@ -368,6 +368,9 @@ func (r *Neo4jEnterpriseClusterReconciler) orphanDeleteStatefulSet(ctx context.C
 	logger.Info("Orphan-deleting StatefulSet for storage expansion",
 		"statefulSet", name, "namespace", namespace)
 
+	// Kept for the pass that creates it again, which takes its template as it
+	// is, the plugins' writes included (operations.md id 171).
+	r.deletedServerStatefulSets.remember(sts)
 	propagation := metav1.DeletePropagationOrphan
 	return r.Delete(ctx, sts, &client.DeleteOptions{
 		PropagationPolicy: &propagation,

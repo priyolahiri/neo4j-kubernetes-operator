@@ -46,6 +46,13 @@ func ParseVersion(versionString string) (*Version, error) {
 	cleaned = strings.TrimPrefix(cleaned, "neo4j-")
 	cleaned = strings.TrimPrefix(cleaned, "neo4j:")
 
+	// A tag may carry the digest it was pinned to ("5.26.31@sha256:…"): the
+	// version is the tag's, as the operator reads it everywhere else
+	// (GetImageVersion, the version label; operations.md id 149).
+	if idx := strings.Index(cleaned, "@"); idx != -1 {
+		cleaned = cleaned[:idx]
+	}
+
 	// Remove any suffix after a dash (like -enterprise, -community)
 	if idx := strings.Index(cleaned, "-"); idx != -1 {
 		cleaned = cleaned[:idx]

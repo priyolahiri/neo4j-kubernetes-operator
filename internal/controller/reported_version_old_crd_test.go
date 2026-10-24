@@ -41,7 +41,11 @@ import (
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-// capturedLine is one log line: its V level and message.
+// errorLevel is the level levelCaptureSink records an Error line at.
+const errorLevel = -1
+
+// capturedLine is one log line: its V level (errorLevel for an error) and
+// message.
 type capturedLine struct {
 	level int
 	msg   string
@@ -57,9 +61,13 @@ func newLevelCaptureSink() levelCaptureSink {
 	return levelCaptureSink{mu: &sync.Mutex{}, lines: &[]capturedLine{}}
 }
 
-func (s levelCaptureSink) Init(logr.RuntimeInfo)          {}
-func (s levelCaptureSink) Enabled(int) bool               { return true }
-func (s levelCaptureSink) Error(error, string, ...any)    {}
+func (s levelCaptureSink) Init(logr.RuntimeInfo) {}
+func (s levelCaptureSink) Enabled(int) bool      { return true }
+func (s levelCaptureSink) Error(_ error, msg string, _ ...any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	*s.lines = append(*s.lines, capturedLine{errorLevel, msg})
+}
 func (s levelCaptureSink) WithValues(...any) logr.LogSink { return s }
 func (s levelCaptureSink) WithName(string) logr.LogSink   { return s }
 func (s levelCaptureSink) Info(level int, msg string, _ ...any) {
@@ -71,11 +79,30 @@ func (s levelCaptureSink) Info(level int, msg string, _ ...any) {
 // about returns the lines at level whose message mentions what the servers
 // report.
 func (s levelCaptureSink) about(level int) []string {
+	return s.mentioning(level, "servers report")
+}
+
+// mentioning returns the lines at level whose message contains text,
+// ignoring case.
+func (s levelCaptureSink) mentioning(level int, text string) []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []string
 	for _, l := range *s.lines {
-		if l.level == level && strings.Contains(l.msg, "servers report") {
+		if l.level == level && strings.Contains(strings.ToLower(l.msg), strings.ToLower(text)) {
+			out = append(out, l.msg)
+		}
+	}
+	return out
+}
+
+// errors returns every Error line.
+func (s levelCaptureSink) errors() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for _, l := range *s.lines {
+		if l.level == errorLevel {
 			out = append(out, l.msg)
 		}
 	}

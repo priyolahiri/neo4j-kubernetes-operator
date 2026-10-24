@@ -467,6 +467,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				TopologyScheduler:       controller.NewTopologyScheduler(mgr.GetClient()),
 				Validator:               validation.NewClusterValidator(mgr.GetClient()),
 				ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
+				APIReader:               mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 				SplitBrainDetector:      controller.NewSplitBrainDetector(mgr.GetClient()),
 				ServerUnavailableGrace:  serverUnavailableGrace,
 				ReadyPollInterval:       readyPollInterval,
@@ -485,6 +486,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Validator:         validation.NewStandaloneValidator(),
 				ConfigMapManager:  controller.NewConfigMapManager(mgr.GetClient()),
 				ReadyPollInterval: readyPollInterval,
+				APIReader:         mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 			},
 		},
 		{
@@ -772,6 +774,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				TopologyScheduler:       controller.NewTopologyScheduler(mgr.GetClient()),
 				Validator:               validation.NewClusterValidator(mgr.GetClient()),
 				ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
+				APIReader:               mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 				SplitBrainDetector:      controller.NewSplitBrainDetector(mgr.GetClient()),
 				ServerUnavailableGrace:  serverUnavailableGrace,
 				ReadyPollInterval:       readyPollInterval,
@@ -789,6 +792,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				Validator:         validation.NewStandaloneValidator(),
 				ConfigMapManager:  controller.NewConfigMapManager(mgr.GetClient()),
 				ReadyPollInterval: readyPollInterval,
+				APIReader:         mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 			}, "Neo4jEnterpriseStandalone"
 		},
 		"database": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
