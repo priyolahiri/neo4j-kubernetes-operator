@@ -662,7 +662,7 @@
     "id": "sfw-user-lifecycle",
     "entityId": "ent-neo4juser",
     "name": "Neo4jUser reconcile lifecycle",
-    "description": "status.phase transitions (Pending/Failed/Ready) plus the ClusterNotReady, PendingDependencies, RolesSynced, and PasswordSynced named conditions driven each reconcile loop, and the deletion path guarded by the neo4j.com/user-finalizer.",
+    "description": "status.phase transitions (Pending/Failed/Ready) plus the ClusterNotReady, PendingDependencies, RolesSynced, and PasswordSynced named conditions driven each reconcile loop, and the deletion path guarded by the neo4j.com/user-finalizer. A Ready user stays Ready while its target is not Ready (operations.md id 158).",
     "moduleId": "mod-security",
     "states": [
       {
@@ -673,7 +673,7 @@
       {
         "key": "pending",
         "name": "Pending",
-        "description": "status.phase=Pending — set on a missing/not-ready cluster target, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
+        "description": "status.phase=Pending — set on a missing target, a not-Ready target when the user is not yet Ready at its generation, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
       },
       {
         "key": "failed",
@@ -693,7 +693,7 @@
       {
         "key": "deletion-failed",
         "name": "DeletionFailed",
-        "description": "DROP USER failed but was classified retryable (classifyFinalizerCleanup); the reconcile requeues and retries instead of releasing the finalizer."
+        "description": "DROP USER failed but was classified retryable (classifyFinalizerCleanup); status.phase=Failed with Ready reason UserDeletionFailed, announced once, and the reconcile requeues and retries instead of releasing the finalizer."
       },
       {
         "key": "removed",
@@ -749,6 +749,11 @@
       },
       {
         "from": "ready",
+        "to": "ready",
+        "label": "ClusterNotReady (ConditionTypeClusterNotReady=True) — the target restarts; a user Ready at its generation keeps phase Ready, and its return announces nothing"
+      },
+      {
+        "from": "ready",
         "to": "pending",
         "label": "RolesPending — a later spec.roles edit reopens a role gap"
       },
@@ -795,7 +800,7 @@
       {
         "from": "deletion-failed",
         "to": "deletion-failed",
-        "label": "UserDeletionFailed — repeated retry on requeue"
+        "label": "UserDeletionFailed — repeated retry on requeue; announced again only when the error changes"
       },
       {
         "from": "deletion-failed",

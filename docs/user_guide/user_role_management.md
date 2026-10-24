@@ -92,6 +92,12 @@ Apply with `kubectl apply -f`. The operator will:
 
 If the role does not yet exist when the user is reconciled, the user enters `PendingDependencies` and waits — when the role lands, the user reconciles automatically.
 
+`spec.roles` also takes a role that was created in Neo4j directly — by an
+admin's `CREATE ROLE`, or by a tool other than the operator — with no
+`Neo4jRole` for it: the operator finds it with `SHOW ROLES` and grants it. Role
+names are case-sensitive. (Before this was fixed, such a role was reported as
+missing for ever and never granted.)
+
 ## Common patterns
 
 ### Built-in roles (no Neo4jRole needed)
@@ -319,6 +325,22 @@ row goes away, learn mode re-learns, and the next grant attributes whatever the
 spec still needs. Deleting and recreating the `Neo4jRole` also works — the role
 starts empty, so everything is attributed.
 
+Two statements can grant the same row — `ACCESS ON DATABASES topodb, other` and
+`ACCESS ON DATABASE TOPODB` — so the second one's grant adds nothing. Such a
+statement is attributed when its own text is the stored row, with the database
+names compared ignoring case, as Neo4j stores them lower-cased. (Before this
+was fixed, a statement that named a database in capitals stayed unattributed,
+and while it did, learn mode revoked no out-of-band row on the role at all.
+Such a role settles on the first reconcile after the upgrade, without a grant;
+an out-of-band row it took in meanwhile stays in
+`status.unattributedPrivileges` until you remove it by hand.)
+
+One case learn mode cannot tell apart: a privilege someone else grants to the
+role in the instant between the two reads around one of the operator's grants
+is learned as that statement's. It is kept, not revoked. Remove it by hand and
+learn mode re-learns the statement without it; granted again later, it is
+out-of-band and revoked as usual. Probe mode does not have this window.
+
 When an alias is retargeted, a privilege granted through it stays on the
 **old** target — as it does in Neo4j itself — and gains the new one. Revoke the
 old target's row by hand if it should go.
@@ -351,7 +373,8 @@ statement the operator cannot read, nothing re-learns.
     operator without them, every `Neo4jRole` goes to `Failed` with a message
     telling you to apply the chart's `crds/` directory. No privilege is
     removed while it is `Failed`, but spec changes are not applied until the
-    CRDs are upgraded.
+    CRDs are upgraded. The role retries every 30 seconds, so it recovers
+    within half a minute of the CRDs being applied.
 
 #### Probe mode
 
@@ -454,8 +477,8 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `Ready` | User exists in Neo4j, password and roles in sync |
 | `RolesSynced` | Granted roles equal `spec.roles` (PUBLIC excluded) |
 | `PasswordSynced` | The password from the current version of the Secret has been applied |
-| `PendingDependencies` | One or more `spec.roles` reference custom roles that don't yet exist |
-| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
+| `PendingDependencies` | One or more `spec.roles` reference custom roles that don't yet exist (no `Neo4jRole`, not in `SHOW ROLES`) |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority). A user already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
 | `RoleNamesResolved` | `spec.roles` names a `Neo4jRole` by its CR name; the message maps each to the Neo4j role granted. Present only then |
 
 ### `Neo4jRole`
@@ -465,7 +488,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `Ready` | Role exists, privileges in sync |
 | `PrivilegesSynced` | Live privileges match `spec.privileges` and `spec.privilegeRules` (immutable extras excluded). `False`/`PrivilegesDrifted`: something could not be reconciled (see events). `Unknown`/`UnattributedPrivileges`: learn mode holds rows it cannot attribute and will not revoke — see [Learn mode](#learn-mode-default) |
 | `PrivilegesResolve` | Every database a privilege names exists. `False`/`DatabaseNotFound`: those privileges are skipped (Neo4j refuses a grant on a missing database) and the rest applied; the message names them, and the field for a `privilegeRules` entry. `False`/`GraphPrivilegeOnComposite`: a GRAPH privilege on a composite database, which Neo4j accepts and ignores |
-| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority). A role already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
 
 ### `Neo4jRoleBinding`
 
@@ -474,8 +497,8 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `Ready` | User exists and all desired roles are granted |
 | `RolesSynced` | `status.grantedRoles` covers `spec.roles` |
 | `UserNotFound` | The named user does not exist in Neo4j (waiting for SSO/LDAP first-login) |
-| `PendingDependencies` | One or more `spec.roles` reference a custom role that doesn't exist yet |
-| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, or has lost its majority) |
+| `PendingDependencies` | One or more `spec.roles` reference a custom role that doesn't exist yet (no `Neo4jRole`, not in `SHOW ROLES`) |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority). A binding already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
 | `RoleNamesResolved` | `spec.roles` names a `Neo4jRole` by its CR name; the message maps each to the Neo4j role granted. Present only then |
 
 The `kubectl get` printer columns surface the most actionable bits:
@@ -497,11 +520,24 @@ prod       analytics-reader  prod-cluster  Ready   True   false  3m
 | Apply CR | Controller adds finalizer; creates user/role on next reconcile |
 | Update spec | Diffed against live state; only changed fields trigger Cypher |
 | Update Secret | Secret's `resourceVersion` changes → `ALTER USER SET PASSWORD` |
-| `kubectl delete` | Finalizer-protected: controller drops user/role first (unless `deletionPolicy: Retain`) |
+| `kubectl delete` | Finalizer-protected: controller drops user/role first (unless `deletionPolicy: Retain`). A drop that fails is recorded in status (phase `Failed`) and announced once, retried, and given up after 5 minutes — the finalizer is released and the object left in Neo4j for an admin |
 | Cluster neither Ready nor Degraded | `ClusterNotReady` condition; reconcile requeued every 30s |
 | Referenced role missing | `PendingDependencies` condition; requeue when role lands |
 
 The user controller watches `Neo4jRole` resources and re-reconciles bound users when a role is created or updated. You don't need to apply CRs in any particular order — the operator converges.
+
+### Target restarts
+
+A `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding` or `Neo4jAuthRule` that is
+`Ready` stays `Ready` while its cluster or standalone is not — a restart, a
+rolling upgrade, a lost majority. `ClusterNotReady=True` says it is waiting.
+What these objects describe lives in the target's `system` database and does
+not change while the target is down, and the target reports its own state, so
+the pass that finds the target back is not a transition: no `UserReady`,
+`RoleReady` or `BindingCreated` event is announced for it. (Before, each
+restart of a standalone made every user on it `Pending` and then announced
+`UserReady` again.) An object that was not yet `Ready` — new, failed, or with
+a spec change not yet applied — waits in `Pending` as before.
 
 ## Cluster vs namespace scope
 
@@ -538,7 +574,7 @@ The team can now manage users and roles for the cluster in their namespace, but 
 
 **Symptom**: `PendingDependencies` condition stuck on a `Neo4jUser`.
 
-Check that the referenced custom role's `Neo4jRole` CR exists in the same namespace and points at the same `clusterRef`. Built-in role names are case-sensitive (`reader`, not `Reader`).
+Check that the referenced custom role's `Neo4jRole` CR exists in the same namespace and points at the same `clusterRef`, or that `SHOW ROLES` on the cluster lists the role (one created in Neo4j directly is granted without a `Neo4jRole`, within 30 seconds of its creation). Role names are case-sensitive (`reader`, not `Reader`).
 
 **Symptom**: Password updates not picked up.
 

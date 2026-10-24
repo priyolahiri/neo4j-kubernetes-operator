@@ -76,6 +76,28 @@ type Neo4jAuthRuleReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// newDeletionClient connects the deletion to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newDeletionClient func(ResolvedTarget) (authRuleDeletionClient, error)
+}
+
+// authRuleDeletionClient is what the Neo4jAuthRule deletion asks of Neo4j.
+// *neo4j.Client is one.
+type authRuleDeletionClient interface {
+	DropAuthRuleIfExists(ctx context.Context, ruleName string) error
+	Close() error
+}
+
+func (r *Neo4jAuthRuleReconciler) connectForDeletion(target ResolvedTarget) (authRuleDeletionClient, error) {
+	if r.newDeletionClient != nil {
+		return r.newDeletionClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jauthrules,verbs=get;list;watch;create;update;patch;delete
@@ -135,9 +157,7 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("clusterRef %q is not Ready", rule.Spec.ClusterRef)
-		r.setNamedCondition(ctx, rule, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
-		r.setStatus(ctx, rule, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, nil, nil)
+		r.waitForTarget(ctx, rule, fmt.Sprintf("clusterRef %q is not Ready", rule.Spec.ClusterRef))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	r.setNamedCondition(ctx, rule, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
@@ -307,7 +327,7 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
 	}
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connectForDeletion(target)
 	if err != nil {
 		logger.Error(err, "cannot connect during auth rule deletion; releasing finalizer")
 		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
@@ -320,8 +340,14 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 	}
 	if err := nc.DropAuthRuleIfExists(ctx, ruleName); err != nil {
 		if classifyFinalizerCleanup(rule, err) == retryCleanup {
-			r.Recorder.Eventf(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed,
-				"DROP AUTH RULE %q failed, will retry: %v", ruleName, err)
+			// Retried every RequeueAfter and on every status change of the
+			// target until the drop succeeds or the grace period ends. The
+			// failure is written to status and announced when it starts or
+			// its message changes, not on every retry (knowledge rule 145).
+			msg := fmt.Sprintf("DROP AUTH RULE %q failed, will retry: %v", ruleName, err)
+			if r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleFailed, msg, nil, nil) {
+				r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 		r.Recorder.Eventf(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed,
@@ -494,6 +520,25 @@ func (r *Neo4jAuthRuleReconciler) setStatus(
 		return false
 	}
 	return transitioned
+}
+
+// waitForTarget records that the target is not Ready: the ClusterNotReady
+// condition, and phase Pending unless the rule is already Ready at its
+// generation, which it stays while the target restarts, as a user, role and
+// binding do (recordTargetWait; knowledge rule 158).
+func (r *Neo4jAuthRuleReconciler) waitForTarget(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule, msg string) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jAuthRule{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(rule), latest); err != nil {
+			return err
+		}
+		recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message, latest.Generation, msg)
+		latest.Status.ObservedGeneration = latest.Generation
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jAuthRule")
+	}
 }
 
 // reportPendingRoles writes the PendingDependencies condition and announces
