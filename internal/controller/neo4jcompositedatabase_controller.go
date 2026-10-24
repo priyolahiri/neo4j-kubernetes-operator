@@ -54,6 +54,28 @@ type Neo4jCompositeDatabaseReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// newDeletionClient connects the deletion to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newDeletionClient func(ResolvedTarget) (compositeDeletionClient, error)
+}
+
+// compositeDeletionClient is what the Neo4jCompositeDatabase deletion asks of
+// Neo4j. *neo4jclient.Client is one.
+type compositeDeletionClient interface {
+	DropCompositeDatabase(ctx context.Context, name string, cascadeAliases bool) error
+	Close() error
+}
+
+func (r *Neo4jCompositeDatabaseReconciler) connectForDeletion(target ResolvedTarget) (compositeDeletionClient, error) {
+	if r.newDeletionClient != nil {
+		return r.newDeletionClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jcompositedatabases,verbs=get;list;watch;create;update;patch;delete
@@ -500,7 +522,7 @@ func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 			logger.Info("deployment not available during deletion; releasing finalizer",
 				"clusterRef", cd.Spec.ClusterRef)
 		default:
-			nc, err := target.NewClient(r.Client)
+			nc, err := r.connectForDeletion(target)
 			if err != nil {
 				logger.Error(err, "connect during deletion; releasing finalizer")
 				break
@@ -510,7 +532,18 @@ func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 			// constituents exist. It removes the constituent ALIASES only —
 			// their target databases are untouched.
 			if err := nc.DropCompositeDatabase(ctx, name, true); err != nil {
-				return r.fail(ctx, cd, "drop composite database failed", err, r.requeueAfter())
+				// The same bounded retry as every other kind whose deletion
+				// runs Cypher (classifyFinalizerCleanup): a drop Neo4j keeps
+				// refusing used to be retried for ever, so the CR never left
+				// Terminating (#526). Retried, and announced once per failure,
+				// until finalizerDeletionGracePeriod has passed; then the
+				// finalizer is released and the composite left for an admin.
+				if classifyFinalizerCleanup(cd, err) == retryCleanup {
+					return r.fail(ctx, cd, "drop composite database failed, will retry", err, r.requeueAfter())
+				}
+				r.Recorder.Eventf(cd, corev1.EventTypeWarning, EventReasonCompositeFailed,
+					"DROP COMPOSITE DATABASE %q failed; releasing finalizer to avoid wedging deletion: %v", name, err)
+				break
 			}
 			r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeDropped,
 				"Composite database %q dropped (constituent aliases removed; their target databases kept)", name)

@@ -78,8 +78,6 @@ func (r *AuraProviderConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		reason = "CredentialsInvalid"
 		msg = "Aura API credentials invalid: " + err.Error()
 		logger.Info("AuraProviderConfig validation failed", "error", err.Error())
-	} else {
-		r.Recorder.Event(pc, corev1.EventTypeNormal, EventReasonAuraCredentialsValidated, msg)
 	}
 
 	changed := false
@@ -108,8 +106,16 @@ func (r *AuraProviderConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{}, updateErr
 	}
 	// Announced when the credentials start failing or the error changes, not on
-	// every validation pass while they stay invalid (knowledge rule 145).
-	if !ready && changed {
+	// every validation pass while they stay invalid (knowledge rule 145) — and,
+	// likewise, when they become valid, not on every pass while they stay so: the
+	// deployed operator revalidates every 30s (RequeueAfter, wired in
+	// cmd/main.go), and AuraCredentialsValidated announced each one (knowledge
+	// rule 136).
+	switch {
+	case !changed:
+	case ready:
+		r.Recorder.Event(pc, corev1.EventTypeNormal, EventReasonAuraCredentialsValidated, msg)
+	default:
 		r.Recorder.Event(pc, corev1.EventTypeWarning, EventReasonAuraCredentialsInvalid, msg)
 	}
 

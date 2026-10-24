@@ -99,7 +99,12 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// Resolve credentials + client (needed for both the delete and the sync path).
+	// Deletion first: it resolves the credentials only when it calls Aura
+	// (knowledge rule 157).
+	if !inst.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, inst)
+	}
+
 	creds, err := resolveAuraCredentials(ctx, r.Client, inst.Namespace, inst.Spec.ProviderConfigRef, inst.Spec.CredentialsSecretRef)
 	if err != nil {
 		return r.fail(ctx, req, inst, "CredentialsUnavailable", err)
@@ -110,10 +115,6 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 	apiClient := resolveClient(r.ClientFactory, creds)
 	v2Client := resolveInstanceV2Client(r.InstanceV2ClientFactory, creds)
-
-	if !inst.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, inst, apiClient)
-	}
 
 	if !controllerutil.ContainsFinalizer(inst, AuraInstanceFinalizer) {
 		if err := r.patchInstance(ctx, req, func(o *neo4jv1beta1.AuraInstance) {
@@ -139,6 +140,11 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	}
 
 	if externalID == "" {
+		// A refusal already on status for this spec is not asked again: it
+		// would only repeat the list and, for a tier Aura refuses, the create.
+		if r.refusalStands(ctx, inst) {
+			return ctrl.Result{}, nil
+		}
 		// Observe-before-create: never POST if an instance with our name already
 		// exists (avoids a duplicate paid instance after a crash between create
 		// and the annotation write). Creation is gated by managementPolicies.
@@ -155,6 +161,13 @@ func (r *AuraInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			// explanation on status and retry rather than binding the wrong instance.
 			if errors.Is(err, errAdoptionUnverified) {
 				return r.fail(ctx, req, inst, "AdoptionBlocked", err)
+			}
+			// A 429, a 5xx or a transport failure of the list or the create is
+			// retried as it is, like every other Aura call, not recorded as a
+			// failure (knowledge rule 88).
+			if isRetryableAuraCall(err) {
+				logger.Info("Aura instance create deferred by a transient API failure; retrying", "error", err.Error())
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
 			return r.fail(ctx, req, inst, "CreateFailed", err)
 		}
@@ -233,7 +246,7 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 
 	existing, err := apiClient.ListInstances(ctx, projectID)
 	if err != nil {
-		return "", false, fmt.Errorf("listing instances before create: %w", err)
+		return "", false, retryableAuraCall(fmt.Errorf("listing instances before create: %w", err))
 	}
 	for i := range existing {
 		if existing[i].Name == name {
@@ -324,7 +337,7 @@ func (r *AuraInstanceReconciler) observeOrCreate(
 
 	resp, err := apiClient.CreateInstance(ctx, createReq)
 	if err != nil {
-		return "", false, err
+		return "", false, retryableAuraCall(err)
 	}
 	id = resp.ID
 	// Persist the external ID BEFORE anything else — this is the idempotency
@@ -465,13 +478,19 @@ func (r *AuraInstanceReconciler) reconcilePauseResume(
 
 // handleDeletion honours the deletion policy: Orphan (default) keeps the cloud
 // instance; Delete destroys it (unless deletionProtection is set).
-func (r *AuraInstanceReconciler) handleDeletion(
-	ctx context.Context, inst *neo4jv1beta1.AuraInstance, apiClient auraAPI,
-) (ctrl.Result, error) {
+//
+// Only the Delete branch calls Aura, so only it resolves the credentials. They
+// are often gone by now — a namespace teardown deletes the Secret and the
+// provider config alongside the CR — and resolving them before the deletion
+// policy wedged the finalizer of every such AuraInstance, Orphan included. A
+// Delete that cannot resolve them waits finalizerDeletionGracePeriod, then
+// orphans the instance and says so (knowledge rule 157).
+func (r *AuraInstanceReconciler) handleDeletion(ctx context.Context, inst *neo4jv1beta1.AuraInstance) (ctrl.Result, error) {
 	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(inst, AuraInstanceFinalizer) {
 		return ctrl.Result{}, nil
 	}
+	req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(inst)}
 
 	externalID := inst.Annotations[AuraExternalIDAnnotation]
 	if externalID == "" {
@@ -481,38 +500,48 @@ func (r *AuraInstanceReconciler) handleDeletion(
 	// Delete the cloud instance only when the policy says Delete AND the Delete
 	// management policy permits it; otherwise orphan (the safe default).
 	deleteCloud := inst.Spec.DeletionPolicy == "Delete" && managementAllows(inst.Spec.ManagementPolicies, auraPolicyDelete)
-	switch {
-	case deleteCloud && inst.Spec.DeletionProtection:
+	if deleteCloud && inst.Spec.DeletionProtection {
 		logger.Info("deletionProtection is set; refusing to delete the Aura instance", "instanceId", externalID)
 		// The refusal is recorded on Synced, and announced when it starts, not
 		// on every requeue while deletionProtection stays set (knowledge rule
 		// 145).
 		const msg = "deletionProtection is set: clear it to allow deletion of the cloud instance"
-		req := ctrl.Request{NamespacedName: client.ObjectKeyFromObject(inst)}
 		if changed, _ := r.setConditionChanged(ctx, req, "Synced", metav1.ConditionFalse, "DeletionProtected", msg); changed {
 			r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceFailed, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-	case deleteCloud:
-		if externalID != "" {
-			if err := apiClient.DeleteInstance(ctx, externalID); err != nil && !aura.IsNotFound(err) {
-				if aura.IsConflict(err) || aura.IsTransient(err) {
-					return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-				}
-				return ctrl.Result{}, err
+	}
+	var (
+		creds    auraCredentials
+		credsErr error
+	)
+	if deleteCloud && externalID != "" {
+		creds, credsErr = resolveAuraCredentials(ctx, r.Client, inst.Namespace, inst.Spec.ProviderConfigRef, inst.Spec.CredentialsSecretRef)
+		if credsErr != nil && !deletionGracePeriodExceeded(inst) {
+			return r.fail(ctx, req, inst, "CredentialsUnavailable",
+				auraDeletionNeedsCredentials(inst, "Aura instance", externalID, credsErr))
+		}
+	}
+	switch {
+	case deleteCloud && externalID != "" && credsErr != nil:
+		r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceOrphaned,
+			auraOrphanedWithoutCredentials("Aura instance", externalID, "the cloud instance keeps running", credsErr))
+	case deleteCloud && externalID != "":
+		if err := resolveClient(r.ClientFactory, creds).DeleteInstance(ctx, externalID); err != nil && !aura.IsNotFound(err) {
+			if aura.IsConflict(err) || aura.IsTransient(err) {
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
-			r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceDeleted,
-				fmt.Sprintf("Deleted Aura instance %s", externalID))
+			return ctrl.Result{}, err
 		}
-	default: // Orphan (policy Orphan, or Delete not permitted by managementPolicies)
-		if externalID != "" {
-			r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceOrphaned,
-				fmt.Sprintf("Orphaning Aura instance %s; the cloud instance keeps running", externalID))
-		}
+		r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceDeleted,
+			fmt.Sprintf("Deleted Aura instance %s", externalID))
+	case externalID != "": // Orphan (policy Orphan, or Delete not permitted by managementPolicies)
+		r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceOrphaned,
+			fmt.Sprintf("Orphaning Aura instance %s; the cloud instance keeps running", externalID))
 	}
 
 	// Release the finalizer.
-	return ctrl.Result{}, r.patchInstance(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(inst)}, func(o *neo4jv1beta1.AuraInstance) {
+	return ctrl.Result{}, r.patchInstance(ctx, req, func(o *neo4jv1beta1.AuraInstance) {
 		controllerutil.RemoveFinalizer(o, AuraInstanceFinalizer)
 	})
 }
@@ -586,7 +615,9 @@ func (r *AuraInstanceReconciler) setConditionChanged(ctx context.Context, req ct
 	return changed, err
 }
 
-// syncStatus writes observed state + conditions.
+// syncStatus writes observed state + conditions, only when they changed or the
+// stored lastSyncedTime is due a refresh: a status write is a watch event, and
+// starts the next pass (auraSyncedTimeRefresh).
 func (r *AuraInstanceReconciler) syncStatus(ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance, observed *aura.Instance) error {
 	running := aura.IsInstanceRunning(observed.Status)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -594,6 +625,7 @@ func (r *AuraInstanceReconciler) syncStatus(ctx context.Context, req ctrl.Reques
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
+		before := latest.Status.DeepCopy()
 		latest.Status.InstanceID = observed.ID
 		latest.Status.Phase = observed.Status
 		if observed.ConnectionURL != "" {
@@ -626,8 +658,6 @@ func (r *AuraInstanceReconciler) syncStatus(ctx context.Context, req ctrl.Reques
 		if cn := r.connectionSecretName(latest); cn != "" {
 			latest.Status.Binding = &neo4jv1beta1.AuraServiceBinding{Name: cn}
 		}
-		now := metav1.Now()
-		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Ready", Status: auraCondStatus(running),
@@ -638,6 +668,11 @@ func (r *AuraInstanceReconciler) syncStatus(ctx context.Context, req ctrl.Reques
 			Type: "Synced", Status: metav1.ConditionTrue, Reason: "Observed",
 			Message: "Reconciled against the Aura API",
 		})
+		now := metav1.Now()
+		if !auraStatusWriteNeeded(*before, latest.Status, before.LastSyncedTime, now.Time) {
+			return nil
+		}
+		latest.Status.LastSyncedTime = &now
 		return r.Status().Update(ctx, latest)
 	})
 }
@@ -655,14 +690,35 @@ func readyReason(status string) string {
 
 // failTerminal records a failure that no retry can clear — the spec asks for
 // something Aura will never do — so it does NOT requeue. The spec edit that
-// fixes it triggers a fresh reconcile on its own.
+// fixes it triggers a fresh reconcile on its own, and until then refusalStands
+// keeps the passes that other events start from asking Aura again.
 func (r *AuraInstanceReconciler) failTerminal(ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance, reason string, cause error) (ctrl.Result, error) {
 	_, _ = r.fail(ctx, req, inst, reason, cause)
 	return ctrl.Result{}, nil
 }
 
-// fail records a failure on status and requeues without a hard error when the
-// cause is external (missing creds/config), so we don't hot-loop on user error.
+// refusalStands reports whether status records failTerminal's refusal of this
+// generation of the spec, so the pass stops before calling Aura (knowledge rule
+// 156). The one refusal whose cause can be fixed outside the spec — no
+// organization, which defaultOrganizationId on the AuraProviderConfig can
+// supply — is looked at again once an organization resolves.
+func (r *AuraInstanceReconciler) refusalStands(ctx context.Context, inst *neo4jv1beta1.AuraInstance) bool {
+	if !wantsV2Create(inst) || inst.Status.Phase != neo4jv1beta1.PhaseError ||
+		!auraRefusalRecorded(inst.Status.Conditions, inst.Status.ObservedGeneration, inst.Generation, v2CreateRefusalReason(inst), "") {
+		return false
+	}
+	noOrg := requireOrgIDForMultiDatabase("", v2CreateReason(inst)).Error()
+	if c := meta.FindStatusCondition(inst.Status.Conditions, "Ready"); c.Message == noOrg && resolveInstanceOrgID(ctx, r.Client, inst) != "" {
+		return false
+	}
+	return true
+}
+
+// fail records a failure on status — phase Error and the Ready condition — and
+// requeues without a hard error when the cause is external (missing
+// creds/config), so we don't hot-loop on user error. The phase used to stay as
+// it was (empty, or the last Aura status), so `kubectl neo4j status` and the
+// ArgoCD health check, which read it, showed a failing instance as healthy.
 func (r *AuraInstanceReconciler) fail(ctx context.Context, req ctrl.Request, inst *neo4jv1beta1.AuraInstance, reason string, cause error) (ctrl.Result, error) {
 	log.FromContext(ctx).Info("AuraInstance reconcile deferred", "reason", reason, "error", cause.Error())
 	announce := false
@@ -673,8 +729,9 @@ func (r *AuraInstanceReconciler) fail(ctx context.Context, req ctrl.Request, ins
 			return client.IgnoreNotFound(err)
 		}
 		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
-		changed := auraConditionChanged(latest.Status.Conditions, want)
+		changed := auraConditionChanged(latest.Status.Conditions, want) || latest.Status.Phase != neo4jv1beta1.PhaseError
 		meta.SetStatusCondition(&latest.Status.Conditions, want)
+		latest.Status.Phase = neo4jv1beta1.PhaseError
 		latest.Status.ObservedGeneration = latest.Generation
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err

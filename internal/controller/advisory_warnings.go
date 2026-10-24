@@ -37,6 +37,34 @@ import (
 // that report real changes.
 const advisoryWarningRefresh = 30 * time.Minute
 
+// AdvisoryWarningRefresh is advisoryWarningRefresh for readers outside this
+// package: an advisory Warning last seen within it may still apply, because it
+// would have been announced again by now if it did.
+const AdvisoryWarningRefresh = advisoryWarningRefresh
+
+// AdvisoryWarningReasons are the reasons the reconcilers announce through
+// advisoryWarnings (record and recordScoped): Warnings that stay true while
+// the object is otherwise fine, announced again every advisoryWarningRefresh
+// while they apply. `kubectl neo4j diagnose` reads one seen within that time
+// as still applying, whatever the object's conditions did since
+// (operations.md id 168). EventReasonUpgradeFailed is left out: the
+// standalone's pre-upgrade block is announced this way, but the reason is a
+// one-time failure everywhere else. TestAdvisoryWarningReasons_ListsEveryRecordedReason
+// fails for a reason recorded here and not listed.
+var AdvisoryWarningReasons = []string{
+	EventReasonValidationWarning,
+	EventReasonTopologyWarning,
+	EventReasonTopologyZoneDiscoveryDegraded,
+	EventReasonRouteAPINotFound,
+	EventReasonMCPApocMissing,
+	EventReasonReplicationSourceCaveat,
+	EventReasonBackupValidateUnsupported,
+	EventReasonServiceAccountAnnotationConflict,
+	EventReasonRestoreShardedNotCovered,
+	EventReasonRestoreFromChainParent,
+	EventReasonPrivilegesDriftKept,
+}
+
 // advisoryWarnings remembers which advisory warnings each object was last
 // given, and when each was announced, so the reconciler can emit a warning when
 // it starts to apply and every advisoryWarningRefresh while it still does — not

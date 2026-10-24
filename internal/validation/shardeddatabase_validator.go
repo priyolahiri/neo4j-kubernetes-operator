@@ -23,6 +23,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	utilerrors "k8s.io/apimachinery/pkg/util/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -45,39 +46,53 @@ func NewShardedDatabaseValidator(client client.Client) *ShardedDatabaseValidator
 type ShardedDatabaseValidationResult struct {
 	Errors   field.ErrorList
 	Warnings []string
+	// Pending names what the sharded database waits for rather than what is
+	// wrong with it: a clusterRef that names no cluster yet. The reconciler
+	// makes that a wait (phase Pending, ClusterNotFound), not a refusal
+	// (operations.md id 145), and applies in either order are fine.
+	Pending []string
+	// ClusterReadErr is a failure to read the referenced cluster for any reason
+	// other than its absence. The rules that need the cluster were not run.
+	ClusterReadErr error
 }
 
-// ValidateShardedDatabase performs comprehensive validation of a Neo4jShardedDatabase
-func (v *ShardedDatabaseValidator) ValidateShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) error {
+// Validate runs every rule and reports every finding. The rules on the spec
+// alone always run; the rules that need the referenced cluster run when it can
+// be read. A failed read used to return at once and drop the errors the spec
+// rules had found, so a user fixed one error, applied again, and only then saw
+// the rest (#532).
+func (v *ShardedDatabaseValidator) Validate(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) ShardedDatabaseValidationResult {
 	result := &ShardedDatabaseValidationResult{
 		Errors:   field.ErrorList{},
 		Warnings: []string{},
 	}
 
-	// Validate basic fields
 	v.validateBasicFields(shardedDB, result)
-
-	// Validate cluster reference
-	if err := v.validateClusterReference(ctx, shardedDB, result); err != nil {
-		return err
-	}
-
-	// Validate property sharding configuration
 	v.validatePropertyShardingConfig(shardedDB, result)
-
-	// Validate topology configuration
 	v.validateTopologyConfig(shardedDB, result)
-
-	// Validate Cypher language version
 	v.validateCypherLanguage(shardedDB, result)
+
+	// Last: the rules that need the cluster.
+	v.validateClusterReference(ctx, shardedDB, result)
+	return *result
+}
+
+// ValidateShardedDatabase is Validate for the reconciler: an error when the
+// spec is refused, or when the cluster could not be read. A cluster that does
+// not exist is not an error here: the reconciler waits for it.
+func (v *ShardedDatabaseValidator) ValidateShardedDatabase(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) error {
+	result := v.Validate(ctx, shardedDB)
 
 	// The errors alone: the reconciler's status message says "Validation
 	// failed" itself, and the prefix here doubled it.
-	if len(result.Errors) > 0 {
-		return result.Errors.ToAggregate()
+	var errs []error
+	if agg := result.Errors.ToAggregate(); agg != nil {
+		errs = append(errs, agg.Errors()...)
 	}
-
-	return nil
+	if result.ClusterReadErr != nil {
+		errs = append(errs, fmt.Errorf("failed to get cluster %s: %w", shardedDB.Spec.ClusterRef, result.ClusterReadErr))
+	}
+	return utilerrors.NewAggregate(errs)
 }
 
 // validateBasicFields validates required basic fields
@@ -98,9 +113,15 @@ func (v *ShardedDatabaseValidator) validateBasicFields(shardedDB *neo4jv1beta1.N
 	}
 }
 
-// validateClusterReference validates that the referenced cluster exists and supports property sharding
-func (v *ShardedDatabaseValidator) validateClusterReference(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) error {
+// validateClusterReference validates that the referenced cluster supports
+// property sharding and has room for the shards. Without a clusterRef (already
+// an error) or a client there is nothing to read; a cluster that does not exist
+// yet is Pending; a read that fails otherwise is ClusterReadErr.
+func (v *ShardedDatabaseValidator) validateClusterReference(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
 	specPath := field.NewPath("spec")
+	if shardedDB.Spec.ClusterRef == "" || v.client == nil {
+		return
+	}
 
 	// Get the referenced cluster
 	var cluster neo4jv1beta1.Neo4jEnterpriseCluster
@@ -111,9 +132,12 @@ func (v *ShardedDatabaseValidator) validateClusterReference(ctx context.Context,
 
 	if err := v.client.Get(ctx, clusterKey, &cluster); err != nil {
 		if errors.IsNotFound(err) {
-			result.Errors = append(result.Errors, field.NotFound(specPath.Child("clusterRef"), shardedDB.Spec.ClusterRef))
+			result.Pending = append(result.Pending, fmt.Sprintf(
+				"waiting for Neo4jEnterpriseCluster %q in namespace %q (spec.clusterRef)", shardedDB.Spec.ClusterRef, shardedDB.Namespace))
+			return
 		}
-		return fmt.Errorf("failed to get cluster %s: %w", shardedDB.Spec.ClusterRef, err)
+		result.ClusterReadErr = err
+		return
 	}
 
 	// Validate cluster supports property sharding
@@ -135,11 +159,7 @@ func (v *ShardedDatabaseValidator) validateClusterReference(ctx context.Context,
 	}
 
 	// Validate that the cluster has sufficient capacity for all shards
-	if err := v.validateClusterCapacity(&cluster, shardedDB, result); err != nil {
-		return err
-	}
-
-	return nil
+	v.validateClusterCapacity(&cluster, shardedDB, result)
 }
 
 // validatePropertyShardingConfig validates property sharding configuration
@@ -339,7 +359,7 @@ func (v *ShardedDatabaseValidator) validateDatabaseTopology(topology *neo4jv1bet
 }
 
 // validateClusterCapacity validates that the cluster has sufficient capacity for all shards
-func (v *ShardedDatabaseValidator) validateClusterCapacity(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) error {
+func (v *ShardedDatabaseValidator) validateClusterCapacity(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, result *ShardedDatabaseValidationResult) {
 	clusterServers := cluster.Spec.Topology.Servers
 	shardingPath := field.NewPath("spec", "propertySharding")
 
@@ -371,8 +391,6 @@ func (v *ShardedDatabaseValidator) validateClusterCapacity(cluster *neo4jv1beta1
 			"total shards (%d) exceeds cluster servers (%d) - shards will share servers",
 			totalShards, clusterServers))
 	}
-
-	return nil
 }
 
 // validateCypherLanguage validates Cypher language version

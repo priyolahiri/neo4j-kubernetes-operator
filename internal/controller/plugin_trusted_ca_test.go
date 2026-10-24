@@ -106,7 +106,6 @@ func caReconciler(t *testing.T, objs ...client.Object) (*Neo4jPluginReconciler, 
 	rec := record.NewFakeRecorder(32)
 	bolt := &pluginBolt{
 		functional: func(context.Context, *DeploymentInfo) bool { return true },
-		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return nil },
 	}
 	return &Neo4jPluginReconciler{
 		Client: c, Scheme: newTestScheme(), Recorder: rec,
@@ -357,6 +356,53 @@ func TestReconcile_StandalonePluginFollowsItsTrustedCAs(t *testing.T) {
 	assert.Equal(t, []string{"mirror-ca (optional)"}, projectedCAs(liveTemplate(t, r.Client, "sa")))
 	assert.Contains(t, *messages,
 		"Updating the plugin's trusted CAs: spec.trustedCASecrets of Neo4jEnterpriseStandalone sa changed (volume plugin-ca of StatefulSet sa)")
+}
+
+// The defect (#530, from the code): the target's JVM truststore folds the
+// legacy spec.auth.trustStore into spec.trustedCASecrets (operations.md id
+// 28), but a VerifiedDownload plugin read spec.trustedCASecrets alone, so a CA
+// the target names the legacy way was trusted by Neo4j and not by the
+// plugin's download. The download trusts the list the JVM does: on install,
+// and when a settled plugin's target gains the legacy CA.
+func TestReconcile_PluginTrustsTheLegacyTrustStore(t *testing.T) {
+	legacy := &neo4jv1beta1.AuthSpec{TrustStore: &neo4jv1beta1.SecretKeyRef{Name: "legacy-ca", Key: "ca.pem"}}
+
+	t.Run("a cluster install", func(t *testing.T) {
+		plugin := verifiedDownloadSelfHeal("", "")
+		cluster, _ := caTarget(neo4jv1beta1.PhaseReady)
+		cluster.Spec.Auth = legacy
+		r, _, writes, _ := caReconciler(t, append([]client.Object{plugin, cluster, selfHealSTS()}, readyClusterPods()...)...)
+
+		reconcilePlugin(t, r, "custom")
+
+		require.Equal(t, 1, *writes)
+		live := liveTemplate(t, r.Client, "c-server")
+		require.Equal(t, []string{"legacy-ca (optional)"}, projectedCAs(live))
+		assert.Equal(t, "ca.pem", live.Spec.Volumes[volumeIndex(&live.Spec, resources.PluginCAVolumeName)].Projected.Sources[0].Secret.Items[0].Key)
+		assert.True(t, containerMountsVolume(initContainer(t, live, "plugin-init-custom"), resources.PluginCAVolumeName))
+	})
+
+	t.Run("a settled standalone plugin", func(t *testing.T) {
+		plugin := verifiedDownloadSelfHeal(neo4jv1beta1.PhaseReady, "Plugin installed and configured successfully")
+		plugin.Spec.ClusterRef = "sa"
+		standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+			ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: selfHealNS},
+			Spec:       neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{TrustedCASecrets: trustedCAs("corp-ca"), Auth: legacy},
+			Status:     neo4jv1beta1.Neo4jEnterpriseStandaloneStatus{Phase: neo4jv1beta1.PhaseReady},
+		}
+		earlier := standalone.DeepCopy()
+		earlier.Spec.Auth = nil
+		sts := pluginTestSTS("sa", selfHealNS)
+		sts.Name = "sa"
+		sts = installedWith(t, sts, &DeploymentInfo{Type: "standalone", Name: "sa", Namespace: selfHealNS, Object: earlier}, plugin)
+		r, rec, writes, _ := caReconciler(t, plugin, standalone, sts)
+
+		reconcilePlugin(t, r, "custom")
+
+		assert.Equal(t, 1, *writes)
+		assert.Equal(t, []string{"corp-ca (optional)", "legacy-ca (optional)"}, projectedCAs(liveTemplate(t, r.Client, "sa")))
+		assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonPluginMissing), "a change, not a loss")
+	})
 }
 
 // pluginPodDrift tells what the list changed from what something removed.

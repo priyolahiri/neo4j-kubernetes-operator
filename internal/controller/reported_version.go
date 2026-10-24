@@ -158,6 +158,15 @@ func resolvedTargetVersionFor(us *neo4jv1beta1.UpgradeStatus, reported string) (
 	return want, want != us.ResolvedTargetVersion
 }
 
+// reportedValue returns a reported version a status write carries, "" for
+// none (statusRecord).
+func reportedValue(v *string) string {
+	if v == nil {
+		return ""
+	}
+	return *v
+}
+
 // heldTargetServerVersion returns the highest version reported by the servers
 // a Paused or Failed upgrade has rolled onto its target: those at or above the
 // partition it kept, once the server StatefulSet's template carries the

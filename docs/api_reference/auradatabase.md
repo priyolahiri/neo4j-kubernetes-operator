@@ -5,7 +5,7 @@
 
 The `AuraDatabase` CRD manages a database on a managed Neo4j Aura instance. Aura manages replication/topology per tier, so there is **no topology knob** — for databases on a self-managed cluster, use [`Neo4jDatabase`](neo4jdatabase.md) instead.
 
-> **Requires a multi-database instance.** An Aura instance can only hold more than its own built-in database if it was created as multi-database, which is fixed at creation and cannot be changed afterwards. Create the target with [`AuraInstance`](aurainstance.md#multi-database-instances) `spec.multiDatabase: true`. Against any other instance the API refuses with *"Only multi database Instances can add databases"* and the CR reports `Ready=False`, reason `InstanceNotMultiDatabase`. That is terminal: the operator stops retrying, because no retry can succeed. The fix is a new instance and a data migration, not a spec edit.
+> **Requires a multi-database instance.** An Aura instance can only hold more than its own built-in database if it was created as multi-database, which is fixed at creation and cannot be changed afterwards. Create the target with [`AuraInstance`](aurainstance.md#multi-database-instances) `spec.multiDatabase: true`. Against any other instance the API refuses with *"Only multi database Instances can add databases"* and the CR reports `Ready=False`, reason `InstanceNotMultiDatabase`. That is terminal: the operator stops retrying, because no retry can succeed, and does not ask Aura again while the CR refers to the same instance. The fix is a new instance and a data migration, not a spec edit.
 
 ## Overview
 
@@ -33,7 +33,7 @@ The `AuraDatabase` CRD manages a database on a managed Neo4j Aura instance. Aura
 | `phase` | `string` | `Pending`, `Ready`, `Error`. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
-| `lastSyncedTime` | `*metav1.Time` | When the database was last observed from the Aura API. |
+| `lastSyncedTime` | `*metav1.Time` | When the operator last recorded the database as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile. |
 
 ## Example
 
