@@ -119,6 +119,14 @@ func (r *AuraDatabaseBackupReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	created, err := apiClient.CreateDatabaseBackup(ctx, orgID, projectID, instanceID, databaseID)
 	if err != nil {
+		// A 429, a 5xx, a transport failure, or another operation in flight on
+		// the instance is retried as it is — as the snapshot create does — not
+		// recorded as a failed backup (knowledge rule 88). Nothing was taken, so
+		// the next pass asks again.
+		if aura.IsConflict(err) || aura.IsTransient(err) {
+			logger.Info("database backup deferred by a transient API failure; retrying", "error", err.Error())
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
 		return r.fail(ctx, req, b, "BackupFailed", err)
 	}
 	if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraDatabaseBackup) {
@@ -164,21 +172,28 @@ func (r *AuraDatabaseBackupReconciler) syncStatus(ctx context.Context, req ctrl.
 		reason = "Unknown"
 		message = fmt.Sprintf("Aura reported an unrecognized backup status %q", observed.Status)
 	}
+	// Written only when something changed or the stored lastSyncedTime is due a
+	// refresh: a status write is a watch event, and starts the next pass
+	// (auraSyncedTimeRefresh).
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.AuraDatabaseBackup{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
+		before := latest.Status.DeepCopy()
 		latest.Status.BackupID = observed.ID
 		latest.Status.Timestamp = observed.Timestamp
 		latest.Status.Exportable = observed.Exportable
-		now := metav1.Now()
-		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
 		latest.Status.Phase = phase
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Ready", Status: condStatus, Reason: reason, Message: message,
 		})
+		now := metav1.Now()
+		if !auraStatusWriteNeeded(*before, latest.Status, before.LastSyncedTime, now.Time) {
+			return nil
+		}
+		latest.Status.LastSyncedTime = &now
 		return r.Status().Update(ctx, latest)
 	})
 	if err != nil {

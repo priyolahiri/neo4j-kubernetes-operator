@@ -119,7 +119,9 @@ type AuraCustomerManagedKeyStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// LastSyncedTime is when the key was last observed from the Aura API.
+	// LastSyncedTime is when the operator last recorded the key as
+	// observed from the Aura API: written with every change to the status,
+	// and at least every 15 minutes while nothing changes.
 	// +optional
 	LastSyncedTime *metav1.Time `json:"lastSyncedTime,omitempty"`
 }

@@ -153,16 +153,6 @@ func GetImageVersion(image string) (*Version, error) {
 	return ParseVersion(tag)
 }
 
-// GetKubernetesDiscoveryParameter returns the correct discovery parameter based on version
-func GetKubernetesDiscoveryParameter(version *Version) string {
-	if version.IsCalver {
-		// CalVer versions (2025.x) use the new parameter without v2
-		return "dbms.kubernetes.discovery.service_port_name"
-	}
-	// SemVer versions (5.x) use the v2 parameter
-	return "dbms.kubernetes.discovery.v2.service_port_name"
-}
-
 // GetBackupCommand generates the correct neo4j-admin database backup command.
 // fromAddresses is a comma-separated list of host:port backup endpoints (port 6362).
 // If fromAddresses is empty, the --from flag is omitted (local backup).

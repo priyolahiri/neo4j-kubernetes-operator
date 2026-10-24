@@ -1110,8 +1110,13 @@ func (r *Neo4jBackupReconciler) validateChainParent(ctx context.Context, backup 
 		return fmt.Errorf("chainFromBackup %q lookup failed in namespace %q: %w",
 			backup.Spec.ChainFromBackup, backup.Namespace, err)
 	}
+	// The scoped name is compared ignoring case: for a database scope it is a
+	// database name, and `Orders` and `orders` are one database, whose
+	// artifacts neo4j-admin names lower-cased in one chain (knowledge
+	// operations.md id 146). The other scopes name Kubernetes objects, which
+	// are lower-case anyway.
 	if parent.Spec.Scope() != backup.Spec.Scope() ||
-		parent.Spec.ScopedName() != backup.Spec.ScopedName() ||
+		!strings.EqualFold(parent.Spec.ScopedName(), backup.Spec.ScopedName()) ||
 		parent.Spec.InstanceRef != backup.Spec.InstanceRef {
 		return fmt.Errorf("chainFromBackup %q targets {scope=%q name=%q instanceRef=%q} but this backup targets {scope=%q name=%q instanceRef=%q}; chained backups must share the same target",
 			parent.Name, parent.Spec.Scope(), parent.Spec.ScopedName(), parent.Spec.InstanceRef,
