@@ -175,8 +175,10 @@ func (r *Neo4jPluginReconciler) envOwnedElsewhere(sts *appsv1.StatefulSet, plugi
 // applyPlugin makes on sts, a copy of the target's StatefulSet, every edit the
 // plugin owns: those on the pod template (applyPluginToTemplate), the removal
 // of the variables its record lists and it no longer sets, and the record of
-// those it sets now; on a cluster, each shared procedure and extension list
-// made what the target's plugins put there (setClusterPluginLists); and the
+// those it sets now; on a cluster, its own tokens added to each shared
+// procedure and extension list, and the tokens no plugin of the target asks
+// for any more taken out (setClusterPluginLists — never another plugin's
+// tokens added); and the
 // removal of the NEO4J_PLUGINS names its record lists and it no longer adds,
 // with the record of those it adds now (applyPluginEntries). It returns,
 // sorted, what it removed: the variables by name, and NEO4J_PLUGINS names as
@@ -211,39 +213,61 @@ func (r *Neo4jPluginReconciler) applyPlugin(ctx context.Context, sts *appsv1.Sta
 	removed := withoutEnvNames(&sts.Spec.Template, stale, r.envOwnedElsewhere(sts, plugin, deployment, others))
 	setPluginEnvRecord(sts, key, want)
 	if deployment.Type != "standalone" {
-		setClusterPluginLists(&sts.Spec.Template, append([]neo4jv1beta1.Neo4jPlugin{*plugin}, others...), targetOwnedEnvNames(sts))
+		setClusterPluginLists(&sts.Spec.Template, pluginListSettings(plugin), others, targetOwnedEnvNames(sts))
 	}
 	removed = append(removed, r.applyPluginEntries(ctx, sts, plugin, deployment, others)...)
 	sort.Strings(removed)
 	return removed, nil
 }
 
-// setClusterPluginLists makes each shared procedure and extension list on a
-// cluster's neo4j container (resources.IsAdditiveConfKey) exactly what
-// plugins, the enabled plugins of the target, put there (pluginListSettings,
-// unioned in CR-name order): a list none of them puts anything in goes. A
-// list the target renders itself (targetOwned) or reads from a Secret is left
-// alone, and a list whose tokens are already the wanted ones keeps its value
-// and order, so a write changes it only when what the plugins ask for does.
+// setClusterPluginLists sets each shared procedure and extension list on a
+// cluster's neo4j container (resources.IsAdditiveConfKey) from what the
+// plugins ask for now, and changes only what the writing plugin is answerable
+// for:
+//   - own, the writing plugin's tokens by setting (pluginListSettings; nil for
+//     its removal), are added;
+//   - a token already in the list is kept while own or another plugin of the
+//     target (others, those otherPlugins lists) asks for it, and goes when none
+//     does — a token a plugin no longer asks for, or one nobody asks for;
+//   - another plugin's tokens are never added on its behalf: a plugin not yet
+//     written to the target (one waiting for it) or one whose tokens something
+//     removed puts them there with its own write.
+//
+// A list left empty goes. A list the target renders itself (targetOwned) or
+// reads from a Secret is left alone, and a list whose tokens do not change
+// keeps its value and order, so a write changes a list only when what the
+// writing plugin asks for, or what nobody asks for any more, does.
 //
 // The lists used to be built by adding: a plugin unioned its tokens into what
 // was there, and took them out only on its uninstall. So tokens stayed when a
 // plugin's spec.security changed while it was installed, and a list a plugin
-// set in spec.config replaced the union outright (#548). Every plugin now
-// computes the same list from the same specs, as a standalone's controller
-// does for its neo4j.conf (unionPluginConfSettings).
-func setClusterPluginLists(template *corev1.PodTemplateSpec, plugins []neo4jv1beta1.Neo4jPlugin, targetOwned map[string]struct{}) {
+// set in spec.config replaced the union outright (#548). The first fix built
+// each list over every enabled plugin of the target, also one not written
+// there yet: a settled plugin then found the list "missing" another plugin's
+// tokens, announced PluginMissing and wrote them before that plugin's own
+// install (a third roll on the v1.22.0 combined walk, A5; #561), and a
+// disabled plugin's removal wrote other plugins' tokens back onto a recreated
+// StatefulSet (operations.md id 173).
+func setClusterPluginLists(template *corev1.PodTemplateSpec, own map[string]string, others []neo4jv1beta1.Neo4jPlugin, targetOwned map[string]struct{}) {
 	container := neo4jContainer(&template.Spec)
 	if container == nil {
 		return
 	}
-	sorted := append([]neo4jv1beta1.Neo4jPlugin(nil), plugins...)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
-	want := map[string]string{}
-	for i := range sorted {
-		for key, tokens := range pluginListSettings(&sorted[i]) {
+	ownTokens := map[string][]string{}
+	for key, tokens := range own {
+		name := resources.Neo4jSettingEnvVarName(key)
+		ownTokens[name] = splitCSVTokens(resources.MergeConfListValues(strings.Join(ownTokens[name], ","), tokens))
+	}
+	claimed := map[string]map[string]struct{}{}
+	for i := range others {
+		for key, tokens := range pluginListSettings(&others[i]) {
 			name := resources.Neo4jSettingEnvVarName(key)
-			want[name] = resources.MergeConfListValues(want[name], tokens)
+			if claimed[name] == nil {
+				claimed[name] = map[string]struct{}{}
+			}
+			for _, token := range splitCSVTokens(tokens) {
+				claimed[name][token] = struct{}{}
+			}
 		}
 	}
 	seen := map[string]bool{}
@@ -254,29 +278,72 @@ func setClusterPluginLists(template *corev1.PodTemplateSpec, plugins []neo4jv1be
 			continue
 		}
 		seen[e.Name] = true
-		if _, own := targetOwned[e.Name]; own || e.ValueFrom != nil {
+		if _, owned := targetOwned[e.Name]; owned || e.ValueFrom != nil {
 			env = append(env, e)
 			continue
 		}
-		switch w := want[e.Name]; {
-		case w == "":
-			continue // nothing any plugin of the target puts there
-		case !sameCSVSet(e.Value, w):
-			e.Value = w
+		value := pluginListValue(e.Value, ownTokens[e.Name], claimed[e.Name])
+		if value == "" {
+			continue // nothing any plugin of the target asks for there
 		}
+		e.Value = value
 		env = append(env, e)
 	}
-	names := make([]string, 0, len(want))
-	for name := range want {
+	names := make([]string, 0, len(ownTokens))
+	for name := range ownTokens {
 		names = append(names, name)
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		if _, own := targetOwned[name]; !seen[name] && !own && want[name] != "" {
-			env = append(env, corev1.EnvVar{Name: name, Value: want[name]})
+		if _, owned := targetOwned[name]; !seen[name] && !owned && len(ownTokens[name]) > 0 {
+			env = append(env, corev1.EnvVar{Name: name, Value: strings.Join(ownTokens[name], ",")})
 		}
 	}
 	container.Env = env
+}
+
+// pluginListValue is a list's new value: the tokens of live that own or
+// claimed holds, in live's order, then own's tokens live lacks; live itself
+// when that is the same set of tokens.
+func pluginListValue(live string, own []string, claimed map[string]struct{}) string {
+	wanted := map[string]struct{}{}
+	for _, token := range own {
+		wanted[token] = struct{}{}
+	}
+	var kept []string
+	have := map[string]struct{}{}
+	for _, token := range splitCSVTokens(live) {
+		_, mine := wanted[token]
+		_, theirs := claimed[token]
+		if _, dup := have[token]; dup || (!mine && !theirs) {
+			continue
+		}
+		have[token] = struct{}{}
+		kept = append(kept, token)
+	}
+	for _, token := range own {
+		if _, ok := have[token]; !ok {
+			have[token] = struct{}{}
+			kept = append(kept, token)
+		}
+	}
+	value := strings.Join(kept, ",")
+	if sameCSVSet(live, value) {
+		return live
+	}
+	return value
+}
+
+// splitCSVTokens splits a comma-separated list into its tokens, trimmed, in order,
+// without empty ones.
+func splitCSVTokens(list string) []string {
+	var out []string
+	for _, token := range strings.Split(list, ",") {
+		if token = strings.TrimSpace(token); token != "" {
+			out = append(out, token)
+		}
+	}
+	return out
 }
 
 // sameCSVSet reports whether two comma-separated lists hold the same tokens,
@@ -503,8 +570,9 @@ func (r *Neo4jPluginReconciler) writeRemoval(ctx context.Context, plugin *neo4jv
 //     now (a plugin installed by an earlier operator has no record), less
 //     those owned elsewhere (envOwnedElsewhere);
 //   - its tokens in the procedure and extension lists: on a cluster each list
-//     becomes what the target's other plugins put there
-//     (setClusterPluginLists), and goes when that is nothing; on a
+//     keeps only the tokens another plugin of the target asks for
+//     (setClusterPluginLists, which adds nothing), and goes when that is
+//     nothing; on a
 //     standalone, whose lists are in neo4j.conf, its tokens in the env copies
 //     an earlier operator left, less those another plugin puts there;
 //   - its names in NEO4J_PLUGINS — those its record lists, and in Managed mode
@@ -530,7 +598,7 @@ func (r *Neo4jPluginReconciler) withoutPlugin(ctx context.Context, sts *appsv1.S
 		if deployment.Type == "standalone" {
 			container.Env = removePluginSecurityEnv(container.Env, r.pluginListTokens(plugin, others, targetOwned))
 		} else {
-			setClusterPluginLists(&sts.Spec.Template, others, targetOwned)
+			setClusterPluginLists(&sts.Spec.Template, nil, others, targetOwned)
 		}
 		entries := splitCSVSet(sts.Annotations[entriesKey])
 		if !shouldSkipNeo4jPluginsEnv(plugin) {
