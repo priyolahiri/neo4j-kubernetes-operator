@@ -641,7 +641,7 @@
     "id": "su-neo4jplugin",
     "name": "Neo4jPlugin Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jPlugin CRD; live-patches NEO4J_PLUGINS via MergeNeo4jPluginList (or injects a checksum-verified init container for installMode=VerifiedDownload) without clobbering env vars owned by other controllers, folds plugin-specific settings into neo4j.conf, and triggers a controlled rolling restart of the target.",
+    "description": "Reconciler for the Neo4jPlugin CRD; live-patches NEO4J_PLUGINS via MergeNeo4jPluginList (or injects a checksum-verified init container for installMode=VerifiedDownload) without clobbering env vars owned by other controllers, sets the plugin's settings as env vars (a standalone's security settings go to its neo4j.conf through the standalone controller), makes a cluster's shared procedure lists what the target's plugins ask for, and triggers a controlled rolling restart of the target. Nothing is set at runtime. spec.enabled false takes the plugin off its target and keeps the CR (phase Disabled); a plugin whose procedures the target's allowlist hides carries the ProceduresHidden condition.",
     "entityIds": [
       "ent-neo4jplugin"
     ],
@@ -655,7 +655,9 @@
       "internal/controller/plugin_controller.go",
       "internal/controller/plugin_conf_settings.go",
       "internal/controller/plugin_target_gate.go",
-      "internal/controller/plugin_env_ownership.go"
+      "internal/controller/plugin_env_ownership.go",
+      "internal/controller/plugin_disabled.go",
+      "internal/controller/plugin_allowlist.go"
     ]
   },
   {

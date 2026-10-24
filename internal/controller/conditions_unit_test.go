@@ -120,6 +120,8 @@ func TestPhaseToConditionStatus_Table(t *testing.T) {
 		// Suspension is deliberate, so the reason must not say "ReconciliationFailed"
 		// — but the status stays False: a suspended backup is not Ready to run.
 		{neo4jv1beta1.PhaseSuspended, metav1.ConditionFalse, ConditionReasonSuspended},
+		// A disabled plugin is not installed, as asked: not Ready, not failed.
+		{neo4jv1beta1.PhaseDisabled, metav1.ConditionFalse, ConditionReasonDisabled},
 		{neo4jv1beta1.PhaseInvalid, metav1.ConditionFalse, ConditionReasonFailed},
 		{neo4jv1beta1.PhaseValidationFailed, metav1.ConditionFalse, ConditionReasonFailed},
 		{neo4jv1beta1.PhaseError, metav1.ConditionFalse, ConditionReasonFailed},

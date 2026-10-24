@@ -45,7 +45,11 @@ type Neo4jPluginSpec struct {
 	Version string `json:"version"`
 
 	// +kubebuilder:default=true
-	// Enable the plugin
+	// Whether the plugin is on its target's servers. false keeps it off: an
+	// installed plugin is removed — its NEO4J_PLUGINS entry, its settings, its
+	// procedure-list tokens and a VerifiedDownload init container, in one
+	// rolling restart — and the CR stays, in phase Disabled. Setting it back to
+	// true installs the plugin again.
 	Enabled bool `json:"enabled,omitempty"`
 
 	// InstallMode selects how the plugin's JAR reaches /plugins.
