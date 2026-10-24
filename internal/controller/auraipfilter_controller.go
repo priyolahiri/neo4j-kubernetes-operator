@@ -84,19 +84,18 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
+	// Deletion first: it resolves the credentials only when it calls Aura
+	// (knowledge rule 157).
+	if !f.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, req, f)
+	}
+
 	creds, err := resolveAuraCredentials(ctx, r.Client, f.Namespace, f.Spec.ProviderConfigRef, f.Spec.CredentialsSecretRef)
 	if err != nil {
 		return r.fail(ctx, req, f, "CredentialsUnavailable", err)
 	}
-	orgID := f.Spec.OrganizationID
-	if orgID == "" {
-		orgID = r.providerDefaultOrgID(ctx, f)
-	}
+	orgID := r.orgID(ctx, f)
 	apiClient := resolveIPFilterClient(r.ClientFactory, creds)
-
-	if !f.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, req, f, apiClient, orgID)
-	}
 
 	if !controllerutil.ContainsFinalizer(f, AuraIPFilterFinalizer) {
 		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraIPFilter) {
@@ -126,6 +125,12 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		allowCreate := managementAllows(f.Spec.ManagementPolicies, auraPolicyCreate)
 		id, adopted, err := r.observeOrCreate(ctx, req, f, apiClient, orgID, entities, allowCreate)
 		if err != nil {
+			// A 429, a 5xx or a transport failure of an Aura call is retried as it
+			// is, not recorded as a failure (knowledge rule 88).
+			if isRetryableAuraCall(err) {
+				logger.Info("IP filter create deferred by a transient API failure; retrying", "error", err.Error())
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+			}
 			return r.fail(ctx, req, f, "CreateFailed", err)
 		}
 		if id == "" {
@@ -158,11 +163,16 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		}
 	}
 
-	if err := r.syncStatus(ctx, req, f, observed); err != nil {
+	changed, err := r.syncStatus(ctx, req, f, observed)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterReady,
-		fmt.Sprintf("IP filter %s reconciled", observed.ID))
+	// Announced when the filter becomes Ready, not on every re-observe while it
+	// stays so (knowledge rule 136).
+	if changed {
+		r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterReady,
+			fmt.Sprintf("IP filter %s reconciled", observed.ID))
+	}
 	// Re-observe periodically to catch out-of-band drift.
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
@@ -175,7 +185,7 @@ func (r *AuraIPFilterReconciler) observeOrCreate(
 	name := r.filterName(f)
 	existing, err := apiClient.ListIPFilters(ctx, orgID)
 	if err != nil {
-		return "", false, fmt.Errorf("listing ip filters before create: %w", err)
+		return "", false, retryableAuraCall(fmt.Errorf("listing ip filters before create: %w", err))
 	}
 	for i := range existing {
 		if existing[i].Name == name {
@@ -200,7 +210,7 @@ func (r *AuraIPFilterReconciler) observeOrCreate(
 		FilteringDisabled: &disabled,
 	})
 	if err != nil {
-		return "", false, err
+		return "", false, retryableAuraCall(err)
 	}
 	cid := created.ID
 	if err := r.setExternalID(ctx, req, cid); err != nil {
@@ -252,8 +262,13 @@ func (r *AuraIPFilterReconciler) reconcileDrift(
 	return true, ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 
+// handleDeletion honours the deletion policy: Orphan (default) leaves the
+// filter in Aura; Delete deletes it. Only Delete calls Aura, so only it
+// resolves the credentials and the organization; one that cannot resolve them
+// waits finalizerDeletionGracePeriod, then orphans the filter and says so
+// (knowledge rule 157).
 func (r *AuraIPFilterReconciler) handleDeletion(
-	ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, apiClient auraIPFilterAPI, orgID string,
+	ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter,
 ) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(f, AuraIPFilterFinalizer) {
 		return ctrl.Result{}, nil
@@ -263,7 +278,23 @@ func (r *AuraIPFilterReconciler) handleDeletion(
 		externalID = f.Status.FilterID
 	}
 	deleteCloud := f.Spec.DeletionPolicy == "Delete" && managementAllows(f.Spec.ManagementPolicies, auraPolicyDelete)
-	if deleteCloud && externalID != "" && orgID != "" {
+	var (
+		apiClient auraIPFilterAPI
+		orgID     string
+		targetErr error
+	)
+	if deleteCloud && externalID != "" {
+		apiClient, orgID, targetErr = r.deletionTarget(ctx, f)
+		if targetErr != nil && !deletionGracePeriodExceeded(f) {
+			return r.fail(ctx, req, f, "CredentialsUnavailable",
+				auraDeletionNeedsCredentials(f, "IP filter", externalID, targetErr))
+		}
+	}
+	switch {
+	case deleteCloud && externalID != "" && targetErr != nil:
+		r.Recorder.Event(f, corev1.EventTypeWarning, EventReasonAuraIPFilterOrphaned,
+			auraOrphanedWithoutCredentials("IP filter", externalID, "it stays in place in Aura", targetErr))
+	case deleteCloud && externalID != "":
 		if err := apiClient.DeleteIPFilter(ctx, orgID, externalID); err != nil {
 			if aura.IsConflict(err) || aura.IsTransient(err) {
 				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
@@ -274,13 +305,37 @@ func (r *AuraIPFilterReconciler) handleDeletion(
 		}
 		r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterDeleted,
 			fmt.Sprintf("Deleted IP filter %s", externalID))
-	} else if externalID != "" {
+	case externalID != "":
 		r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterOrphaned,
 			fmt.Sprintf("Orphaning IP filter %s; it stays in place in Aura", externalID))
 	}
 	return ctrl.Result{}, r.patch(ctx, req, func(o *neo4jv1beta1.AuraIPFilter) {
 		controllerutil.RemoveFinalizer(o, AuraIPFilterFinalizer)
 	})
+}
+
+// deletionTarget resolves what deleting the filter in Aura needs: the client,
+// from the credentials, and the organization. Both come from the provider
+// config when the CR names one, so a deleted provider config takes both away.
+func (r *AuraIPFilterReconciler) deletionTarget(ctx context.Context, f *neo4jv1beta1.AuraIPFilter) (auraIPFilterAPI, string, error) {
+	creds, err := resolveAuraCredentials(ctx, r.Client, f.Namespace, f.Spec.ProviderConfigRef, f.Spec.CredentialsSecretRef)
+	if err != nil {
+		return nil, "", err
+	}
+	orgID := r.orgID(ctx, f)
+	if orgID == "" {
+		return nil, "", fmt.Errorf("organizationId is required (set it on the CR or as defaultOrganizationId on the AuraProviderConfig)")
+	}
+	return resolveIPFilterClient(r.ClientFactory, creds), orgID, nil
+}
+
+// orgID is the filter's organization: spec.organizationId, else the provider
+// config's defaultOrganizationId. Empty when neither is set.
+func (r *AuraIPFilterReconciler) orgID(ctx context.Context, f *neo4jv1beta1.AuraIPFilter) string {
+	if f.Spec.OrganizationID != "" {
+		return f.Spec.OrganizationID
+	}
+	return r.providerDefaultOrgID(ctx, f)
 }
 
 // resolveEntities resolves spec.instanceRefs to Aura instance IDs (via the
@@ -427,27 +482,44 @@ func (r *AuraIPFilterReconciler) setCondition(ctx context.Context, req ctrl.Requ
 	})
 }
 
-func (r *AuraIPFilterReconciler) syncStatus(ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, observed *aura.IPFilter) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+// syncStatus records the filter as Ready, only when that changes the status or
+// the stored lastSyncedTime is due a refresh (auraSyncedTimeRefresh). It reports
+// whether the write changed the phase or the Ready condition, from the attempt
+// whose write succeeded, so the caller announces Ready once (knowledge rule 136).
+func (r *AuraIPFilterReconciler) syncStatus(ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, observed *aura.IPFilter) (bool, error) {
+	changed := false
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		changed = false
 		latest := &neo4jv1beta1.AuraIPFilter{}
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
-		latest.Status.FilterID = observed.ID
-		latest.Status.Phase = "Ready"
-		now := metav1.Now()
-		latest.Status.LastSyncedTime = &now
-		latest.Status.ObservedGeneration = latest.Generation
-		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
+		before := latest.Status.DeepCopy()
+		readyCond := metav1.Condition{
 			Type: "Ready", Status: metav1.ConditionTrue, Reason: "Reconciled",
 			Message: "IP filter reconciled against the Aura API (v2beta1, beta)",
-		})
+		}
+		wouldChange := latest.Status.Phase != neo4jv1beta1.PhaseReady || auraConditionChanged(latest.Status.Conditions, readyCond)
+		latest.Status.FilterID = observed.ID
+		latest.Status.Phase = neo4jv1beta1.PhaseReady
+		latest.Status.ObservedGeneration = latest.Generation
+		meta.SetStatusCondition(&latest.Status.Conditions, readyCond)
 		meta.SetStatusCondition(&latest.Status.Conditions, metav1.Condition{
 			Type: "Synced", Status: metav1.ConditionTrue, Reason: "Observed",
 			Message: "Reconciled against the Aura API (v2beta1, beta)",
 		})
-		return r.Status().Update(ctx, latest)
+		now := metav1.Now()
+		if !auraStatusWriteNeeded(*before, latest.Status, before.LastSyncedTime, now.Time) {
+			return nil
+		}
+		latest.Status.LastSyncedTime = &now
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = wouldChange
+		return nil
 	})
+	return changed, err
 }
 
 func (r *AuraIPFilterReconciler) fail(ctx context.Context, req ctrl.Request, f *neo4jv1beta1.AuraIPFilter, reason string, cause error) (ctrl.Result, error) {

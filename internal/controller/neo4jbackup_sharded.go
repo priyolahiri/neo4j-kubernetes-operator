@@ -96,8 +96,9 @@ func (r *Neo4jBackupReconciler) shardedPreflightStatic(ctx context.Context, back
 }
 
 // shardedPreflightGlobSafety runs the expensive `SHOW DATABASES` check that
-// guards against the neo4j-admin glob `{logical-name}*` pulling in unrelated
-// databases (e.g. a backup for "products" silently including "productsales").
+// guards against the neo4j-admin patterns `{logical-name}-g*` /
+// `{logical-name}-p*` pulling in unrelated databases (e.g. a backup for
+// "products" silently including a database named "products-gold").
 // Only call this for ShardedDatabase kinds AND only at Job-creation time —
 // running it on every reconcile would issue a Bolt query every poll.
 //
@@ -123,36 +124,46 @@ func (r *Neo4jBackupReconciler) shardedPreflightGlobSafety(ctx context.Context, 
 
 	logical := r.shardedLogicalNameForBackup(ctx, backup)
 	if poisoning := shardedGlobPoisoning(logical, dbs); len(poisoning) > 0 {
-		return fmt.Errorf("backup glob %q would also match unrelated database(s): %v — rename or drop the conflicting database(s) before running this backup", logical+"*", poisoning)
+		return fmt.Errorf("backup patterns %s would also match unrelated database(s): %v — rename or drop the conflicting database(s) before running this backup", strings.Join(shardedBackupPatterns(logical), " "), poisoning)
 	}
 	return nil
 }
 
+// shardedBackupPatterns are the database patterns a sharded backup passes
+// neo4j-admin: the family's graph shard and its property shards,
+// `<logical>-g*` and `<logical>-p*`, the name lower-cased as Neo4j names the
+// shards. One pattern `<logical>*` (the Operations Manual's example) also
+// matched every database whose name merely begins with the logical name: a
+// copy restored beside it as `ProductsCopy` made `Products*` take
+// `productscopy-g000` along, and the glob-safety check refused every backup
+// of `Products` after the restore (v1.22.x walk). neo4j-admin takes several
+// patterns in one run (`[<database>...]`), and `*` is one or more characters
+// (ConfigPatternBuilder).
+func shardedBackupPatterns(logical string) []string {
+	name := strings.ToLower(logical)
+	return []string{name + "-g*", name + "-p*"}
+}
+
 // shardedGlobPoisoning returns the databases in a SHOW DATABASES listing that
-// the backup glob `{logical}*` would match outside the sharded family itself.
+// the backup patterns (shardedBackupPatterns) would match outside the sharded
+// family itself: a name that begins with `<logical>-g` or `<logical>-p` and is
+// not a shard, `<logical>-(g|p)NNN`.
 //
-// Names are compared lower-cased. neo4j-admin matches the glob ignoring case
-// (DatabaseNamePattern compiles it CASE_INSENSITIVE) and SHOW DATABASES lists
-// every name lower-cased, while the logical name comes from spec, which may
-// spell it with capitals. Compared as written, `Products` matched no database
-// at all, so the check passed while the backup took `productsales` along.
+// Names are compared lower-cased. neo4j-admin matches the patterns ignoring
+// case (DatabaseNamePattern compiles them CASE_INSENSITIVE) and SHOW DATABASES
+// lists every name lower-cased, while the logical name comes from spec, which
+// may spell it with capitals. A database that only begins with the logical
+// name (`productsales`, `productscopy-g000`) is not matched by the patterns
+// and is no concern of this backup.
 func shardedGlobPoisoning(logical string, dbs []neo4jclient.DatabaseInfo) []string {
 	prefix := strings.ToLower(logical)
 	shardPattern := shardedShardNamePattern(prefix)
 	var poisoning []string
 	for _, db := range dbs {
 		// SHOW DATABASES returns duplicate rows per database (one per role).
-		// Filter by name against the prefix and shard regex.
+		// Filter by name against the patterns and the shard regex.
 		name := strings.ToLower(db.Name)
-		if !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		if name == prefix {
-			// The "virtual" aggregated database — same name as the logical
-			// sharded DB. Today this doesn't appear in SHOW DATABASES until
-			// first access (per neo4jshardeddatabase_controller.go), but if a
-			// future Neo4j release surfaces it we still want to allow it
-			// since it's part of the same sharded family.
+		if !matchesShardedBackupPattern(prefix, name) {
 			continue
 		}
 		if shardPattern.MatchString(name) {
@@ -164,6 +175,18 @@ func shardedGlobPoisoning(logical string, dbs []neo4jclient.DatabaseInfo) []stri
 		}
 	}
 	return poisoning
+}
+
+// matchesShardedBackupPattern reports whether neo4j-admin's patterns
+// `<prefix>-g*` / `<prefix>-p*` take the (lower-cased) database name: `*` is
+// at least one character.
+func matchesShardedBackupPattern(prefix, name string) bool {
+	for _, p := range []string{prefix + "-g", prefix + "-p"} {
+		if len(name) > len(p) && strings.HasPrefix(name, p) {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(s []string, v string) bool {
@@ -205,10 +228,13 @@ func (r *Neo4jBackupReconciler) expectedShardArtifactsForBackup(ctx context.Cont
 	}
 
 	// Artifact names carry the LOGICAL database name (what neo4j-admin
-	// actually writes), not the CR name.
-	logical := shardedDB.Spec.Name
+	// actually writes), not the CR name — lower-cased, as neo4j-admin names
+	// every artifact (knowledge operations.md id 146). With the spec's
+	// capitals (`Products-g000`) no shard matched its log line, so the run
+	// waited for its file names until the Job was gone (v1.22.x walk).
+	logical := strings.ToLower(shardedDB.Spec.Name)
 	if logical == "" {
-		logical = backup.Spec.ScopedName()
+		logical = strings.ToLower(backup.Spec.ScopedName())
 	}
 	count := int(shardedDB.Spec.PropertySharding.PropertyShards)
 	if count < 0 {
@@ -306,11 +332,15 @@ func (r *Neo4jBackupReconciler) applyShardedPreflight(ctx context.Context, backu
 // produced a Job that matched zero databases while preflight passed
 // (fresh-eyes journey, v1.12.1). Falls back to the CR name when the CR is
 // gone or spec.name is empty (where the two were always equal anyway).
+//
+// The name is lower-cased: it is the name Neo4j gives the database and its
+// shards, and the one neo4j-admin writes into the artifacts and its log,
+// whatever capitals spec.name has (knowledge operations.md id 146).
 func (r *Neo4jBackupReconciler) shardedLogicalNameForBackup(ctx context.Context, backup *neo4jv1beta1.Neo4jBackup) string {
 	ns := backup.Namespace
 	shardedDB := &neo4jv1beta1.Neo4jShardedDatabase{}
 	if err := r.Get(ctx, types.NamespacedName{Name: backup.Spec.ScopedName(), Namespace: ns}, shardedDB); err != nil || shardedDB.Spec.Name == "" {
-		return backup.Spec.ScopedName()
+		return strings.ToLower(backup.Spec.ScopedName())
 	}
-	return shardedDB.Spec.Name
+	return strings.ToLower(shardedDB.Spec.Name)
 }

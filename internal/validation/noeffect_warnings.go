@@ -18,6 +18,7 @@ package validation
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -63,11 +64,34 @@ func tlsNoEffectWarnings(tls *neo4jv1beta1.TLSSpec, resourceName string) []strin
 			"certificate chain, point spec.tls.issuerRef at an Issuer backed by it", resourceName))}
 }
 
+// routeNoEffectWarnings covers the OpenShift Routes the cluster and the
+// standalone share: spec.service.route and the MCP server's
+// spec.mcp.http.service.route. tls.secretName is rendered into neither — a
+// Route has no field that names a certificate Secret the way an Ingress does —
+// so the router serves the certificate it would serve anyway (#536).
+func routeNoEffectWarnings(service *neo4jv1beta1.ServiceSpec, mcp *neo4jv1beta1.MCPServerSpec) []string {
+	const instead = "the Route carries no certificate of its own, so the OpenShift router serves its default " +
+		"certificate for edge and reencrypt, and passthrough serves the Neo4j server's own (spec.tls). To serve " +
+		"another certificate at the router, add it to the Route itself (spec.tls.certificate and spec.tls.key, " +
+		"or spec.tls.externalCertificate where your OpenShift supports it); the operator leaves it in place"
+	var warnings []string
+	if service != nil && service.Route != nil && service.Route.TLS != nil && service.Route.TLS.SecretName != "" {
+		warnings = append(warnings, NoEffectWarning(field.NewPath("spec", "service", "route", "tls", "secretName"), instead))
+	}
+	if mcp != nil && mcp.HTTP != nil && mcp.HTTP.Service != nil && mcp.HTTP.Service.Route != nil &&
+		mcp.HTTP.Service.Route.TLS != nil && mcp.HTTP.Service.Route.TLS.SecretName != "" {
+		warnings = append(warnings, NoEffectWarning(
+			field.NewPath("spec", "mcp", "http", "service", "route", "tls", "secretName"), instead))
+	}
+	return warnings
+}
+
 // NoEffectWarnings reports cluster spec fields that are set but not read, plus
 // the advisory AuthProviderWarnings, which share the same ValidationWarning
 // channel.
 func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
 	warnings := tlsNoEffectWarnings(cluster.Spec.TLS, cluster.Name)
+	warnings = append(warnings, routeNoEffectWarnings(cluster.Spec.Service, cluster.Spec.MCP)...)
 
 	if p := cluster.Spec.Topology.Placement; p != nil {
 		placementPath := field.NewPath("spec", "topology", "placement")
@@ -118,6 +142,7 @@ func maxUnavailableNoEffectWarning(strategy *neo4jv1beta1.UpgradeStrategySpec, i
 // the reconciler turns into events.
 func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []string {
 	warnings := tlsNoEffectWarnings(standalone.Spec.TLS, standalone.Name)
+	warnings = append(warnings, routeNoEffectWarnings(standalone.Spec.Service, standalone.Spec.MCP)...)
 
 	// strictPeerValidation picks the CLUSTER SSL policy. It is read for
 	// Neo4jEnterpriseCluster only; a standalone has no intra-cluster traffic and
@@ -136,7 +161,48 @@ func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnt
 		"a standalone has one server; remove it"); w != "" {
 		warnings = append(warnings, w)
 	}
+	warnings = append(warnings, standaloneUpgradeTimeoutWarnings(standalone.Spec.UpgradeStrategy)...)
 	return append(warnings, AuthProviderWarnings(standalone.Spec.Auth, field.NewPath("spec", "auth"))...)
+}
+
+// standaloneUpgradeTimeoutWarnings covers the upgradeStrategy timeouts, which
+// bound steps of a cluster's rolling upgrade that a standalone's upgrade does
+// not have: it checks the server is reachable (preUpgradeHealthCheck, with
+// autoPauseOnFailure), then replaces its one pod. Nothing on the standalone's
+// path reads them. The CRD gives each a default wherever upgradeStrategy is
+// present, so the default cannot be told from "never mentioned" and stays
+// silent; a value meaning the same duration ("1800s") is the default too.
+//
+// postUpgradeHealthCheck is not read on a standalone either, and has no
+// warning: false says no check runs after the upgrade, which is what happens,
+// and true is its default.
+func standaloneUpgradeTimeoutWarnings(strategy *neo4jv1beta1.UpgradeStrategySpec) []string {
+	if strategy == nil {
+		return nil
+	}
+	path := field.NewPath("spec", "upgradeStrategy")
+	timeouts := []struct {
+		name, value string
+		crdDefault  time.Duration
+		bounds      string
+	}{
+		{"upgradeTimeout", strategy.UpgradeTimeout, 30 * time.Minute, "each step of a cluster's rolling upgrade"},
+		{"healthCheckTimeout", strategy.HealthCheckTimeout, 5 * time.Minute, "the check, after a cluster's upgrade, that every server runs the new version"},
+		{"stabilizationTimeout", strategy.StabilizationTimeout, 3 * time.Minute, "a cluster's wait for its servers to settle after its upgrade"},
+	}
+	var warnings []string
+	for _, timeout := range timeouts {
+		if timeout.value == "" {
+			continue
+		}
+		if d, err := time.ParseDuration(timeout.value); err == nil && d == timeout.crdDefault {
+			continue
+		}
+		warnings = append(warnings, NoEffectWarning(path.Child(timeout.name), fmt.Sprintf(
+			"it bounds %s, and a standalone's upgrade has no such step: the operator checks the server is reachable "+
+				"(preUpgradeHealthCheck) and replaces its one pod. Remove it", timeout.bounds)))
+	}
+	return warnings
 }
 
 // pluginNoEffectWarnings reports Neo4jPlugin spec fields that are set but not

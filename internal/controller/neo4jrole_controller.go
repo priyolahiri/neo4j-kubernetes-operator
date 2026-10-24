@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -25,6 +26,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -70,6 +72,32 @@ type Neo4jRoleReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// newDeletionClient connects the deletion to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newDeletionClient func(ResolvedTarget) (roleDeletionClient, error)
+
+	// connectTarget connects the reconcile to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests make the connection fail here.
+	connectTarget func(ResolvedTarget) (*neo4jclient.Client, error)
+}
+
+// roleDeletionClient is what the Neo4jRole deletion asks of Neo4j.
+// *neo4jclient.Client is one.
+type roleDeletionClient interface {
+	DropRoleIfExists(ctx context.Context, roleName string) error
+	Close() error
+}
+
+func (r *Neo4jRoleReconciler) connectForDeletion(target ResolvedTarget) (roleDeletionClient, error) {
+	if r.newDeletionClient != nil {
+		return r.newDeletionClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jroles,verbs=get;list;watch;create;update;patch;delete
@@ -137,16 +165,21 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(role.Spec.ClusterRef))
-		r.setNamedCondition(ctx, role, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
-		r.setStatus(ctx, role, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, nil, false)
+		r.waitForTarget(ctx, role, ConditionReasonClusterNotReady,
+			fmt.Sprintf("%s is not Ready", targetRefDisplay(role.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
-	r.setNamedCondition(ctx, role, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Connect
-	nc, err := target.NewClient(r.Client)
+	connect := target.NewClient
+	if r.connectTarget != nil {
+		connect = func(client.Client) (*neo4jclient.Client, error) { return r.connectTarget(target) }
+	}
+	nc, err := connect(r.Client)
 	if err != nil {
+		if targetUnreachable(err) {
+			return r.unreachable(ctx, role, err, requeue)
+		}
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (knowledge
 		// rule 145).
@@ -160,6 +193,9 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
+	// Only a target that answered is ready for this role: written after the
+	// connection, so an unreachable one keeps the time its outage began.
+	r.setNamedCondition(ctx, role, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Ensure role exists
 	info, err := nc.ShowRole(ctx, roleName)
@@ -338,21 +374,28 @@ func (r *Neo4jRoleReconciler) finishReconcile(
 			"applied %d added / %d revoked privileges", applied, revoked)
 	}
 
-	// Emit RoleReady on the first transition to Ready (avoids spamming the
-	// event stream on every reconcile after the role is already Ready).
-	if role.Status.Phase != "Ready" {
-		r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleReady,
-			"Role %q is ready (%d privileges in sync)", roleName, len(final))
-	}
-
 	readyMsg := fmt.Sprintf("role %q is in sync (%d privileges)", roleName, len(final))
 	if unresolved > 0 {
 		readyMsg = fmt.Sprintf("role %q is in sync (%d privileges; %d skipped until their database exists, see PrivilegesResolve)",
 			roleName, len(final), unresolved)
 	}
-	r.setStatus(ctx, role, "Ready", metav1.ConditionTrue, ConditionReasonRoleReady, readyMsg, final, drift)
+	r.reportReady(ctx, role, roleName, readyMsg, final, drift)
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// reportReady writes the Ready status and announces RoleReady when that write
+// moves the persisted phase into Ready — never from this pass's copy, which
+// the informer cache may hold from before the last write, so it is once per
+// transition. A restart of the target is not one (waitForTarget; knowledge
+// rule 158).
+func (r *Neo4jRoleReconciler) reportReady(
+	ctx context.Context, role *neo4jv1beta1.Neo4jRole, roleName, readyMsg string, final []string, drift bool,
+) {
+	if _, entered := r.writeStatus(ctx, role, "Ready", metav1.ConditionTrue, ConditionReasonRoleReady, readyMsg, final, drift); entered {
+		r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleReady,
+			"Role %q is ready (%d privileges in sync)", roleName, len(final))
+	}
 }
 
 func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1beta1.Neo4jRole, roleName string) (ctrl.Result, error) {
@@ -386,7 +429,7 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connectForDeletion(target)
 	if err != nil {
 		// If we cannot connect, surface the error but do not block deletion
 		// indefinitely.
@@ -397,8 +440,14 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 
 	if err := nc.DropRoleIfExists(ctx, roleName); err != nil {
 		if classifyFinalizerCleanup(role, err) == retryCleanup {
-			r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonRoleDeletionFailed,
-				"DROP ROLE %q failed, will retry: %v", roleName, err)
+			// Retried every RequeueAfter and on every status change of the
+			// target until the drop succeeds or the grace period ends. The
+			// failure is written to status and announced when it starts or
+			// its message changes, not on every retry (knowledge rule 145).
+			msg := fmt.Sprintf("DROP ROLE %q failed, will retry: %v", roleName, err)
+			if r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleDeletionFailed, msg, nil, false) {
+				r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonRoleDeletionFailed, msg)
+			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 		r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonRoleDeletionFailed,
@@ -506,12 +555,22 @@ func (r *Neo4jRoleReconciler) reportUnresolvedPrivilegeDatabases(
 // privilegeDatabaseNames is the deduplicated, order-preserving set of database
 // names a role's privileges target.
 func privilegeDatabaseNames(privileges []string) []string {
+	return distinctPrivilegeTargets(privileges, neo4jclient.PrivilegeDatabaseTargets)
+}
+
+// distinctPrivilegeTargets collects the names targets reads from each
+// statement, in order, each name once, the first spelling kept. Names are
+// de-duplicated ignoring case: `TOPODB` and `topodb` are one database to
+// Neo4j, and an exact comparison listed both spellings in the role's
+// warnings (knowledge rule 146).
+func distinctPrivilegeTargets(stmts []string, targets func(string) []string) []string {
 	var named []string
 	seen := map[string]bool{}
-	for _, stmt := range privileges {
-		for _, name := range neo4jclient.PrivilegeDatabaseTargets(stmt) {
-			if !seen[name] {
-				seen[name] = true
+	for _, stmt := range stmts {
+		for _, name := range targets(stmt) {
+			key := strings.ToLower(name)
+			if !seen[key] {
+				seen[key] = true
 				named = append(named, name)
 			}
 		}
@@ -540,16 +599,7 @@ func unresolvedDatabaseNames(named []string, known map[string]bool) []string {
 func (r *Neo4jRoleReconciler) compositeGraphTargets(
 	ctx context.Context, nc *neo4jclient.Client, role *neo4jv1beta1.Neo4jRole,
 ) []string {
-	var named []string
-	seen := map[string]bool{}
-	for _, stmt := range rolePrivilegeStatements(role) {
-		for _, name := range neo4jclient.PrivilegeGraphTargets(stmt) {
-			if !seen[name] {
-				seen[name] = true
-				named = append(named, name)
-			}
-		}
-	}
+	named := distinctPrivilegeTargets(rolePrivilegeStatements(role), neo4jclient.PrivilegeGraphTargets)
 	if len(named) == 0 {
 		return nil
 	}
@@ -644,32 +694,6 @@ func pluralIs(n int) string {
 	return "are"
 }
 
-// canonicaliseDesired turns the spec privileges into a deduplicated, sorted
-// slice of canonical statements plus a map from each canonical form back to the
-// original spec text. The diff is keyed on the canonical form, but callers
-// execute the original text — the canonical form upper-cases bare tokens
-// (including unquoted identifiers) and is explicitly not safe to feed to Neo4j.
-func (r *Neo4jRoleReconciler) canonicaliseDesired(stmts []string) ([]string, map[string]string, error) {
-	set := map[string]struct{}{}
-	byCanonical := map[string]string{}
-	for _, s := range stmts {
-		canon := neo4jclient.CanonicalisePrivilegeStatement(s)
-		if canon == "" {
-			continue
-		}
-		set[canon] = struct{}{}
-		if _, exists := byCanonical[canon]; !exists {
-			byCanonical[canon] = s // first original wins for a given canonical form
-		}
-	}
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out, byCanonical, nil
-}
-
 // fetchCurrentPrivileges reads SHOW ROLE PRIVILEGES AS COMMANDS and returns:
 //   - canonical: sorted, deduplicated set of canonical statements
 //   - immutable: set (by canonical form) of statements flagged immutable
@@ -726,6 +750,11 @@ func (r *Neo4jRoleReconciler) requeueAfter() time.Duration {
 }
 
 func (r *Neo4jRoleReconciler) fail(ctx context.Context, role *neo4jv1beta1.Neo4jRole, label string, err error, requeue time.Duration) (ctrl.Result, error) {
+	if targetUnreachable(err) {
+		// The target went away mid-pass: an outage, not this role's failure
+		// (knowledge rule 172).
+		return r.unreachable(ctx, role, err, requeue)
+	}
 	msg := label
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
@@ -744,10 +773,29 @@ func (r *Neo4jRoleReconciler) fail(ctx context.Context, role *neo4jv1beta1.Neo4j
 	// goes back as an error, to controller-runtime's backoff. Same rule as
 	// Neo4jReplicaDatabase's fail(). Never return a requeue WITH an error:
 	// controller-runtime ignores it (TestNoRequeueWithError).
-	if isPermanentServerRejection(err) {
+	//
+	// So does a failure that lasts until someone acts and that no backoff
+	// can outwait: a refusal the controller made itself (a built-in role the
+	// target does not have, err nil), and learn mode's state that the API
+	// server will not keep (lastingStatusWriteFailure). A nil err went back as
+	// "done", so nothing requeued the role until another object's change woke
+	// it; the status write went to error backoff, which grows to over a
+	// quarter of an hour, so the role recovered that long after the CRDs were
+	// upgraded (#526).
+	if err == nil || isPermanentServerRejection(err) || lastingStatusWriteFailure(err) {
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	return ctrl.Result{}, err
+}
+
+// lastingStatusWriteFailure reports a failure to write learn mode's state that
+// the same write will meet again: a CRD that prunes the fields
+// (errNeo4jRoleCRDOutdated), a status the API server refuses as invalid, or
+// one too large to store. Conflicts and an unreachable API server are not
+// lasting; they keep error backoff.
+func lastingStatusWriteFailure(err error) bool {
+	return errors.Is(err, errNeo4jRoleCRDOutdated) || apierrors.IsInvalid(err) ||
+		apierrors.IsRequestEntityTooLargeError(err)
 }
 
 // setStatus writes the phase, message and Ready condition. It reports whether
@@ -763,14 +811,30 @@ func (r *Neo4jRoleReconciler) setStatus(
 	appliedPrivileges []string,
 	drift bool,
 ) bool {
-	transitioned := false
+	changed, _ := r.writeStatus(ctx, role, phase, readyStatus, readyReason, message, appliedPrivileges, drift)
+	return changed
+}
+
+// writeStatus is setStatus that also reports whether the write moved the
+// persisted phase into the one given (entered), the transition RoleReady
+// announces.
+func (r *Neo4jRoleReconciler) writeStatus(
+	ctx context.Context,
+	role *neo4jv1beta1.Neo4jRole,
+	phase string,
+	readyStatus metav1.ConditionStatus,
+	readyReason, message string,
+	appliedPrivileges []string,
+	drift bool,
+) (transitioned, entered bool) {
 	update := func() error {
-		transitioned = false
+		transitioned, entered = false, false
 		latest := &neo4jv1beta1.Neo4jRole{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(role), latest); err != nil {
 			return err
 		}
-		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		phaseMoved := latest.Status.Phase != phase
+		changed := phaseMoved || latest.Status.Message != message
 		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message) {
 			changed = true
 		}
@@ -784,14 +848,61 @@ func (r *Neo4jRoleReconciler) setStatus(
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
-		transitioned = changed
+		transitioned, entered = changed, phaseMoved
 		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jRole status")
+		return false, false
+	}
+	return transitioned, entered
+}
+
+// waitForTarget records that the target cannot serve the role (reason
+// ClusterNotReady or ClusterUnreachable): the ClusterNotReady condition, and
+// phase Pending unless the role is already Ready at its generation, which it
+// stays while the target restarts — so the pass that finds the target back
+// announces nothing (recordTargetWait; knowledge rule 158). The status is
+// written only when it changes. It reports lasting when an unreachable target
+// has outlasted targetUnreachableGrace (id 172).
+func (r *Neo4jRoleReconciler) waitForTarget(ctx context.Context, role *neo4jv1beta1.Neo4jRole, reason, msg string) (lasting bool) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jRole{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(role), latest); err != nil {
+			return err
+		}
+		before := latest.Status.DeepCopy()
+		lasting = recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message,
+			latest.Generation, reason, msg, time.Now())
+		latest.Status.ObservedGeneration = latest.Generation
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jRole")
 		return false
 	}
-	return transitioned
+	return lasting
+}
+
+// unreachable handles a target that reads Ready but cannot be reached, as the
+// user's does (Neo4jUserReconciler.unreachable): a role Ready at its
+// generation stays Ready, any other waits in Pending, logged at info and
+// retried on the fixed interval; only an outage that outlasts
+// targetUnreachableGrace is announced, once (knowledge rule 172).
+func (r *Neo4jRoleReconciler) unreachable(ctx context.Context, role *neo4jv1beta1.Neo4jRole, err error, requeue time.Duration) (ctrl.Result, error) {
+	if r.waitForTarget(ctx, role, ConditionReasonClusterUnreachable, targetUnreachableMessage(role.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		if r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, false) {
+			r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	log.FromContext(ctx).Info("Target reads Ready but cannot be reached; retrying",
+		"clusterRef", role.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
 // setNamedCondition writes one named condition, reporting whether it actually

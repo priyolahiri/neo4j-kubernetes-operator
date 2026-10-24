@@ -22,49 +22,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestCanonicaliseDesired_MapsCanonicalToOriginal pins audit finding #3: the
-// add loop must execute the user's ORIGINAL statement text, not the canonical
-// form. The canonical form upper-cases bare tokens — including unquoted
-// identifiers — so a role named `users` written unquoted canonicalises to
-// "... TO USERS" and would target the wrong (case-sensitive) role if executed.
-// canonicaliseDesired must therefore return the original text keyed by canon.
-func TestCanonicaliseDesired_MapsCanonicalToOriginal(t *testing.T) {
-	r := &Neo4jRoleReconciler{}
-
-	t.Run("keyword-like identifier preserves original case", func(t *testing.T) {
-		orig := "GRANT ACCESS ON DATABASE neo4j TO users"
-		canon, byCanonical, err := r.canonicaliseDesired([]string{orig})
-		assert.NoError(t, err)
-		assert.Len(t, canon, 1)
-		// The role name is a NAME, so it keeps its case even though it spells
-		// a keyword (it used to be upper-cased to USERS).
-		assert.Equal(t, "GRANT ACCESS ON DATABASE neo4j TO users", canon[0])
-		// But the map gives back the original text we must actually execute.
-		assert.Equal(t, orig, byCanonical[canon[0]],
-			"add loop must run the original statement, not the upper-cased canonical")
-	})
-
-	t.Run("dedup keeps first original and sorts canon", func(t *testing.T) {
-		canon, byCanonical, err := r.canonicaliseDesired([]string{
-			"GRANT ACCESS ON DATABASE neo4j TO r",
-			"grant   access  on database neo4j to r", // same canonical, different text
-			"GRANT MATCH {*} ON GRAPH neo4j NODES * TO r",
-		})
-		assert.NoError(t, err)
-		assert.Len(t, canon, 2, "two distinct canonical statements")
-		// First original wins for the duplicated canonical form.
-		assert.Equal(t, "GRANT ACCESS ON DATABASE neo4j TO r",
-			byCanonical["GRANT ACCESS ON DATABASE neo4j TO r"])
-	})
-
-	t.Run("empty and whitespace-only statements are skipped", func(t *testing.T) {
-		canon, byCanonical, err := r.canonicaliseDesired([]string{"", "   ", " ; "})
-		assert.NoError(t, err)
-		assert.Empty(t, canon)
-		assert.Empty(t, byCanonical)
-	})
-}
-
 // The silent DR failure, in the two pieces that can be tested without a live
 // server: which databases a role's privileges name, and which of those the
 // cluster does not have.

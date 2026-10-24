@@ -739,7 +739,7 @@ make undeploy-prod
 **Cluster Name**: `neo4j-operator-dev`
 
 #### `make dev-down`
-**Description**: Tear down the complete dev environment (delegates to `dev-destroy`: runs `hack/cleanup-dev.sh` and deletes the `neo4j-operator-dev` cluster).
+**Description**: Tear down the complete dev environment (delegates to `dev-destroy`: deletes the `neo4j-operator-dev` cluster, and with it every Kubernetes resource of the dev environment). It asks nothing; local files are left alone — `make dev-cleanup` removes build artifacts.
 **Usage**: `make dev-down`
 
 ### Cluster Management
@@ -807,14 +807,13 @@ make dev-cleanup
 ```
 
 #### `make dev-destroy`
-**Description**: Complete development environment destruction
+**Description**: Delete the development cluster, without prompting. Deleting the Kind cluster removes every Kubernetes resource the dev environment has; local files (`bin/`, `tmp/`, `dist/`) are left alone. It used to run `hack/cleanup-dev.sh` first, which asked for confirmation on a terminal: its resource pass acts on the current kubectl context, which need not be the dev cluster, and its file pass removes `bin/`, tools and envtest assets included. That script is `make dev-cleanup`.
 **Usage**: `make dev-destroy`
 **Example**:
 ```bash
 make dev-destroy
-# Removes all development artifacts
-# Deletes development cluster
-# Complete cleanup
+# Deletes the neo4j-operator-dev Kind cluster
+# Leaves bin/, tmp/ and dist/ alone (make dev-cleanup removes them, and asks)
 ```
 
 ### Operator Management

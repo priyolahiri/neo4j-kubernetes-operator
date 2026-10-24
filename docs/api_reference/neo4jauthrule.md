@@ -55,7 +55,7 @@ Before applying a `Neo4jAuthRule`:
 | `RolesSynced` | Granted roles match `spec.grantedRoles`. |
 | `OIDCProviderConfigured` | Cluster has `dbms.security.abac.authorization_providers` set. |
 | `AuthRuleVersionTooOld` | Cluster version is below 2026.03; reconcile is paused. |
-| `ClusterNotReady` | Cluster has not reached its `Ready` phase. |
+| `ClusterNotReady` | Cluster has not reached its `Ready` phase (reason `ClusterNotReady`), or reads `Ready` but refuses the connection (reason `ClusterUnreachable`; a `ConnectionFailed` failure only after 5 minutes). A rule that is `Ready` keeps phase `Ready` meanwhile (a restart); any other waits in `Pending`. |
 | `PendingDependencies` | One or more `grantedRoles` do not yet exist. |
 
 ## Cypher condition syntax
@@ -163,7 +163,7 @@ Set `enforceRoles: false` to disable the revoke step (additions still happen) �
 
 - **Create**: the controller adds the `neo4j.com/authrule-finalizer`, runs `CREATE OR REPLACE AUTH RULE`, then grants `spec.grantedRoles`.
 - **Update**: edits to `spec` trigger drift reconciliation as described above.
-- **Delete (`Drop`, default)**: `DROP AUTH RULE … IF EXISTS` on the cluster, finalizer released. If the cluster is gone or downgraded below 2026.03, the finalizer is released without remote action.
+- **Delete (`Drop`, default)**: `DROP AUTH RULE … IF EXISTS` on the cluster, finalizer released. If the cluster is gone or downgraded below 2026.03, the finalizer is released without remote action. A failed drop is recorded in status (phase `Failed`, reason `AuthRuleFailed`), announced once, and retried for up to 5 minutes before the finalizer is released anyway.
 - **Delete (`Retain`)**: finalizer released; rule left in Neo4j.
 
 ## Limitations

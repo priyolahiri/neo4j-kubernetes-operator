@@ -231,7 +231,9 @@ func TestImageValidator_Validate(t *testing.T) {
 	}
 }
 
-func TestImageValidator_isVersionSupported(t *testing.T) {
+// The supported-version rule of Validate (5.26.x or CalVer 2025.01+), over
+// the tag alone. An empty tag is a different error (required), still one.
+func TestImageValidator_SupportedVersions(t *testing.T) {
 	validator := NewImageValidator()
 
 	tests := []struct {
@@ -265,7 +267,10 @@ func TestImageValidator_isVersionSupported(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
-			result := validator.isVersionSupported(tt.version)
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{
+				Image: neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: tt.version},
+			}}
+			result := len(validator.Validate(cluster)) == 0
 			assert.Equal(t, tt.supported, result, "Version %s support expected: %v, got: %v", tt.version, tt.supported, result)
 		})
 	}

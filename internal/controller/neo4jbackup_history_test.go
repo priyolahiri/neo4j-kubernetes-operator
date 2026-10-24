@@ -467,10 +467,12 @@ func TestRecordOneShotBackupRun_FailedJobAppendsToHistory(t *testing.T) {
 // recorded/finalized while the Pod is still alive — recordOneShotBackupRun
 // returns false so the caller requeues to retry the log read before the Job TTL
 // GCs the Pod. Once the Pod is gone, it records best-effort (returns true).
+// The Job finished just now: the wait is bounded by artifactCaptureGrace
+// (TestRecordOneShotBackupRun_StopsWaitingAfterTheGrace).
 func TestRecordOneShotBackupRun_DefersWhenMetadataMissingAndPodAlive(t *testing.T) {
 	ctx := context.Background()
 	ns := "default"
-	start := metav1.NewTime(time.Date(2026, 6, 4, 8, 0, 0, 0, time.UTC))
+	start := metav1.NewTime(time.Now().Add(-time.Minute).Truncate(time.Second))
 	end := metav1.NewTime(start.Add(30 * time.Second))
 	succeededJob := &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{UID: types.UID("uid-ok"), Name: "b-backup", Namespace: ns},
@@ -515,6 +517,40 @@ func TestRecordOneShotBackupRun_DefersWhenMetadataMissingAndPodAlive(t *testing.
 		require.Len(t, got.Status.History, 1)
 		assert.Equal(t, "Succeeded", got.Status.History[0].Status)
 	})
+}
+
+// A log that does not name the artifacts when the Job finished never will.
+// The run waited for the Pod to go, which the Job's 30-minute TTL takes with
+// it: a sharded backup whose shard names never matched its log stayed Running
+// for 30 minutes and then lost its Job under it (v1.22.x walk). After
+// artifactCaptureGrace the run is recorded, the Pod still there.
+func TestRecordOneShotBackupRun_StopsWaitingAfterTheGrace(t *testing.T) {
+	ctx := context.Background()
+	ns := "default"
+	finished := metav1.NewTime(time.Now().Add(-artifactCaptureGrace - time.Minute).Truncate(time.Second))
+	start := metav1.NewTime(finished.Add(-30 * time.Second))
+	job := &batchv1.Job{
+		ObjectMeta: metav1.ObjectMeta{UID: types.UID("uid-ok"), Name: "b-backup", Namespace: ns},
+		Status: batchv1.JobStatus{
+			Succeeded: 1, StartTime: &start, CompletionTime: &finished,
+			Conditions: []batchv1.JobCondition{{Type: batchv1.JobComplete, Status: "True"}},
+		},
+	}
+	backup := &neo4jv1beta1.Neo4jBackup{
+		ObjectMeta: metav1.ObjectMeta{Name: "b", Namespace: ns},
+		Spec:       neo4jv1beta1.Neo4jBackupSpec{InstanceRef: "c", Database: "neo4j"},
+	}
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{
+		Name: "b-backup-xyz", Namespace: ns,
+		Labels: map[string]string{"batch.kubernetes.io/job-name": "b-backup"},
+	}}
+	r := newBackupTestReconcilerWithStatus(t, backup, pod)
+
+	assert.True(t, r.recordOneShotBackupRun(ctx, backup, job), "the grace has passed; the Pod being there changes nothing")
+	got := &neo4jv1beta1.Neo4jBackup{}
+	require.NoError(t, r.Get(ctx, client.ObjectKey{Name: "b", Namespace: ns}, got))
+	require.Len(t, got.Status.History, 1)
+	assert.Equal(t, "Succeeded", got.Status.History[0].Status)
 }
 
 // TestBackupPodExists pins the Pod-liveness probe that gates the requeue.

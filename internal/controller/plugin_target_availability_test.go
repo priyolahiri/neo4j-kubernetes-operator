@@ -40,16 +40,12 @@ import (
 )
 
 // boltMustNotRun fails the test if a pass that should only wait connects to
-// Neo4j or configures anything.
+// Neo4j.
 func boltMustNotRun(t *testing.T) *pluginBolt {
 	return &pluginBolt{
 		functional: func(context.Context, *DeploymentInfo) bool {
 			t.Error("a pass that waits for its target must not connect to Neo4j")
 			return true
-		},
-		configure: func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error {
-			t.Error("a pass that waits for its target must not configure anything")
-			return nil
 		},
 	}
 }

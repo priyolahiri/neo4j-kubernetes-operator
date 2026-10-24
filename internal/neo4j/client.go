@@ -1412,35 +1412,6 @@ func isTransientNeo4jError(err error) bool {
 		strings.Contains(msg, "please retry the transaction")
 }
 
-// CheckUpgradeCompatibility checks if an upgrade to the specified version is compatible
-func (c *Client) CheckUpgradeCompatibility(ctx context.Context, targetVersion string) error {
-	// Get current version
-	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
-		AccessMode: neo4j.AccessModeRead,
-	})
-	defer session.Close(ctx)
-
-	result, err := session.Run(ctx, "CALL dbms.components() YIELD versions RETURN versions[0] as version", nil)
-	if err != nil {
-		return fmt.Errorf("failed to get current version: %w", err)
-	}
-
-	if !result.Next(ctx) {
-		return fmt.Errorf("no version information found")
-	}
-
-	record := result.Record()
-	currentVersion, _ := record.Get("version")
-
-	// Simplified version compatibility check
-	// In a real implementation, this would check Neo4j upgrade matrix
-	if fmt.Sprintf("%v", currentVersion) == targetVersion {
-		return fmt.Errorf("target version %s is the same as current version", targetVersion)
-	}
-
-	return nil
-}
-
 // IsClusterHealthy checks if the cluster is in a healthy state
 func (c *Client) IsClusterHealthy(ctx context.Context) (bool, error) {
 	servers, err := c.GetServerList(ctx)
@@ -1815,8 +1786,18 @@ func (c *Client) GetClusterConsensusState(ctx context.Context) (bool, error) {
 	return enabledServers > totalServers/2, nil
 }
 
-// ValidateUpgradeSafety performs comprehensive upgrade safety checks
-func (c *Client) ValidateUpgradeSafety(ctx context.Context, targetVersion string) error {
+// ValidateUpgradeSafety checks that the cluster is healthy enough to start a
+// rolling upgrade: a majority of servers available, a majority enabled, and a
+// leader.
+//
+// It has no version check. The tag is ordered against what the servers run by
+// the version rule (validation.UpgradeValidator.ValidateTagAgainstRunning),
+// and against what they report by the state machine when it starts. The
+// CheckUpgradeCompatibility it called compared dbms.components() with the tag
+// string: never equal for an "-enterprise" tag, so it refused nothing, while
+// a bare tag ("5.26.31") whose repo alone changed was refused as "the same as
+// current version", failing an image change the servers need (#538).
+func (c *Client) ValidateUpgradeSafety(ctx context.Context) error {
 	// 1. Check cluster health
 	healthy, err := c.IsClusterHealthy(ctx)
 	if err != nil {
@@ -1835,12 +1816,7 @@ func (c *Client) ValidateUpgradeSafety(ctx context.Context, targetVersion string
 		return fmt.Errorf("cluster does not have consensus, upgrade not safe")
 	}
 
-	// 3. Check version compatibility
-	if err := c.CheckUpgradeCompatibility(ctx, targetVersion); err != nil {
-		return fmt.Errorf("version compatibility check failed: %w", err)
-	}
-
-	// 4. Verify we have a leader
+	// 3. Verify we have a leader
 	leader, err := c.GetLeader(ctx)
 	if err != nil {
 		return fmt.Errorf("no cluster leader found: %w", err)

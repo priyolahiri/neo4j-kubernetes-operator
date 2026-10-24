@@ -51,7 +51,7 @@ There is no separate `target` type. Set `spec.instanceRef` to the deployment (a 
 | Scope field | Type | Meaning |
 |-------------|------|---------|
 | `database` | `string` | Back up a single database (e.g. `"neo4j"`, `"mydb"`). |
-| `shardedDatabase` | `string` | The name of a `Neo4jShardedDatabase` CR; backs up all shards of that logical property-sharded database (e.g. a CR whose `spec.name` is `products` → `products-g000`, `products-p000`, …) in one `neo4j-admin` invocation via a glob. |
+| `shardedDatabase` | `string` | The name of a `Neo4jShardedDatabase` CR; backs up all shards of that logical property-sharded database (e.g. a CR whose `spec.name` is `products` → `products-g000`, `products-p000`, …) in one `neo4j-admin` invocation, with the patterns `"<name>-g*" "<name>-p*"` (the name lower-cased; a database that merely begins with the name, such as a restored `productscopy`, is not included). |
 | `allDatabases` | `bool` | Back up every user database on the instance (`neo4j-admin` is invoked with the `"*"` glob, producing one artifact per database; the `system` database is excluded). |
 
 The scope fields are mutually exclusive — set exactly one.
@@ -256,7 +256,7 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 | `phase` | `string` | Current backup phase — see [Backup Phases](#backup-phases) |
 | `message` | `string` | Human-readable message about the current state |
 | `observedGeneration` | `int64` | The `.metadata.generation` most recently observed by the controller |
-| `lastRunTime` | `*metav1.Time` | When the last backup Job started |
+| `lastRunTime` | `*metav1.Time` | When the last backup Job started (set when the backup enters `Running`, not on each pass while it runs) |
 | `lastSuccessTime` | `*metav1.Time` | When a **one-shot** backup completed (set on the `Completed` phase transition). **Never set for scheduled backups** — they don't pass through `Completed`; read `status.history[]` instead. |
 | `nextRunTime` | `*metav1.Time` | **Reserved — not currently populated by the operator.** For scheduled backups the CronJob's own schedule is authoritative (`kubectl get cronjob <name>-backup-cron`); read `status.history[]` for actual run times. |
 | `stats` | [`*BackupStats`](#backupstats) | Statistics from the most recent backup run (only `duration` is populated — see [BackupStats](#backupstats)). |
@@ -271,8 +271,8 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 | `Waiting` | The target cluster/standalone CR doesn't exist yet (common with `kubectl apply -f dir/` ordering) or isn't accepting work yet (a cluster still forming or without a majority; a standalone not `Ready`). A `Degraded` cluster is backed up. Transient — the controller requeues. |
 | `Scheduled` | A CronJob has been created for `spec.schedule`. **This is the steady state for scheduled backups** — they never transition to `Completed`; per-run outcomes accumulate in `status.history[]`. The `Ready` condition is `True` (reason `BackupScheduled`) in this phase. |
 | `Suspended` | `spec.suspend: true` — the CronJob is suspended and one-shot runs are paused. The `Ready` condition is `False` with reason `Suspended` (a deliberate pause, not a failure). |
-| `Running` | A one-shot backup Job is executing. |
-| `Completed` | The one-shot backup Job succeeded. Terminal — re-running requires deleting and recreating the CR. |
+| `Running` | A one-shot backup Job is executing, or has succeeded and the operator is reading the artifact names from its Pod's log ("capturing artifact metadata"; at most 5 minutes after the Job finished, then the run is recorded with what was read). |
+| `Completed` | The one-shot backup Job succeeded. Terminal — re-running requires deleting and recreating the CR. Nothing the operator does afterwards changes it: a pass that read an older copy of the backup checks the phase with the API server before doing anything. |
 | `Failed` | The one-shot backup Job failed terminally (Job `Failed` condition, after retries) or a non-transient error occurred (e.g. chain target/storage mismatch). Terminal for one-shot backups. |
 | `Invalid` | The spec failed validation (clear aggregated message in `status.message`). Recoverable — fixing the spec re-triggers reconcile. |
 
@@ -360,7 +360,7 @@ A typical setup is a daily `FULL` backup CR plus an hourly `DIFF` backup CR that
 
 - Must reference a CR in the **same namespace**.
 - Cannot self-reference (`chainFromBackup: <this-cr-name>` is rejected).
-- Scope (`instanceRef` + database/sharded/all-databases scope) must match the referenced CR.
+- Scope (`instanceRef` + database/sharded/all-databases scope) must match the referenced CR. A database name matches in any case (`Orders` and `orders` are one database, and `neo4j-admin` writes both as `orders-<timestamp>.backup`).
 - Storage backend (type + bucket/path) must match.
 
 **Runtime safety**: the operator labels every backup Job with `app.kubernetes.io/part-of: <chain-root-name>` and refuses to submit a new Job while another Job sharing the same `part-of` label is still active — preventing the daily FULL and hourly DIFF from racing against the same artifact directory.

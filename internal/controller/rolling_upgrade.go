@@ -168,14 +168,18 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 	return nil
 }
 
-// validateVersionCompatibility asks the rule the reconciler's validation runs
-// on every pass (validation.UpgradeValidator.ValidateVersionUpgrade, with the
-// same status.version), so an edit that validation accepted is never refused
-// here, and the two cannot drift apart. An empty current version (never
-// verified, e.g. the first upgrade after the operator was installed against an
-// existing cluster) is not checked.
-func (r *RollingUpgradeOrchestrator) validateVersionCompatibility(currentVersion, targetVersion string) error {
-	if errs := validation.NewUpgradeValidator().ValidateVersionUpgrade(currentVersion, targetVersion); len(errs) > 0 {
+// validateVersionCompatibility asks the whole rule the reconciler's validation
+// runs on every pass (validation.UpgradeValidator.ValidateTagAgainstRunning,
+// with the same status), so an edit that validation accepted is never refused
+// here, and the two cannot drift apart: spec.image.tag against status.version,
+// against what the servers report for a tag without a patch
+// (status.runningVersion), and against an unfinished upgrade that has
+// restarted a server (status.upgradeStatus). It used to ask only the
+// status.version part (#550). An empty status.version (never verified, e.g.
+// the first upgrade after the operator was installed against an existing
+// cluster) is not checked.
+func (r *RollingUpgradeOrchestrator) validateVersionCompatibility(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
+	if errs := validation.NewUpgradeValidator().ValidateTagAgainstRunning(cluster); len(errs) > 0 {
 		return errs.ToAggregate()
 	}
 	return nil

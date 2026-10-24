@@ -84,7 +84,6 @@ func gateReconciler(t *testing.T, bolt *pluginBolt, objs ...client.Object) (*Neo
 	if bolt == nil {
 		bolt = &pluginBolt{
 			functional: func(context.Context, *DeploymentInfo) bool { return true },
-			configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return nil },
 		}
 	}
 	return &Neo4jPluginReconciler{
@@ -317,7 +316,6 @@ func TestReconcile_ThePassThatWritesWaitsForTheGenerationItWrote(t *testing.T) {
 	r := &Neo4jPluginReconciler{Client: c, Scheme: newTestScheme(), Recorder: rec, RequeueAfter: 30 * time.Second,
 		bolt: &pluginBolt{
 			functional: func(context.Context, *DeploymentInfo) bool { return true },
-			configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return nil },
 		}}
 
 	res := reconcilePlugin(t, r, "custom")
@@ -366,7 +364,6 @@ func objects(plugin *neo4jv1beta1.Neo4jPlugin, cluster *neo4jv1beta1.Neo4jEnterp
 func boltDown() *pluginBolt {
 	return &pluginBolt{
 		functional: func(context.Context, *DeploymentInfo) bool { return false },
-		configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return nil },
 	}
 }
 
@@ -856,7 +853,6 @@ func TestPluginWritesFollowTheTargetsRollout_APIServer(t *testing.T) {
 	plugins := &Neo4jPluginReconciler{Client: c, Scheme: scheme, Recorder: rec, RequeueAfter: time.Second,
 		bolt: &pluginBolt{
 			functional: func(context.Context, *DeploymentInfo) bool { return true },
-			configure:  func(context.Context, *neo4jv1beta1.Neo4jPlugin, *DeploymentInfo) error { return nil },
 		}}
 	plugin := verifiedDownloadPlugin()
 	plugin.Namespace, plugin.Generation = ns, 0

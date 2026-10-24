@@ -21,10 +21,12 @@ import (
 	stderrors "errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -153,7 +155,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		return ctrl.Result{}, fmt.Errorf("%s", msg)
 	}
 
-	neo4jClient, err := r.targetClient(target)
+	neo4jClient, err := r.allDatabasesClient(target)
 	if err != nil {
 		logger.Error(err, "Failed to connect for all-databases restore", "kind", target.kind())
 		r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting to connect to %s %q: %v", target.kind(), target.name(), err))
@@ -229,7 +231,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 				r.markDatabaseResult(ctx, restore, db, StatusFailed, fmt.Sprintf("CREATE DATABASE with seedURI failed: %v", cErr))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
-			r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
+			r.progressRecorder().Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
 				fmt.Sprintf("All-databases restore: seeding %q from %s", db, seedURI))
 			r.markDatabaseResult(ctx, restore, db, StatusRunning, "seeding from backup")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -237,6 +239,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		case StatusRunning:
 			online, total, _, stErr := neo4jClient.DatabaseOnlineState(ctx, db)
 			if stErr == nil && total > 0 && online == total {
+				r.seedProgress.forget(restore, db)
 				r.markDatabaseResult(ctx, restore, db, StatusCompleted, "online")
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
@@ -252,16 +255,18 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			// once the state is steady.
 			progress := seedingProgressMessage(online, total, stErr)
 			r.noteDatabaseProgress(ctx, restore, db, progress)
-			// Also emit it EVERY poll. The status message records only the latest
-			// state, so it cannot distinguish "slow" from "stuck": one sample of
-			// "0/1 allocations online" looks identical either way. Event
-			// aggregation supplies what is missing — repeated identical events
-			// collapse into one object with a count and first/last timestamps, so
-			// `kubectl describe` (and the integration suite's own diagnostics dump)
-			// shows whether this database sat at 0/1 from the first poll or worked
-			// through several states.
-			r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreSeedProgress,
-				fmt.Sprintf("database %q: %s", db, progress))
+			// Also announce it as an event. The status message records only the
+			// latest state, so it cannot distinguish "slow" from "stuck": one
+			// sample of "0/1 allocations online" looks identical either way.
+			// Event aggregation supplies what is missing — repeated identical
+			// events collapse into one object with a count and first/last
+			// timestamps, so `kubectl describe` (and the integration suite's own
+			// diagnostics dump) shows whether this database sat at 0/1 from the
+			// first poll or worked through several states. Announced when the
+			// progress changes and every seedProgressRefresh while it does not —
+			// on every poll it spent its event budget (#527) — from the progress
+			// recorder, so it never spends the restore's own.
+			r.seedProgress.announce(r.progressRecorder(), restore, db, progress)
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -275,6 +280,9 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 // post-restore hooks run and the restore is Completed. Either way the restore
 // is over, so it is stamped with status.completionTime (the online loop never
 // set it, so `kubectl get neo4jrestore` showed no end time).
+//
+// The outcome is announced (RestoreCompleted / RestoreFailed) from the status
+// write, once: this path used to end in status alone, with no event.
 func (r *Neo4jRestoreReconciler) finishAllDatabasesRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
 	completion := metav1.Now()
 	restore.Status.CompletionTime = &completion
@@ -285,8 +293,10 @@ func (r *Neo4jRestoreReconciler) finishAllDatabasesRestore(ctx context.Context, 
 		}
 	}
 	if failed > 0 {
-		r.updateRestoreStatus(ctx, restore, StatusFailed,
-			fmt.Sprintf("%d of %d databases failed to restore; see status.databaseResults", failed, len(restore.Status.DatabaseResults)))
+		msg := fmt.Sprintf("%d of %d databases failed to restore; see status.databaseResults", failed, len(restore.Status.DatabaseResults))
+		if r.transitionRestoreStatus(ctx, restore, StatusFailed, msg) {
+			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, "All-databases restore failed: "+msg)
+		}
 		return ctrl.Result{}, nil
 	}
 	if restore.Spec.Options != nil && restore.Spec.Options.PostRestore != nil {
@@ -296,8 +306,10 @@ func (r *Neo4jRestoreReconciler) finishAllDatabasesRestore(ctx context.Context, 
 			return ctrl.Result{}, err
 		}
 	}
-	r.updateRestoreStatus(ctx, restore, StatusCompleted,
-		fmt.Sprintf("Restored %d databases", len(restore.Status.DatabaseResults)))
+	msg := fmt.Sprintf("Restored %d databases", len(restore.Status.DatabaseResults))
+	if r.transitionRestoreStatus(ctx, restore, StatusCompleted, msg) {
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreCompleted, "All-databases restore completed: "+msg)
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -652,4 +664,109 @@ func (r *Neo4jRestoreReconciler) issueGuardAllowsRecreate(ctx context.Context, r
 	// No entry yet on the server — the seeding write has not landed at all, so
 	// this is genuinely the first pass for this database.
 	return true
+}
+
+// allDatabasesRestoreClient is the part of the Neo4j client the all-databases
+// restore loop uses, so a test can drive the loop against a scripted server;
+// production always supplies a *neo4j.Client.
+type allDatabasesRestoreClient interface {
+	DatabaseExists(ctx context.Context, databaseName string) (bool, error)
+	RecreateDatabaseWithSeedURI(ctx context.Context, version *neo4j.Version, databaseName, seedURI string) (bool, error)
+	CreateDatabaseWithSeedURIOptions(ctx context.Context, databaseName, seedURI string, ifNotExists bool) error
+	DatabaseOnlineState(ctx context.Context, databaseName string) (online, total int, diag string, err error)
+	Close() error
+}
+
+// allDatabasesClient connects to the restore's target for the all-databases
+// loop.
+func (r *Neo4jRestoreReconciler) allDatabasesClient(target restoreTarget) (allDatabasesRestoreClient, error) {
+	if r.newAllDatabasesClient != nil {
+		return r.newAllDatabasesClient(target)
+	}
+	c, err := r.targetClient(target)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// seedProgressRefresh is how often a database's unchanged seed progress is
+// announced again. Every RestoreSeedProgress spends the progress recorder's
+// event budget (client-go: a burst of 25 per source, object and event type,
+// then one every five minutes); one every ten minutes gives back more than it
+// spends, and still moves the aggregated event's count and last timestamp,
+// which is how a stall shows (knowledge operations.md id 92), well inside the
+// API server's one-hour event TTL.
+const seedProgressRefresh = 10 * time.Minute
+
+// seedProgressEvents remembers, per restore and database, the progress last
+// announced and when, so a database's progress is announced when it changes
+// and every seedProgressRefresh while it does not — not on every poll, which
+// the 30s requeue made 120 events an hour per seeding database. The zero value
+// is ready to use. State is in memory: an operator restart announces each
+// database's progress once more, which is fine.
+type seedProgressEvents struct {
+	mu        sync.Mutex
+	last      map[string]seedProgressNote
+	lastSweep time.Time
+	// now replaces the clock in tests; nil means time.Now.
+	now func() time.Time
+}
+
+type seedProgressNote struct {
+	progress string
+	at       time.Time
+}
+
+// seedProgressKey names one database of one restore; the UID makes a
+// recreated restore start afresh.
+func seedProgressKey(restore *neo4jv1beta1.Neo4jRestore, database string) string {
+	return fmt.Sprintf("%s/%s/%s/%s", restore.Namespace, restore.Name, restore.UID, database)
+}
+
+// announce emits RestoreSeedProgress for database on rec, unless the same
+// progress was announced within seedProgressRefresh.
+func (s *seedProgressEvents) announce(rec record.EventRecorder, restore *neo4jv1beta1.Neo4jRestore, database, progress string) {
+	if rec == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	if s.now != nil {
+		now = s.now()
+	}
+	if s.last == nil {
+		s.last = map[string]seedProgressNote{}
+	}
+	s.sweepLocked(now)
+	key := seedProgressKey(restore, database)
+	if n, ok := s.last[key]; ok && n.progress == progress && now.Sub(n.at) < seedProgressRefresh {
+		return
+	}
+	rec.Event(restore, corev1.EventTypeNormal, EventReasonRestoreSeedProgress,
+		fmt.Sprintf("database %q: %s", database, progress))
+	s.last[key] = seedProgressNote{progress: progress, at: now}
+}
+
+// forget drops a database whose seed is over.
+func (s *seedProgressEvents) forget(restore *neo4jv1beta1.Neo4jRestore, database string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.last, seedProgressKey(restore, database))
+}
+
+// sweepLocked drops, at most once per seedProgressRefresh, the databases no
+// poll has announced for two refresh periods — those of a deleted restore,
+// mostly. A database still seeding is announced at least once a period.
+func (s *seedProgressEvents) sweepLocked(now time.Time) {
+	if now.Sub(s.lastSweep) < seedProgressRefresh {
+		return
+	}
+	s.lastSweep = now
+	for key, n := range s.last {
+		if now.Sub(n.at) > 2*seedProgressRefresh {
+			delete(s.last, key)
+		}
+	}
 }

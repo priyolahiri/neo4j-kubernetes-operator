@@ -34,7 +34,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `allowList` | `[]object` | **Required.** The allowed source ranges (MinItems 1, MaxItems 1000). Each entry is `{address, prefixLen, description?}` — the v2beta1 API splits CIDR notation into an address plus a prefix length (so `"203.0.113.0/24"` → `address: "203.0.113.0"`, `prefixLen: 24`). |
 | `instanceRefs` | `[]string` | Names of [`AuraInstance`](aurainstance.md)s (same namespace) the filter is applied to; the operator resolves each to its Aura instance ID (the API's `filtered_entities.instances`). Set (dedup), MaxItems 100. Omit to attach the filter out of band. |
 | `filteringDisabled` | `bool` | Turns the filter off without deleting it (the API's `filtering_disabled`). Default `false` (the filter is enforced). |
-| `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (leave the filter in place on CR delete — deleting it would open network access). `Delete` removes it from Aura. |
+| `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (leave the filter in place on CR delete — deleting it would open network access). `Delete` removes it from Aura. `Orphan` needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone; `Delete` waits for the credentials and the organization (`Ready=False`, reason `CredentialsUnavailable`) and after 5 minutes removes the CR anyway with a Warning `AuraIPFilterOrphaned` — the filter stays in place in Aura. |
 | `managementPolicies` | `[]string` | Items enum `Observe` / `Create` / `Update` / `Delete` / `*`. Default `["*"]` (full management). |
 
 ### `allowList[]` (AuraIPFilterAllowEntry)
@@ -53,7 +53,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `phase` | `string` | Mirrors the reconcile outcome: `Pending`, `Ready`, `Error`. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
-| `lastSyncedTime` | `*metav1.Time` | When the filter was last observed from the Aura API. |
+| `lastSyncedTime` | `*metav1.Time` | When the operator last recorded the filter as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile. |
 
 ## Example
 

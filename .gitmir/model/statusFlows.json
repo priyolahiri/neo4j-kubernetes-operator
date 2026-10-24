@@ -25,7 +25,7 @@
       {
         "key": "Ready",
         "name": "Ready",
-        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period. Plugin installs and anything else that rolls the servers wait while Degraded is True. A cluster whose upgrade is Paused or Failed half-way, its servers on two versions, is Ready once every server is available: the servers below the partition the upgrade kept are not a rollout in flight, and status.message names the held upgrade (operations.md id 149)."
+        "description": "Cluster formation is verified and status.endpoints/status.replicas reflect the live serving cluster. A formed cluster short of a server outside a rollout stays Ready, with the Degraded condition True, for the grace period. Plugin installs and anything else that rolls the servers wait while Degraded is True. A cluster whose upgrade is Paused or Failed half-way, its servers on two versions, is Ready once every server is available: the servers below the partition the upgrade kept are not a rollout in flight, and status.message names the held upgrade (operations.md id 149). While an upgrade is in progress, status.message says so (#553)."
       },
       {
         "key": "Degraded",
@@ -35,12 +35,12 @@
       {
         "key": "Paused",
         "name": "Paused",
-        "description": "A rolling-upgrade step failed with upgradeStrategy.autoPauseOnFailure set. It lasts one pass: the next runs the normal path again, which keeps the StatefulSet partition the upgrade left (the servers it has not rolled keep the version they run) and reports Ready, Forming or a server short as for any cluster. status.upgradeStatus.phase stays Paused until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149)."
+        "description": "A rolling-upgrade step failed with upgradeStrategy.autoPauseOnFailure set. It lasts one pass: the next runs the normal path again, which keeps the StatefulSet partition the upgrade left (the servers it has not rolled keep the version they run) and reports Ready, Forming or a server short as for any cluster. status.upgradeStatus.phase stays Paused until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149). A check that refuses an upgrade before it starts no longer sets it: the cluster stays Ready."
       },
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "A validation, resource-creation, storage-expansion, or rolling-upgrade error occurred; status.message and a Warning event carry the cause, and the next reconcile retries. After a rolling-upgrade failure the next pass keeps the partition the upgrade left, so the servers it has not rolled restart only when the upgrade state machine retries (operations.md id 149)."
+        "description": "A validation, resource-creation, storage-expansion, or rolling-upgrade error occurred; status.message and a Warning event carry the cause, and the next reconcile retries. After a rolling-upgrade failure the next pass keeps the partition the upgrade left, so the servers it has not rolled restart only when the upgrade state machine retries (operations.md id 149). Not after a check refuses an upgrade before it starts: nothing changed on the servers and the cluster stays Ready (operations.md id 149)."
       }
     ],
     "transitions": [
@@ -194,7 +194,7 @@
       {
         "key": "Staging",
         "name": "Staging",
-        "description": "Applies the full target-version pod template (image plus version-correct discovery env) with the StatefulSet partition frozen at replicas, then reconciles the ConfigMap under the same freeze."
+        "description": "Applies the full target-version pod template (image plus version-correct discovery env) with the StatefulSet partition frozen at replicas, then reconciles the ConfigMap under the same freeze. Keeps the StatefulSet's replica count (operations.md id 163), and freezes at the lowest restarted server that cannot start on its image instead, so it is replaced first (id 162)."
       },
       {
         "key": "Rolling",
@@ -219,12 +219,12 @@
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "Terminal failure state after a step's deadline or gate is exceeded. The StatefulSet keeps the partition the step left, so the servers not yet rolled stay on status.version; isUpgradeRequired re-enters once the cluster is Ready with every server available and the target and status.version still disagree, and the retry keeps the record's start time and progress (operations.md id 149)."
+        "description": "Terminal failure state after a step's deadline or gate is exceeded. The StatefulSet keeps the partition the step left, so the servers not yet rolled stay on status.version; isUpgradeRequired re-enters once the cluster is Ready with every server available and the target and status.version still disagree, and the retry keeps the record's start time and progress (operations.md id 149). A start a check refused before Staging is Failed too, and is tried again every minute while the cluster stays Ready."
       },
       {
         "key": "Paused",
         "name": "Paused",
-        "description": "Failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed. The StatefulSet keeps the partition the step left. It goes on when the user changes spec.image.tag (towards the new tag) or turns autoPauseOnFailure off (retried like Failed); a tag below the target is refused once the upgrade has restarted a server on it (operations.md id 149)."
+        "description": "Failure state when upgradeStrategy.autoPauseOnFailure is set; never auto-resumed. The StatefulSet keeps the partition the step left. It goes on when the user changes spec.image.tag (towards the new tag) or turns autoPauseOnFailure off (retried like Failed); a tag below the target is refused once the upgrade has restarted a server on it (operations.md id 149). A new tag goes on even while the servers it restarted cannot start on the target: they are replaced first (operations.md id 162)."
       },
       {
         "key": "InProgress",
@@ -396,12 +396,12 @@
       {
         "key": "Running",
         "name": "Running",
-        "description": "A backup Job is currently executing neo4j-admin database backup."
+        "description": "A backup Job is currently executing neo4j-admin database backup, or has succeeded and its artifact names are being read from its Pod's log (at most 5 minutes after the Job finished). lastRunTime is stamped when the backup enters Running."
       },
       {
         "key": "Completed",
         "name": "Completed",
-        "description": "The most recent backup Job reached JobComplete and its run was recorded in status.history."
+        "description": "The most recent backup Job reached JobComplete and its run was recorded in status.history. Final for a one-time backup: read from the API server when a pass's cached copy is not terminal."
       },
       {
         "key": "Failed",
@@ -572,7 +572,7 @@
       {
         "from": "Validating",
         "to": "Creating",
-        "label": "Validation passes"
+        "label": "Validation passes (written on the first pass too: the pass goes on from the status it wrote)"
       },
       {
         "from": "Creating",
@@ -662,7 +662,7 @@
     "id": "sfw-user-lifecycle",
     "entityId": "ent-neo4juser",
     "name": "Neo4jUser reconcile lifecycle",
-    "description": "status.phase transitions (Pending/Failed/Ready) plus the ClusterNotReady, PendingDependencies, RolesSynced, and PasswordSynced named conditions driven each reconcile loop, and the deletion path guarded by the neo4j.com/user-finalizer.",
+    "description": "status.phase transitions (Pending/Failed/Ready) plus the ClusterNotReady, PendingDependencies, RolesSynced, and PasswordSynced named conditions driven each reconcile loop, and the deletion path guarded by the neo4j.com/user-finalizer. A Ready user stays Ready while its target is not Ready (operations.md id 158).",
     "moduleId": "mod-security",
     "states": [
       {
@@ -673,7 +673,7 @@
       {
         "key": "pending",
         "name": "Pending",
-        "description": "status.phase=Pending — set on a missing/not-ready cluster target, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
+        "description": "status.phase=Pending — set on a missing target, a target that is not Ready or reads Ready but cannot be reached when the user is not yet Ready at its generation, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
       },
       {
         "key": "failed",
@@ -693,7 +693,7 @@
       {
         "key": "deletion-failed",
         "name": "DeletionFailed",
-        "description": "DROP USER failed but was classified retryable (classifyFinalizerCleanup); the reconcile requeues and retries instead of releasing the finalizer."
+        "description": "DROP USER failed but was classified retryable (classifyFinalizerCleanup); status.phase=Failed with Ready reason UserDeletionFailed, announced once, and the reconcile requeues and retries instead of releasing the finalizer."
       },
       {
         "key": "removed",
@@ -749,6 +749,16 @@
       },
       {
         "from": "ready",
+        "to": "ready",
+        "label": "ClusterNotReady (ConditionTypeClusterNotReady=True) — the target restarts; a user Ready at its generation keeps phase Ready, and its return announces nothing"
+      },
+      {
+        "from": "ready",
+        "to": "ready",
+        "label": "ClusterUnreachable (ConditionTypeClusterNotReady=True) — the target reads Ready but refuses the connection; a user Ready at its generation keeps phase Ready, logged at info, for up to 5 minutes"
+      },
+      {
+        "from": "ready",
         "to": "pending",
         "label": "RolesPending — a later spec.roles edit reopens a role gap"
       },
@@ -795,7 +805,7 @@
       {
         "from": "deletion-failed",
         "to": "deletion-failed",
-        "label": "UserDeletionFailed — repeated retry on requeue"
+        "label": "UserDeletionFailed — repeated retry on requeue; announced again only when the error changes"
       },
       {
         "from": "deletion-failed",
@@ -806,6 +816,11 @@
         "from": "deletion-failed",
         "to": "removed",
         "label": "UserDeletionFailed (non-retryable) — cleanup gives up, finalizer released to avoid wedging deletion"
+      },
+      {
+        "from": "ready",
+        "to": "failed",
+        "label": "ConnectionFailed — the target has been unreachable for more than 5 minutes (id 172)"
       }
     ]
   },
@@ -853,9 +868,9 @@
         "description": "The CR was deleted with deletionPolicy=Delete; DeleteInstance has been called and the finalizer is pending release."
       },
       {
-        "key": "Failed",
-        "name": "Failed",
-        "description": "A non-transient, non-conflict error occurred during create, observe, patch, or upgrade; fail() set Ready=False."
+        "key": "Error",
+        "name": "Error",
+        "description": "The operator could not reconcile the instance: credentials or project ID unavailable, a create, observe, patch or upgrade Aura refused, a Delete waiting for credentials, or a terminal create refusal (MultiDatabaseUnsupported / ServerlessGraphAnalyticsUnsupported). fail() sets phase Error with Ready=False; a terminal refusal on status for the current generation is not asked again. A 429, a 5xx or a transport failure is retried and never writes this phase."
       }
     ],
     "transitions": [
@@ -901,13 +916,18 @@
       },
       {
         "from": "Creating",
-        "to": "Failed",
-        "label": "observeOrCreate/CreateInstance returns a non-transient error; fail() sets Ready=False"
+        "to": "Error",
+        "label": "observeOrCreate/CreateInstance returns an error that is not a transient Aura failure; fail() sets phase Error and Ready=False"
       },
       {
         "from": "Running",
-        "to": "Failed",
-        "label": "GetInstance or PatchInstance/UpgradeInstance returns a non-transient, non-conflict error; fail() sets Ready=False"
+        "to": "Error",
+        "label": "GetInstance returns an error Aura gave that is neither a 404 nor transient; fail() sets phase Error and Ready=False (a PatchInstance/UpgradeInstance error is returned for error backoff instead)"
+      },
+      {
+        "from": "Error",
+        "to": "Running",
+        "label": "the failure clears and the next GetInstance observation writes Aura's own status back"
       }
     ]
   },
