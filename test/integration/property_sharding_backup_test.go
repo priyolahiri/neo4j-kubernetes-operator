@@ -138,7 +138,7 @@ var _ = Describe("Property Sharding Backup Integration Tests", Label("extended")
 	})
 
 	Context("when backing up a property-sharded database", func() {
-		It("emits a single neo4j-admin invocation with quoted glob and per-shard artifacts", func() {
+		It("emits a single neo4j-admin invocation with quoted shard patterns and per-shard artifacts", func() {
 			By("Creating a property-sharding-enabled cluster")
 			cluster = &neo4jv1beta1.Neo4jEnterpriseCluster{
 				ObjectMeta: metav1.ObjectMeta{
@@ -254,12 +254,12 @@ var _ = Describe("Property Sharding Backup Integration Tests", Label("extended")
 				return k8sClient.Get(ctx, types.NamespacedName{Name: jobName, Namespace: testNamespace}, job)
 			}, 2*time.Minute, pollInterval).Should(Succeed())
 
-			By("Verifying the Job's neo4j-admin invocation uses the quoted glob")
+			By("Verifying the Job's neo4j-admin invocation names the shards with quoted patterns")
 			Expect(job.Spec.Template.Spec.Containers).ToNot(BeEmpty())
 			containerCmd := strings.Join(job.Spec.Template.Spec.Containers[0].Command, " ") + " " +
 				strings.Join(job.Spec.Template.Spec.Containers[0].Args, " ")
-			Expect(containerCmd).To(ContainSubstring(`"products*"`),
-				"neo4j-admin database backup must be invoked with the quoted glob 'products*'")
+			Expect(containerCmd).To(ContainSubstring(`"products-g*" "products-p*"`),
+				"neo4j-admin database backup must be invoked with the quoted shard patterns 'products-g*' 'products-p*'")
 			Expect(containerCmd).To(ContainSubstring("--remote-address-resolution=true"),
 				"sharded backups must default --remote-address-resolution to true on 2025.09+ (this image is 2025.12+)")
 

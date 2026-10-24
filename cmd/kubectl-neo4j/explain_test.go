@@ -31,6 +31,7 @@ func TestConditionGuidanceCoversEveryConditionType(t *testing.T) {
 		controller.ConditionTypeServersHealthy,
 		controller.ConditionTypeDatabasesHealthy,
 		controller.ConditionTypeServersPendingDrain,
+		controller.ConditionTypeTopologyChangeDeferred,
 		controller.ConditionTypeRolesSynced,
 		controller.ConditionTypeRoleNamesResolved,
 		controller.ConditionTypePasswordSynced,
@@ -120,6 +121,26 @@ func TestExplainResource_UnknownPhaseIsAdmittedNotGuessed(t *testing.T) {
 	})
 	assert.Contains(t, out, "no guidance for this phase")
 	assert.Contains(t, out, "newer than this CLI")
+}
+
+// A Neo4jAuthRule waiting for some of its roles reports PendingDependencies.
+// The controller wrote it as a literal outside the shared vocabulary, so this
+// command told the user the phase "may be newer than this CLI" (#549).
+func TestExplainResource_AnAuthRuleWaitingForRolesIsExplained(t *testing.T) {
+	c := testClient(t, &neo4jv1beta1.Neo4jAuthRule{
+		ObjectMeta: metav1.ObjectMeta{Name: "analysts", Namespace: "neo4j"},
+		Status: neo4jv1beta1.Neo4jAuthRuleStatus{
+			Phase:   neo4jv1beta1.PhasePendingDependencies,
+			Message: `auth rule "analysts" applied; 1/2 granted, waiting on missing roles [auditor]`,
+		},
+	})
+
+	out := captureExplainErr(t, func(f *os.File) error {
+		return explainResource(context.Background(), c, "neo4j", "Neo4jAuthRule/analysts", f)
+	})
+	assert.Contains(t, out, "phase: PendingDependencies")
+	assert.Contains(t, out, "waits for the others it grants")
+	assert.NotContains(t, out, "newer than this CLI")
 }
 
 func TestExplainResource_UnknownKindIsAClearError(t *testing.T) {

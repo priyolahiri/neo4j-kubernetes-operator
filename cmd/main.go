@@ -467,6 +467,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				TopologyScheduler:       controller.NewTopologyScheduler(mgr.GetClient()),
 				Validator:               validation.NewClusterValidator(mgr.GetClient()),
 				ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
+				APIReader:               mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 				SplitBrainDetector:      controller.NewSplitBrainDetector(mgr.GetClient()),
 				ServerUnavailableGrace:  serverUnavailableGrace,
 				ReadyPollInterval:       readyPollInterval,
@@ -485,6 +486,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Validator:         validation.NewStandaloneValidator(),
 				ConfigMapManager:  controller.NewConfigMapManager(mgr.GetClient()),
 				ReadyPollInterval: readyPollInterval,
+				APIReader:         mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 			},
 		},
 		{
@@ -503,6 +505,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — a one-time backup's terminal phase
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				// Typed Kubernetes client for fetching backup-Pod logs (used by
 				// shard-artifact filename/size parsing + neo4j-admin backup
@@ -514,11 +517,14 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 		{
 			name: "Neo4jRestore",
 			controller: &controller.Neo4jRestoreReconciler{
-				Client:       mgr.GetClient(),
-				Scheme:       mgr.GetScheme(),
-				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
-				APIReader:    mgr.GetAPIReader(), // uncached — guards the destructive recreate
-				RequeueAfter: controller.GetTestRequeueAfter(),
+				Client:   mgr.GetClient(),
+				Scheme:   mgr.GetScheme(),
+				Recorder: mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				// A source of its own: per-database progress keeps its own
+				// event budget, so the restore's outcome is never dropped.
+				ProgressRecorder: mgr.GetEventRecorderFor("neo4j-restore-progress"),
+				APIReader:        mgr.GetAPIReader(), // uncached — guards the destructive recreate
+				RequeueAfter:     controller.GetTestRequeueAfter(),
 				// Cluster-native Cypher restores poll database online-state
 				// across requeues (pollClusterRestoreOnline) rather than
 				// blocking a worker, but >1 worker still keeps independent
@@ -768,6 +774,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				TopologyScheduler:       controller.NewTopologyScheduler(mgr.GetClient()),
 				Validator:               validation.NewClusterValidator(mgr.GetClient()),
 				ConfigMapManager:        controller.NewConfigMapManager(mgr.GetClient()).WithRecorder(mgr.GetEventRecorderFor("neo4j-enterprise-cluster-controller")),
+				APIReader:               mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 				SplitBrainDetector:      controller.NewSplitBrainDetector(mgr.GetClient()),
 				ServerUnavailableGrace:  serverUnavailableGrace,
 				ReadyPollInterval:       readyPollInterval,
@@ -785,6 +792,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				Validator:         validation.NewStandaloneValidator(),
 				ConfigMapManager:  controller.NewConfigMapManager(mgr.GetClient()),
 				ReadyPollInterval: readyPollInterval,
+				APIReader:         mgr.GetAPIReader(), // uncached — the revision a StatefulSet is created again from (id 171)
 			}, "Neo4jEnterpriseStandalone"
 		},
 		"database": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
@@ -801,17 +809,19 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — a one-time backup's terminal phase
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				Clientset:    mustBuildClientset(mgr),
 			}, "Neo4jBackup"
 		},
 		"restore": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jRestoreReconciler{
-				Client:       mgr.GetClient(),
-				Scheme:       mgr.GetScheme(),
-				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
-				APIReader:    mgr.GetAPIReader(), // uncached — guards the destructive recreate
-				RequeueAfter: controller.GetTestRequeueAfter(),
+				Client:           mgr.GetClient(),
+				Scheme:           mgr.GetScheme(),
+				Recorder:         mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				ProgressRecorder: mgr.GetEventRecorderFor("neo4j-restore-progress"),
+				APIReader:        mgr.GetAPIReader(), // uncached — guards the destructive recreate
+				RequeueAfter:     controller.GetTestRequeueAfter(),
 				// See dev-mode wiring above: poll-based online wait + multiple
 				// workers prevents one slow restore from starving the rest.
 				MaxConcurrentReconciles: 4,

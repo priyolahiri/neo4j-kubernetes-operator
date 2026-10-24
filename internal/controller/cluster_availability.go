@@ -179,6 +179,51 @@ func (a shortfallAssessment) summary() string {
 	return s
 }
 
+// outageDetail is what the status messages and the Degraded condition say
+// about a formed cluster short of a server: what Neo4j reports (summary), and,
+// while Neo4j still lists every server available — a pod is terminating, or
+// its readiness probe lags a restart — which server pods Kubernetes does not
+// report ready (notReadyServerPods). It never carries the formation or rollout
+// check's words, which describe a cluster forming or rolling (#553).
+func outageDetail(a shortfallAssessment, notReadyPods []string) string {
+	if len(a.Unavailable) > 0 || len(notReadyPods) == 0 {
+		return a.summary()
+	}
+	return fmt.Sprintf("Neo4j still lists %d of %d servers available; server pods not ready: %s",
+		a.Available, a.Expected, strings.Join(notReadyPods, ", "))
+}
+
+// notReadyServerPods names each server pod, {cluster}-server-0 to N-1, that
+// Kubernetes does not report Ready, with why: "(terminating)", "(not ready)"
+// or "(missing)". nil when every one is ready or the pods cannot be listed.
+func (r *Neo4jEnterpriseClusterReconciler) notReadyServerPods(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(cluster.Namespace), client.MatchingLabels{
+		"neo4j.com/cluster":    cluster.Name,
+		"neo4j.com/clustering": "true",
+	}); err != nil {
+		return nil
+	}
+	byName := make(map[string]*corev1.Pod, len(pods.Items))
+	for i := range pods.Items {
+		byName[pods.Items[i].Name] = &pods.Items[i]
+	}
+	var out []string
+	for i := 0; i < int(cluster.Spec.Topology.Servers); i++ {
+		name := fmt.Sprintf("%s-server-%d", cluster.Name, i)
+		pod, ok := byName[name]
+		switch {
+		case !ok:
+			out = append(out, name+" (missing)")
+		case pod.DeletionTimestamp != nil:
+			out = append(out, name+" (terminating)")
+		case !isPodReady(pod):
+			out = append(out, name+" (not ready)")
+		}
+	}
+	return out
+}
+
 // serverAddressBook remembers, per cluster (key ns/name), the last address
 // each server reported. SHOW SERVERS reports no address for a server that is
 // down — exactly when the address, the pod's name, is wanted: in the Degraded

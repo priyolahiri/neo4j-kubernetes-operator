@@ -116,8 +116,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
 	// deferredUpgradeTargets dedupes the UpgradeDeferred event per cluster
-	// (key ns/name → deferred image) so a held image change doesn't emit an
-	// event on every Forming-phase reconcile (#262 review).
+	// (key ns/name → heldImageChange) so a held image change doesn't emit an
+	// event on every Forming-phase reconcile (#262 review), and is announced
+	// only once it outlasts the pass that first held it
+	// (announceHeldImageChange). The target a scale-down drain holds back is
+	// under drainDeferralKey (#527; announceUpgradeDeferredByDrain).
 	deferredUpgradeTargets sync.Map
 	// connectivityFailures tracks consecutive can't-connect reconciles per
 	// cluster (key ns/name → *connectivityFailureStreak) so a persistent
@@ -138,6 +141,14 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// (writtenGeneration), so a cached read that predates the write is a
 	// rollout in flight, not the rolled-out template it replaced.
 	serverStatefulSetWrites sync.Map
+	// deletedServerStatefulSets keeps the server StatefulSet a storage
+	// expansion orphan-deleted until the pass that creates it again, which
+	// takes its template (statefulset_recreate.go, operations.md id 171).
+	deletedServerStatefulSets deletedStatefulSets
+	// APIReader reads what the cache does not hold (the ControllerRevision a
+	// StatefulSet created again takes its template from after an operator
+	// restart). nil uses Client.
+	APIReader client.Reader
 
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
@@ -370,11 +381,12 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			if !clusterEverAccepted(cluster) {
 				event, status = "Cluster validation failed", "Validation failed"
 			}
-			logger.Error(err, event)
-			// Announced when the failure starts or its message changes, not
-			// on every RequeueAfter while the spec stays invalid (knowledge
-			// rule 136).
-			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err)) {
+			// Announced — and logged at info — when the failure starts or its
+			// message changes, not on every RequeueAfter while the spec stays
+			// invalid (knowledge rule 136).
+			announced := r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("%s: %v", status, err))
+			logRefusal(logger, announced, event, err)
+			if announced {
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonValidationFailed, "%s: %v", event, err)
 			}
 			// A spec the user must fix is not a reconcile error: it is
@@ -388,12 +400,11 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		// Validate server role hints for both create and update
 		roleHintErrors := resources.ValidateServerRoleHints(cluster)
 		if len(roleHintErrors) > 0 {
-			for _, roleError := range roleHintErrors {
-				logger.Error(fmt.Errorf("server role validation error"), roleError)
-			}
 			// Announced when the failure starts or its message changes, not
 			// on every RequeueAfter while it stays (knowledge rule 145).
-			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors)) {
+			announced := r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Server role validation failed: %v", roleHintErrors))
+			logRefusal(logger, announced, "Server role validation failed", fmt.Errorf("%s", strings.Join(roleHintErrors, "; ")))
+			if announced {
 				for _, roleError := range roleHintErrors {
 					r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonServerRoleFailed, "Server role hint validation failed: %s", roleError)
 				}
@@ -405,8 +416,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// Validate property sharding configuration if enabled
 	if cluster.Spec.PropertySharding != nil && cluster.Spec.PropertySharding.Enabled {
 		if err := r.validatePropertyShardingConfiguration(ctx, cluster); err != nil {
-			logger.Error(err, "Property sharding validation failed")
-			if r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err)) {
+			announced := r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Property sharding validation failed: %v", err))
+			logRefusal(logger, announced, "Property sharding validation failed", err)
+			if announced {
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonPropertyShardingFailed, "Property sharding validation failed: %v", err)
 			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -422,8 +434,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", cluster.Spec.Storage.ClassName)
-		logger.Error(fmt.Errorf("storage class not found"), msg)
-		if r.updateClusterStatus(ctx, cluster, "Failed", msg) {
+		announced := r.updateClusterStatus(ctx, cluster, "Failed", msg)
+		logRefusal(logger, announced, "StorageClass not found", fmt.Errorf("%s", msg))
+		if announced {
 			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -440,6 +453,14 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		}
 		// The patch above triggers a watch event that re-queues this object.
 		return ctrl.Result{}, nil
+	}
+
+	// A held upgrade: record what its servers have started on (an image that
+	// was not pullable may be now), and drop the record of one nothing started
+	// on that spec.image.tag no longer names (operations.md id 149).
+	if upgradeHeld(cluster) {
+		r.recordStartedTarget(ctx, cluster)
+		r.forgetAbandonedUpgrade(ctx, cluster)
 	}
 
 	// Check if this is an upgrade scenario. A mid-flight state machine
@@ -465,6 +486,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// once the cluster reaches Ready, isUpgradeRequired fires on the drift
 	// and the state machine performs the upgrade properly.
 	r.holdImageDriftUntilReady(ctx, cluster)
+	// Likewise a change of spec.topology.servers, while a Paused or Failed
+	// upgrade keeps a partition: servers added then would start on its target,
+	// and a drain would run mid-upgrade (operations.md id 163).
+	r.holdTopologyWhileUpgradeHolds(ctx, cluster)
 
 	// Neo4jEnterpriseCluster is always multi-node from the start
 	// (minimum 1 primary + 1 secondary OR 2+ primaries)
@@ -685,9 +710,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			"zones", len(placement.AvailabilityZones),
 			"enforceDistribution", placement.EnforceDistribution)
 
-		if len(placement.AvailabilityZones) > 0 {
-			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonTopologyPlacementCalc,
-				fmt.Sprintf("Calculated topology placement across %d zones", len(placement.AvailabilityZones)))
+		// Announced when the zones change, not on every pass (#527).
+		if msg, news := r.TopologyScheduler.placementAnnouncement(cluster, placement); news {
+			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonTopologyPlacementCalc, msg)
 		}
 		r.recordZoneDiscovery(cluster, placement)
 	}
@@ -770,15 +795,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 	// Plugin management is now handled by the separate Neo4jPlugin CRD and controller
 
-	// Verify Neo4j cluster formation before marking as Ready
-	formation, err := r.verifyNeo4jClusterFormation(ctx, cluster)
-	if err != nil {
-		logger.Error(err, "Failed to verify cluster formation")
-		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonClusterFormationFailed,
-			"Cluster formation check failed: %v", err)
-		_ = r.updateClusterStatus(ctx, cluster, "Forming", fmt.Sprintf("Verifying cluster formation: %v", err))
-		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
-	}
+	// Verify Neo4j cluster formation before marking as Ready. Formation does
+	// not fail, it waits: every way the check can come back short is a
+	// formationCheck the shortfall assessment reads.
+	formation := r.verifyNeo4jClusterFormation(ctx, cluster)
 
 	// Not every server is available. A cluster that has formed and is still
 	// serving stays Ready (then turns Degraded); anything else is Forming.
@@ -862,6 +882,11 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	r.upgradeDiagnostics.Delete(clusterKey(cluster))
 	r.serverStatefulSetWrites.Delete(clusterKey(cluster))
+	r.deletedServerStatefulSets.forget(cluster.Namespace, cluster.Name+"-server")
+	r.forgetDeferredUpgrades(cluster)
+	if r.TopologyScheduler != nil {
+		r.TopologyScheduler.forgetCluster(cluster)
+	}
 	forgetServerAddresses(cluster)
 	neo4jclient.ForgetCluster(cluster.Namespace, cluster.Name)
 
@@ -1050,7 +1075,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 		"name", obj.GetName(),
 		"namespace", obj.GetNamespace())
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
+	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 		if sts, ok := obj.(*appsv1.StatefulSet); ok {
 			// Check if this is an update (object already exists in cluster)
 			// CRITICAL FIX: Use UID to determine if this is an existing object, not ResourceVersion
@@ -1203,27 +1228,73 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					"statefulSet", sts.Name,
 					"namespace", sts.Namespace)
 				sts.Spec = desiredSpec
+				ownerCluster, isCluster := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster)
+				// Created again after a storage expansion deleted it: as it was —
+				// its template with the plugins' and other controllers' writes,
+				// replica count, strategy and records — with the new claim
+				// templates, so no pod restarts (operations.md id 171).
+				var recreate *recreateSource
+				if isCluster {
+					recreate = r.deletedServerStatefulSets.source(ctx, r.Client, r.apiReader(), sts.Namespace, sts.Name,
+						ownerCluster.UID, map[string]string{"neo4j.com/cluster": ownerCluster.Name, "neo4j.com/clustering": "true"})
+				}
+				if recreate != nil {
+					recreate.applyTo(sts)
+					logger.Info("Creating the server StatefulSet again as it was, with the new volume claim templates",
+						"statefulSet", sts.Name, "from", recreate.from)
+				}
 				// Created again while an upgrade is held (a storage expansion
 				// deletes the StatefulSet and orphans its pods): start with the
 				// upgrade's partition, or the new StatefulSet would restart
 				// every server below it onto its template (operations.md id 149).
-				if ownerCluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok &&
-					sts.Spec.UpdateStrategy.RollingUpdate != nil && sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
+				if isCluster && sts.Spec.UpdateStrategy.RollingUpdate != nil && sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
 					sts.Spec.UpdateStrategy.RollingUpdate.Partition = partitionForNewServerStatefulSet(ownerCluster, sts.Spec.Replicas)
 				}
-				writeOwnedTemplateItems(sts, desiredSpec.Template)
-				// Stamp on create as well as on update. The stamp is what lets a
-				// cluster that never finishes forming still accept a corrected
-				// template (see isTemplateChangeSignificant); a StatefulSet that
-				// only ever got stamped once it went stable could not be repaired
-				// before it got there, which is precisely when it needs to be.
-				setClusterTemplateHash(sts, desiredSpec.Template)
+				switch {
+				case recreate == nil:
+					writeOwnedTemplateItems(sts, desiredSpec.Template)
+					// Stamp on create as well as on update. The stamp is what lets a
+					// cluster that never finishes forming still accept a corrected
+					// template (see isTemplateChangeSignificant); a StatefulSet that
+					// only ever got stamped once it went stable could not be repaired
+					// before it got there, which is precisely when it needs to be.
+					setClusterTemplateHash(sts, desiredSpec.Template)
+				case recreate.annotations == nil:
+					// Read from a revision: what the operator renders is recorded,
+					// and no template hash, so the next pass's apply converges.
+					writeOwnedTemplateItems(sts, desiredSpec.Template)
+				}
+				// A cluster with Aura Fleet Management starts its servers with
+				// the plugin. Merged here, into the StatefulSet being created and
+				// after the record of the env the cluster owns and its template
+				// hash, NEO4J_PLUGINS stays out of the static template and out of
+				// that record, as every pass's fleet merge leaves it. Merged by
+				// the next pass instead, it rolled every server of a new cluster
+				// during its first formation (operations.md id 175). A template
+				// recreated as it was already carries it; the merge is idempotent.
+				if isCluster && sts.Name == ownerCluster.Name+"-server" && clusterInstallsFleetManagement(ownerCluster) {
+					sts.Spec.Template = *sts.Spec.Template.DeepCopy()
+					if _, err := addFleetManagementPlugin(&sts.Spec.Template); err != nil {
+						return fmt.Errorf("%w in StatefulSet %s", err, sts.Name)
+					}
+				}
 			}
 		}
 		return nil
 	})
+	if sts, ok := obj.(*appsv1.StatefulSet); ok && err == nil && op == controllerutil.OperationResultCreated {
+		r.deletedServerStatefulSets.forget(sts.Namespace, sts.Name)
+	}
 
 	return err
+}
+
+// apiReader is APIReader, or Client when none is set.
+func (r *Neo4jEnterpriseClusterReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 // isTemplateChangeSignificant determines if StatefulSet template changes warrant pod restarts
@@ -1758,6 +1829,20 @@ type statusRecord struct {
 	// resolvedTargetVersion is status.upgradeStatus.resolvedTargetVersion,
 	// written only when there is an upgrade record.
 	resolvedTargetVersion *string
+	// outcome, when set, receives what became of the two above in the write
+	// that succeeded.
+	outcome *reportedVersionsOutcome
+}
+
+// reportedVersionsOutcome is what a status write did with the versions the
+// servers report (statusRecord).
+type reportedVersionsOutcome struct {
+	// sent: the write carried a change of them.
+	sent bool
+	// dropped: the stored object came back without one of them — the
+	// installed CRD does not have the field (this release's CRDs are not
+	// applied), and the API server pruned it.
+	dropped bool
 }
 
 // updateClusterStatusRecording is updateClusterStatusWithVersion with the
@@ -1769,8 +1854,28 @@ type statusRecord struct {
 // been acted on, and claiming it had read as "nothing pending" while a
 // rollout of it was about to start.
 func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusRecording(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message string, rec statusRecord, extra ...metav1.Condition) bool {
+	return r.writeClusterStatus(ctx, cluster, phase, message, rec, extra...).changed
+}
+
+// clusterStatusWrite is what a cluster status write did.
+type clusterStatusWrite struct {
+	// changed: the phase, the message or the Ready condition moved — what a
+	// caller announces with an event.
+	changed bool
+	// before is the status the write replaced (or found already right), read
+	// in the attempt that succeeded, so it is what the API server held and
+	// not this pass's copy, which the informer cache may have handed over
+	// from before the last pass's write. nil when the write failed.
+	before *neo4jv1beta1.Neo4jEnterpriseClusterStatus
+}
+
+// writeClusterStatus is updateClusterStatusRecording, reporting what the write
+// replaced as well as whether it changed something. A caller that announces
+// entering a phase reads it from before (operations.md id 136).
+func (r *Neo4jEnterpriseClusterReconciler) writeClusterStatus(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message string, rec statusRecord, extra ...metav1.Condition) clusterStatusWrite {
 	logger := log.FromContext(ctx)
 	statusChanged := false
+	var before *neo4jv1beta1.Neo4jEnterpriseClusterStatus
 	version := rec.version
 	actedOn := cluster.Generation
 
@@ -1780,9 +1885,13 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusRecording(ctx cont
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 			return err
 		}
+		before = latest.Status.DeepCopy()
 		if actedOn == 0 {
 			// An object built in memory rather than read from the API server.
 			actedOn = latest.Generation
+		}
+		if rec.outcome != nil {
+			*rec.outcome = reportedVersionsOutcome{} // this attempt's
 		}
 
 		// Check if status is already exactly what we want
@@ -1890,15 +1999,28 @@ func (r *Neo4jEnterpriseClusterReconciler) updateClusterStatusRecording(ctx cont
 		}
 
 		statusChanged = statusNeedsUpdate || conditionNeedsUpdate
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		if rec.outcome != nil {
+			// The update returns the object as stored: without a field the
+			// installed CRD lacks.
+			*rec.outcome = reportedVersionsOutcome{
+				sent: versionsNeedUpdate,
+				dropped: (rec.runningVersion != nil && latest.Status.RunningVersion != *rec.runningVersion) ||
+					(rec.resolvedTargetVersion != nil && latest.Status.UpgradeStatus != nil &&
+						latest.Status.UpgradeStatus.ResolvedTargetVersion != *rec.resolvedTargetVersion),
+			}
+		}
+		return nil
 	}
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		logger.Error(err, "Failed to update cluster status")
-		return false
+		return clusterStatusWrite{}
 	}
-	return statusChanged
+	return clusterStatusWrite{changed: statusChanged, before: before}
 }
 
 // buildReplicaStatus reports the desired vs ready server count by reading
@@ -2181,9 +2303,12 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	// Skip upgrade check if cluster is not ready — including a cluster that
 	// is still Ready while a server is down (#444): rolling the others then
 	// could cost it its majority. holdImageDriftUntilReady keeps the image
-	// change held until every server is back.
+	// change held until every server is back. The one exception: a held
+	// upgrade whose restarted servers cannot start on its target, and a new
+	// tag — only the machine's write of it brings them back, and it restarts
+	// nothing that is up (heldUpgradeRepair, operations.md id 162).
 	if cluster.Status.Phase != "Ready" || serversUnavailableSince(cluster) != nil {
-		return false
+		return r.heldUpgradeRepair(ctx, cluster) != nil
 	}
 
 	// "Paused" is an explicit manual hold (autoPauseOnFailure) — never
@@ -2215,7 +2340,12 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	currentImage := serverSts.Spec.Template.Spec.Containers[0].Image
 	desiredImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	if currentImage != desiredImage {
-		return true
+		// An attempt at this image that a check refused before it staged
+		// anything is tried again once upgradeStartRetry has passed, not on
+		// every pass: the normal pass runs in between, with the change held
+		// (refuseUpgradeStart). Retried on every pass, it starved the normal
+		// pass; failed and then made Ready again, it flapped (#538).
+		return !startRefusedRecently(cluster.Status.UpgradeStatus, cluster.Spec.Image.Tag, time.Now())
 	}
 
 	// Failed-upgrade retry: once Staging has run, the template already carries
@@ -2266,6 +2396,15 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 	// Staging below regardless, and its TargetVersion may predate the field.)
 	if upgradeStateMachineActive(cluster) && phase != upgradePhaseLegacyInProgress &&
 		cluster.Status.UpgradeStatus.TargetVersion != cluster.Spec.Image.Tag {
+		// What the current target started a server on, read before it is left
+		// behind; and the new tag held to it, since validation may have read the
+		// record before that server started (operations.md id 149). A refused
+		// tag waits: the next pass's validation reports it.
+		r.recordStartedTarget(ctx, cluster)
+		if errs := validation.NewUpgradeValidator().ValidateTagAgainstRunning(cluster); len(errs) > 0 {
+			logger.Info("Not re-staging: the new target is below what a server has started on", "reason", errs.ToAggregate().Error())
+			return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+		}
 		logger.Info("Upgrade target changed mid-flight; re-staging",
 			"previousTarget", cluster.Status.UpgradeStatus.TargetVersion, "newTarget", cluster.Spec.Image.Tag)
 		now := metav1.Now()
@@ -2278,6 +2417,8 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 			us.Message = us.CurrentStep
 		}); err != nil {
 			logger.Error(err, "Failed to persist re-staging transition")
+		} else {
+			r.noteUpgradeInClusterMessage(ctx, cluster)
 		}
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 	}
@@ -2343,13 +2484,13 @@ type formationCheck struct {
 }
 
 // verifyNeo4jClusterFormation checks if Neo4j cluster formation is complete and detects split-brain scenarios
-func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (formationCheck, error) {
+func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) formationCheck {
 	logger := log.FromContext(ctx)
 
 	// Skip verification for single-server clusters (always formed)
 	expectedServers := int(cluster.Spec.Topology.Servers)
 	if expectedServers == 1 {
-		return formationCheck{formed: true, message: "Single server cluster - formation complete"}, nil
+		return formationCheck{formed: true, message: "Single server cluster - formation complete"}
 	}
 
 	// First, check if Neo4j is ready to accept connections using legacy check
@@ -2404,9 +2545,9 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		if podIssues != "" {
 			// Surface it on the CR too — this is the string `kubectl describe`
 			// and `kubectl get` show, and it is where a user looks first.
-			return formationCheck{message: "Waiting for Neo4j to accept connections; " + podIssues}, nil
+			return formationCheck{message: "Waiting for Neo4j to accept connections; " + podIssues}
 		}
-		return formationCheck{message: "Waiting for Neo4j to accept connections"}, nil
+		return formationCheck{message: "Waiting for Neo4j to accept connections"}
 	}
 	if servers == nil {
 		// Connected, and SHOW SERVERS returned no rows: an empty list, not
@@ -2430,7 +2571,7 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		available := countAvailableServers(servers)
 		logger.V(1).Info("Skipping split-brain detection: a recent check found the cluster whole and no server pod has changed",
 			"available", available, "expected", expectedServers, "interval", r.SplitBrainCheckInterval)
-		return formationCheck{formed: true, message: fmt.Sprintf("Cluster formation complete: %d/%d servers available", available, expectedServers), servers: servers}, nil
+		return formationCheck{formed: true, message: fmt.Sprintf("Cluster formation complete: %d/%d servers available", available, expectedServers), servers: servers}
 	}
 	// Only a check that finds the cluster whole is recorded below; any other
 	// outcome leaves nothing, so the next pass checks again.
@@ -2442,10 +2583,10 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 	if err != nil {
 		logger.Error(err, "Failed to perform split-brain detection, falling back to legacy check")
 		// Fall back to legacy cluster formation check
-		isFormed, message, legacyErr := r.legacyClusterFormationCheck(ctx, cluster, expectedServers)
+		isFormed, message := r.legacyClusterFormationCheck(ctx, cluster, expectedServers)
 		logger.Info("Legacy cluster formation check result",
-			"isFormed", isFormed, "message", message, "error", legacyErr)
-		return formationCheck{formed: isFormed, message: message, servers: servers}, legacyErr
+			"isFormed", isFormed, "message", message)
+		return formationCheck{formed: isFormed, message: message, servers: servers}
 	}
 
 	logger.Info("Split-brain analysis results",
@@ -2473,23 +2614,23 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 				logger.Error(repairErr, "Failed to repair split-brain automatically")
 				r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonSplitBrainRepairFailed,
 					"Automatic split-brain repair failed: %v", repairErr)
-				return formationCheck{message: fmt.Sprintf("Split-brain repair failed: %v", repairErr), servers: servers, splitBrain: true}, nil
+				return formationCheck{message: fmt.Sprintf("Split-brain repair failed: %v", repairErr), servers: servers, splitBrain: true}
 			}
 
 			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonSplitBrainRepaired,
 				"Split-brain automatically repaired by restarting orphaned pods")
 
 			// After repair, cluster needs time to reform
-			return formationCheck{message: "Split-brain repaired, waiting for cluster reformation", servers: servers, splitBrain: true}, nil
+			return formationCheck{message: "Split-brain repaired, waiting for cluster reformation", servers: servers, splitBrain: true}
 		}
 
 		// For other repair actions, report but don't auto-repair
-		return formationCheck{message: splitBrainMsg, servers: servers, splitBrain: true}, nil
+		return formationCheck{message: splitBrainMsg, servers: servers, splitBrain: true}
 	}
 
 	// If no split-brain, check if cluster formation is complete
 	if analysis.RepairAction == RepairActionWaitForming {
-		return formationCheck{message: analysis.ErrorMessage, servers: servers}, nil
+		return formationCheck{message: analysis.ErrorMessage, servers: servers}
 	}
 
 	// Verify we have the expected number of servers across all views
@@ -2503,17 +2644,17 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 
 		if availableServers >= expectedServers {
 			r.recordCleanSplitBrainCheck(cluster, podsFingerprint, time.Now())
-			return formationCheck{formed: true, message: fmt.Sprintf("Cluster formation complete: %d/%d servers available", availableServers, expectedServers), servers: servers}, nil
+			return formationCheck{formed: true, message: fmt.Sprintf("Cluster formation complete: %d/%d servers available", availableServers, expectedServers), servers: servers}
 		}
-		return formationCheck{message: fmt.Sprintf("Cluster forming: %d/%d servers available", availableServers, expectedServers), servers: servers}, nil
+		return formationCheck{message: fmt.Sprintf("Cluster forming: %d/%d servers available", availableServers, expectedServers), servers: servers}
 	}
 
 	// Fall back to legacy cluster formation check if split-brain analysis was inconclusive
 	logger.Info("Falling back to legacy cluster formation check after split-brain analysis")
-	isFormed, message, legacyErr := r.legacyClusterFormationCheck(ctx, cluster, expectedServers)
+	isFormed, message := r.legacyClusterFormationCheck(ctx, cluster, expectedServers)
 	logger.Info("Final legacy cluster formation check result",
-		"isFormed", isFormed, "message", message, "error", legacyErr)
-	return formationCheck{formed: isFormed, message: message, servers: servers}, legacyErr
+		"isFormed", isFormed, "message", message)
+	return formationCheck{formed: isFormed, message: message, servers: servers}
 }
 
 // reconcileServerShortfall sets the status of a cluster that is not fully
@@ -2542,14 +2683,18 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 		"verdict", a.Verdict, "detail", detail, "available", a.Available, "expected", a.Expected,
 		"formedBefore", formed, "rolloutInFlight", in.RolloutInFlight, "splitBrain", in.SplitBrain)
 
-	// Neo4j can still list every server as Available for a few seconds after
-	// a pod goes, or before a restarted pod passes its readiness probe; then
-	// the pod-level detail is the better description.
-	shortfall := a.summary()
-	if len(a.Unavailable) == 0 {
-		shortfall = detail
+	// A formed cluster short of a server is an outage, not formation: its
+	// messages say what Neo4j and Kubernetes report about the servers. detail
+	// comes from the formation check ("Cluster formation in progress: 2/3
+	// servers visible") or the rollout check ("Waiting for every server pod
+	// to be updated…"), which describe neither, and both appeared while the
+	// phase read Ready (#553). It stays the message of a cluster that is
+	// Forming.
+	var shortfall string
+	switch a.Verdict {
+	case verdictQuorumLost, verdictWithinGrace, verdictDegraded:
+		shortfall = outageDetail(a, r.notReadyServerPods(ctx, cluster))
 	}
-	degradedMsg := a.summary() + ". " + detail
 	switch a.Verdict {
 	case verdictUnmeasured:
 		// Nothing is known to have changed, so nothing is written; the next
@@ -2562,14 +2707,14 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 		}
 		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseForming,
 			"Waiting for a majority of servers: "+shortfall, "",
-			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
+			clusterFormedCondition(), serversUnavailableCondition(shortfall))
 
 	case verdictWithinGrace:
 		// Still serving: the phase, the Ready condition and every dependent
 		// carry on. Only the Degraded condition and ServersHealthy say so.
 		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseReady,
 			"Neo4j cluster is serving. "+shortfall, "",
-			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
+			clusterFormedCondition(), serversUnavailableCondition(shortfall))
 
 	case verdictDegraded:
 		if r.firstAnnouncement(cluster, a.Verdict, cluster.Status.Phase == neo4jv1beta1.PhaseDegraded) {
@@ -2578,16 +2723,22 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 		}
 		_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseDegraded,
 			fmt.Sprintf("Neo4j cluster is serving but degraded for longer than %s. %s", in.Grace, shortfall), "",
-			clusterFormedCondition(), serversUnavailableCondition(degradedMsg))
+			clusterFormedCondition(), serversUnavailableCondition(shortfall))
 
 	default:
 		// First formation, a rollout or scale-up, a split-brain, or nothing
-		// measurable. "Formation started" is only true the first time.
-		if !formed && cluster.Status.Phase != neo4jv1beta1.PhaseForming {
+		// measurable. "Formation started" is only true the first time, and is
+		// announced by the write that takes a cluster that never formed into
+		// Forming, judged from what that write replaced. This pass's copy can
+		// come from a cache that has not seen the last pass's write of Forming,
+		// and judged from it every new cluster announced formation twice
+		// (#553; operations.md id 136).
+		w := r.writeClusterStatus(ctx, cluster, neo4jv1beta1.PhaseForming, detail, statusRecord{})
+		if w.before != nil && w.before.Phase != neo4jv1beta1.PhaseForming &&
+			!clusterHasFormed(&neo4jv1beta1.Neo4jEnterpriseCluster{Status: *w.before}) {
 			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterFormationStarted,
 				"Neo4j cluster formation started")
 		}
-		_ = r.updateClusterStatus(ctx, cluster, neo4jv1beta1.PhaseForming, detail)
 	}
 }
 
@@ -2602,15 +2753,18 @@ func (r *Neo4jEnterpriseClusterReconciler) reportSplitBrainDetected(cluster *neo
 	return msg
 }
 
-// legacyClusterFormationCheck performs the original cluster formation verification
-func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, expectedServers int) (bool, string, error) {
+// legacyClusterFormationCheck performs the original cluster formation
+// verification. It reports whether the cluster has formed and what to say if
+// not; it has no error to return, because every way it can come back short —
+// no connection, no server list — is the cluster not formed yet.
+func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, expectedServers int) (bool, string) {
 	logger := log.FromContext(ctx)
 
 	// Create Neo4j client to check cluster status
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err != nil {
 		// If we can't connect to Neo4j yet, cluster is still forming
-		return false, "Waiting for Neo4j to accept connections", nil
+		return false, "Waiting for Neo4j to accept connections"
 	}
 	defer func() {
 		if closeErr := neo4jClient.Close(); closeErr != nil {
@@ -2625,12 +2779,12 @@ func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx conte
 			logger.Info("Cluster formation check failed", "attempt", attempt, "error", err)
 			if attempt == 3 {
 				// Final attempt failed
-				return false, fmt.Sprintf("Cannot query server list after 3 attempts: %v", err), nil
+				return false, fmt.Sprintf("Cannot query server list after 3 attempts: %v", err)
 			}
 			// Wait 2 seconds before retry
 			select {
 			case <-ctx.Done():
-				return false, "Context cancelled during cluster formation check", nil
+				return false, "Context cancelled during cluster formation check"
 			case <-time.After(2 * time.Second):
 				continue
 			}
@@ -2656,21 +2810,21 @@ func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx conte
 			if attempt == 1 {
 				select {
 				case <-ctx.Done():
-					return false, "Context cancelled during stability check", nil
+					return false, "Context cancelled during stability check"
 				case <-time.After(3 * time.Second):
 					// Continue to verify stability
 					continue
 				}
 			}
 			// Cluster formation is complete and stable
-			return true, fmt.Sprintf("Cluster formation complete and stable: %d/%d servers available", availableServers, expectedServers), nil
+			return true, fmt.Sprintf("Cluster formation complete and stable: %d/%d servers available", availableServers, expectedServers)
 		}
 
 		// Not enough servers, wait before retry
 		if attempt < 3 {
 			select {
 			case <-ctx.Done():
-				return false, "Context cancelled during cluster formation wait", nil
+				return false, "Context cancelled during cluster formation wait"
 			case <-time.After(5 * time.Second):
 				continue
 			}
@@ -2678,7 +2832,7 @@ func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx conte
 	}
 
 	// Should not reach here, but handle gracefully
-	return false, "Cluster formation verification incomplete", nil
+	return false, "Cluster formation verification incomplete"
 }
 
 // NewQueryMonitor creates a new query monitor
@@ -2860,7 +3014,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 	servers, serverErr := neo4jClient.GetServerList(ctx)
 	servers = withKnownAddresses(cluster, servers)
 	if serverErr != nil {
-		logger.Error(serverErr, "Failed to collect SHOW SERVERS")
+		logDiagnosticsQueryFailure(logger, "SHOW SERVERS", serverErr)
 		diagnostics.CollectionError = fmt.Sprintf("SHOW SERVERS failed: %v", serverErr)
 	} else {
 		for _, s := range servers {
@@ -2889,7 +3043,7 @@ func (qm *QueryMonitor) CollectDiagnostics(ctx context.Context, cluster *neo4jv1
 	// Collect database list
 	databases, dbErr := neo4jClient.GetDatabases(ctx)
 	if dbErr != nil {
-		logger.Error(dbErr, "Failed to collect SHOW DATABASES")
+		logDiagnosticsQueryFailure(logger, "SHOW DATABASES", dbErr)
 		if diagnostics.CollectionError == "" {
 			diagnostics.CollectionError = fmt.Sprintf("SHOW DATABASES failed: %v", dbErr)
 		} else {
@@ -3050,13 +3204,17 @@ func (qm *QueryMonitor) updateDatabasesCondition(cluster *neo4jv1beta1.Neo4jEnte
 	}
 }
 
-// validatePropertyShardingConfiguration validates property sharding settings
+// validatePropertyShardingConfiguration validates property sharding settings.
+// Its errors say what is wrong and no more: Reconcile writes them after
+// "Property sharding validation failed: ", and an error that said so too read
+// "…validation failed: property sharding version validation failed: …"
+// (#549; operations.md id 136).
 func (r *Neo4jEnterpriseClusterReconciler) validatePropertyShardingConfiguration(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	logger := log.FromContext(ctx)
 
 	// Validate Neo4j version supports property sharding (2025.12+)
 	if err := validatePropertyShardingVersion(cluster.Spec.Image.Tag); err != nil {
-		return fmt.Errorf("property sharding version validation failed: %w", err)
+		return err
 	}
 
 	// Validate minimum cluster size for property sharding
@@ -3190,9 +3348,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, c
 	desired := route.DeepCopy()
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-		route.SetLabels(desired.GetLabels())
-		route.SetAnnotations(desired.GetAnnotations())
-		route.Object["spec"] = desired.Object["spec"]
+		applyDesiredRoute(route, desired)
 		return nil
 	})
 	// A cluster without the Route API stays without it: an advisory warning,
@@ -3262,9 +3418,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-			route.SetLabels(desired.GetLabels())
-			route.SetAnnotations(desired.GetAnnotations())
-			route.Object["spec"] = desired.Object["spec"]
+			applyDesiredRoute(route, desired)
 			return nil
 		})
 		return err
@@ -3344,6 +3498,14 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 	// the feature is first enabled, before we attempt token registration.
 	stsName := fmt.Sprintf("%s-server", cluster.Name)
 	if err := r.mergeFleetManagementPlugin(ctx, stsName, cluster.Namespace); err != nil {
+		if errors.IsNotFound(err) {
+			// A new cluster's first pass gets here before it writes its server
+			// StatefulSet. Nothing failed: the pass that finds it adds the
+			// plugin. A Warning here greeted every new cluster (#531).
+			logger.V(1).Info("Server StatefulSet not created yet; fleet-management is added on a later pass",
+				"statefulSet", stsName)
+			return nil
+		}
 		// Non-fatal for the reconcile: the cluster is functional, plugin patching failed.
 		logger.Error(err, "Failed to patch StatefulSet NEO4J_PLUGINS for fleet-management")
 		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
@@ -3432,50 +3594,13 @@ func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx contex
 		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: namespace}, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
 		}
-
-		containerIdx := -1
-		for i, c := range sts.Spec.Template.Spec.Containers {
-			if c.Name == "neo4j" {
-				containerIdx = i
-				break
-			}
-		}
-		if containerIdx < 0 {
-			return fmt.Errorf("neo4j container not found in StatefulSet %s", stsName)
-		}
-
-		envs := sts.Spec.Template.Spec.Containers[containerIdx].Env
-		pluginsIdx := -1
-		for i, e := range envs {
-			if e.Name == "NEO4J_PLUGINS" {
-				pluginsIdx = i
-				break
-			}
-		}
-
-		var updated string
-		var err error
-		if pluginsIdx < 0 {
-			updated = `["fleet-management"]`
-		} else {
-			current := envs[pluginsIdx].Value
-			updated, err = MergeNeo4jPluginList(current, "fleet-management")
-			if err != nil {
-				return fmt.Errorf("merge plugin list: %w", err)
-			}
-			if updated == current {
-				return nil // already present — nothing to patch
-			}
-		}
-
 		stsCopy := sts.DeepCopy()
-		if pluginsIdx < 0 {
-			stsCopy.Spec.Template.Spec.Containers[containerIdx].Env = append(
-				stsCopy.Spec.Template.Spec.Containers[containerIdx].Env,
-				corev1.EnvVar{Name: "NEO4J_PLUGINS", Value: updated},
-			)
-		} else {
-			stsCopy.Spec.Template.Spec.Containers[containerIdx].Env[pluginsIdx].Value = updated
+		changed, err := addFleetManagementPlugin(&stsCopy.Spec.Template)
+		if err != nil {
+			return fmt.Errorf("%w in StatefulSet %s", err, stsName)
+		}
+		if !changed {
+			return nil // already present — nothing to patch
 		}
 		return r.Update(ctx, stsCopy)
 	})
@@ -3600,20 +3725,19 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 // IN-MEMORY cluster object while the cluster is not Ready, so the normal
 // reconcile path keeps converging the cluster on its CURRENT image instead of
 // silently applying a version change outside the upgrade state machine
-// (#262). No-ops when the StatefulSet doesn't exist yet (initial install) or
-// there is no drift.
+// (#262). No-ops when there are no servers yet (initial install) or there is
+// no drift.
+//
+// The image in place is the server StatefulSet's, or, while a storage
+// expansion has orphan-deleted it, the image its orphaned pods run
+// (serverImageInPlace): the StatefulSet created again must not carry a held
+// image change in as an ungated roll of every server (#538).
 func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
-	serverSts := &appsv1.StatefulSet{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-server", cluster.Name),
-		Namespace: cluster.Namespace,
-	}, serverSts); err != nil {
+	place, found := r.serverImageInPlace(ctx, cluster)
+	if !found {
 		return
 	}
-	if len(serverSts.Spec.Template.Spec.Containers) == 0 {
-		return
-	}
-	currentImage := serverSts.Spec.Template.Spec.Containers[0].Image
+	currentImage := place.image
 	desiredImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	if currentImage == desiredImage {
 		return
@@ -3628,28 +3752,22 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	// lost every server: the version rule has already checked the tag
 	// against status.version, and the Ready pass records the new version once
 	// every server runs it (clusterVersionToRecord, operations.md id 144).
-	if serverSts.Status.ReadyReplicas == 0 {
+	if place.ready == 0 {
 		log.FromContext(ctx).Info("Applying image change without the Ready gate: no ready replicas exist to protect (formation blocked, possibly by the current image)",
 			"current", currentImage, "desired", desiredImage)
 		return
 	}
-	idx := strings.LastIndex(currentImage, ":")
-	if idx <= 0 {
+	// A tag can carry a digest: split as the image was built, never on the
+	// last colon (#531).
+	repo, tag, ok := splitImage(currentImage)
+	if !ok {
 		return // unparseable image — leave the spec alone
 	}
 	log.FromContext(ctx).V(1).Info("Image change deferred until the cluster is Ready — the rolling-upgrade state machine will perform it",
 		"current", currentImage, "desired", desiredImage, "phase", cluster.Status.Phase)
-	// Event once per deferred target (not per reconcile — a Forming cluster
-	// reconciles every ~30s and would spam the event stream). In-memory
-	// dedupe: an operator restart re-emits a single event, which is fine.
-	key := cluster.Namespace + "/" + cluster.Name
-	if prev, _ := r.deferredUpgradeTargets.Load(key); prev != desiredImage {
-		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeDeferred,
-			"Image change to %s deferred until the cluster is Ready with every server available; the rolling-upgrade state machine will perform it", desiredImage)
-		r.deferredUpgradeTargets.Store(key, desiredImage)
-	}
-	cluster.Spec.Image.Repo = currentImage[:idx]
-	cluster.Spec.Image.Tag = currentImage[idx+1:]
+	r.announceHeldImageChange(cluster, desiredImage)
+	cluster.Spec.Image.Repo = repo
+	cluster.Spec.Image.Tag = tag
 }
 
 // recordClusterReady writes the Ready status of a cluster whose formation and
@@ -3680,15 +3798,25 @@ func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Contex
 		log.FromContext(ctx).Info("Recording the version the servers now run",
 			"previous", cluster.Status.Version, "running", rec.version)
 	}
-	if rec.runningVersion != nil && *rec.runningVersion != cluster.Status.RunningVersion {
-		log.FromContext(ctx).Info("Recording the version the servers report",
-			"version", firstNonEmpty(rec.version, cluster.Status.Version), "reported", *rec.runningVersion)
+	var outcome reportedVersionsOutcome
+	rec.outcome = &outcome
+	changed := r.updateClusterStatusRecording(ctx, cluster, "Ready", clusterReadyMessage(cluster), rec, conditions...)
+	// Said once it is stored. With the CRDs of an earlier release installed,
+	// the API server drops the fields, so every Ready pass sends them again
+	// (the first pass after the CRDs are applied records them): that write
+	// changes nothing, and is not worth an Info line each time (#550; the
+	// standalone does the same, recordStandaloneRunningVersion).
+	switch {
+	case outcome.dropped:
+		log.FromContext(ctx).V(1).Info("The API server dropped the versions the servers report (this release's CRDs are not applied); sending them again on the next pass",
+			"version", firstNonEmpty(rec.version, cluster.Status.Version), "runningVersion", reportedValue(rec.runningVersion),
+			"resolvedTargetVersion", reportedValue(rec.resolvedTargetVersion))
+	case outcome.sent:
+		log.FromContext(ctx).Info("Recorded the versions the servers report",
+			"version", firstNonEmpty(rec.version, cluster.Status.Version), "runningVersion", reportedValue(rec.runningVersion),
+			"resolvedTargetVersion", reportedValue(rec.resolvedTargetVersion))
 	}
-	if rec.resolvedTargetVersion != nil {
-		log.FromContext(ctx).Info("Recording the version the held upgrade's target resolved to",
-			"target", cluster.Status.UpgradeStatus.TargetVersion, "reported", *rec.resolvedTargetVersion)
-	}
-	return r.updateClusterStatusRecording(ctx, cluster, "Ready", clusterReadyMessage(cluster), rec, conditions...)
+	return changed
 }
 
 // reportedVersionsToRecord is what a Ready pass records about the versions the
@@ -3709,7 +3837,11 @@ func reportedVersionsToRecord(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts 
 		rec.version = clusterVersionToRecord(&cluster.Status, rolledImageTag(sts))
 	}
 	tag := firstNonEmpty(rec.version, cluster.Status.Version)
-	if !upgradeHeld(cluster) {
+	// An upgrade a check refused before it staged anything holds nothing:
+	// every server runs status.version, and what they report is recorded as
+	// for any cluster. It used to be left alone for as long as the record
+	// stayed Paused or Failed (#550).
+	if !upgradeHeld(cluster) || (sts != nil && !upgradeStaged(cluster.Status.UpgradeStatus, sts)) {
 		if running, ok := runningVersionFor(tag, highestReportedVersion(servers, nil)); ok {
 			rec.runningVersion = &running
 		}

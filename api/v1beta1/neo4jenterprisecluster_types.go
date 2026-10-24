@@ -276,7 +276,9 @@ type StorageSpec struct {
 	// ClassName is the StorageClass for the data PVCs. If omitted (or empty),
 	// the PVCs inherit the cluster's default StorageClass. When set, the named
 	// class must exist — the operator verifies this at apply time and reports an
-	// explicit error rather than leaving pods Pending indefinitely.
+	// explicit error rather than leaving pods Pending indefinitely. It applies to
+	// volumes when they are created: an existing volume keeps its StorageClass,
+	// so a later change has no effect on it, and a ValidationWarning says so.
 	// +optional
 	ClassName string `json:"className,omitempty"`
 
@@ -853,7 +855,13 @@ type RouteTLSSpec struct {
 	// +kubebuilder:validation:Enum=None;Allow;Redirect
 	InsecureEdgeTerminationPolicy string `json:"insecureEdgeTerminationPolicy,omitempty"`
 
-	// Secret containing the certificate (for reencrypt/passthrough)
+	// Secret containing the certificate (for reencrypt/passthrough).
+	//
+	// Reserved: accepted by the schema but not acted on today. No Route the
+	// operator writes names a certificate, so the OpenShift router serves its
+	// default one (edge, reencrypt) or the server's own (passthrough). The
+	// operator raises a ValidationWarning event whenever it is set; a
+	// certificate added to the Route itself is kept.
 	SecretName string `json:"secretName,omitempty"`
 }
 
@@ -1398,6 +1406,17 @@ type UpgradeStatus struct {
 	// +optional
 	ResolvedTargetVersion string `json:"resolvedTargetVersion,omitempty"`
 
+	// StartedTargetVersion is the newest version a server of this upgrade has
+	// started on: previousVersion until a restarted server's Neo4j container
+	// starts on a target, then that target. A server whose container never
+	// started on the target — its image could not be pulled, its container
+	// could not be created — has not run it. A spec.image.tag below it is
+	// refused, since that server would be rolled back; a tag between it and
+	// targetVersion is allowed. Empty on an upgrade an earlier operator
+	// started, which is held to targetVersion once it has restarted a server.
+	// +optional
+	StartedTargetVersion string `json:"startedTargetVersion,omitempty"`
+
 	// Progress shows upgrade progress statistics
 	Progress *UpgradeProgress `json:"progress,omitempty"`
 
@@ -1517,21 +1536,29 @@ type UpgradeStrategySpec struct {
 
 	// UpgradeTimeout bounds each step of a cluster's rolling upgrade: staging
 	// the new template, and each server's restart until its databases have
-	// caught up. A Go duration above zero ("30m", "1h30m").
+	// caught up. A Go duration above zero ("30m", "1h30m"). A
+	// Neo4jEnterpriseStandalone's upgrade has no such step: there a value
+	// other than the default raises a ValidationWarning.
 	// +kubebuilder:default="30m"
 	UpgradeTimeout string `json:"upgradeTimeout,omitempty"`
 
-	// PostUpgradeHealthCheck enables cluster health validation after upgrade
+	// PostUpgradeHealthCheck enables cluster health validation after upgrade.
+	// A Neo4jEnterpriseStandalone runs no check after its upgrade, whatever
+	// the value.
 	// +kubebuilder:default=true
 	PostUpgradeHealthCheck bool `json:"postUpgradeHealthCheck,omitempty"`
 
 	// HealthCheckTimeout bounds the check, after a cluster's upgrade, that every
-	// server runs the new version. A Go duration above zero ("5m").
+	// server runs the new version. A Go duration above zero ("5m"). A
+	// Neo4jEnterpriseStandalone runs no such check: there a value other than
+	// the default raises a ValidationWarning.
 	// +kubebuilder:default="5m"
 	HealthCheckTimeout string `json:"healthCheckTimeout,omitempty"`
 
 	// StabilizationTimeout specifies how long to wait for cluster stabilization
-	// after its upgrade. A Go duration above zero ("3m").
+	// after its upgrade. A Go duration above zero ("3m"). A
+	// Neo4jEnterpriseStandalone has no such wait: there a value other than the
+	// default raises a ValidationWarning.
 	// +kubebuilder:default="3m"
 	StabilizationTimeout string `json:"stabilizationTimeout,omitempty"`
 

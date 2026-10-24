@@ -155,12 +155,12 @@ spec:
       name: neo4jenterprisestandalones.neo4j.neo4j.com
       version: v1beta1
     - description: Neo4jPlugin declaratively installs and manages a Neo4j plugin (APOC,
-        Graph Data Science, Bloom, GenAI, n10s, GraphQL, or a custom plugin) on a
-        referenced cluster or standalone. The controller merges the plugin name into
-        the StatefulSet's NEO4J_PLUGINS env var (without overwriting plugins added
-        by other controllers), applies plugin-specific configuration, and triggers
-        a controlled rolling restart. Multiple Neo4jPlugin resources targeting the
-        same deployment coexist and stack additively.
+        Graph Data Science, Bloom, GenAI, n10s on 5.26, or a custom JAR through installMode
+        VerifiedDownload) on a referenced cluster or standalone. The controller merges
+        the plugin name into the StatefulSet's NEO4J_PLUGINS env var (without overwriting
+        plugins added by other controllers), applies plugin-specific configuration,
+        and triggers a controlled rolling restart. Multiple Neo4jPlugin resources
+        targeting the same deployment coexist and stack additively.
       displayName: Neo4j Plugin
       kind: Neo4jPlugin
       name: neo4jplugins.neo4j.neo4j.com
@@ -238,7 +238,7 @@ spec:
     - Automated cluster formation with V2 discovery (Neo4j 5.26 LTS and the CalVer release line — 2025.x, 2026.x, and onward)
     - TLS encryption via cert-manager with automatic certificate rotation, plus a JVM truststore (`spec.trustedCASecrets`) for self-signed enterprise CAs (LDAP / OIDC providers behind internal PKI)
     - Authentication providers — Native, LDAP, and OIDC/SSO are wired through typed `spec.auth` fields. JWT is covered via OIDC ID tokens. Kerberos can be configured via direct `spec.config` keys plus a keytab mounted from `spec.extraVolumes`.
-    - Plugin management via the `Neo4jPlugin` CRD — APOC, Graph Data Science, Bloom, GenAI, n10s, GraphQL, and custom plugins, with automatic security configuration and rolling restarts
+    - Plugin management via the `Neo4jPlugin` CRD — APOC, Graph Data Science, Bloom, GenAI, n10s (5.26), and custom JARs through a checksum-verified download, with automatic security configuration and rolling restarts
     - Scheduled backups to S3, GCS, Azure Blob Storage, or PVC — with Workload Identity (cloud IAM) and custom S3-compatible endpoints (e.g. MinIO), encryption, and retention
     - Point-in-time restore and cross-cloud disaster recovery
     - Database lifecycle management via Neo4jDatabase CRD
@@ -317,6 +317,12 @@ spec:
           - ""
           resources:
           - pods/log
+          verbs:
+          - get
+        - apiGroups:
+          - apps
+          resources:
+          - controllerrevisions
           verbs:
           - get
         - apiGroups:

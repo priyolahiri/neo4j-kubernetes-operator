@@ -59,6 +59,7 @@ type fakeAuraAPI struct {
 
 	// Call flags / captured args.
 	listCalled     bool
+	listCalls      int
 	createCalled   bool
 	patchCalled    bool
 	pauseCalled    bool
@@ -73,6 +74,7 @@ type fakeAuraAPI struct {
 
 func (f *fakeAuraAPI) ListInstances(ctx context.Context, tenantID string) ([]aura.InstanceSummary, error) {
 	f.listCalled = true
+	f.listCalls++
 	if f.listInstancesFn != nil {
 		return f.listInstancesFn(ctx, tenantID)
 	}
@@ -244,6 +246,13 @@ func auraTestScheme(t *testing.T) *runtime.Scheme {
 // Secret so resolveAuraCredentials always succeeds.
 func newAuraFakeClient(t *testing.T, scheme *runtime.Scheme, objs ...client.Object) client.Client {
 	t.Helper()
+	return auraFakeClientBuilder(t, scheme, objs...).Build()
+}
+
+// auraFakeClientBuilder is newAuraFakeClient before Build, for a test that
+// adds interceptors.
+func auraFakeClientBuilder(t *testing.T, scheme *runtime.Scheme, objs ...client.Object) *fake.ClientBuilder {
+	t.Helper()
 	creds := &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{Name: testSecretName, Namespace: testNS},
 		Data: map[string][]byte{
@@ -272,8 +281,7 @@ func newAuraFakeClient(t *testing.T, scheme *runtime.Scheme, objs ...client.Obje
 			&neo4jv1beta1.Neo4jEnterpriseCluster{},
 			&neo4jv1beta1.Neo4jEnterpriseStandalone{},
 		).
-		WithObjects(all...).
-		Build()
+		WithObjects(all...)
 }
 
 func credRef() *neo4jv1beta1.AuraCredentialsSecretRef {

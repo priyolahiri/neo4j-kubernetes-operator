@@ -160,7 +160,7 @@ Specifies role constraints for individual servers.
 
 | Field | Type | Description |
 |---|---|---|
-| `className` | `string` | Storage class for the data PVCs. **Optional** — if omitted, the PVCs inherit the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a `StorageClassNotFound` event and `Failed` status) rather than leaving server pods `Pending`. Immutable after creation. |
+| `className` | `string` | Storage class for the data PVCs. **Optional** — if omitted, the PVCs inherit the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a `StorageClassNotFound` event and `Failed` status) rather than leaving server pods `Pending`. Immutable after creation: a volume keeps the StorageClass it was created with, and so does the StatefulSet's claim template, so a later edit changes nothing, and while it names a class the data volumes do not use the cluster raises a `ValidationWarning` naming each volume and its class. |
 | `size` | `string` | **Required.** Storage size (e.g., `"10Gi"`). Must be a valid Kubernetes quantity greater than zero, the same rule as a standalone: `"1.5Gi"` is fine; `"0"`, `"fifty"`, `"10 Gi"` and a capital `K` suffix (`"5K"`, not a Kubernetes suffix — use `Ki`, or lowercase `k`) are refused by validation. Can be increased after creation — the operator automatically expands PVCs and recreates the StatefulSet with zero downtime. **Cannot be decreased** (PVC shrink is not supported by Kubernetes). Requires the StorageClass to have `allowVolumeExpansion: true`. |
 | `retentionPolicy` | `string` | PVC retention policy: `"Delete"` (default) permanently removes PVCs on deletion; `"Retain"` preserves them. **Use `Retain` for production to prevent data loss.** See [Storage and PVC Retention](../user_guide/configuration.md#storage-and-pvc-retention). |
 
@@ -817,7 +817,7 @@ Configures an Ingress resource for HTTP(S) access to Neo4j Browser.
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | Enable OpenShift Route creation |
-| `host` | `string` | Hostname for the Route (optional) |
+| `host` | `string` | Hostname for the Route (optional). Without it OpenShift generates one, which the operator keeps; removing `host` later keeps the Route's current host, since OpenShift ignores an update that clears it |
 | `path` | `string` | Path for the Route (default: `"/"`) |
 | `annotations` | `map[string]string` | Route annotations |
 | `tls` | [`*RouteTLSSpec`](#routetlsspec) | TLS settings for the Route |
@@ -829,7 +829,7 @@ Configures an Ingress resource for HTTP(S) access to Neo4j Browser.
 |---|---|---|
 | `termination` | `string` | TLS termination: `"edge"`, `"reencrypt"`, `"passthrough"` |
 | `insecureEdgeTerminationPolicy` | `string` | `"None"`, `"Allow"`, `"Redirect"` |
-| `secretName` | `string` | Secret containing certificate (reencrypt/passthrough) |
+| `secretName` | `string` | **Reserved — no effect today.** Intended for the Route's certificate, but no Route the operator writes names one: the OpenShift router serves its default certificate (`edge`, `reencrypt`) or the server's own (`passthrough`). A `ValidationWarning` event is raised when it is set. To serve another certificate at the router, add it to the Route itself (`spec.tls.certificate` and `key`, or `spec.tls.externalCertificate`); the operator keeps what it does not render |
 
 ### MCPServerSpec
 
@@ -913,10 +913,10 @@ Configures how the operator handles Neo4j version upgrades.
 | `strategy` | `string` | `"RollingUpgrade"` (default) or `"Recreate"`. A cluster is upgraded one server at a time with either, the only way Neo4j documents for upgrading a cluster; `Recreate` raises a `ValidationWarning` (see [Upgrade Strategy](../user_guide/guides/upgrades.md#upgrade-strategy)). A standalone's one pod is replaced with either |
 | `preUpgradeHealthCheck` | `bool` | Enable health validation before upgrade (default: `true`) |
 | `maxUnavailableDuringUpgrade` | `*int32` | Accepted but has no effect: the operator restarts one server at a time, as Neo4j's rolling upgrade requires, and waits for its databases to catch up before the next. A value other than `1` (the default) raises a `ValidationWarning` |
-| `upgradeTimeout` | `string` | Budget for staging and for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: `"30m"`). A Go duration above zero (`30m`, `1h30m`, `90s`); one that does not parse, or is zero or less, is refused |
-| `postUpgradeHealthCheck` | `bool` | Enable health validation after upgrade (default: `true`) |
-| `healthCheckTimeout` | `string` | Timeout for post-upgrade version verification (default: `"5m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused |
-| `stabilizationTimeout` | `string` | Wait time for cluster stabilization (default: `"3m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused |
+| `upgradeTimeout` | `string` | Budget for staging and for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: `"30m"`). A Go duration above zero (`30m`, `1h30m`, `90s`); one that does not parse, or is zero or less, is refused. A standalone's upgrade has no such step: there a value other than the default raises a `ValidationWarning` |
+| `postUpgradeHealthCheck` | `bool` | Enable health validation after upgrade (default: `true`). A standalone runs no check after its upgrade, whatever the value |
+| `healthCheckTimeout` | `string` | Timeout for post-upgrade version verification (default: `"5m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused. A standalone runs no such check: there a value other than the default raises a `ValidationWarning` |
+| `stabilizationTimeout` | `string` | Wait time for cluster stabilization (default: `"3m"`). A Go duration above zero; one that does not parse, or is zero or less, is refused. A standalone has no such wait: there a value other than the default raises a `ValidationWarning` |
 | `autoPauseOnFailure` | `bool` | Pause upgrade on failure for manual intervention (default: `true`) |
 
 ## Status
@@ -1007,8 +1007,9 @@ Detailed upgrade progress tracking.
 | `currentStep` | `string` | Current upgrade step description |
 | `previousVersion` | `string` | Version before upgrade |
 | `targetVersion` | `string` | Version being upgraded to |
-| `resolvedTargetVersion` | `string` | For a `targetVersion` without a patch, the Neo4j version the servers this upgrade restarted report (`SHOW SERVERS`, `version`): what the target resolved to. Recorded when a restarted server passes the upgrade's availability check, or, for a `Paused` or `Failed` upgrade, at the next `Ready`; kept when the target changes mid-upgrade. Once a server has restarted, a `spec.image.tag` below it is refused too |
-| `progress` | [`*UpgradeProgress`](#upgradeprogress) | Upgrade progress statistics. Once `inProgress` or `upgraded` is above zero the upgrade has restarted a server on its target, and until it completes a `spec.image.tag` below `targetVersion` (and below `resolvedTargetVersion`, when recorded) is refused |
+| `resolvedTargetVersion` | `string` | For a `targetVersion` without a patch, the Neo4j version the servers this upgrade restarted report (`SHOW SERVERS`, `version`): what the target resolved to. Recorded when a restarted server passes the upgrade's availability check, or, for a `Paused` or `Failed` upgrade, at the next `Ready`; kept when the target changes mid-upgrade. Once a server has started on a target (`startedTargetVersion`), a `spec.image.tag` below it is refused too |
+| `startedTargetVersion` | `string` | The newest version a server this upgrade restarted has started on: `previousVersion` when the upgrade starts, then the target once a restarted server's Neo4j container has started on it (running, or exited after running). A container waiting on an image it cannot pull (`ErrImagePull`, `ImagePullBackOff`, `InvalidImageName`) or that could not be created (`CreateContainerConfigError`) has not. Until the upgrade completes, a `spec.image.tag` below it is refused; a tag between it and `targetVersion` is allowed, so an upgrade paused on an image that cannot be pulled can go on towards an earlier fixed tag. Kept when the target changes. Empty on an upgrade an earlier operator release started (see `progress`) |
+| `progress` | [`*UpgradeProgress`](#upgradeprogress) | Upgrade progress statistics. On an upgrade without `startedTargetVersion` (started by an earlier operator release), `inProgress` or `upgraded` above zero means the upgrade has restarted a server on its target, and until it completes a `spec.image.tag` below `targetVersion` (and below `resolvedTargetVersion`, when recorded) is refused |
 | `message` | `string` | Additional upgrade details |
 | `lastError` | `string` | Last error encountered during upgrade |
 
@@ -1071,6 +1072,7 @@ The operator maintains the following condition types on `status.conditions` (sta
 | `ClusterFormed` | The cluster has formed at least once. Never set back to `False` | n/a | n/a — absent until the cluster first forms |
 | `ServersHealthy` | All servers are `state=Enabled` **and** `health=Available` | Any server is Cordoned, Deallocating, or Unavailable | Diagnostics cannot be collected (cluster not formed yet, or Bolt unreachable) |
 | `DatabasesHealthy` | All user databases have `status=online` | Any database has `requestedStatus=online` but `status≠online` | Diagnostics cannot be collected (cluster not formed yet, or Bolt unreachable) |
+| `TopologyChangeDeferred` | `spec.topology.servers` asks for another number of servers than the server StatefulSet keeps, and the change waits: an upgrade is in progress, or a `Paused` or `Failed` one keeps a partition (reason `WaitsForUpgrade`; the message gives both counts and the upgrade). Applied once the upgrade completes — see [Upgrades](../user_guide/guides/upgrades.md) | Nothing waits any more (reason `NoTopologyChangeWaits`) | n/a — absent until a change first waits |
 | `ServersPendingDrain` | Set during a scale-down: the cluster still has Neo4j servers registered beyond `spec.topology.servers` (removed servers not yet deallocated and dropped), so databases may be under-replicated on them | The removed servers have been drained and dropped | n/a |
 | `RestartPending` | One or more servers have not restarted since the operator added or changed a setting that takes full effect only at each server's next restart, and did not restart them for it (reason `SettingsAwaitRestart`; the message names the servers and settings). Today: `dbms.cluster.raft.async_channel_acquisition_enabled` on 5.26.29+ (see [5.26: writes while a server is stopped](../user_guide/clustering.md#526-writes-while-a-server-is-stopped)), `dbms.security.tls_reload_enabled` on CalVer 2025.03+ with cert-manager TLS (see [TLS certificate rotation](../user_guide/security.md#tls-certificate-rotation)), and a change of `dbms.cluster.network.connect_timeout` (added by an operator upgrade, or edited in `spec.config`), which is applied to the running servers but reaches their Raft connections only at a restart (see [Writes while a restarted server rejoins](../user_guide/clustering.md#writes-while-a-restarted-server-rejoins)). Restart the named pods, or let it happen on their next restart | Every server runs those settings (reason `NoSettingsAwaitRestart`) | n/a — absent when nothing is applied at restart (CalVer, or the setting is set in `spec.config`) and no connect-timeout change is recorded |
 | `CrossClusterProxySecure` | The cluster SSL policy requires a peer certificate on the port the CCDR proxy publishes | `strictPeerValidation` is `false`, so `trust_all=true` accepts **any** peer certificate — the exposed port is encrypted but not authenticated. (A cluster with no TLS at all cannot reach this state: the proxy is rejected at validation.) | n/a — the condition is removed entirely when the proxy is disabled |

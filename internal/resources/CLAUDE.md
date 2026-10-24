@@ -15,6 +15,7 @@ apply the results.
 | `networkpolicy.go` | `BuildNetworkPolicyForEnterprise` / `…ForStandalone` |
 | `route.go` | OpenShift `Route` builders (unstructured) |
 | `mcp.go` | MCP sidecar Deployment/Service/Ingress/Route builders |
+| `version_label.go` | `VersionLabelValue`: the `app.kubernetes.io/version` label value for an image tag — the digest dropped, cut to a valid label value — used by every label set that carries a tag (`../../docs/knowledge/operations.md` id 149) |
 | `resource_recommendation.go` | `NewResourceRecommender` resource sizing helper |
 | `security_context.go` | `DefaultNeo4jPodSecurityContext` / `DefaultNeo4jContainerSecurityContext` (single source of truth) |
 | `*_test.go` | Unit tests (see [Tests](#tests)); `cluster_startup_test.go` pins naming + discovery |
@@ -22,7 +23,7 @@ apply the results.
 ## Key types & functions
 
 - `BuildServerStatefulSetForEnterprise(cluster)` — the **one** server StatefulSet (delegates to
-  `buildStatefulSetForEnterprise(cluster, "server", Spec.Topology.Servers)`). `BuildServerStatefulSetsForEnterprise` (plural) is **Deprecated**; don't use it.
+  `buildStatefulSetForEnterprise(cluster, "server", Spec.Topology.Servers)`). The plural builder that made one StatefulSet per server was removed (#533).
 - `buildVersionSpecificDiscoveryConfig(cluster)` — version-gated discovery conf string; branches on `isCalverImage(tag)`.
 - `BuildConfigMapForEnterprise`, `BuildPodSpecForEnterprise` — startup script + pod spec.
 - `BuildHeadlessServiceForEnterprise`, `BuildClientServiceForEnterprise`, `BuildInternalsServiceForEnterprise`, `BuildMetricsServiceForEnterprise`.

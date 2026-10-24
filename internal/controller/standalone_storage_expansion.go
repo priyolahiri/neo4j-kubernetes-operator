@@ -41,6 +41,10 @@ import (
 func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneStorageExpansion(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (bool, error) {
 	logger := log.FromContext(ctx)
 
+	// A size can grow; a StorageClass cannot change. Say so while the spec
+	// asks for one the volume does not use.
+	r.recordStorageClassChange(ctx, standalone)
+
 	// User input: ParseQuantity, never MustParse (a malformed value would panic
 	// the manager). The inline validator rejects a bad size first, but this
 	// function does not depend on it.
@@ -288,6 +292,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) orphanDeleteStandaloneStatefulSet(
 	logger.Info("Orphan-deleting StatefulSet for storage expansion",
 		"statefulSet", name, "namespace", namespace)
 
+	// Kept for the pass that creates it again, which starts from it
+	// (operations.md id 171).
+	r.deletedStatefulSets.remember(sts)
 	propagation := metav1.DeletePropagationOrphan
 	return r.Delete(ctx, sts, &client.DeleteOptions{
 		PropagationPolicy: &propagation,

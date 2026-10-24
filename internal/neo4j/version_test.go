@@ -47,6 +47,10 @@ func TestParseVersion(t *testing.T) {
 		// CalVer year advance
 		{"2026.03.1-enterprise", false, 2026, 3, 1, true},
 
+		// A tag pinned to a digest is the tag's version (#562 walk)
+		{"2026.08.1-enterprise@sha256:0123abcd", false, 2026, 8, 1, true},
+		{"5.26.31@sha256:0123abcd", false, 5, 26, 31, false},
+
 		// Error cases
 		{"", true, 0, 0, 0, false},
 		{"not-a-version", true, 0, 0, 0, false},
@@ -176,21 +180,30 @@ func TestGetImageVersion(t *testing.T) {
 			t.Error("expected error for image without colon")
 		}
 	})
-}
 
-// ---------------------------------------------------------------------------
-// TestGetKubernetesDiscoveryParameter
-// ---------------------------------------------------------------------------
-
-func TestGetKubernetesDiscoveryParameter(t *testing.T) {
-	semver, _ := ParseVersion("5.26.0-enterprise")
-	calver, _ := ParseVersion("2025.01.0-enterprise")
-
-	if got := GetKubernetesDiscoveryParameter(semver); got != "dbms.kubernetes.discovery.v2.service_port_name" {
-		t.Errorf("SemVer: expected v2 parameter, got %q", got)
+	// A tag carrying a digest, which the image validation accepts, and a
+	// registry port: neither colon is the tag's (#531).
+	for image, want := range map[string]string{
+		"neo4j:2026.08.1-enterprise@sha256:0123abcd":               "2026.8.1",
+		"registry.example:5000/neo4j:5.26.31-enterprise":           "5.26.31",
+		"registry.example:5000/neo4j:5.26.31-enterprise@sha256:ab": "5.26.31",
+	} {
+		t.Run(image, func(t *testing.T) {
+			v, err := GetImageVersion(image)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if v.String() != want {
+				t.Errorf("got %s, want %s", v.String(), want)
+			}
+		})
 	}
-	if got := GetKubernetesDiscoveryParameter(calver); got != "dbms.kubernetes.discovery.service_port_name" {
-		t.Errorf("CalVer: expected non-v2 parameter, got %q", got)
+	for _, image := range []string{"neo4j@sha256:0123abcd", "registry.example:5000/neo4j"} {
+		t.Run(image+" names no tag", func(t *testing.T) {
+			if _, err := GetImageVersion(image); err == nil {
+				t.Error("expected an error for an image without a tag")
+			}
+		})
 	}
 }
 

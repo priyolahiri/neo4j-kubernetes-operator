@@ -114,6 +114,56 @@ func TestValidateWithWarnings_ChecksTheTagAgainstAnUpgradeThatRestartedAServer(t
 	})
 }
 
+// A server counts as having run a target only once its Neo4j container started
+// on it (status.upgradeStatus.startedTargetVersion). The #562 walk paused an
+// upgrade to an unpublished tag, 2026.09.9-enterprise: server-2 sat in
+// ErrImagePull and never ran it, yet the earlier fixed 2026.09.0-enterprise
+// was refused as a downgrade — the rule read the walk's progress, which says
+// a server was released, not that it started.
+func TestValidateWithWarnings_HoldsTheTagToWhatAServerStartedOn(t *testing.T) {
+	const (
+		running     = "2026.08.1-enterprise" // status.version
+		unpublished = "2026.09.9-enterprise" // the target server-2 could not pull
+	)
+	released := &neo4jv1beta1.UpgradeProgress{Total: 3, InProgress: 1, Pending: 2}
+	upgrade := func(target, started string) *neo4jv1beta1.UpgradeStatus {
+		return &neo4jv1beta1.UpgradeStatus{Phase: "Paused", PreviousVersion: running, TargetVersion: target,
+			StartedTargetVersion: started, Progress: released}
+	}
+	cases := []struct {
+		name    string
+		upgrade *neo4jv1beta1.UpgradeStatus
+		tag     string
+		wantErr string
+	}{
+		{"no server started on the target: an earlier fixed tag", upgrade(unpublished, running), "2026.09.0-enterprise", ""},
+		{"no server started on the target: back to status.version", upgrade(unpublished, running), running, ""},
+		{"a server started on the target: below it", upgrade(unpublished, unpublished), "2026.09.0-enterprise",
+			"the upgrade to " + unpublished + " (status.upgradeStatus.targetVersion) has already restarted servers on it"},
+		{"a server ran an earlier target: between the two", upgrade("2026.10.0-enterprise", "2026.09.0-enterprise"), "2026.09.1-enterprise", ""},
+		{"a server ran an earlier target: below it", upgrade("2026.10.0-enterprise", "2026.09.0-enterprise"), running,
+			"servers this upgrade restarted have run 2026.09.0-enterprise (status.upgradeStatus.startedTargetVersion)"},
+		{"an earlier operator's record: held to the target once a server was released", upgrade(unpublished, ""), "2026.09.0-enterprise",
+			"has already restarted servers on it"},
+	}
+	validator := NewClusterValidator(nil)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cluster := validClusterForWarnings()
+			cluster.Spec.Image.Tag = tc.tag
+			cluster.Status.Version = running
+			cluster.Status.UpgradeStatus = tc.upgrade
+			errs := validator.ValidateWithWarnings(context.Background(), cluster).Errors
+			if tc.wantErr == "" {
+				assert.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1, "%v", errs)
+			assert.Contains(t, errs[0].Detail, tc.wantErr)
+		})
+	}
+}
+
 // The v1.22.0 journey (2026-10-17): a cluster on 5.26.31-enterprise was moved
 // to 5.26-enterprise, which floated to 5.26.32 that day. The upgrade paused
 // after server-2 restarted on 5.26.32, the tag was set back to

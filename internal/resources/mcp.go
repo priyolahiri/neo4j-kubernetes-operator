@@ -494,7 +494,7 @@ func mcpLabelsForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, mcp *neo4
 	return map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   cluster.Name,
-		"app.kubernetes.io/version":    mcpImageTag(mcp),
+		"app.kubernetes.io/version":    VersionLabelValue(mcpImageTag(mcp)),
 		"app.kubernetes.io/component":  "mcp",
 		"app.kubernetes.io/part-of":    "neo4j-cluster",
 		"app.kubernetes.io/managed-by": "neo4j-operator",
@@ -507,7 +507,7 @@ func mcpLabelsForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, 
 	return map[string]string{
 		"app.kubernetes.io/name":       "neo4j",
 		"app.kubernetes.io/instance":   standalone.Name,
-		"app.kubernetes.io/version":    mcpImageTag(mcp),
+		"app.kubernetes.io/version":    VersionLabelValue(mcpImageTag(mcp)),
 		"app.kubernetes.io/component":  "mcp",
 		"app.kubernetes.io/part-of":    "neo4j-standalone",
 		"app.kubernetes.io/managed-by": "neo4j-operator",

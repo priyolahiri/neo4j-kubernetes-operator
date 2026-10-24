@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"sigs.k8s.io/yaml"
 )
 
 func unstructuredFrom(t *testing.T, obj map[string]interface{}) *unstructured.Unstructured {
@@ -159,9 +160,10 @@ func TestWriteArchive_RoundTrips(t *testing.T) {
 	assert.Equal(t, "kind: Neo4jEnterpriseCluster", got["bundle/resources/Neo4jEnterpriseCluster/prod.yaml"])
 }
 
+// renderObject renders an object with the marshaller the bundle writes with.
 func renderObject(t *testing.T, obj *unstructured.Unstructured) string {
 	t.Helper()
-	b, err := yamlMarshal(obj.Object)
+	b, err := yaml.Marshal(obj.Object)
 	require.NoError(t, err)
 	return string(b)
 }

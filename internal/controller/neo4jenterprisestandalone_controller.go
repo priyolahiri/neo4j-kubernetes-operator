@@ -100,6 +100,21 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// the server reported, so it is read again only when the container runs
 	// another image.
 	runningVersionReads sync.Map
+	// deletedStatefulSets keeps the StatefulSet a storage expansion
+	// orphan-deleted until the pass that creates it again, which takes its
+	// template (statefulset_recreate.go, operations.md id 171).
+	deletedStatefulSets deletedStatefulSets
+	// APIReader reads the ControllerRevision a StatefulSet created again takes
+	// its template from after an operator restart. nil uses Client.
+	APIReader client.Reader
+}
+
+// apiReader is APIReader, or Client when none is set.
+func (r *Neo4jEnterpriseStandaloneReconciler) apiReader() client.Reader {
+	if r.APIReader != nil {
+		return r.APIReader
+	}
+	return r.Client
 }
 
 func podSecurityContextForStandalone(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.PodSecurityContext {
@@ -200,13 +215,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
 	r.advisoryWarnings.record(r.Recorder, standalone, EventReasonValidationWarning, r.Validator.NoEffectWarnings(standalone))
 	if len(validationErrs) > 0 {
-		logger.Error(fmt.Errorf("validation failed: %v", validationErrs), "Validation failed")
 		msg := fmt.Sprintf("Validation failed: %v", validationErrs)
 
-		// Update status to reflect validation failure. Announced when the
-		// failure starts or its message changes, not on every RequeueAfter
-		// while the spec stays invalid (knowledge rule 136).
-		if r.setFailedStatus(ctx, standalone, msg) {
+		// Update status to reflect validation failure. Announced — and logged
+		// at info — when the failure starts or its message changes, not on
+		// every RequeueAfter while the spec stays invalid (knowledge rule 136).
+		announced := r.setFailedStatus(ctx, standalone, msg)
+		logRefusal(logger, announced, "Validation failed", validationErrs.ToAggregate())
+		if announced {
 			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -221,11 +237,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 		return ctrl.Result{}, scErr
 	} else if !exists {
 		msg := fmt.Sprintf("StorageClass %q not found; create it or set spec.storage.className to an existing class (or leave it empty to use the cluster default)", standalone.Spec.Storage.ClassName)
-		logger.Error(fmt.Errorf("storage class not found"), msg)
 		// Announced when the failure starts or its message changes, not on
 		// every RequeueAfter while the class stays missing (knowledge rule
 		// 145).
-		if r.setFailedStatus(ctx, standalone, msg) {
+		announced := r.setFailedStatus(ctx, standalone, msg)
+		logRefusal(logger, announced, "StorageClass not found", fmt.Errorf("%s", msg))
+		if announced {
 			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonStorageClassNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -283,6 +300,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 
 	neo4jclient.ForgetStandalone(standalone.Namespace, standalone.Name)
 	r.runningVersionReads.Delete(standalone.Namespace + "/" + standalone.Name)
+	r.deletedStatefulSets.forget(standalone.Namespace, standalone.Name)
 
 	// Remove finalizer
 	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); err != nil {
@@ -378,21 +396,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		return ctrl.Result{}, fmt.Errorf("failed to reconcile NetworkPolicy: %w", err)
 	}
 
-	// Reconcile OpenShift Route (if configured via spec.service.route)
-	if standalone.Spec.Service != nil && standalone.Spec.Service.Route != nil && standalone.Spec.Service.Route.Enabled {
-		route := resources.BuildRouteForStandalone(standalone)
-		if route != nil {
-			route.SetOwnerReferences([]metav1.OwnerReference{*metav1.NewControllerRef(standalone, neo4jv1beta1.GroupVersion.WithKind("Neo4jEnterpriseStandalone"))})
-
-			if err := r.createOrUpdateUnstructured(ctx, route); err != nil {
-				if meta.IsNoMatchError(err) {
-					logger.Info("Route API not available; skipping Route creation")
-				} else {
-					return ctrl.Result{}, fmt.Errorf("failed to reconcile Route: %w", err)
-				}
-			}
-		}
-	}
+	// The OpenShift Route (spec.service.route) is reconciled once, at the end
+	// of reconcileService. A second write here, an unconditional Get+Update,
+	// sent the Route to the API server again on every pass (#536).
 
 	// Reconcile ServiceMonitor for Prometheus scraping (non-fatal if Prometheus Operator not installed)
 	if standalone.Spec.Monitoring != nil && standalone.Spec.Monitoring.Enabled {
@@ -595,7 +601,8 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 }
 
 // collectPluginConfSettings returns the union of neo4j.conf settings derived from
-// every enabled Neo4jPlugin targeting this standalone (#146). A list error is
+// every Neo4jPlugin on this standalone (#146): enabled, and not refused by its
+// image (operations.md id 170). A list error is
 // returned (not swallowed) so the caller can requeue without pruning plugin-owned
 // keys from neo4j.conf.
 func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (map[string]string, error) {
@@ -616,7 +623,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx cont
 	if err := r.List(ctx, plugins, client.InNamespace(standalone.Namespace)); err != nil {
 		return nil, fmt.Errorf("listing Neo4jPlugins in %s: %w", standalone.Namespace, err)
 	}
-	return unionPluginConfSettings(plugins.Items, standalone.Name), nil
+	return unionPluginConfSettings(plugins.Items, standalone.Name, standalone.Spec.Image.Tag), nil
 }
 
 // standaloneConfigHashAnnotation carries a hash of the rendered neo4j.conf on the
@@ -1135,9 +1142,26 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 		desiredEnv = desiredSpec.Template.Spec.Containers[0].Env
 	}
 
+	// Created again after a storage expansion deleted it: start from the
+	// StatefulSet as it was — its template with the plugins' writes, and from
+	// memory its records — so the apply below sees the template it had, keeps
+	// what other controllers wrote, and restarts nothing that has not changed
+	// (operations.md id 171).
+	existing := &appsv1.StatefulSet{}
+	if getErr := r.Get(ctx, client.ObjectKeyFromObject(statefulSet), existing); errors.IsNotFound(getErr) {
+		if src := r.deletedStatefulSets.source(ctx, r.Client, r.apiReader(), statefulSet.Namespace, statefulSet.Name,
+			standalone.UID, resources.StandalonePodSelector(standalone.Name)); src != nil {
+			src.applyTo(statefulSet)
+			logger.Info("Creating the StatefulSet again as it was, with the new volume claim templates",
+				"statefulSet", statefulSet.Name, "from", src.from)
+		}
+	}
+
 	// Create or update StatefulSet with retry logic to handle resource version conflicts
+	var op controllerutil.OperationResult
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, statefulSet, func() error {
+		var err error
+		op, err = controllerutil.CreateOrUpdate(ctx, r.Client, statefulSet, func() error {
 			// On update, CreateOrUpdate's Get has replaced `statefulSet` with the
 			// stored object (carrying our previously-stamped tracking annotations);
 			// on create it still holds the freshly-built desired object (no
@@ -1213,6 +1237,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 			if len(statefulSet.Spec.Template.Spec.Containers) > 0 {
 				statefulSet.Spec.Template.Spec.Containers[0].Env = mergedEnv
 			}
+			// With Aura Fleet Management the template carries the plugin from
+			// the write that creates the StatefulSet: the fleet merge later in
+			// the pass reads the StatefulSet from a cache that has not seen it,
+			// and the next pass's merge restarted the new pod. Added to what is
+			// written, never to the record of the env the standalone owns
+			// (operations.md id 175); on an existing StatefulSet the merge of
+			// an earlier pass has put it there already.
+			if standaloneInstallsFleetManagement(standalone) {
+				if _, err := addFleetManagementPlugin(&statefulSet.Spec.Template); err != nil {
+					return fmt.Errorf("%w in StatefulSet %s", err, statefulSet.Name)
+				}
+			}
 			statefulSet.Spec.Template.Spec.InitContainers = mergeOwnedByName(
 				currentInit, desiredTemplate.Spec.InitContainers, prevOwnedInit,
 				func(c corev1.Container) string { return c.Name })
@@ -1227,6 +1263,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create or update StatefulSet: %w", err)
+	}
+	if op == controllerutil.OperationResultCreated {
+		r.deletedStatefulSets.forget(statefulSet.Namespace, statefulSet.Name)
 	}
 	logger.Info("Successfully created or updated StatefulSet", "name", statefulSet.Name)
 
@@ -1357,9 +1396,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context
 	desired := route.DeepCopy()
 
 	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-		route.SetLabels(desired.GetLabels())
-		route.SetAnnotations(desired.GetAnnotations())
-		route.Object["spec"] = desired.Object["spec"]
+		applyDesiredRoute(route, desired)
 		return nil
 	})
 	// An advisory warning, announced when it starts to apply, not on every
@@ -1428,9 +1465,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Cont
 
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
-			route.SetLabels(desired.GetLabels())
-			route.SetAnnotations(desired.GetAnnotations())
-			route.Object["spec"] = desired.Object["spec"]
+			applyDesiredRoute(route, desired)
 			return nil
 		})
 		return err
@@ -2203,11 +2238,24 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	var phase, message string
 	var ready bool
 
-	if statefulSet.Status.ReadyReplicas == 1 {
+	// Ready is the one pod ready on the StatefulSet's latest pod template. A
+	// ready pod alone read Ready from the moment a template write started a
+	// roll until the old pod stopped — the pod that was about to restart — so
+	// a dependent that went by Ready (a database, a user, a plugin) acted on a
+	// server on its way down; the plugin gate had to check the roll itself
+	// (operations.md id 141, #548). A cluster turns Forming for a roll the same
+	// way (#444).
+	rolling := statefulSetRolloutPending(statefulSet)
+	switch {
+	case statefulSet.Status.ReadyReplicas == 1 && rolling == "":
 		phase = "Ready"
 		message = "Standalone deployment is ready"
 		ready = true
-	} else {
+	case statefulSet.Status.ReadyReplicas == 1:
+		phase = "Pending"
+		message = "Waiting for the standalone to restart on its latest pod template: " + rolling
+		ready = false
+	default:
 		phase = "Pending"
 		message = "Waiting for standalone deployment to be ready"
 		ready = false
@@ -2238,11 +2286,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	}
 	externalIP := standaloneServiceExternalIP(ctx, r.Client, standalone)
 
+	// status.observedGeneration, and the Ready condition's, is the generation
+	// this pass read at its start and acted on, not the one the write
+	// re-reads: a spec edited while the pass ran has not been acted on, and
+	// claiming it had read as "nothing pending" (as setFailedStatus, and the
+	// cluster since #547; operations.md id 153).
+	actedOn := standalone.Generation
+
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Get the latest version of the resource to avoid conflicts
 		latestStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, latestStandalone); err != nil {
 			return fmt.Errorf("failed to get latest standalone resource: %w", err)
+		}
+		if actedOn == 0 {
+			// An object built in memory rather than read from the API server.
+			actedOn = latestStandalone.Generation
 		}
 
 		version := latestStandalone.Status.Version
@@ -2262,7 +2321,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 			latestStandalone.Status.Message == message &&
 			latestStandalone.Status.Ready == ready &&
 			latestStandalone.Status.Version == version &&
-			latestStandalone.Status.ObservedGeneration == latestStandalone.Generation &&
+			latestStandalone.Status.ObservedGeneration == actedOn &&
 			endpointsCurrent {
 			logger.V(1).Info("Status unchanged, skipping update")
 			return nil
@@ -2278,11 +2337,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 		latestStandalone.Status.Message = message
 		latestStandalone.Status.Ready = ready
 		latestStandalone.Status.Version = version
-		latestStandalone.Status.ObservedGeneration = latestStandalone.Generation
+		latestStandalone.Status.ObservedGeneration = actedOn
 
 		// Update Ready condition using standard helper
 		condStatus, condReason := PhaseToConditionStatus(phase)
-		SetReadyCondition(&latestStandalone.Status.Conditions, latestStandalone.Generation, condStatus, condReason, message)
+		SetReadyCondition(&latestStandalone.Status.Conditions, actedOn, condStatus, condReason, message)
 
 		latestStandalone.Status.Endpoints = &neo4jv1beta1.EndpointStatus{
 			Bolt:               fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", boltScheme, standalone.Name, standalone.Namespace),
@@ -2322,7 +2381,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectStandaloneDiagnostics(ctx c
 
 	databases, dbErr := neo4jClient.GetDatabases(ctx)
 	if dbErr != nil {
-		logger.Error(dbErr, "Failed to collect SHOW DATABASES")
+		logDiagnosticsQueryFailure(logger, "SHOW DATABASES", dbErr)
 		diagnostics.CollectionError = fmt.Sprintf("SHOW DATABASES failed: %v", dbErr)
 	} else {
 		diagnostics.Databases = append(diagnostics.Databases, toDatabaseDiagnostics(databases)...)
@@ -2966,6 +3025,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 	// --- Phase 1: ensure the plugin jar is loaded ---
 	// The standalone StatefulSet name is the same as the standalone resource name.
 	if err := r.mergeFleetManagementPlugin(ctx, standalone.Name, standalone.Namespace); err != nil {
+		if errors.IsNotFound(err) {
+			// The pass that creates the StatefulSet reads it back from a cache
+			// that has not seen it yet. Nothing failed: the next pass adds the
+			// plugin. A Warning here greeted every new standalone (#531).
+			logger.V(1).Info("StatefulSet not in the cache yet; fleet-management is added on a later pass",
+				"statefulSet", standalone.Name)
+			return nil
+		}
 		logger.Error(err, "Failed to patch StatefulSet NEO4J_PLUGINS for fleet-management")
 		if r.Recorder != nil {
 			r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
@@ -3053,50 +3120,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: namespace}, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
 		}
-
-		containerIdx := -1
-		for i, c := range sts.Spec.Template.Spec.Containers {
-			if c.Name == "neo4j" {
-				containerIdx = i
-				break
-			}
-		}
-		if containerIdx < 0 {
-			return fmt.Errorf("neo4j container not found in StatefulSet %s", stsName)
-		}
-
-		envs := sts.Spec.Template.Spec.Containers[containerIdx].Env
-		pluginsIdx := -1
-		for i, e := range envs {
-			if e.Name == "NEO4J_PLUGINS" {
-				pluginsIdx = i
-				break
-			}
-		}
-
-		var updated string
-		var err error
-		if pluginsIdx < 0 {
-			updated = `["fleet-management"]`
-		} else {
-			current := envs[pluginsIdx].Value
-			updated, err = MergeNeo4jPluginList(current, "fleet-management")
-			if err != nil {
-				return fmt.Errorf("merge plugin list: %w", err)
-			}
-			if updated == current {
-				return nil // already present — nothing to patch
-			}
-		}
-
 		stsCopy := sts.DeepCopy()
-		if pluginsIdx < 0 {
-			stsCopy.Spec.Template.Spec.Containers[containerIdx].Env = append(
-				stsCopy.Spec.Template.Spec.Containers[containerIdx].Env,
-				corev1.EnvVar{Name: "NEO4J_PLUGINS", Value: updated},
-			)
-		} else {
-			stsCopy.Spec.Template.Spec.Containers[containerIdx].Env[pluginsIdx].Value = updated
+		changed, err := addFleetManagementPlugin(&stsCopy.Spec.Template)
+		if err != nil {
+			return fmt.Errorf("%w in StatefulSet %s", err, stsName)
+		}
+		if !changed {
+			return nil // already present — nothing to patch
 		}
 		return r.Update(ctx, stsCopy)
 	})

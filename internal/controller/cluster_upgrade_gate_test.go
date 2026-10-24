@@ -23,6 +23,8 @@ package controller
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -31,6 +33,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/record"
+	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -150,5 +153,162 @@ func TestHoldImageDriftUntilReady_ZeroReadyReplicasEscapesHold(t *testing.T) {
 
 	if cluster.Spec.Image.Tag != "2026.04-enterprise" {
 		t.Errorf("with zero ready replicas the corrected image must NOT be held; got %s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	}
+}
+
+// A tag carrying a digest, which validation accepts, is split as the image was
+// built: the hold used to split on the last colon and pinned the repo
+// "neo4j:2026.08.1-enterprise@sha256" with the tag "0123…" (#531).
+func TestHoldImageDriftUntilReady_ATagWithADigestIsPinnedWhole(t *testing.T) {
+	const running = "2026.08.1-enterprise@sha256:0123abcd"
+	sts := gateTestSTS("registry.example:5000/neo4j:"+running, 3, "rev1", "rev1", 3, 3)
+	cluster := gateTestCluster("2026.09.0-enterprise", "Forming")
+	cluster.Spec.Image.Repo = "registry.example:5000/neo4j"
+	r := gateTestReconciler(t, sts, cluster)
+
+	r.holdImageDriftUntilReady(context.Background(), cluster)
+
+	if cluster.Spec.Image.Repo != "registry.example:5000/neo4j" || cluster.Spec.Image.Tag != running {
+		t.Errorf("want registry.example:5000/neo4j : %s, got %s : %s", running, cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+	}
+}
+
+// heldServerPod is a server pod of cluster "c", Ready or not, running image;
+// a Ready one's neo4j container is running.
+func heldServerPod(ordinal int, image string, ready bool) *corev1.Pod {
+	status := corev1.ConditionFalse
+	var state corev1.ContainerState
+	if ready {
+		status = corev1.ConditionTrue
+		state.Running = &corev1.ContainerStateRunning{}
+	}
+	return &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name: fmt.Sprintf("c-server-%d", ordinal), Namespace: "default",
+			Labels: map[string]string{"neo4j.com/cluster": "c", "neo4j.com/clustering": "true"},
+		},
+		Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "neo4j", Image: image}}},
+		Status: corev1.PodStatus{
+			Phase:             corev1.PodRunning,
+			Conditions:        []corev1.PodCondition{{Type: corev1.PodReady, Status: status}},
+			ContainerStatuses: []corev1.ContainerStatus{{Name: "neo4j", Ready: ready, State: state}},
+		},
+	}
+}
+
+// A storage expansion orphan-deletes the server StatefulSet and the next pass
+// creates it again. The hold found no StatefulSet and let the held image
+// through, so the new StatefulSet rolled every server onto it, ungated, on a
+// cluster that was not Ready (#538). It reads the orphaned pods instead.
+func TestHoldImageDriftUntilReady_HoldsTheOrphanedServersImage(t *testing.T) {
+	const running, target = "neo4j:2026.08.1-enterprise", "2026.09.0-enterprise"
+
+	t.Run("every server on one image", func(t *testing.T) {
+		cluster := gateTestCluster(target, "Forming")
+		r := gateTestReconciler(t, cluster,
+			heldServerPod(0, running, true), heldServerPod(1, running, true), heldServerPod(2, running, false))
+		r.holdImageDriftUntilReady(context.Background(), cluster)
+		if cluster.Spec.Image.Tag != "2026.08.1-enterprise" || cluster.Spec.Image.Repo != "neo4j" {
+			t.Errorf("the image the orphaned servers run must be held; got %s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
+		}
+	})
+
+	t.Run("a held upgrade: the highest ordinal carries the template it left", func(t *testing.T) {
+		cluster := heldCluster(upgradePhasePaused, true)
+		cluster.Spec.Image.Tag = "2026.10.0-enterprise" // moved on while the cluster was not Ready
+		cluster.Status.Phase = "Forming"
+		r := gateTestReconciler(t, cluster,
+			heldServerPod(0, "neo4j:"+holdRunning, true), heldServerPod(1, "neo4j:"+holdRunning, true), heldServerPod(2, "neo4j:"+holdTarget, true))
+		r.holdImageDriftUntilReady(context.Background(), cluster)
+		if cluster.Spec.Image.Tag != holdTarget {
+			t.Fatalf("want the held target %s, got %s", holdTarget, cluster.Spec.Image.Tag)
+		}
+		// So the StatefulSet created again keeps the partition the upgrade left.
+		if p := partitionForNewServerStatefulSet(cluster, ptr.To(int32(3))); p == nil || *p != 2 {
+			t.Errorf("the recreated StatefulSet must keep partition 2; got %v", p)
+		}
+	})
+
+	t.Run("no server ready: the escape hatch lets the image through", func(t *testing.T) {
+		cluster := gateTestCluster(target, "Forming")
+		r := gateTestReconciler(t, cluster, heldServerPod(0, running, false), heldServerPod(1, running, false))
+		r.holdImageDriftUntilReady(context.Background(), cluster)
+		if cluster.Spec.Image.Tag != target {
+			t.Errorf("with no ready server the image is not held; got %s", cluster.Spec.Image.Tag)
+		}
+	})
+
+	t.Run("pods of another cluster are not this one's", func(t *testing.T) {
+		cluster := gateTestCluster(target, "Forming")
+		other := heldServerPod(0, running, true)
+		other.Name, other.Labels["neo4j.com/cluster"] = "cc-server-0", "cc"
+		r := gateTestReconciler(t, cluster, other)
+		r.holdImageDriftUntilReady(context.Background(), cluster)
+		if cluster.Spec.Image.Tag != target {
+			t.Errorf("a new cluster's image is not held; got %s", cluster.Spec.Image.Tag)
+		}
+	})
+}
+
+// UpgradeDeferred is announced once a hold outlasts the pass that met it. On
+// the pass after a refused tag is fixed, the phase is still the refusal's
+// Failed: that pass holds the new image and writes Ready, and the next one
+// starts the upgrade. It announced a deferral every time (#550).
+func TestHoldImageDriftUntilReady_AnnouncesADeferralThatOutlastsAPass(t *testing.T) {
+	ctx := context.Background()
+	deferred := func(r *Neo4jEnterpriseClusterReconciler) int {
+		rec, ok := r.Recorder.(*record.FakeRecorder)
+		if !ok {
+			t.Fatal("want a FakeRecorder")
+		}
+		n := 0
+		for len(rec.Events) > 0 {
+			if ev := <-rec.Events; strings.Contains(ev, EventReasonUpgradeDeferred) {
+				n++
+			}
+		}
+		return n
+	}
+	sts := gateTestSTS("neo4j:2026.08.1-enterprise", 3, "rev1", "rev1", 3, 3)
+	pass := func(r *Neo4jEnterpriseClusterReconciler, tag string) {
+		r.holdImageDriftUntilReady(ctx, gateTestCluster(tag, "Failed"))
+	}
+
+	r := gateTestReconciler(t, sts)
+	pass(r, "2026.09.0-enterprise")
+	if n := deferred(r); n != 0 {
+		t.Fatalf("the first pass that holds a change announces nothing; got %d events", n)
+	}
+	// The cluster turned Ready and the upgrade started: nothing to announce.
+	r.deferredUpgradeTargets.Delete("default/c")
+
+	// A hold that lasts: announced on its second pass, once.
+	pass(r, "2026.10.0-enterprise")
+	pass(r, "2026.10.0-enterprise")
+	pass(r, "2026.10.0-enterprise")
+	if n := deferred(r); n != 1 {
+		t.Fatalf("a lasting hold is announced once; got %d", n)
+	}
+	// Another target is another deferral.
+	pass(r, "2026.11.0-enterprise")
+	pass(r, "2026.11.0-enterprise")
+	if n := deferred(r); n != 1 {
+		t.Fatalf("a new target is announced once more; got %d", n)
+	}
+
+	// A change an upgrade the machine stopped already explains — its record
+	// names the target, announced with UpgradeFailed — is not announced.
+	held := heldCluster(upgradePhaseFailed, false)
+	held.Status.Phase = "Forming"
+	r = gateTestReconciler(t, gateTestSTS("neo4j:"+holdRunning, 3, "rev1", "rev1", 3, 3))
+	for i := 0; i < 3; i++ {
+		c := held.DeepCopy()
+		r.holdImageDriftUntilReady(ctx, c)
+		if c.Spec.Image.Tag != holdRunning {
+			t.Fatalf("the change is still held; got %s", c.Spec.Image.Tag)
+		}
+	}
+	if n := deferred(r); n != 0 {
+		t.Fatalf("the stopped upgrade's own target is not announced as deferred; got %d", n)
 	}
 }

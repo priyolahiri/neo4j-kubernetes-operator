@@ -202,27 +202,49 @@ func (v *PluginValidator) validateVerifiedDownloadMode(plugin *neo4jv1beta1.Neo4
 // Neo4j ships new plugins (and uses different labels, e.g. "neo4j-bloom" vs
 // the operator's "bloom"). Returns "" when nothing noteworthy.
 func (v *PluginValidator) pluginCompatibilityWarning(name, version string) string {
-	// Define known plugins and their minimum compatible versions with Neo4j 5.26+
+	// Known plugins and their minimum compatible versions with Neo4j 5.26+,
+	// keyed by the name spec.name takes: the plugin's key in NEO4J_PLUGINS, as
+	// the Operations Manual lists it ("Supported plugins and documentation",
+	// configuration/plugins.adoc on 5.x and dev), and the aliases the plugin
+	// controller maps to one (gds, neosemantics). The matrix used to record
+	// "neo4j-genai" and "neo4j-bloom", which no Neo4jPlugin can be named — the
+	// entrypoint knows only genai and bloom — so the published GenAI and Bloom
+	// examples raised a ValidationWarning (#553). GenAI ships with the server
+	// (products/), so its version is the server's. "" is a known plugin with no
+	// recorded minimum.
+	//
+	// Whether the target's image can install a Managed plugin at all is not
+	// this matrix's question: n10s is a NEO4J_PLUGINS name on 5.26 and on
+	// CalVer before 2025.05 only, and graphql on no supported release — it was
+	// recorded here as "neo4j-graphql" and has been removed. The plugin
+	// controller refuses such a name against its target's image tag
+	// (ManagedPluginImageErrors, operations.md id 170).
 	compatibilityMatrix := map[string]string{
 		"apoc":                   "5.26.0",
 		"apoc-extended":          "5.26.0",
 		"graph-data-science":     "2.9.0",
+		"gds":                    "2.9.0",
+		"bloom":                  "2.9.0",
+		"genai":                  "5.26.0",
+		"n10s":                   "5.26.0",
+		"neosemantics":           "5.26.0",
+		"fleet-management":       "",
 		"neo4j-streams":          "5.26.0",
 		"neo4j-kafka-connect":    "5.26.0",
-		"neo4j-bloom":            "2.9.0",
 		"neo4j-browser":          "5.26.0",
 		"neo4j-desktop":          "1.6.0",
 		"neo4j-etl":              "1.6.0",
 		"neo4j-graph-algorithms": "deprecated", // Deprecated in favor of GDS
-		"neo4j-graphql":          "5.26.0",
 		"neo4j-spark-connector":  "5.3.0",
 		"neo4j-fabric":           "5.26.0", // Part of core in 5.26+
 		"neo4j-vector":           "5.26.0",
-		"neo4j-genai":            "2025.01.0",
 	}
 
 	// Check if plugin is known
 	minVersion, exists := compatibilityMatrix[strings.ToLower(name)]
+	if exists && minVersion == "" {
+		return ""
+	}
 	if !exists {
 		// Unknown plugins are common and legitimate (URL-sourced, newly
 		// shipped, or labelled differently than this matrix records) — note

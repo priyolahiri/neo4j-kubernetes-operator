@@ -284,7 +284,7 @@ func (r *Neo4jPluginReconciler) selfRepair(ctx context.Context, plugin *neo4jv1b
 	}
 	name := resources.PluginInitContainerName(plugin.Spec.Name)
 	desired := sts.DeepCopy()
-	if _, err := r.applyPlugin(ctx, desired, plugin, deployment); err != nil {
+	if err := r.desiredTarget(ctx, desired, plugin, deployment); err != nil {
 		return "", false, err
 	}
 	initChanges := isVerifiedDownloadInstallMode(plugin) &&

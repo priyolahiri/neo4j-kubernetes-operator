@@ -243,12 +243,12 @@
       {
         "refKind": "function",
         "refId": "sf-grant-role",
-        "note": "Desired roles not yet granted are added via GRANT ROLE; roles no longer desired are removed via REVOKE ROLE (never touching the implicit PUBLIC role)."
+        "note": "Desired roles not yet granted are added via GRANT ROLE — built-ins, Neo4jRole CRs, and roles created in Neo4j directly (SHOW ROLES); roles no longer desired are removed via REVOKE ROLE (never touching the implicit PUBLIC role)."
       },
       {
         "refKind": "event",
         "refId": "ev-user-ready",
-        "note": "Once granted roles match spec.roles exactly and no roles are missing, the reconciler emits UserReady and sets status.phase=Ready."
+        "note": "Once granted roles match spec.roles exactly and no roles are missing, the reconciler sets status.phase=Ready and emits UserReady if that write entered Ready; a target restart does not."
       }
     ],
     "notes": "Neo4jUser.spec is authoritative for password (via the Secret's change-detection hash), accountStatus, homeDatabase, and roles — drift from any of these is reverted every reconcile loop. Privileges are never set here: they live exclusively on Neo4jRole.spec.privileges, never on Neo4jUser or Neo4jRoleBinding."

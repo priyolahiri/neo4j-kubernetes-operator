@@ -348,17 +348,20 @@ func TestBackupLogParsers_IgnoreCase(t *testing.T) {
 	assert.Equal(t, backupArtifactFull, run.ArtifactType)
 }
 
-// neo4j-admin matches the backup glob `Products*` ignoring case, so it takes
-// `productsales` along; the guard that refuses such a glob compared the name
-// as written and matched nothing.
+// neo4j-admin matches the backup patterns `Products-g*` / `Products-p*`
+// ignoring case, so they take a database named `products-gold` along; the
+// guard that refuses such patterns compared the name as written and matched
+// nothing. A database that merely begins with the family's name (`productsales`,
+// a copy restored as `ProductsCopy`) is not matched by the patterns at all.
 func TestShardedGlobPoisoning_IgnoresCase(t *testing.T) {
 	dbs := []neo4jclient.DatabaseInfo{
 		{Name: "system"}, {Name: "products-g000"}, {Name: "products-p000"}, {Name: "products-p000"},
-		{Name: "productsales"}, {Name: "products"},
+		{Name: "productsales"}, {Name: "products"}, {Name: "productscopy"}, {Name: "productscopy-g000"},
+		{Name: "productscopy-p000"}, {Name: "products-gold"},
 	}
-	assert.Equal(t, []string{"productsales"}, shardedGlobPoisoning("Products", dbs))
-	assert.Equal(t, []string{"productsales"}, shardedGlobPoisoning("products", dbs))
-	assert.Empty(t, shardedGlobPoisoning("Products", dbs[:4]), "the family alone")
+	assert.Equal(t, []string{"products-gold"}, shardedGlobPoisoning("Products", dbs))
+	assert.Equal(t, []string{"products-gold"}, shardedGlobPoisoning("products", dbs))
+	assert.Empty(t, shardedGlobPoisoning("Products", dbs[:9]), "the family, its copy and a name that only begins the same way")
 }
 
 // An all-databases backup catalogues the sharded family as neo4j-admin listed

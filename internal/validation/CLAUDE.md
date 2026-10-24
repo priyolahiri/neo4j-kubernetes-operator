@@ -17,11 +17,11 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 | `topology_validator.go` | Server count, `serverModeConstraint`/`serverRoles` index/dup/all-SECONDARY checks. |
 | `config_validator.go` | Rejects deprecated / operator-managed / per-pod runtime `spec.config` keys; calls `ValidateSettingValues`. |
 | `setting_values.go` | `typedSettings` (setting → Neo4j value type + documented minimum) and `ValidateSettingValues`: refuses a typed value Neo4j would refuse at startup, with readers that mirror Neo4j's own parsers. Narrow on purpose — see `docs/knowledge/operations.md` id 140 before adding a setting. |
-| `memory_validator.go`, `storage_validator.go` | Memory floors, PVC/storage checks. |
+| `memory_validator.go`, `storage_validator.go` | Memory floors, PVC/storage checks; `StorageClassChangeWarning`, the advisory the reconcilers raise while `spec.storage.className` names a class the existing volumes do not use (operations.md id 102). |
 | `tls_validator.go`, `truststore_validator.go` | TLS mode/issuer/strict-peer rules, trusted CA secrets. |
 | `auth_validator.go`, `user_validator.go`, `role_validator.go`, `rolebinding_validator.go`, `authrule_validator.go` | Auth providers and the user/role/binding/authrule CRDs. |
 | `backup_validator.go` | `BackupValidator` + standalone helper `ValidateNeo4jVersion`. |
-| `upgrade_validator.go` (`ValidateVersionUpgrade`, shared with the upgrade state machine; `validateTagAgainstUpgrade`, the tag against an unfinished upgrade's target once it has restarted a server, operations.md id 149; `ValidateUpgradeStrategy`), `plugin_validator.go`, `fleet_validator.go`, `mcp_validator.go`, `shardeddatabase_validator.go`, `sharding.go` | Version-upgrade rules, plugins, Aura fleet, MCP, sharded DB, `IsClusterShardingReady`. |
+| `upgrade_validator.go` (`ValidateVersionUpgrade`; `ValidateTagAgainstRunning`, the whole tag rule against status, shared by `validateAgainstRunning` and the upgrade state machine; `TagBelowReportedVersion`, its ordering for the machine's live check; `validateTagAgainstUpgrade`, the tag against what an unfinished upgrade's servers have started on (`upgradeFloor`: `status.upgradeStatus.startedTargetVersion`, or the target for a record an earlier operator wrote once it restarted a server), operations.md id 149; `ValidateUpgradeStrategy`), `plugin_validator.go`, `plugin_entrypoint.go` (`entrypointPluginLists`, the per-release names the Neo4j entrypoint installs; `ManagedPluginImageErrors`, operations.md id 170), `fleet_validator.go`, `mcp_validator.go`, `shardeddatabase_validator.go`, `sharding.go` | Version-upgrade rules, plugins, Aura fleet, MCP, sharded DB, `IsClusterShardingReady`. |
 | `alias_validator.go`, `compositedatabase_validator.go`, `replica_validator.go`, `ccdr_proxy_validator.go`, `backup_replication_source.go` | `Neo4jDatabaseAlias`, `Neo4jCompositeDatabase`, `Neo4jReplicaDatabase`; `spec.crossClusterReplication` (refused without `spec.tls`); replication-source `Neo4jBackup` rules. |
 | `admin_password_validator.go`, `license_validator.go`, `networkpolicy_validator.go` | Admin password shape (no leading `-`), `acceptLicenseAgreement` (`yes`/`eval`), `spec.networkPolicy`. |
 | `*_validator_test.go`, `sharding_test.go` | Table-driven unit tests (one per validator). |
@@ -43,6 +43,9 @@ file per concern; the per-CRD aggregators (`ClusterValidator`, `StandaloneValida
 - `cluster_validator.go` **reports every validator, not just the first**: the early return on
   image errors was removed in #354, because it produced a fix-one-rerun loop (a broken image hid
   the `spec.config` and `spec.storage` problems behind it). Keep it that way — two tests pin it.
+  The sharded validator had the same loop behind a failed cluster read (#532): its spec rules now
+  run first, and a cluster that does not exist yet is `Pending` (the reconciler waits for it,
+  operations.md id 145), never an error.
 - `image_validator.go` rejects only the unambiguous `-community` signal; a bare/retagged Enterprise
   tag passes (runtime `CALL dbms.components()` is the backstop). Version must be 5.26.x or 2025.01.0+.
 - `edition_validator.go` is a deliberate no-op — keep it; the edition field was removed.
