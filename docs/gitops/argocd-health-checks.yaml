@@ -11,6 +11,18 @@ metadata:
   name: argocd-cm
   namespace: argocd
 data:
+  # ---------------------------------------------------------------------------
+  # Self-managed CRDs key off status.phase, an operator-owned vocabulary.
+  #
+  # Every phase `kubectl neo4j status --problems` reports is Degraded on every
+  # kind — Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — whether
+  # or not that kind writes it today. A refused spec does not progress: as
+  # Progressing (a Neo4jDatabase in ValidationFailed, before #528), Argo CD
+  # showed the Application still syncing and a later sync wave waited for ever.
+  # TestArgoCDHealthChecks_EveryProblemPhaseIsDegraded
+  # (cmd/kubectl-neo4j/argocd_health_test.go) pins this against the CLI's list.
+  # ---------------------------------------------------------------------------
+
   resource.customizations.health.neo4j.neo4j.com_Neo4jEnterpriseCluster: |
     hs = {}
     if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
@@ -22,7 +34,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Neo4j cluster is ready"
-    elseif phase == "Failed" or phase == "Degraded" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Neo4j cluster is in a failed state"
     else
@@ -42,7 +54,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Neo4j standalone is ready"
-    elseif phase == "Failed" or phase == "Degraded" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Neo4j standalone is in a failed state"
     else
@@ -62,7 +74,10 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Database is ready"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
+      -- "ValidationFailed": the operator refused the spec, nothing was
+      -- created, and nothing changes until the spec is edited. "Error": the
+      -- deletion's DROP DATABASE was refused and is being retried.
       hs.status = "Degraded"
       hs.message = obj.status.message or "Database creation failed"
     else
@@ -92,7 +107,7 @@ data:
       -- a sync wave.
       hs.status = "Healthy"
       hs.message = obj.status.message or "Backup is suspended"
-    elseif phase == "Failed" or phase == "Invalid" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       -- "Invalid" is terminal until the spec is edited (no requeue).
       hs.status = "Degraded"
       hs.message = obj.status.message or "Backup failed"
@@ -114,7 +129,7 @@ data:
     if phase == "Completed" or phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Restore completed"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Restore failed"
     else
@@ -134,7 +149,7 @@ data:
     if phase == "Ready" or phase == "Installed" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Plugin is installed and ready"
-    elseif phase == "Failed" or phase == "Invalid" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       -- "Invalid" is terminal until the spec is edited (no requeue).
       hs.status = "Degraded"
       hs.message = obj.status.message or "Plugin installation failed"
@@ -155,7 +170,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Sharded database is ready"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Sharded database failed"
     else
@@ -179,7 +194,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "User is in sync"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "User reconciliation failed"
     else
@@ -199,7 +214,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Role is in sync"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Role reconciliation failed"
     else
@@ -219,7 +234,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Role binding is in sync"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Role binding reconciliation failed"
     else
@@ -242,7 +257,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Auth rule is in sync"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Auth rule reconciliation failed"
     else
@@ -264,7 +279,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Composite database is in sync"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Composite database reconciliation failed"
     else
@@ -287,7 +302,7 @@ data:
     if phase == "Ready" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Alias is in sync"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Alias reconciliation failed"
     else
@@ -315,7 +330,7 @@ data:
       -- the CR is now inert by design. Do NOT let Argo try to "fix" it.
       hs.status = "Healthy"
       hs.message = obj.status.message or "Replica was promoted; this CR is inert"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Replica reconciliation failed"
     else
@@ -338,7 +353,7 @@ data:
     if phase == "Completed" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Promotion completed"
-    elseif phase == "Failed" then
+    elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Promotion failed"
     else
