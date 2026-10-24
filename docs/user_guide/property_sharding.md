@@ -193,7 +193,10 @@ spec:
 
 Use `seedURI` for a single backup location that contains shard-suffixed artifacts
 (for example, `products-g000` and `products-p000`). Use `seedURIs` for per-shard
-URIs when seeding from dumps or multiple locations.
+URIs when seeding from dumps or multiple locations. Its keys are the shard names,
+which Neo4j derives from the database name lower-cased and matches exactly; the
+operator sends them lower-cased, so `spec.name: Products` seeds from keys
+`products-g000`, `products-p000`, … however the spec spells them.
 
 ```yaml
 spec:
@@ -467,11 +470,15 @@ with `spec.instanceRef` (the cluster) + `spec.shardedDatabase` set to the
 **`Neo4jShardedDatabase` resource name** (e.g. `products-sharded-db`) — the operator
 resolves the logical database name (`spec.name`, e.g. `products`) from that resource.
 A single backup captures every shard consistently in one `neo4j-admin database backup`
-invocation via a `{logical-name}*` glob — you do **not** list the individual shard
-databases (`products-g000`, `products-p000`, …). Because of the glob, the backup is
-refused while any other database's name starts with the logical name (for example
-`products-archive` beside `products`), naming it: rename or drop that database, or
-pick a logical name no other database begins with.
+invocation via two patterns, `{logical-name}-g*` (the graph shard) and
+`{logical-name}-p*` (the property shards), with the name lower-cased as Neo4j names the
+shards — you do **not** list the individual shard databases (`products-g000`,
+`products-p000`, …). A database whose name only begins with the logical name (a copy
+restored beside it as `ProductsCopy`, or `productsales`) is not part of it. The backup is
+refused while another database matches the patterns without being a shard (for example
+`products-gold` beside `products`), naming it: rename or drop that database, or pick
+another logical name. The run's `status.history[].shardArtifacts` names each shard as
+`neo4j-admin` writes it, lower-cased, whatever capitals `spec.name` has.
 
 > ℹ️ An **all-databases** backup (`spec.allDatabases`) **catalogues** each sharded
 > family's per-shard artifacts in `status.history[].shardedFamilies` (family names also

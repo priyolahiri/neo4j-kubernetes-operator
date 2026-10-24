@@ -19,12 +19,14 @@ package controller
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
@@ -74,12 +76,63 @@ func roleCRIndex(ctx context.Context, c client.Client, namespace, targetKey stri
 
 // roleNameExists reports whether roleName matches a same-namespace Neo4jRole
 // CR's effective Neo4j role name (spec.name, or metadata.name when spec.name
-// is empty) pointing at the same clusterRef. This is the existence pre-flight
-// shared by both controllers' diffRoles.
+// is empty) pointing at the same clusterRef.
 func roleNameExists(ctx context.Context, c client.Client, namespace, targetKey, roleName string) bool {
 	effective, _ := roleCRIndex(ctx, c, namespace, targetKey)
 	_, ok := effective[roleName]
 	return ok
+}
+
+// roleLister is the one call the role-existence pre-flight needs from Neo4j.
+type roleLister interface {
+	ListRoles(ctx context.Context) ([]neo4jclient.RoleInfo, error)
+}
+
+// missingRoles is the existence pre-flight shared by the Neo4jUser and
+// Neo4jRoleBinding diffRoles: the desired roles, sorted, that exist nowhere. A
+// role exists when it is built in, already granted to the user, managed by a
+// same-namespace Neo4jRole on the same target, or listed by SHOW ROLES — a role
+// created in Neo4j directly, by an admin or another tool. Without that last
+// check such a role was reported missing on every pass and never granted,
+// although spec.roles is documented to take one (#526). SHOW ROLES is read
+// only when some role is none of the others, so a steady pass does not run it.
+// Role names are case-sensitive in Neo4j, so they are compared exactly.
+func missingRoles(
+	ctx context.Context, c client.Client, roles roleLister,
+	namespace, targetKey string, desired []string, current map[string]struct{},
+) ([]string, error) {
+	var unknown []string
+	for _, role := range desired {
+		if validation.IsBuiltInRole(role) {
+			continue
+		}
+		if _, ok := current[role]; ok {
+			continue
+		}
+		if roleNameExists(ctx, c, namespace, targetKey, role) {
+			continue
+		}
+		unknown = append(unknown, role)
+	}
+	if len(unknown) == 0 {
+		return nil, nil
+	}
+	live, err := roles.ListRoles(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list roles: %w", err)
+	}
+	inNeo4j := make(map[string]struct{}, len(live))
+	for _, r := range live {
+		inNeo4j[r.Role] = struct{}{}
+	}
+	var missing []string
+	for _, role := range unknown {
+		if _, ok := inNeo4j[role]; !ok {
+			missing = append(missing, role)
+		}
+	}
+	sort.Strings(missing)
+	return missing, nil
 }
 
 // resolveRoleNames maps each desired spec.roles entry to the Neo4j role name to

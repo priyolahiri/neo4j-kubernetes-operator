@@ -6,13 +6,13 @@
 
 The fleet-management plugin jar is pre-bundled in every Neo4j Enterprise image at `/var/lib/neo4j/products/`. When you enable Fleet Management in the operator:
 
-1. The operator merges `"fleet-management"` into the existing `NEO4J_PLUGINS` list on the StatefulSet. This is additive — any plugins already installed via `Neo4jPlugin` CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to `/plugins/` — **no internet access required**.
+1. The operator merges `"fleet-management"` into the existing `NEO4J_PLUGINS` list on the StatefulSet. This is additive — any plugins already installed via `Neo4jPlugin` CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to `/plugins/` — **no internet access required**. A new cluster or standalone is created with the plugin already listed, so its servers start with it; enabling Fleet Management on a running deployment restarts its servers once to load it.
 2. The required procedure security settings (`dbms.security.procedures.unrestricted=fleetManagement.*` and `dbms.security.procedures.allowlist=fleetManagement.*`) are added to `neo4j.conf` automatically.
 3. Once the cluster reaches `Ready` phase and the plugin is loaded, the operator reads the Aura registration token from a Kubernetes Secret and calls `CALL fleetManagement.registerToken($token)` via Bolt. This is idempotent — re-registering on reconcile loops is harmless.
 
 ### Two-phase reconciliation
 
-Plugin installation (step 1) happens on every reconcile when `enabled: true`. Token registration (step 2–3) is gated on `status.phase == "Ready"` and skips if `status.auraFleetManagement.registered == true`. This ensures the pod restart triggered by the plugin load completes before registration is attempted.
+Plugin installation (step 1) happens on every reconcile when `enabled: true`. Token registration (step 2–3) is gated on `status.phase == "Ready"` and skips if `status.auraFleetManagement.registered == true`. This ensures the plugin is loaded (on a running deployment, after the restart that loads it) before registration is attempted.
 
 ### Plugin coexistence
 
@@ -80,7 +80,7 @@ spec:
 
 The operator will:
 
-- Merge `"fleet-management"` into `NEO4J_PLUGINS` on the next reconcile (causes a rolling pod restart to load the jar)
+- Merge `"fleet-management"` into `NEO4J_PLUGINS`: a new cluster's servers start with it; on a running cluster this rolls the servers once to load the jar
 - Register the token once the cluster reaches `Ready` phase
 
 ### Verify registration

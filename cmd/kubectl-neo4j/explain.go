@@ -91,6 +91,16 @@ var conditionGuidance = map[string]guidance{
 		meaning:         "a scale-down is waiting for servers to hand off their data before they can be removed.",
 		action:          "Wait. Removing the pods by hand loses the data those servers still hold.",
 	},
+	controller.ConditionTypeTopologyChangeDeferred: {
+		problemWhenTrue: true,
+		meaning: "spec.topology.servers asks for another number of servers than the cluster runs, and the change " +
+			"waits: an upgrade is in progress, or stopped Paused or Failed part-way. A rolling upgrade changes no " +
+			"topology — servers added then would start on the upgrade's target, and a scale-down's drain would run " +
+			"mid-upgrade. The message gives both counts and the upgrade.",
+		action: "Nothing is lost; the change is applied once the upgrade completes. To go on with a Paused upgrade, " +
+			"see status.upgradeStatus.lastError and change spec.image.tag or set " +
+			"spec.upgradeStrategy.autoPauseOnFailure to false; or set spec.topology.servers back to the count the cluster runs.",
+	},
 	controller.ConditionTypeRestartPending: {
 		problemWhenTrue: true,
 		meaning: "one or more servers have not restarted since the operator added or changed a setting that takes " +
@@ -230,6 +240,10 @@ var phaseGuidance = map[string]guidance{
 		meaning: "reconciliation is deliberately paused for this resource.",
 		action:  "Nothing will change until it is resumed. Expected during a maintenance window; unexpected otherwise.",
 	},
+	neo4jv1beta1.PhaseDisabled: {
+		meaning: "the Neo4jPlugin has spec.enabled: false, and nothing of it is on its target's servers: its NEO4J_PLUGINS entry, settings, procedure-list tokens and VerifiedDownload init container were removed (one rolling restart), or were never there.",
+		action:  "Nothing to do. Set spec.enabled: true to install the plugin again; delete the CR if you no longer want it at all.",
+	},
 	neo4jv1beta1.PhasePending: {
 		meaning: "the resource is waiting on something that does not exist yet — a Secret, a referenced cluster, a database.",
 		action:  "This is 'not yet', not 'wrong'. status.message names what it is waiting for; create that and it proceeds on its own. On a Neo4jReplicaDatabase it also means the replica has not been created in Neo4j yet: check the downstream is Ready and, for an s3:// source, that its servers have AWS_REGION (reason ReplicaObjectStoreEnvMissing). A Neo4jDatabase or Neo4jShardedDatabase waiting for seed credentials on its cluster says so with reason SeedCredsMissing.",
@@ -271,6 +285,12 @@ var phaseGuidance = map[string]guidance{
 	neo4jv1beta1.PhaseExpanding: {
 		meaning: "the volumes are being grown.",
 		action:  "Wait. This needs a StorageClass with allowVolumeExpansion: true — `kubectl neo4j preflight` checks that before you ask for it.",
+	},
+	neo4jv1beta1.PhasePendingDependencies: {
+		meaning: "a Neo4jAuthRule is applied in Neo4j with the roles that exist, and waits for the others it grants. " +
+			"The rule is in force for those roles; the missing ones get it once they exist.",
+		action: "This is 'not yet', not 'wrong'. status.message names the missing roles: create them (a Neo4jRole, or a " +
+			"role created in Neo4j) and the rule is granted to them on its own, without re-applying it.",
 	},
 	neo4jv1beta1.PhaseUnknown: {
 		meaning: "the operator could not determine the state.",

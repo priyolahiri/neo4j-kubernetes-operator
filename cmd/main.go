@@ -503,6 +503,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — a one-time backup's terminal phase
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				// Typed Kubernetes client for fetching backup-Pod logs (used by
 				// shard-artifact filename/size parsing + neo4j-admin backup
@@ -514,11 +515,14 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 		{
 			name: "Neo4jRestore",
 			controller: &controller.Neo4jRestoreReconciler{
-				Client:       mgr.GetClient(),
-				Scheme:       mgr.GetScheme(),
-				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
-				APIReader:    mgr.GetAPIReader(), // uncached — guards the destructive recreate
-				RequeueAfter: controller.GetTestRequeueAfter(),
+				Client:   mgr.GetClient(),
+				Scheme:   mgr.GetScheme(),
+				Recorder: mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				// A source of its own: per-database progress keeps its own
+				// event budget, so the restore's outcome is never dropped.
+				ProgressRecorder: mgr.GetEventRecorderFor("neo4j-restore-progress"),
+				APIReader:        mgr.GetAPIReader(), // uncached — guards the destructive recreate
+				RequeueAfter:     controller.GetTestRequeueAfter(),
 				// Cluster-native Cypher restores poll database online-state
 				// across requeues (pollClusterRestoreOnline) rather than
 				// blocking a worker, but >1 worker still keeps independent
@@ -801,17 +805,19 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — a one-time backup's terminal phase
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				Clientset:    mustBuildClientset(mgr),
 			}, "Neo4jBackup"
 		},
 		"restore": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.Neo4jRestoreReconciler{
-				Client:       mgr.GetClient(),
-				Scheme:       mgr.GetScheme(),
-				Recorder:     mgr.GetEventRecorderFor("neo4j-restore-controller"),
-				APIReader:    mgr.GetAPIReader(), // uncached — guards the destructive recreate
-				RequeueAfter: controller.GetTestRequeueAfter(),
+				Client:           mgr.GetClient(),
+				Scheme:           mgr.GetScheme(),
+				Recorder:         mgr.GetEventRecorderFor("neo4j-restore-controller"),
+				ProgressRecorder: mgr.GetEventRecorderFor("neo4j-restore-progress"),
+				APIReader:        mgr.GetAPIReader(), // uncached — guards the destructive recreate
+				RequeueAfter:     controller.GetTestRequeueAfter(),
 				// See dev-mode wiring above: poll-based online wait + multiple
 				// workers prevents one slow restore from starving the rest.
 				MaxConcurrentReconciles: 4,

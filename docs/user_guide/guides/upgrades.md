@@ -49,7 +49,7 @@ operator restarts:
 
 | Phase | What's happening |
 |---|---|
-| `Staging` | Pre-upgrade health check, version-compatibility check, StatefulSet frozen (partition = replica count), new image applied to the template |
+| `Staging` | StatefulSet frozen (partition = replica count), new image applied to the template. Before it, the version check and the pre-upgrade health check; if one refuses, nothing changes on the servers (see [When an upgrade stops](#when-an-upgrade-stops-paused-and-failed)) |
 | `Rolling` | Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (`SHOW SERVERS`) **and** that pod's databases (`dbms.cluster.statusCheck`, `SHOW DATABASES`) are verified before the partition is lowered |
 | `Stabilizing` | All pods updated; the operator waits for consistently stable cluster health and consensus |
 | `Verifying` | Every server's reported version is checked against the target before the upgrade is declared done |
@@ -88,11 +88,15 @@ any patch of that line pass: `2026.08.1` passes for `2026.08-enterprise`,
 `spec.image` while the cluster is `Forming`, `Degraded`, mid-restore, or
 otherwise not `Ready` — or while it is `Ready` but a server is unavailable (its
 `Degraded` condition is `True`) — does not roll pods immediately: the operator
-holds the change (you'll see an `UpgradeDeferred` event on the cluster) and the
+holds the change (you'll see an `UpgradeDeferred` event on the cluster once the
+hold has lasted more than one reconcile) and the
 rolling-upgrade state machine performs it once the cluster is `Ready` with every
 server available — a version change must never sneak in as an ungated restart
 while quorum is still forming, and rolling the other servers while one is down
-could cost the cluster its majority.
+could cost the cluster its majority. The hold also covers a storage expansion
+made meanwhile: the expansion deletes the StatefulSet (leaving its pods
+running), and the StatefulSet is created again on the image the servers run, not
+the new one.
 
 One deliberate exception: if **no server pod is ready** — the typical case
 being a first deploy stuck in `ImagePullBackOff` on a mistyped tag, but also a
@@ -124,6 +128,14 @@ backups wait for. Once every server is available the cluster is `Ready`, and
 reported as for any cluster: `Ready` with the `Degraded` condition, then
 `Degraded` after the grace period.
 
+**Refused before it starts.** The version check and the pre-upgrade health check
+run before anything changes on the servers. If one of them refuses, the cluster
+stays `Ready` — its `status.message` names the stopped upgrade — and the event is
+emitted once for that refusal, not again while the same check keeps refusing
+with the same error. A `Failed` one is tried again every minute, and the rest of
+the cluster's reconciliation runs in between; a `Paused` one waits for you, as
+below.
+
 What happens next:
 
 - **Failed:** the operator retries the upgrade itself once the cluster is
@@ -139,9 +151,22 @@ What happens next:
     afterwards if you want the next failure to pause again.
 
   Either way the upgrade resumes once the cluster is `Ready` with every server
-  available, and the `UpgradeStarted` event says it resumed. A server that
-  cannot start on the target image keeps the cluster short of a server, so the
-  upgrade does not resume, towards any tag, while it is down.
+  available, and the `UpgradeStarted` event says it resumed. While it rolls,
+  `status.message` says the upgrade is in progress.
+- **A server that cannot start on the target.** When the servers the upgrade
+  restarted cannot start on its target — the image cannot be pulled (a typo, a
+  tag not published yet), or Neo4j keeps exiting on it — the cluster is short of
+  them, so it is not `Ready` with every server available. Set `spec.image.tag`
+  to another target (a fixed image, or a later version): the upgrade goes on
+  towards it straight away and replaces those servers first — they are down, so
+  no server that is up restarts — then rolls the rest one at a time through the
+  usual checks. The `UpgradeStarted` event names the servers it
+  replaces. This applies only when the servers that are down are exactly the
+  ones the upgrade restarted, every one of them failing to start, and Neo4j
+  reports no other server unavailable; otherwise the upgrade waits until every
+  server is back. Setting the same target again, or turning
+  `autoPauseOnFailure` off, does not replace them: the same image cannot start
+  there either.
 - **Going back:** you can set the tag back to `status.version` only while the
   upgrade has not restarted any server (it stopped while staging, or before its
   first server restarted); the upgrade then runs to that version, which every
@@ -152,6 +177,15 @@ What happens next:
   means below the patch the restarted servers report, which the operator
   records in `status.upgradeStatus.resolvedTargetVersion` (see
   [Tags without a patch](#tags-without-a-patch)).
+
+**The number of servers waits for the upgrade.** A rolling upgrade changes no
+topology. A change of `spec.topology.servers` made while an upgrade is in
+progress, or while a `Paused` or `Failed` one has restarted some of the servers
+(or staged its target), is not applied until the upgrade completes: added
+servers would start on the target, and a scale-down's drain would run
+mid-upgrade. The `TopologyChangeDeferred` condition says so, with both counts.
+Once the upgrade completes, the change is applied as usual: a scale-down
+drains its servers first.
 
 ### Version checks
 
@@ -186,7 +220,9 @@ and once it has completed, the same tag is refused against what every server run
 Update validation failed: validation failed: spec.image.tag: Invalid value: "5.26.31-enterprise": downgrades are not supported: the servers run 5.26.32 (status.runningVersion, what 5.26-enterprise in status.version resolved to), and Neo4j cannot go back to an earlier version. Set the tag to 5.26.32 or later; running an earlier version means restoring a backup taken before the upgrade
 ```
 
-`5.26.32-enterprise`, a later patch, `5.26-enterprise` itself and any later line are accepted. Moving from `5.26-enterprise` to `5.26.32-enterprise` changes the server pod template, so it runs as an upgrade and every server restarts once, even when both tags are the same image.
+`5.26.32-enterprise`, a later patch, `5.26-enterprise` itself and any later line are accepted. Moving from `5.26-enterprise` to `5.26.32-enterprise` changes the server pod template, so it runs as an upgrade and every server restarts once, even when both tags are the same image. There is no way round that restart: Kubernetes restarts a container whose image reference changes, whatever image it resolves to, and the operator cannot tell what a tag resolves to without asking the registry, with its credentials, before any server pulls it. To avoid the extra restart, keep the tag without a patch until your next upgrade, and name a patch from then on.
+
+When an upgrade starts, the operator also asks the servers what they run, and refuses a tag below the highest version one of them reports (the upgrade turns `Paused` or `Failed` before anything changes, and `lastError` names the version). This catches a patch the servers run that the operator has not recorded yet.
 
 A `Neo4jEnterpriseStandalone` is held to the same rule. Its `status.version` is recorded once its pod is ready on the current image, so it does not move while the pod is being replaced, nor for an image that never starts: setting the tag back to the version the server runs is always allowed. A downgrade is refused the same way (the standalone turns `Failed` with a `ValidationFailed` event saying `the standalone runs …`), and the server keeps the version it runs.
 
@@ -203,8 +239,8 @@ The servers keep running the version they ran; nothing else in the spec is appli
 Not checked:
 
 - **No `status.version` yet** — a cluster that has not been `Ready` since the operator was installed. There is nothing verified to compare with; the operator records the version at the next `Ready`, for a cluster created by an older release too.
-- **The patch of a tag without one, before the operator has read what the servers run.** Moving from `5.26-enterprise` to `5.26.12-enterprise` (or back) is checked against `status.runningVersion` or `status.upgradeStatus.resolvedTargetVersion` once they are recorded (see [Tags without a patch](#tags-without-a-patch)). Until then — while an upgrade's first restarted server has not yet passed its availability check, or before the first `Ready` pass under an operator that records them — the patch is not ordered, and such a move is allowed. The `Verifying` phase accepts any patch of the line for such a tag (see [Version verification](#upgrade-phases-and-resumability)).
-- **A patch Neo4j changed without a new tag.** A floating tag pulled again (`imagePullPolicy: Always`, or a new node) can start a server on a newer patch. The cluster records it on its next `Ready` pass, and the standalone when its container restarts on the new image; a tag set between the two before then is not refused.
+- **The patch of a tag without one, before the operator has read what the servers run.** Moving from `5.26-enterprise` to `5.26.12-enterprise` (or back) is checked against `status.runningVersion` or `status.upgradeStatus.resolvedTargetVersion` once they are recorded (see [Tags without a patch](#tags-without-a-patch)), and, when an upgrade starts with `preUpgradeHealthCheck` on, against what the servers report then. Not checked: a target changed while an upgrade is rolling, before the server it restarted has passed its availability check (the operator records what it runs there); and an upgrade started with `preUpgradeHealthCheck: false` before the first `Ready` pass under an operator that records them. The `Verifying` phase accepts any patch of the line for such a tag (see [Version verification](#upgrade-phases-and-resumability)).
+- **A patch Neo4j changed without a new tag, on a standalone.** A floating tag pulled again (`imagePullPolicy: Always`, or a new node) can start a server on a newer patch. A cluster records it on its next `Ready` pass, and checks the servers again when an upgrade starts; a standalone records it on the pass after its container restarts on the new image, and a tag set before then is not refused.
 
 ## Upgrade Strategy
 
@@ -233,7 +269,7 @@ The three timeouts are Go durations above zero: `30m`, `1h30m`, `90s`. A value t
 
 Servers always restart one at a time, as Neo4j's rolling upgrade requires. `maxUnavailableDuringUpgrade` is accepted for compatibility but has no effect; a value other than `1` raises a `ValidationWarning` event.
 
-When `preUpgradeHealthCheck` is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and `autoPauseOnFailure` is `true`, the upgrade is `Paused` before anything changes, rather than proceeding against an unhealthy deployment; resume it as described in [When an upgrade stops](#when-an-upgrade-stops-paused-and-failed). Without `autoPauseOnFailure` it is `Failed`, and retried once the cluster is `Ready` with every server available.
+When `preUpgradeHealthCheck` is enabled, the operator checks the cluster before changing the image: a majority of servers available, a majority enabled, a leader, and no server running a version above the target. If the check fails and `autoPauseOnFailure` is `true`, the upgrade is `Paused` before anything changes, rather than proceeding against an unhealthy deployment; resume it as described in [When an upgrade stops](#when-an-upgrade-stops-paused-and-failed). Without `autoPauseOnFailure` it is `Failed`, and tried again every minute while the cluster is `Ready` with every server available. Either way the cluster stays `Ready`.
 
 For the full field reference see the [API Reference](../../api_reference/neo4jenterprisecluster.md).
 

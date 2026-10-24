@@ -489,10 +489,18 @@ func TestPluginValidator_pluginCompatibilityWarning(t *testing.T) {
 		},
 		{
 			name:          "valid CalVer plugin",
-			pluginName:    "neo4j-genai",
+			pluginName:    "genai",
 			version:       "2025.01.0",
 			expectWarning: false,
 		},
+		// The names spec.name takes are the entrypoint's keys (#553): a name
+		// the entrypoint does not know is the unknown one.
+		{name: "genai on 5.26", pluginName: "genai", version: "5.26.0", expectWarning: false},
+		{name: "bloom", pluginName: "bloom", version: "2.15.0", expectWarning: false},
+		{name: "gds alias", pluginName: "gds", version: "2.10.0", expectWarning: false},
+		{name: "neosemantics", pluginName: "n10s", version: "5.26.0", expectWarning: false},
+		{name: "fleet management, no recorded minimum", pluginName: "fleet-management", version: "1.0.0", expectWarning: false},
+		{name: "a label no Neo4jPlugin can use", pluginName: "neo4j-genai", version: "2025.01.0", expectWarning: true},
 	}
 
 	for _, tt := range tests {

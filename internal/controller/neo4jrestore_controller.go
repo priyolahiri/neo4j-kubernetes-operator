@@ -104,6 +104,14 @@ type Neo4jRestoreReconciler struct {
 	client.Client
 	Scheme   *runtime.Scheme
 	Recorder record.EventRecorder
+	// ProgressRecorder emits the per-database events of an all-databases
+	// restore (each database's RestoreStarted and RestoreSeedProgress). It is
+	// a recorder of its own, a source of its own, because client-go's spam
+	// filter gives each source, object and event type one budget — a burst of
+	// 25, then one every five minutes — and on the restore's own recorder a
+	// long or many-database restore spent it, so its RestoreCompleted could be
+	// dropped (#527). nil uses Recorder.
+	ProgressRecorder record.EventRecorder
 	// APIReader reads straight from the API server, bypassing the informer cache.
 	// Required before issuing a DESTRUCTIVE, non-idempotent operation: the cached
 	// client is eventually consistent, so a status write that marks work as
@@ -117,6 +125,23 @@ type Neo4jRestoreReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// seedProgress announces a database's seed progress when it changes, and
+	// while it does not, every seedProgressRefresh — not on every poll.
+	seedProgress seedProgressEvents
+
+	// newAllDatabasesClient builds the Neo4j client the all-databases restore
+	// loop uses. nil selects the real one; tests substitute a scripted server.
+	newAllDatabasesClient func(target restoreTarget) (allDatabasesRestoreClient, error)
+}
+
+// progressRecorder is where the per-database events of an all-databases
+// restore go: ProgressRecorder, or Recorder when none is wired.
+func (r *Neo4jRestoreReconciler) progressRecorder() record.EventRecorder {
+	if r.ProgressRecorder != nil {
+		return r.ProgressRecorder
+	}
+	return r.Recorder
 }
 
 // Pod hardening for restore Jobs delegates to the single source of truth
@@ -455,11 +480,13 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	// An all-databases one runs a multi-database `neo4j-admin database
 	// restore` and handleRestoreSuccess brings every database online via
 	// registerAllDatabasesAfterRestore. Why it goes offline is announced once
-	// the checks below have passed and the instance is stopped: announced
-	// first, it said "Restoring offline" for a restore the next check refused
-	// (stopCluster: false against a running standalone, v1.22.0 journey). It
-	// is decided here, before stopCluster marks the instance as this
-	// restore's, so a re-entry after the stop does not announce it again.
+	// the checks below have passed: announced first, it said "Restoring
+	// offline" for a restore the next check refused (stopCluster: false
+	// against a running standalone, v1.22.0 journey). With stopCluster it is
+	// announced at the stop, and decided here, before stopCluster marks the
+	// instance as this restore's, so a re-entry after the stop does not
+	// announce it again. Without stopCluster nothing marks the instance, so it
+	// is announced with the Job's start, from the status write (below).
 	offlineReason := ""
 	if reason := standaloneOfflineReason(restore, r.restoreStandalone(ctx, restore)); reason != "" && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
 		offlineReason = reason
@@ -526,12 +553,9 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 			return ctrl.Result{}, err
 		}
 	}
-	if offlineReason != "" {
-		msg := fmt.Sprintf("Restoring offline with neo4j-admin, which stops standalone %q: %s", cluster.Name, offlineReason)
-		if !restore.Spec.StopCluster {
-			msg = fmt.Sprintf("Restoring offline with neo4j-admin into standalone %q, which is stopped: %s", cluster.Name, offlineReason)
-		}
-		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted, msg)
+	if offlineReason != "" && restore.Spec.StopCluster {
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
+			fmt.Sprintf("Restoring offline with neo4j-admin, which stops standalone %q: %s", cluster.Name, offlineReason))
 	}
 
 	// Create restore job
@@ -565,9 +589,19 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		return ctrl.Result{}, err
 	}
 
-	// Update status
-	r.updateRestoreStatus(ctx, restore, StatusRunning, fmt.Sprintf("Restore job %s created", job.Name))
-	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted, fmt.Sprintf("Restore job %s started", job.Name))
+	// Announced from the write, not from this pass's copy (knowledge rule
+	// 145): a pass that read the restore from before the last pass's Running
+	// write (the cache lags it; with stopCluster the re-entry then waits out
+	// the stop's 10s poll) re-entered here, found the Job (AlreadyExists, rule
+	// 46) and announced "Restore job … started" a second time (v1.22.0
+	// re-walk). Its write changes nothing, so it announces nothing.
+	if r.transitionRestoreStatus(ctx, restore, StatusRunning, fmt.Sprintf("Restore job %s created", job.Name)) {
+		if offlineReason != "" && !restore.Spec.StopCluster {
+			r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
+				fmt.Sprintf("Restoring offline with neo4j-admin into standalone %q, which is stopped: %s", cluster.Name, offlineReason))
+		}
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted, fmt.Sprintf("Restore job %s started", job.Name))
+	}
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
@@ -2005,7 +2039,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreFromPath(restore *neo4jv1beta1.Neo4
 
 // isLocalPVCRestoreSource reports whether the restore reads from a
 // PVC-mounted backup directory (as opposed to a cloud URI). Used in two
-// places: (1) shell-side file-path resolution via buildLocalRestoreFilePath,
+// places: (1) shell-side file-path resolution (standaloneRestoreFromPath),
 // and (2) the `mkdir -p /tmp/restore-tmp` prelude that pairs with the
 // default `--temp-path=/tmp/restore-tmp`. Centralising the condition makes
 // these two stay in sync.
@@ -2034,11 +2068,9 @@ func isLocalPVCRestoreSource(restore *neo4jv1beta1.Neo4jRestore) bool {
 	return st.Type == "" || st.Type == "pvc"
 }
 
-// buildLocalRestoreFilePath returns a shell command-substitution expression
-// that resolves the target database's `<dbname>-*.backup` file path at Pod
-// exec time, suitable to pass to `neo4j-admin database restore --from-path=`.
-//
-// Returns "" for sources that don't need shell-side resolution (cloud URIs).
+// resolveLocalPVCFromPath, given a `--from-path` string and a database name,
+// returns the shell command-substitution form for local PVC mounts (path
+// starts with `/backup`) and the input unchanged for cloud URIs.
 //
 // Why this is necessary: per the Neo4j 5.26 docs, `neo4j-admin database
 // restore --from-path=<path>` requires <path> to be a FILE path (or a
@@ -2050,33 +2082,13 @@ func isLocalPVCRestoreSource(restore *neo4jv1beta1.Neo4jRestore) bool {
 // but the operator doesn't know <timestamp> at reconcile time (it's set by
 // neo4j-admin database backup at execution). Instead of staging the file or
 // teaching the operator to predict timestamps, the shell resolves the path
-// at Pod startup via command substitution: `$(ls .../<dbname>-*.backup
-// | tail -1)` (the latest match). This sidesteps both the "directory not file" issue and the
+// at Pod startup via command substitution (latestArtifactSubstitution: the
+// newest `<dbname>-<timestamp>.backup` via `ls … | tail -1`). This sidesteps
+// both the "directory not file" issue and the
 // multi-database directory issue (cluster-target backups co-locate one
 // .backup per database in one folder).
 //
-// Cloud URIs (s3://, gs://, azb://) bypass this — neo4j-admin's native
-// cloud readers handle per-file selection from the bucket prefix, and the
-// shell `ls` would have no filesystem to enumerate anyway.
-//
-// Security note: shellQuote() wraps the database name (user-controlled via
-// spec.DatabaseName) so shell metacharacters can't escape the glob.
-func buildLocalRestoreFilePath(restore *neo4jv1beta1.Neo4jRestore, sourceDir string) string {
-	if !isLocalPVCRestoreSource(restore) {
-		return ""
-	}
-	if restoreSourceDatabase(restore) == "" {
-		return ""
-	}
-	return resolveLocalPVCFromPath(sourceDir, restoreSourceDatabase(restore))
-}
-
-// resolveLocalPVCFromPath is the path-based equivalent of
-// buildLocalRestoreFilePath: given a `--from-path` string and a database
-// name, returns the shell command-substitution form for local PVC mounts
-// (path starts with `/backup`) and the input unchanged for cloud URIs.
-//
-// This exists for the PITR code path where the source is determined by
+// It is also the PITR code path's, where the source is determined by
 // resolving a `BaseBackup` (which could be a Neo4jBackup ref OR explicit
 // storage), not by inspecting `Source.Type/Storage` directly. The PVC
 // detection is purely string-based here: anything starting with `/backup`
@@ -2099,21 +2111,41 @@ func resolveLocalPVCFromPath(backupPath, databaseName string) string {
 	if databaseName == "" || !strings.HasPrefix(backupPath, "/backup") {
 		return backupPath
 	}
-	// `ls ... | tail -1` picks the LATEST matching file. neo4j-admin embeds
-	// an ISO-8601 timestamp in each artifact's filename
-	// (`<dbname>-YYYY-MM-DDThh-mm-ss.backup`), and ISO-8601 sorts
-	// lexicographically into chronological order — so `ls` (default
-	// alphabetical) | `tail -1` reliably returns the most-recent run when
-	// multiple runs share the directory (the canonical layout for
-	// `--type=DIFF` chaining). Callers that need a specific run pin it via
-	// spec.source.backupRunID → the resolver pre-substitutes the captured
-	// ArtifactFilename into backupPath, in which case backupPath is already
-	// a file path and `resolveLocalPVCFromPath` is not used. If no match
-	// exists, ls prints to stderr and tail returns nothing, so --from-path=
-	// becomes empty and neo4j-admin errors with a clear "missing argument"
-	// message.
-	return fmt.Sprintf("$(ls %s/%s-*.backup | tail -1)",
-		shellQuote(backupPath), shellQuote(databaseName))
+	return latestArtifactSubstitution(backupPath, databaseName)
+}
+
+// latestArtifactGlob is what follows `<database>` in the name of an artifact
+// neo4j-admin writes: `-<yyyy-MM-dd'T'HH-mm-ss>.backup` (FileManager's
+// "%s-%s.backup" and DATE_FORMATTER in neo4j-backup, 5.23 and 2025.09 alike).
+// A bare `-*.backup` also matched another database whose name starts with
+// this one and a dash: `products-*.backup` took `products-eu-….backup`, which
+// sorts after `products-2…`, so `tail -1` restored the wrong database. A
+// database name is lower-case, so it cannot hold the timestamp's `T`.
+const latestArtifactGlob = "-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T*.backup"
+
+// latestArtifactSubstitution is the shell command substitution that names the
+// newest artifact of databaseName in dir.
+//
+// `ls ... | tail -1` picks the LATEST matching file. neo4j-admin embeds an
+// ISO-8601 timestamp in each artifact's filename
+// (`<dbname>-YYYY-MM-DDThh-mm-ss.backup`), and ISO-8601 sorts
+// lexicographically into chronological order — so `ls` (default alphabetical)
+// | `tail -1` reliably returns the most-recent run when multiple runs share
+// the directory (the canonical layout for `--type=DIFF` chaining). Callers
+// that need a specific run pin it via spec.source.backupRunID → the resolver
+// pre-substitutes the captured ArtifactFilename into backupPath, in which case
+// backupPath is already a file path and this is not used. If no match exists,
+// ls prints to stderr and tail returns nothing, so --from-path= becomes empty
+// and neo4j-admin errors with a clear "missing argument" message.
+//
+// The name is lower-cased: neo4j-admin backs up the databases the server
+// lists, and names each artifact from the database's layout, whose name is
+// normalized to lower case (PlainDatabaseLayout / NormalizedDatabaseName), so
+// `--database=Products` writes `products-<timestamp>.backup` and a glob on
+// `Products` found nothing (knowledge operations.md id 146).
+func latestArtifactSubstitution(dir, databaseName string) string {
+	return fmt.Sprintf("$(ls %s/%s%s | tail -1)",
+		shellQuote(dir), shellQuote(strings.ToLower(databaseName)), latestArtifactGlob)
 }
 
 // isPVCBackupPath reports whether a resolved restore `--from-path` value
@@ -2159,10 +2191,11 @@ func (r *Neo4jRestoreReconciler) buildRestoreCommand(ctx context.Context, restor
 	//   /backup/<run-id>/<dbname>-<timestamp>.backup
 	// where <timestamp> is set by neo4j-admin at backup execution and isn't
 	// known to the operator at restore-CR reconcile time. The shell resolves
-	// it via `$(ls .../<dbname>-*.backup | tail -1)` (the latest) at Pod startup.
-	// This also handles the cluster-target backup case where multiple
-	// `*.backup` files co-locate in one directory (one per database) — the
-	// glob naturally selects only the requested DB's file.
+	// it via `$(ls .../<dbname>-<timestamp glob>.backup | tail -1)` (the
+	// latest) at Pod startup. This also handles the cluster-target backup case
+	// where multiple `*.backup` files co-locate in one directory (one per
+	// database) — the glob selects only the requested DB's file
+	// (latestArtifactSubstitution).
 	// The exact artifact when it is known — the only form neo4j-admin will
 	// restore under a different name — else the shell glob / cloud directory.
 	fromPath, err := standaloneRestoreFromPath(restore, backupPath, isLocalPVCRestoreSource(restore))

@@ -86,6 +86,31 @@ func specSecuritySettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 	return settings
 }
 
+// pluginListSettings returns, by setting, the plugin's tokens in the shared
+// procedure and extension lists (resources.IsAdditiveConfKey): from its
+// security settings — the automatic ones, each replaced by what spec.security
+// asks for, as pluginSecuritySettings has them — and from the lists its
+// spec.config sets, unioned with those.
+func pluginListSettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
+	out := make(map[string]string)
+	for k, v := range automaticPluginSecuritySettings(plugin.Spec.Name) {
+		if resources.IsAdditiveConfKey(k) {
+			out[k] = v
+		}
+	}
+	for k, v := range specSecuritySettings(plugin) {
+		if resources.IsAdditiveConfKey(k) {
+			out[k] = v
+		}
+	}
+	for k, v := range plugin.Spec.Config {
+		if resources.IsAdditiveConfKey(k) {
+			out[k] = resources.MergeConfListValues(out[k], v)
+		}
+	}
+	return out
+}
+
 // pluginConfSettings returns the neo4j.conf settings derived from a single
 // Neo4jPlugin: its automatic security settings, what its spec.security asks
 // for, and any security or startup-only keys the user set in spec.config —
@@ -106,16 +131,19 @@ func pluginConfSettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 	return settings
 }
 
-// unionPluginConfSettings merges the conf settings of every enabled Neo4jPlugin
-// targeting targetRef. Additive keys (procedure allowlists, http_auth_allowlist)
-// are unioned across plugins (so GDS + APOC keep both token sets); other keys
-// take the last value in plugin-name order (deterministic). Plugins are sorted
-// by name so the result is stable between reconciles (no ConfigMap churn).
-func unionPluginConfSettings(plugins []neo4jv1beta1.Neo4jPlugin, targetRef string) map[string]string {
+// unionPluginConfSettings merges the conf settings of every Neo4jPlugin
+// targeting targetRef that is to be on it: enabled, and not refused by the
+// image tagged imageTag (pluginOnImage, operations.md id 170) — a refused plugin
+// writes nothing to its target. Additive keys (procedure allowlists,
+// http_auth_allowlist) are unioned across plugins (so GDS + APOC keep both token
+// sets); other keys take the last value in plugin-name order (deterministic).
+// Plugins are sorted by name so the result is stable between reconciles (no
+// ConfigMap churn).
+func unionPluginConfSettings(plugins []neo4jv1beta1.Neo4jPlugin, targetRef, imageTag string) map[string]string {
 	sorted := make([]*neo4jv1beta1.Neo4jPlugin, 0, len(plugins))
 	for i := range plugins {
 		p := &plugins[i]
-		if p.Spec.ClusterRef == targetRef && p.Spec.Enabled {
+		if p.Spec.ClusterRef == targetRef && pluginOnImage(p, imageTag) {
 			sorted = append(sorted, p)
 		}
 	}

@@ -70,7 +70,11 @@ func TestValidateVersionCompatibility(t *testing.T) {
 	for _, tc := range cases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			err := orch.validateVersionCompatibility(tc.current, tc.target)
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+				Spec:   neo4jv1beta1.Neo4jEnterpriseClusterSpec{Image: neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: tc.target}},
+				Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{Version: tc.current},
+			}
+			err := orch.validateVersionCompatibility(cluster)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("expected error for current=%q target=%q, got nil", tc.current, tc.target)
@@ -91,6 +95,45 @@ func TestValidateVersionCompatibility(t *testing.T) {
 				t.Fatalf("unexpected error for current=%q target=%q: %v", tc.current, tc.target, err)
 			}
 		})
+	}
+}
+
+// The machine's own check before it starts is the whole rule validation runs,
+// the versions the servers report included (#550): it asked
+// ValidateVersionUpgrade alone, which cannot order a patch against a tag
+// without one, so these passed it.
+func TestValidateVersionCompatibility_HoldsTheTagToWhatTheServersReport(t *testing.T) {
+	orch := &RollingUpgradeOrchestrator{}
+
+	completed := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{Image: neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.31-enterprise"}},
+		Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{
+			Version: "5.26-enterprise", RunningVersion: "5.26.32",
+		},
+	}
+	err := orch.validateVersionCompatibility(completed)
+	if err == nil || !containsIgnoreCase(err.Error(), "status.runningVersion") {
+		t.Fatalf("a patch below what the servers report must be refused; got %v", err)
+	}
+
+	held := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		Spec: neo4jv1beta1.Neo4jEnterpriseClusterSpec{Image: neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.31-enterprise"}},
+		Status: neo4jv1beta1.Neo4jEnterpriseClusterStatus{
+			Version: "5.26.31-enterprise",
+			UpgradeStatus: &neo4jv1beta1.UpgradeStatus{
+				Phase: "Paused", TargetVersion: "5.26-enterprise", ResolvedTargetVersion: "5.26.32",
+				Progress: &neo4jv1beta1.UpgradeProgress{Total: 3, InProgress: 1},
+			},
+		},
+	}
+	err = orch.validateVersionCompatibility(held)
+	if err == nil || !containsIgnoreCase(err.Error(), "resolvedTargetVersion") {
+		t.Fatalf("a tag below what a restarted server reports must be refused; got %v", err)
+	}
+
+	held.Spec.Image.Tag = "5.26.32-enterprise"
+	if err := orch.validateVersionCompatibility(held); err != nil {
+		t.Fatalf("the patch the restarted server runs is not a downgrade: %v", err)
 	}
 }
 

@@ -505,8 +505,10 @@ spec:
                   annotation).
                 type: string
               lastSyncedTime:
-                description: LastSyncedTime is when the instance was last observed
-                  from the Aura API.
+                description: |-
+                  LastSyncedTime is when the operator last recorded the instance as
+                  observed from the Aura API: written with every change to the status,
+                  and at least every 15 minutes while nothing changes.
                 format: date-time
                 type: string
               metricsIntegrationUrl:
@@ -520,7 +522,8 @@ spec:
               phase:
                 description: |-
                   Phase mirrors the Aura instance status (Creating, Running, Pausing,
-                  Paused, Resuming, Updating, Restoring, Destroying, ...).
+                  Paused, Resuming, Updating, Restoring, Destroying, ...), or is Error
+                  while the operator cannot reconcile the instance.
                 type: string
             type: object
         type: object

@@ -211,8 +211,10 @@ spec:
                 - type
                 x-kubernetes-list-type: map
               lastSyncedTime:
-                description: LastSyncedTime is when the membership was last observed
-                  from the Aura API.
+                description: |-
+                  LastSyncedTime is when the operator last recorded the membership as
+                  observed from the Aura API: written with every change to the status,
+                  and at least every 15 minutes while nothing changes.
                 format: date-time
                 type: string
               observedGeneration:

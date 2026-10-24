@@ -154,6 +154,30 @@ func TestClusterValidator_NoEffectWarnings(t *testing.T) {
 			instead: "one server at a time",
 		},
 		{
+			// No Route the operator writes names a certificate (#536).
+			name: "service.route.tls.secretName",
+			mutate: func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
+				c.Spec.Service = &neo4jv1beta1.ServiceSpec{Route: &neo4jv1beta1.RouteSpec{
+					Enabled: true, TLS: &neo4jv1beta1.RouteTLSSpec{Termination: "reencrypt", SecretName: "route-cert"},
+				}}
+			},
+			path:    "spec.service.route.tls.secretName",
+			instead: "add it to the Route itself",
+		},
+		{
+			name: "mcp.http.service.route.tls.secretName",
+			mutate: func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
+				c.Spec.MCP = &neo4jv1beta1.MCPServerSpec{
+					Enabled: true, Transport: "http",
+					HTTP: &neo4jv1beta1.MCPHTTPConfig{Service: &neo4jv1beta1.MCPServiceSpec{Route: &neo4jv1beta1.RouteSpec{
+						Enabled: true, TLS: &neo4jv1beta1.RouteTLSSpec{Termination: "edge", SecretName: "mcp-cert"},
+					}}},
+				}
+			},
+			path:    "spec.mcp.http.service.route.tls.secretName",
+			instead: "router serves its default certificate",
+		},
+		{
 			// Neo4j documents only rolling upgrades for a cluster; Recreate used
 			// to stop the operator from upgrading at all (operations.md id 144).
 			name: "upgradeStrategy.strategy Recreate",
@@ -206,6 +230,15 @@ func TestClusterValidator_NoEffectWarnings(t *testing.T) {
 		}
 	})
 
+	t.Run("route TLS fields that ARE read do not warn", func(t *testing.T) {
+		cluster := validClusterForWarnings()
+		cluster.Spec.Service = &neo4jv1beta1.ServiceSpec{Route: &neo4jv1beta1.RouteSpec{
+			Enabled: true, TLS: &neo4jv1beta1.RouteTLSSpec{Termination: "edge", InsecureEdgeTerminationPolicy: "Redirect"},
+		}}
+		res := validator.ValidateCreateWithWarnings(ctx, cluster)
+		assert.Empty(t, res.NoEffectWarnings)
+	})
+
 	t.Run("placement fields that ARE read do not warn", func(t *testing.T) {
 		cluster := validClusterForWarnings()
 		cluster.Spec.Topology.Placement = &neo4jv1beta1.PlacementConfig{
@@ -246,6 +279,24 @@ func TestStandaloneValidator_NoEffectWarnings(t *testing.T) {
 
 		sa.Spec.UpgradeStrategy.MaxUnavailableDuringUpgrade = ptr.To(int32(1))
 		assert.Empty(t, v.NoEffectWarnings(sa), "the CRD default does not warn")
+	})
+
+	// No Route the operator writes names a certificate (#536).
+	t.Run("route tls.secretName", func(t *testing.T) {
+		sa := validStandalone()
+		sa.Spec.Service = &neo4jv1beta1.ServiceSpec{Route: &neo4jv1beta1.RouteSpec{
+			Enabled: true, TLS: &neo4jv1beta1.RouteTLSSpec{Termination: "passthrough", SecretName: "route-cert"},
+		}}
+		sa.Spec.MCP = &neo4jv1beta1.MCPServerSpec{
+			Enabled: true, Transport: "http",
+			HTTP: &neo4jv1beta1.MCPHTTPConfig{Service: &neo4jv1beta1.MCPServiceSpec{Route: &neo4jv1beta1.RouteSpec{
+				Enabled: true, TLS: &neo4jv1beta1.RouteTLSSpec{Termination: "edge", SecretName: "mcp-cert"},
+			}}},
+		}
+		assert.Empty(t, v.ValidateCreate(sa), "the standalone must still be accepted")
+		warnings := v.NoEffectWarnings(sa)
+		requireNoEffectWarning(t, warnings, "spec.service.route.tls.secretName", "passthrough serves the Neo4j server's own")
+		requireNoEffectWarning(t, warnings, "spec.mcp.http.service.route.tls.secretName", "add it to the Route itself")
 	})
 
 	// On a standalone, Recreate does what it says: the one pod is replaced.

@@ -12,14 +12,14 @@ management, and error classification.
 | `client.go` | `Client` (driver + circuit breaker + pool metrics); constructors `NewClientForEnterprise`, `NewClientForEnterpriseStandalone`, `NewClientForPod`; `VerifyConnectivity`, `CreateDatabase*`, `DropDatabase`, `ExecuteCypher*`, fleet-management calls. |
 | `version.go` | `Version` struct + `ParseVersion`, `IsSupported`, `Compare`, `GetImageVersion`, the `Supports*` capability gates, and `GetBackupCommand`/`GetRestoreCommand`. |
 | `users.go` | `Client` methods for users & roles: `ShowUser`, `CreateUserAdvanced`, `AlterUser` (+ `AlterUserOptions` builder), `ShowRole`, `CreateRoleAdvanced`, `DropRoleIfExists`, `ListUsers`/`ListRoles`, `ShowRolePrivileges`. |
-| `privileges.go` | Pure string helpers: `CanonicalisePrivilegeStatement`, `DerivePrivilegeRevoke`, `PrivilegeStatementMatchesRole`, `PrivilegeStatementVerb`. No I/O. |
+| `privileges.go` | Pure string helpers: `CanonicalisePrivilegeStatement`, `DerivePrivilegeRevoke`, `PrivilegeStatementMatchesRole`, `PrivilegeStatementVerb`, `FoldPrivilegeDatabaseNames` (a comparison key with only the database names lower-cased, as Neo4j stores them). No I/O. |
 | `auth_rules.go` | ABAC `Neo4jAuthRule` DDL: `ShowAuthRule`, `ListAuthRules`, `CreateOrReplaceAuthRule`, `AlterAuthRule`, `DropAuthRuleIfExists`, `Grant/RevokeRolesFromAuthRule`. |
 | `server_management.go` | Cluster scale-down: `CordonServer`, `DeallocateServers` (supports `DRYRUN`), `DropServer`, `MinimumSystemPrimaries`. |
 | `cypher25.go` | `Cypher25()` / `Cypher5()` / `HasCypher25Prefix` — the ONLY places a `CYPHER 25` / `CYPHER 5` directive is spelled (knowledge `operations.md` ids 30, 97; `TestCypher25Guard`). |
 | `composite.go` / `aliases.go` | `Neo4jCompositeDatabase` constituent and `Neo4jDatabaseAlias` DDL, pinned to Cypher 5 (the OIDC remote form to Cypher 25). |
 | `replicas.go` | Cross-cluster replica DDL: `CreateReplicaDatabaseFromBackup/FromNetwork`, `PromoteReplicaDatabase`. |
 | `privilege_rules.go` | `RenderPrivilegeRule` / `PrivilegeRuleProblems` — render `spec.privilegeRules` to GRANT/DENY statements (render, never parse). |
-| `error_classify.go` | `IsTransientError`, `IsHostUnresolvableError`, `IsConnectivityError`, `IsNotFoundError` — drive finalizer/retry decisions in controllers. |
+| `error_classify.go` | `IsTransientError` (a connectivity failure, or a Neo4j error the driver retries: `Neo.TransientError.*`, NotALeader), `IsHostUnresolvableError`, `IsConnectivityError`, `IsNotFoundError` — drive finalizer/retry decisions and log levels in controllers (knowledge `operations.md` id 164). |
 | `*_test.go` | Unit tests (see below). |
 
 ## Key types & functions

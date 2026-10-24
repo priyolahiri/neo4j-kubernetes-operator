@@ -1,12 +1,121 @@
 package validation
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
+
+// shardedValidatorClient is a fake API server holding objs; getErr, when set,
+// fails every read of a Neo4jEnterpriseCluster with it.
+func shardedValidatorClient(t *testing.T, getErr error, objs ...client.Object) client.Client {
+	t.Helper()
+	scheme := runtime.NewScheme()
+	require.NoError(t, neo4jv1beta1.AddToScheme(scheme))
+	b := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...)
+	if getErr != nil {
+		b = b.WithInterceptorFuncs(interceptor.Funcs{
+			Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+				if _, ok := obj.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok {
+					return getErr
+				}
+				return c.Get(ctx, key, obj, opts...)
+			},
+		})
+	}
+	return b.Build()
+}
+
+// brokenShardedDB breaks three spec rules that need no cluster: a reserved
+// name, no property shards and Cypher 5.
+func brokenShardedDB(clusterRef string) *neo4jv1beta1.Neo4jShardedDatabase {
+	return &neo4jv1beta1.Neo4jShardedDatabase{
+		ObjectMeta: metav1.ObjectMeta{Name: "products", Namespace: "default"},
+		Spec: neo4jv1beta1.Neo4jShardedDatabaseSpec{
+			ClusterRef:            clusterRef,
+			Name:                  "system",
+			DefaultCypherLanguage: "5",
+			PropertySharding: neo4jv1beta1.PropertyShardingConfiguration{
+				PropertyShards:        0,
+				GraphShard:            neo4jv1beta1.DatabaseTopology{Primaries: 1},
+				PropertyShardTopology: neo4jv1beta1.PropertyShardTopology{Replicas: 1},
+			},
+		},
+	}
+}
+
+// A cluster the validator could not read ended validation with the read error
+// alone and dropped the spec errors already found: the user fixed one, applied
+// again, and only then saw the rest (#532). Every spec error is reported
+// whatever happens to the read.
+func TestShardedDatabaseValidator_ReportsEverySpecErrorWhateverTheClusterRead(t *testing.T) {
+	ctx := context.Background()
+	specErrors := []string{"spec.name", "spec.propertySharding.propertyShards", "spec.defaultCypherLanguage"}
+
+	t.Run("cluster not found: the spec errors, and a wait for the cluster", func(t *testing.T) {
+		v := NewShardedDatabaseValidator(shardedValidatorClient(t, nil))
+		err := v.ValidateShardedDatabase(ctx, brokenShardedDB("sc"))
+		require.Error(t, err)
+		for _, path := range specErrors {
+			assert.Contains(t, err.Error(), path)
+		}
+		out := v.Validate(ctx, brokenShardedDB("sc"))
+		assert.Len(t, out.Errors, len(specErrors))
+		assert.Len(t, out.Pending, 1)
+		assert.NoError(t, out.ClusterReadErr)
+	})
+
+	t.Run("cluster read fails: the spec errors and the read error", func(t *testing.T) {
+		v := NewShardedDatabaseValidator(shardedValidatorClient(t, apierrors.NewServiceUnavailable("etcd is unhappy")))
+		err := v.ValidateShardedDatabase(ctx, brokenShardedDB("sc"))
+		require.Error(t, err)
+		for _, path := range specErrors {
+			assert.Contains(t, err.Error(), path)
+		}
+		assert.Contains(t, err.Error(), "etcd is unhappy")
+	})
+
+	t.Run("no clusterRef: required, with the others, and nothing is read", func(t *testing.T) {
+		v := NewShardedDatabaseValidator(shardedValidatorClient(t, apierrors.NewServiceUnavailable("must not be read")))
+		out := v.Validate(ctx, brokenShardedDB(""))
+		assert.Len(t, out.Errors, len(specErrors)+1)
+		assert.NoError(t, out.ClusterReadErr)
+	})
+}
+
+// A cluster that does not exist yet is a wait for the reconciler (Pending,
+// ClusterNotFound: operations.md id 145), so it is not a validation error. As
+// one, the reconciler refused the database as Failed and never reached the
+// wait.
+func TestShardedDatabaseValidator_AMissingClusterIsNotAnError(t *testing.T) {
+	ctx := context.Background()
+	valid := brokenShardedDB("sc")
+	valid.Spec.Name = "products"
+	valid.Spec.DefaultCypherLanguage = "25"
+	valid.Spec.PropertySharding.PropertyShards = 2
+
+	v := NewShardedDatabaseValidator(shardedValidatorClient(t, nil))
+	assert.NoError(t, v.ValidateShardedDatabase(ctx, valid))
+
+	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "sc", Namespace: "default"},
+		Spec:       neo4jv1beta1.Neo4jEnterpriseClusterSpec{Topology: neo4jv1beta1.TopologyConfiguration{Servers: 3}},
+	}
+	v = NewShardedDatabaseValidator(shardedValidatorClient(t, nil, cluster))
+	err := v.ValidateShardedDatabase(ctx, valid)
+	require.Error(t, err, "once the cluster is there, the rules that need it run")
+	assert.Contains(t, err.Error(), "property sharding enabled")
+}
 
 func TestValidateShardedDatabaseName(t *testing.T) {
 	v := &ShardedDatabaseValidator{}

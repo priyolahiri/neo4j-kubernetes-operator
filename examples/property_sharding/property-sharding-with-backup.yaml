@@ -79,7 +79,7 @@ metadata:
   namespace: default
 spec:
   # Target the Neo4jShardedDatabase. A single Neo4jBackup captures ALL shards
-  # consistently — the operator backs up the whole `{name}*` shard set in one
+  # consistently — the operator backs up `{name}-g*` and `{name}-p*` in one
   # neo4j-admin invocation (graph shard + every property shard). There is no
   # per-shard list.
   instanceRef: backup-sharding-cluster   # the owning Neo4jEnterpriseCluster

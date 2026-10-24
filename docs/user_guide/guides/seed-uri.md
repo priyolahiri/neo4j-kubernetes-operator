@@ -149,7 +149,7 @@ spec:
 >       name: backup-credentials
 > ```
 >
-> The operator validates this projection before seeding. If the Secret is missing from `extraEnvFrom`, it emits an actionable error with a copy-pasteable snippet; a `Neo4jRestore` waits in `Pending` meanwhile and carries on once the Secret is projected. Add the annotation `neo4j.com/auto-inherit-seed-creds: "true"` on the hosting cluster/standalone CR to let the operator patch `spec.extraEnvFrom` automatically — note this triggers a rolling restart of the server pods. When relying on IRSA / GKE Workload Identity / Azure Workload Identity, no Secret projection is needed.
+> The operator validates this projection before seeding. If the Secret is missing from `extraEnvFrom`, it emits an actionable error with a copy-pasteable snippet; a `Neo4jRestore` waits in `Pending` meanwhile and carries on once the Secret is projected. Add the annotation `neo4j.com/auto-inherit-seed-creds: "true"` on the hosting cluster/standalone CR to let the operator patch `spec.extraEnvFrom` automatically — note this triggers a rolling restart of the server pods. If you apply the hosting CR with `kubectl apply --server-side`, keep `extraEnvFrom` and `env` out of its manifest, or add the operator's entry to it, or the next apply conflicts ([GitOps](../../gitops/README.md#the-operator-does-not-rewrite-your-spec)). When relying on IRSA / GKE Workload Identity / Azure Workload Identity, no Secret projection is needed.
 
 ## Credential Requirements by Provider
 
