@@ -1022,7 +1022,7 @@
   {
     "id": "ev-plugin-settings-failing",
     "name": "PluginSettingsFailing",
-    "description": "On a Neo4jPlugin whose write changes the settings (NEO4J_<setting> variables) that every server that is down keeps failing with — typically a spec.config key Neo4j refuses at startup, removed from the plugin. A Warning, once, when the plugin writes that change to a target that is not Ready: every server pod that is down has its neo4j container exited non-zero and not running again while running a variable the write changes, those pods are the highest ordinals at or above the partition, no pod is missing or terminating, and Neo4j's last diagnostics report no other server unavailable — so the roll replaces the failing pods first and costs no server that is up (knowledge operations.md id 155). A Normal event when the plugin deletes a standalone's pod stuck on the old settings on an older revision, which its OrderedReady StatefulSet does not replace.",
+    "description": "On a Neo4jPlugin whose write changes the settings (NEO4J_<setting> variables) that every server that is down keeps failing with — typically a spec.config key Neo4j refuses at startup, removed from the plugin, or the plugin's removal when it is disabled or refused by its target's image (operations.md id 170). A Warning, once, when the plugin writes that change to a target that is not Ready: every server pod that is down has its neo4j container exited non-zero and not running again while running a variable the write changes, those pods are the highest ordinals at or above the partition, no pod is missing or terminating, and Neo4j's last diagnostics report no other server unavailable — so the roll replaces the failing pods first and costs no server that is up (knowledge operations.md id 155). A Normal event when the plugin deletes a standalone's pod stuck on the old settings on an older revision, which its OrderedReady StatefulSet does not replace.",
     "moduleId": "mod-plugins"
   },
   {
@@ -1113,6 +1113,12 @@
     "id": "ev-plugin-procedures-hidden",
     "name": "PluginProceduresHidden",
     "description": "Warning event on a Neo4jPlugin whose procedures the target's effective dbms.security.procedures.allowlist — shared by every plugin of the target — loads none of, emitted when its ProceduresHidden condition appears or its message changes. The plugin stays Ready; the list is not widened (operations.md id 161).",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-unknown-to-image",
+    "name": "PluginUnknownToImage",
+    "description": "Warning, once, when a Managed Neo4jPlugin is refused because the image its target runs cannot install one of its NEO4J_PLUGINS names (graphql on every supported release, n10s on CalVer from 2025.05, a custom JAR's name): the entrypoint exits on such a name. Announced from the status write that moves the plugin into the refusal; again only for a different refusal (the target's image changed). The plugin is Failed, and what an earlier write of it left on the target is taken off (operations.md id 170).",
     "moduleId": "mod-plugins"
   }
 ]
