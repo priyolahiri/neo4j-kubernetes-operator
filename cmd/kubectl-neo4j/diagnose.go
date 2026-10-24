@@ -52,6 +52,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -62,6 +63,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/controller"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
@@ -108,6 +110,11 @@ type diagnosis struct {
 	message  string
 	summary  string // "2/3 servers ready"
 	symptoms []symptom
+	// earlierWarnings counts the Warning events from before stateSince, when
+	// the resource's Ready condition last changed: they describe a state it
+	// has left, so they are counted, not listed (warningEvents).
+	earlierWarnings int
+	stateSince      time.Time
 }
 
 // problems reports whether this diagnosis contains anything that will not fix
@@ -328,7 +335,9 @@ func diagnoseResource(obj *unstructured.Unstructured, env namespaceEnv) diagnosi
 		d.summary, d.symptoms = diagnoseBackup(obj.GetName(), env)
 	}
 
-	d.symptoms = append(d.symptoms, warningEvents(obj, env)...)
+	events, earlier, since := warningEvents(obj, env)
+	d.symptoms = append(d.symptoms, events...)
+	d.earlierWarnings, d.stateSince = earlier, since
 	d.symptoms = append(d.symptoms, missingStatusSymptom(obj, row, env.operator)...)
 	return d
 }
@@ -825,11 +834,37 @@ func backupJobOutcome(j *batchv1.Job) (jobOutcome, batchv1.JobCondition) {
 	return jobInProgress, batchv1.JobCondition{}
 }
 
-// warningEvents surfaces Warning events the API server recorded against this
-// exact object. Events explain far more about a stuck reconcile than status
-// does, and the operator emits structured ones (internal/controller/events.go)
-// precisely so they can be read this way.
-func warningEvents(obj *unstructured.Unstructured, env namespaceEnv) []symptom {
+// transitionSlack is how far before a condition's lastTransitionTime a Warning
+// may be and still belong to the state that transition began. The operator
+// writes the status that records a state and emits the event that reports it
+// in the same pass (status first, events.go), and both timestamps are whole
+// seconds.
+const transitionSlack = 5 * time.Second
+
+// advisoryCurrentFor is how long an advisory Warning counts as still applying:
+// the operator announces it again every AdvisoryWarningRefresh while it does,
+// on the first reconcile pass after that, and a pass can come a few minutes
+// late on a kind that requeues slowly.
+const advisoryCurrentFor = controller.AdvisoryWarningRefresh + 5*time.Minute
+
+// warningEvents surfaces the Warning events the API server recorded against
+// this exact object that still describe its current state, and counts the
+// rest. Events explain far more about a stuck reconcile than status does, and
+// the operator emits structured ones (internal/controller/events.go) precisely
+// so they can be read this way.
+//
+// A Warning is current, and marked, when it was last seen after the object's
+// Ready condition last changed: it was raised in the state the object is in
+// now. An earlier one described a state the object has since left — a
+// ClusterQuorumLost from before a cluster became Ready again — and marking it
+// on a healthy cluster for the hour an event lives sent people after a
+// problem that was over (#553). The advisories the operator announces again
+// every 30 minutes while they apply (AdvisoryWarningReasons: a field that has
+// no effect, a missing Route API, …) are current while they are that recent,
+// whatever the conditions did. An object without a Ready condition has nothing
+// to tell its states apart, and every Warning stays current.
+func warningEvents(obj *unstructured.Unstructured, env namespaceEnv) (current []symptom, earlier int, stateSince time.Time) {
+	stateSince = readySince(obj)
 	var recent []corev1.Event
 	for i := range env.events {
 		e := env.events[i]
@@ -839,10 +874,14 @@ func warningEvents(obj *unstructured.Unstructured, env namespaceEnv) []symptom {
 		if e.InvolvedObject.Kind != obj.GetKind() || e.InvolvedObject.Name != obj.GetName() {
 			continue
 		}
+		if !warningIsCurrent(e, stateSince) {
+			earlier++
+			continue
+		}
 		recent = append(recent, e)
 	}
 	sort.Slice(recent, func(i, j int) bool {
-		return recent[i].LastTimestamp.After(recent[j].LastTimestamp.Time)
+		return eventLastSeen(recent[i]).After(eventLastSeen(recent[j]))
 	})
 	// Only the newest few: a resource that has been failing for a day can
 	// carry hundreds of near-identical events, and printing them all buries
@@ -850,16 +889,57 @@ func warningEvents(obj *unstructured.Unstructured, env namespaceEnv) []symptom {
 	if len(recent) > 3 {
 		recent = recent[:3]
 	}
-	var symptoms []symptom
 	for _, e := range recent {
-		symptoms = append(symptoms, symptom{
+		current = append(current, symptom{
 			mark:    markWarning,
 			subject: "event " + e.Reason,
-			what:    fmt.Sprintf("%s ago", humanAge(e.LastTimestamp.Time)),
+			what:    fmt.Sprintf("%s ago", humanAge(eventLastSeen(e))),
 			detail:  e.Message,
 		})
 	}
-	return symptoms
+	return current, earlier, stateSince
+}
+
+// warningIsCurrent applies warningEvents' rule to one Warning.
+func warningIsCurrent(e corev1.Event, stateSince time.Time) bool {
+	seen := eventLastSeen(e)
+	if slices.Contains(controller.AdvisoryWarningReasons, e.Reason) && time.Since(seen) < advisoryCurrentFor {
+		return true
+	}
+	return stateSince.IsZero() || !seen.Before(stateSince.Add(-transitionSlack))
+}
+
+// readySince is when the object's Ready condition last changed, or zero.
+func readySince(obj *unstructured.Unstructured) time.Time {
+	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	for _, raw := range conditions {
+		cond, ok := raw.(map[string]any)
+		if !ok || cond["type"] != controller.ConditionTypeReady {
+			continue
+		}
+		at, _ := cond["lastTransitionTime"].(string)
+		if t, err := time.Parse(time.RFC3339, at); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
+// eventLastSeen is when an event last happened, whichever API wrote it: the
+// legacy recorder sets lastTimestamp, the events.k8s.io one the series or the
+// event time.
+func eventLastSeen(e corev1.Event) time.Time {
+	switch {
+	case !e.LastTimestamp.IsZero():
+		return e.LastTimestamp.Time
+	case e.Series != nil && !e.Series.LastObservedTime.IsZero():
+		return e.Series.LastObservedTime.Time
+	case !e.EventTime.IsZero():
+		return e.EventTime.Time
+	case !e.FirstTimestamp.IsZero():
+		return e.FirstTimestamp.Time
+	}
+	return e.CreationTimestamp.Time
 }
 
 // missingStatusSymptom reports a resource the operator has never written status
@@ -987,7 +1067,6 @@ func renderOne(d diagnosis, stdout *os.File) {
 	}
 	if len(d.symptoms) == 0 {
 		fmt.Fprintln(stdout, "  nothing to report below the resource level")
-		return
 	}
 	for _, f := range d.symptoms {
 		fmt.Fprintf(stdout, "  %s %s — %s\n", f.mark, f.subject, f.what)
@@ -997,6 +1076,10 @@ func renderOne(d diagnosis, stdout *os.File) {
 		if f.action != "" {
 			fmt.Fprintf(stdout, "      → %s\n", wrapIndent(f.action, 8))
 		}
+	}
+	if d.earlierWarnings > 0 {
+		fmt.Fprintf(stdout, "  (%d earlier Warning event(s), from before its Ready condition last changed %s ago; "+
+			"kubectl describe %s %s lists them)\n", d.earlierWarnings, humanAge(d.stateSince), d.kind, d.name)
 	}
 }
 

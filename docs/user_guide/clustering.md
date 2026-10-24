@@ -381,6 +381,8 @@ cordon → DRYRUN DEALLOCATE (feasibility) → DEALLOCATE DATABASES FROM SERVER 
 
 Replicas are **held** at the current count (the removed pods stay running and reachable for data hand-off) until every removed server is dropped; only then are the pods stopped. Progress shows as a `ServersPendingDrain` condition and `ScaleDownDraining` events. Removed-ordinal PVCs are reclaimed (`PVCRetentionPolicy.WhenScaled=Delete`).
 
+**During an upgrade.** A change of `spec.topology.servers` — up or down — waits while a rolling upgrade is in progress, or while a `Paused` or `Failed` one holds part of the servers on its target: the `TopologyChangeDeferred` condition says so, and the change is applied once the upgrade completes (see [Upgrades](guides/upgrades.md#when-an-upgrade-stops-paused-and-failed)).
+
 **The system-database floor.** A cluster cannot be scaled below `spec.topology.minSystemPrimaries` (default **min(3, servers)** — i.e. 3 for any cluster of 3+, 2 for a 2-server cluster). This is the `system` database's voting-member quorum; Neo4j refuses to drop below it. To run 1–2 nodes, use `Neo4jEnterpriseStandalone`.
 
 **When a scale-down is refused.** The operator sets `ServersPendingDrain` to a `ScaleDownBlocked` reason (with the exact cause) and **holds replicas — nothing is cordoned or removed** — when:

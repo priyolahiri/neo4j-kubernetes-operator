@@ -238,15 +238,20 @@ func pluginCR(name, pluginName, clusterRef string, enabled bool, config map[stri
 }
 
 // TestUnionPluginConfSettings: union across plugins (additive keys merged),
-// honoring clusterRef + enabled filtering.
+// honoring clusterRef + enabled filtering, and leaving out a plugin the
+// standalone's image refuses (operations.md id 170): it writes nothing to its
+// target, and on 2026.08 neither graphql nor n10s is a name the entrypoint
+// installs.
 func TestUnionPluginConfSettings(t *testing.T) {
 	plugins := []neo4jv1beta1.Neo4jPlugin{
 		*pluginCR("gds", "gds", "sa", true, nil),
 		*pluginCR("bloom", "bloom", "sa", true, nil),
-		*pluginCR("elsewhere", "gds", "other", true, nil),      // different target → ignored
-		*pluginCR("off", "fleet-management", "sa", false, nil), // disabled → ignored
+		*pluginCR("elsewhere", "gds", "other", true, nil),                                                                    // different target → ignored
+		*pluginCR("off", "fleet-management", "sa", false, nil),                                                               // disabled → ignored
+		*pluginCR("graphql", "graphql", "sa", true, map[string]string{"dbms.security.procedures.unrestricted": "graphql.*"}), // refused → ignored
+		*pluginCR("n10s", "n10s", "sa", true, map[string]string{"dbms.security.procedures.unrestricted": "n10s.*"}),          // refused on CalVer → ignored
 	}
-	got := unionPluginConfSettings(plugins, "sa")
+	got := unionPluginConfSettings(plugins, "sa", "2026.08.1-enterprise")
 
 	u := got["dbms.security.procedures.unrestricted"]
 	if !strings.Contains(u, "gds.*") || !strings.Contains(u, "bloom.*") {
@@ -254,6 +259,13 @@ func TestUnionPluginConfSettings(t *testing.T) {
 	}
 	if strings.Contains(u, "fleetManagement.*") {
 		t.Errorf("disabled/other-target plugins must not contribute, got %q", u)
+	}
+	if strings.Contains(u, "graphql.*") || strings.Contains(u, "n10s.*") {
+		t.Errorf("a plugin the standalone's image refuses must not contribute, got %q", u)
+	}
+	// On 5.26 the entrypoint installs n10s: its settings are in.
+	if u := unionPluginConfSettings(plugins, "sa", "5.26.32-enterprise")["dbms.security.procedures.unrestricted"]; !strings.Contains(u, "n10s.*") || strings.Contains(u, "graphql.*") {
+		t.Errorf("on 5.26, n10s contributes and graphql does not, got %q", u)
 	}
 	if got["server.unmanaged_extension_classes"] == "" {
 		t.Error("bloom's unmanaged_extension_classes should be present")

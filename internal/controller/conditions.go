@@ -35,12 +35,28 @@ const (
 	// yet auto-drain them (#173).
 	ConditionTypeServersPendingDrain = "ServersPendingDrain"
 
+	// ConditionTypeTopologyChangeDeferred indicates spec.topology.servers asks
+	// for another server count than the server StatefulSet keeps, because an
+	// upgrade is in flight or keeps a partition (Paused or Failed): Neo4j's
+	// rolling upgrade changes no topology, and servers added then would start
+	// on the upgrade's target. The change is applied once the upgrade
+	// completes (operations.md id 163).
+	ConditionTypeTopologyChangeDeferred = "TopologyChangeDeferred"
+
 	// ConditionTypeCrossClusterProxySecure reports whether anything
 	// authenticates the tx-shipping port that spec.crossClusterReplication
 	// publishes through a load balancer. The proxy is a TCP passthrough, so
 	// the cluster SSL policy is the only access control there is; False means
 	// the port is reachable without one. Set only while the proxy is enabled.
 	ConditionTypeCrossClusterProxySecure = "CrossClusterProxySecure"
+
+	// ConditionTypeProceduresHidden is set on a Neo4jPlugin, True with reason
+	// NotInAllowlist, while the effective dbms.security.procedures.allowlist of
+	// its target loads none of its procedures (operations.md id 161); it is
+	// removed when the list loads them again.
+	ConditionTypeProceduresHidden = "ProceduresHidden"
+	// ConditionReasonNotInAllowlist is the reason of ProceduresHidden.
+	ConditionReasonNotInAllowlist = "NotInAllowlist"
 )
 
 // Reason constants for the Ready condition across all CRDs.
@@ -67,7 +83,11 @@ const (
 	// (Neo4jBackup spec.suspend). The Ready status stays False, since a
 	// suspended resource is not ready to do its work, but the reason must not
 	// be ConditionReasonFailed: nothing failed.
-	ConditionReasonSuspended       = "Suspended"
+	ConditionReasonSuspended = "Suspended"
+	// ConditionReasonDisabled — a Neo4jPlugin with spec.enabled: false, off
+	// its target as asked. Ready is False (the plugin is not installed), but
+	// nothing failed.
+	ConditionReasonDisabled        = "Disabled"
 	ConditionReasonRestoreComplete = "RestoreCompleted"
 	ConditionReasonRestoreFailed   = "RestoreFailed"
 	ConditionReasonPluginInstalled = "PluginInstalled"
@@ -87,10 +107,13 @@ const (
 	ConditionReasonServersPendingDrain   = "ServersPendingDrain"
 	ConditionReasonNoServersPendingDrain = "NoServersPendingDrain"
 	ConditionReasonScaleDownBlocked      = "ScaleDownBlocked"
-	// ConditionReasonScaleDownDeferredByUpgrade — a topology shrink was
-	// requested while a rolling upgrade is mid-flight; the drain starts
-	// after the upgrade completes (#173/#174 mutual exclusion).
-	ConditionReasonScaleDownDeferredByUpgrade = "ScaleDownDeferredByUpgrade"
+	// ConditionReasonWaitsForUpgrade / ConditionReasonNoTopologyChangeWaits
+	// are the TopologyChangeDeferred condition's reasons: a change of
+	// spec.topology.servers waits while an upgrade is in flight or keeps a
+	// partition, and is applied once it completes (#173/#174 mutual
+	// exclusion; operations.md id 163).
+	ConditionReasonWaitsForUpgrade       = "WaitsForUpgrade"
+	ConditionReasonNoTopologyChangeWaits = "NoTopologyChangeWaits"
 )
 
 // SetReadyCondition sets the standard "Ready" condition on a conditions slice.
@@ -154,6 +177,9 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 		// Declared state, not a fault: False (not Ready to run) with a reason
 		// that says so, instead of the ReconciliationFailed a real failure gets.
 		return metav1.ConditionFalse, ConditionReasonSuspended
+	case neo4jv1beta1.PhaseDisabled:
+		// Declared state too: a disabled plugin is not installed, as asked.
+		return metav1.ConditionFalse, ConditionReasonDisabled
 	case neo4jv1beta1.PhaseDegraded:
 		return metav1.ConditionFalse, ConditionReasonDegraded
 	case neo4jv1beta1.PhaseFailed, neo4jv1beta1.PhaseInvalid, neo4jv1beta1.PhaseValidationFailed, neo4jv1beta1.PhaseError:
@@ -165,7 +191,8 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 	case neo4jv1beta1.PhaseForming, neo4jv1beta1.PhaseCreating:
 		return metav1.ConditionUnknown, ConditionReasonForming
 	case neo4jv1beta1.PhaseInstalling, neo4jv1beta1.PhaseRunning,
-		neo4jv1beta1.PhaseValidating, neo4jv1beta1.PhasePending, neo4jv1beta1.PhaseWaiting:
+		neo4jv1beta1.PhaseValidating, neo4jv1beta1.PhasePending, neo4jv1beta1.PhaseWaiting,
+		neo4jv1beta1.PhasePendingDependencies:
 		return metav1.ConditionUnknown, ConditionReasonPending
 	default:
 		return metav1.ConditionUnknown, ConditionReasonPending

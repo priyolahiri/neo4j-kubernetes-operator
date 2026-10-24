@@ -54,6 +54,11 @@ func TestMapPluginName(t *testing.T) {
 			input:    "my-custom-plugin",
 			expected: "my-custom-plugin",
 		},
+		{name: "gds alias", input: "gds", expected: "graph-data-science"},
+		{name: "neosemantics alias", input: "neosemantics", expected: "n10s"},
+		// No longer mapped by a case of its own (operations.md id 170): no
+		// supported image installs it, so a Managed graphql plugin is refused.
+		{name: "graphql as it is", input: "graphql", expected: "graphql"},
 	}
 
 	for _, tt := range tests {
@@ -338,20 +343,10 @@ func TestMergeNeo4jPluginList(t *testing.T) {
 	}
 }
 
-// TestFleetManagementPluginType verifies that "fleet-management" is recognised as a
-// Neo4j config plugin (not environment-variable-only) and gets the correct security settings.
+// TestFleetManagementPluginType verifies that "fleet-management" gets the
+// correct security settings and plugin name.
 func TestFleetManagementPluginType(t *testing.T) {
 	r := &Neo4jPluginReconciler{}
-
-	t.Run("fleet-management is PluginTypeNeo4jConfig", func(t *testing.T) {
-		pluginType := r.getPluginType("fleet-management")
-		assert.Equal(t, PluginTypeNeo4jConfig, pluginType)
-	})
-
-	t.Run("fleet-management needs automatic security settings", func(t *testing.T) {
-		assert.True(t, r.requiresAutomaticSecurityConfiguration("fleet-management"),
-			"fleet-management should require automatic procedure security settings")
-	})
 
 	t.Run("fleet-management security settings are correct", func(t *testing.T) {
 		settings := r.getAutomaticSecuritySettings("fleet-management")
@@ -362,48 +357,6 @@ func TestFleetManagementPluginType(t *testing.T) {
 	t.Run("fleet-management maps to 'fleet-management' plugin name", func(t *testing.T) {
 		assert.Equal(t, "fleet-management", r.mapPluginName("fleet-management"))
 	})
-}
-
-func TestGetPluginType(t *testing.T) {
-	r := &Neo4jPluginReconciler{}
-
-	tests := []struct {
-		name     string
-		plugin   string
-		expected PluginType
-	}{
-		{"apoc", "apoc", PluginTypeEnvironmentOnly},
-		{"apoc-extended", "apoc-extended", PluginTypeEnvironmentOnly},
-		{"gds", "graph-data-science", PluginTypeNeo4jConfig},
-		{"gds shorthand", "gds", PluginTypeNeo4jConfig},
-		{"bloom", "bloom", PluginTypeNeo4jConfig},
-		{"genai", "genai", PluginTypeNeo4jConfig},
-		{"unknown", "some-custom-plugin", PluginTypeNeo4jConfig},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, r.getPluginType(tt.plugin))
-		})
-	}
-}
-
-func TestIsEnvironmentVariableOnlyPlugin(t *testing.T) {
-	r := &Neo4jPluginReconciler{}
-	assert.True(t, r.isEnvironmentVariableOnlyPlugin("apoc"))
-	assert.True(t, r.isEnvironmentVariableOnlyPlugin("apoc-extended"))
-	assert.False(t, r.isEnvironmentVariableOnlyPlugin("gds"))
-	assert.False(t, r.isEnvironmentVariableOnlyPlugin("bloom"))
-	assert.False(t, r.isEnvironmentVariableOnlyPlugin("unknown"))
-}
-
-func TestRequiresAutomaticSecurityConfiguration(t *testing.T) {
-	r := &Neo4jPluginReconciler{}
-	assert.True(t, r.requiresAutomaticSecurityConfiguration("bloom"))
-	assert.True(t, r.requiresAutomaticSecurityConfiguration("graph-data-science"))
-	assert.True(t, r.requiresAutomaticSecurityConfiguration("gds"))
-	assert.True(t, r.requiresAutomaticSecurityConfiguration("fleet-management"))
-	assert.False(t, r.requiresAutomaticSecurityConfiguration("apoc"))
-	assert.False(t, r.requiresAutomaticSecurityConfiguration("unknown"))
 }
 
 func TestGetAutomaticSecuritySettings(t *testing.T) {
@@ -441,30 +394,6 @@ func TestIsSecuritySetting(t *testing.T) {
 	assert.True(t, pluginConfKeyIsSecurity("dbms.bloom.license_file"))
 	assert.False(t, pluginConfKeyIsSecurity("server.memory.heap.max_size"))
 	assert.False(t, pluginConfKeyIsSecurity("gds.maxConcurrentRequests"))
-}
-
-func TestFilterNeo4jClientConfig(t *testing.T) {
-	r := &Neo4jPluginReconciler{}
-	config := map[string]string{
-		"apoc.load.json":                     "true",  // should be filtered (apoc prefix)
-		"gds.enterprise.license_file":        "/path", // should be filtered (non-dynamic)
-		"dbms.security.procedures.allowlist": "gds.*", // should be filtered (non-dynamic)
-		"gds.maxConcurrentRequests":          "4",     // should be kept (dynamic)
-	}
-	filtered := r.filterNeo4jClientConfig(config)
-	assert.NotContains(t, filtered, "apoc.load.json")
-	assert.NotContains(t, filtered, "gds.enterprise.license_file")
-	assert.NotContains(t, filtered, "dbms.security.procedures.allowlist")
-	assert.Contains(t, filtered, "gds.maxConcurrentRequests")
-}
-
-func TestHasRuntimeSecurityConfiguration(t *testing.T) {
-	r := &Neo4jPluginReconciler{}
-	// Currently always returns false per the code comment
-	assert.False(t, r.hasRuntimeSecurityConfiguration(nil))
-	assert.False(t, r.hasRuntimeSecurityConfiguration(&neo4jv1beta1.PluginSecurity{
-		AllowedProcedures: []string{"gds.*"},
-	}))
 }
 
 // TestRemoveFromNeo4jPluginList covers the inverse of MergeNeo4jPluginList,

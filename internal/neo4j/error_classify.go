@@ -82,6 +82,22 @@ func IsConnectivityError(err error) bool {
 	return false
 }
 
+// IsTransientError reports whether err says "not now" rather than "no": the
+// server could not be reached (IsConnectivityError), or Neo4j answered with an
+// error the driver itself would retry (isTransientNeo4jError) — a
+// Neo.TransientError.* (a database unavailable while it restarts or fails
+// over, a replication or leadership change under way), a cluster error such as
+// Neo.ClientError.Cluster.NotALeader, or a 2025+ "conflicting transaction
+// state". All of them are routine while servers restart, a leader changes or a
+// majority is lost, and pass by themselves. The Neo4jError is found with
+// errors.As, so a wrapped one counts. Any other Neo4j code — a syntax error, a
+// missing privilege, an unknown database — is not transient; nor is
+// Neo.TransientError.Transaction.Terminated, which the driver reclassifies as
+// the client error it is.
+func IsTransientError(err error) bool {
+	return IsConnectivityError(err) || isTransientNeo4jError(err)
+}
+
 // IsNotFoundError reports whether err indicates the target object (database,
 // user, or role) does not exist — i.e. a drop/revoke is already satisfied and
 // can be treated as idempotent success.

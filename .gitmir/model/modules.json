@@ -58,12 +58,14 @@
     "id": "mod-plugins",
     "name": "Plugins",
     "key": "plugins",
-    "description": "Neo4jPlugin: installs and configures APOC, Graph Data Science, Bloom, GenAI, n10s, and GraphQL plugins with automatic security configuration.",
+    "description": "Neo4jPlugin: installs and configures APOC, Graph Data Science, Bloom, GenAI and, on 5.26, n10s by name (NEO4J_PLUGINS, judged against the names the target's image installs), and any other JAR through a checksum-verified download, with automatic security configuration.",
     "paths": [
       "api/v1beta1/neo4jplugin_types.go",
       "internal/controller/plugin_controller.go",
       "internal/controller/plugin_target_gate.go",
-      "internal/controller/plugin_env_ownership.go"
+      "internal/controller/plugin_env_ownership.go",
+      "internal/controller/plugin_refused.go",
+      "internal/validation/plugin_entrypoint.go"
     ]
   },
   {

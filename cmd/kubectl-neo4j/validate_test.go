@@ -61,7 +61,9 @@ func TestOfflineValidatorsAreNilClientSafe(t *testing.T) {
 		// client call.
 		"Neo4jBackup": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jBackup\n" +
 			"metadata: {name: b}\nspec: {instanceRef: sc, shardedDatabase: products}\n",
-		"Neo4jPlugin":          "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jPlugin\nmetadata: {name: p}\nspec: {}\n",
+		// A Managed plugin with a target: reading the target's image tag is
+		// its one client call.
+		"Neo4jPlugin":          "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jPlugin\nmetadata: {name: p}\nspec: {clusterRef: prod, name: graphql, version: \"1\", enabled: true}\n",
 		"Neo4jDatabaseAlias":   "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jDatabaseAlias\nmetadata: {name: a}\nspec: {}\n",
 		"Neo4jReplicaDatabase": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jReplicaDatabase\nmetadata: {name: r}\nspec: {}\n",
 		// Set defaultCypherLanguage deliberately: it is the one field whose
@@ -508,6 +510,8 @@ func TestDeployedOperatorVersion(t *testing.T) {
 			deploy("registry:5000/op:v1.15.0"), "v1.15.0"},
 		{"digest pin names no release",
 			deploy("ghcr.io/x/op@sha256:" + strings.Repeat("a", 64)), ""},
+		{"a tag pinned to its digest is still the tag's release (#531)",
+			deploy("registry:5000/op:v1.15.0@sha256:" + strings.Repeat("a", 64)), "v1.15.0"},
 		{"both placeholders means we cannot tell",
 			deploy("ghcr.io/x/op:latest", ver("latest")), ""},
 		{"a dev build is not a release",

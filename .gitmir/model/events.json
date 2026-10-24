@@ -2,13 +2,7 @@
   {
     "id": "ev-cluster-formation-started",
     "name": "ClusterFormationStarted",
-    "description": "Fires when a cluster that has never formed enters Forming. A formed cluster that rolls, scales up or loses servers does not raise it (#444).",
-    "moduleId": "mod-cluster"
-  },
-  {
-    "id": "ev-cluster-formation-failed",
-    "name": "ClusterFormationFailed",
-    "description": "Fires when the SHOW SERVERS / split-brain check used to verify cluster formation itself errors, distinct from the cluster simply not being formed yet.",
+    "description": "Fires when a cluster that has never formed enters Forming. A formed cluster that rolls, scales up or loses servers does not raise it (#444). Announced by the status write that enters Forming, judged from the status that write replaced (writeClusterStatus), never from the pass's own copy: a pass that read the cluster from a cache that had not seen the previous pass's write announced it a second time for every new cluster (#553; knowledge operations.md id 136). There is no ClusterFormationFailed event: formation waits rather than fails, and a cluster that stays unreachable raises ConnectivityDegraded.",
     "moduleId": "mod-cluster"
   },
   {
@@ -38,7 +32,7 @@
   {
     "id": "ev-topology-placement-calculated",
     "name": "TopologyPlacementCalculated",
-    "description": "Fires after a successful topology placement calculation that found at least one availability zone to spread servers across.",
+    "description": "Fires after a topology placement calculation that found at least one availability zone to spread servers across, naming the zones. Announced when the placement is first calculated and when its zones change, from a per-cluster memory in the topology scheduler, not on every pass (#527; knowledge operations.md id 136); an operator restart announces it once more.",
     "moduleId": "mod-cluster"
   },
   {
@@ -50,7 +44,7 @@
   {
     "id": "ev-property-sharding-validation-failed",
     "name": "PropertyShardingValidationFailed",
-    "description": "Fires when spec.propertySharding is enabled but fails version, cluster-size, required-config-key, or resource-minimum validation. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Fires when spec.propertySharding is enabled but fails version, cluster-size, required-config-key, or resource-minimum validation. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The message says \"validation failed\" once: the version check's error no longer carries a prefix of its own (#549).",
     "moduleId": "mod-cluster"
   },
   {
@@ -86,7 +80,7 @@
   {
     "id": "ev-upgrade-started",
     "name": "UpgradeStarted",
-    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster, whatever its upgradeStrategy), or when the standalone begins its own pre-upgrade check on the pass that applies a new image (once per image: not again while the pod is being replaced). A Paused or Failed upgrade taken up again is announced as resumed (\"Rolling upgrade resumed after it was Paused\").",
+    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster, whatever its upgradeStrategy), or when the standalone begins its own pre-upgrade check on the pass that applies a new image (once per image: not again while the pod is being replaced). A Paused or Failed upgrade taken up again is announced as resumed (\"Rolling upgrade resumed after it was Paused\"). A held upgrade taken up to replace the servers that cannot start on its target names them: '... cannot start on <target> and is replaced first' (operations.md id 162).",
     "moduleId": "mod-cluster"
   },
   {
@@ -98,19 +92,19 @@
   {
     "id": "ev-upgrade-paused",
     "name": "UpgradePaused",
-    "description": "A Warning that fires when a rolling-upgrade step fails and upgradeStrategy.autoPauseOnFailure is set, halting the state machine for manual intervention; the servers stay where it stopped until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149).",
+    "description": "A Warning that fires when a rolling-upgrade step fails and upgradeStrategy.autoPauseOnFailure is set, halting the state machine for manual intervention; the servers stay where it stopped until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149). A refusal before the upgrade starts is announced once, and the cluster stays Ready.",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-upgrade-failed",
     "name": "UpgradeFailed",
-    "description": "Fires when a rolling-upgrade step's deadline or gate is exceeded without autoPauseOnFailure set, or when the standalone's pre-upgrade health check fails with autoPauseOnFailure set. The standalone's pre-upgrade health check, which holds the upgrade back and is re-run every RequeueAfter, is advisory: announced when the block starts and every 30 minutes while it lasts (knowledge operations.md id 145).",
+    "description": "Fires when a rolling-upgrade step's deadline or gate is exceeded without autoPauseOnFailure set, or when the standalone's pre-upgrade health check fails with autoPauseOnFailure set. The standalone's pre-upgrade health check, which holds the upgrade back and is re-run every RequeueAfter, is advisory: announced when the block starts and every 30 minutes while it lasts (knowledge operations.md id 145). A cluster upgrade a check refuses before it starts is announced once per refusal — again only when the phase, target or error changes — while the operator tries it every minute; the cluster stays Ready (operations.md id 149).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-upgrade-deferred",
     "name": "UpgradeDeferred",
-    "description": "Fires when a rolling upgrade is deferred because a scale-down drain is still in progress (mutual exclusion — the drain must finish first).",
+    "description": "Fires when an image change is held back: the cluster is not Ready with every server available (holdImageDriftUntilReady), or a scale-down drain is in progress (mutual exclusion — the drain must finish first). Announced once per held target from a per-cluster memory, not on every check: the drain's deferral names the target and was emitted every 15s while the drain ran (#527); the memory is forgotten when the drain releases its hold, so a later drain announces again (knowledge operations.md id 136). Also when the normal pass holds an image change because the cluster is not Ready with every server available: announced on the second pass that holds the same image, once (the pass after a refused tag is fixed holds it for one pass only, #550), and not for a change a stopped upgrade's record already names.",
     "moduleId": "mod-cluster"
   },
   {
@@ -176,7 +170,7 @@
   {
     "id": "ev-aura-fleet-management-plugin-patch-failed",
     "name": "AuraFleetManagementPluginPatchFailed",
-    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails.",
+    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the write that creates the StatefulSet already lists the plugin (#531; knowledge operations.md ids 164, 175).",
     "moduleId": "mod-cluster"
   },
   {
@@ -188,7 +182,7 @@
   {
     "id": "ev-validation-warning",
     "name": "ValidationWarning",
-    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set, or a value that has no effect (upgradeStrategy.strategy Recreate on a cluster) (Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore, AuraInstance). Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
+    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set, or a value that has no effect (upgradeStrategy.strategy Recreate on a cluster; a standalone's upgradeStrategy timeouts other than their defaults; an OpenShift Route's tls.secretName, which no Route the operator writes names, #536); and while spec.storage.className names a StorageClass the existing data volumes do not use. Raised on Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore and AuraInstance. Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
     "moduleId": "mod-database"
   },
   {
@@ -464,19 +458,19 @@
   {
     "id": "ev-restore-started",
     "name": "RestoreStarted",
-    "description": "A restore Job was created, a cluster-native Cypher recreate was issued, or an all-databases per-database seed began. For a standalone restore that runs offline with neo4j-admin, a first RestoreStarted names the reason; it is emitted only once the existence check, the pre-restore hooks and the stop (or, with stopCluster false, the refusal of a running standalone) have passed, and with stopCluster false it says the standalone is already stopped (knowledge operations.md id 145).",
+    "description": "A restore Job was created (announced from the status write that made the restore Running, so a pass on a stale copy does not repeat it), a cluster-native Cypher recreate was issued, or an all-databases per-database seed began (from the source neo4j-restore-progress). For a standalone restore that runs offline with neo4j-admin, a first RestoreStarted names the reason; it is emitted only once the existence check, the pre-restore hooks and the stop (or, with stopCluster false, the refusal of a running standalone) have passed — with stopCluster true at the stop, with stopCluster false with the Job's start, saying the standalone is already stopped — and once per attempt (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-restore-completed",
     "name": "RestoreCompleted",
-    "description": "The Neo4jRestore reconcile reached its terminal Completed phase.",
+    "description": "The Neo4jRestore reconcile reached its terminal Completed phase; for an all-databases restore once, from the status write, on the restore's own event budget (knowledge operations.md id 166).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-restore-failed",
     "name": "RestoreFailed",
-    "description": "The restore Job, Cypher recreate/online-wait, or seed-proxy/seed-config setup failed terminally.",
+    "description": "The restore Job, Cypher recreate/online-wait, or seed-proxy/seed-config setup failed terminally; for an all-databases restore once, when a database failed, from the status write.",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -500,7 +494,7 @@
   {
     "id": "ev-restore-seed-progress",
     "name": "RestoreSeedProgress",
-    "description": "Periodic progress update while an all-databases restore's per-database seed is still coming online (allocation counts or the last poll's error).",
+    "description": "The progress of one database's seed in an all-databases restore (allocation counts or the last poll's error), announced when it changes and every 10 minutes while it does not, from the source neo4j-restore-progress — an event budget of its own, so a long seed cannot crowd out the restore's outcome (knowledge operations.md ids 92, 166).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -530,13 +524,13 @@
   {
     "id": "ev-user-ready",
     "name": "UserReady",
-    "description": "Emitted the first time a Neo4jUser's granted roles fully match spec.roles with no pending dependencies (neo4juser_controller.go).",
+    "description": "Emitted when a Neo4jUser becomes Ready — granted roles match spec.roles with no pending dependencies — the first time, or back from a failure of its own (neo4juser_controller.go). Announced from the status write that moved the persisted phase into Ready (writeStatus reports entered), never from the pass's copy; a Ready user stays Ready while its target restarts, so a restart is not announced (knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-user-deletion-failed",
     "name": "UserDeletionFailed",
-    "description": "Emitted when DROP USER fails during Neo4jUser deletion; a retryable failure requeues, otherwise the finalizer is released to avoid wedging deletion (neo4juser_controller.go).",
+    "description": "Emitted when DROP USER fails during Neo4jUser deletion (neo4juser_controller.go). A retryable failure is written to status (phase Failed, Ready reason UserDeletionFailed) and announced when that write changed it — once per failure, not on every retry; the drop is retried until it succeeds or finalizerDeletionGracePeriod ends, when the finalizer is released with one more Warning (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -572,7 +566,7 @@
   {
     "id": "ev-role-pending",
     "name": "RolePending",
-    "description": "Emitted when a desired role name matches neither a built-in nor any Neo4jRole CR, deferring the grant until the role exists (neo4juser_controller.go, neo4jrolebinding_controller.go, neo4jauthrule_controller.go). Emitted after the PendingDependencies condition write, which names the missing roles sorted, and only when that write changed it: once per wait, and again when the missing set changes (knowledge operations.md id 145).",
+    "description": "Emitted when a desired role name exists nowhere — not a built-in, not a Neo4jRole CR, not a role in Neo4j (SHOW ROLES, read only when needed; missingRoles in role_resolution.go) — deferring the grant until the role exists (neo4juser_controller.go, neo4jrolebinding_controller.go, neo4jauthrule_controller.go). Emitted after the PendingDependencies condition write, which names the missing roles sorted, and only when that write changed it: once per wait, and again when the missing set changes (knowledge operations.md ids 17, 145).",
     "moduleId": "mod-security"
   },
   {
@@ -590,13 +584,13 @@
   {
     "id": "ev-role-ready",
     "name": "RoleReady",
-    "description": "Emitted the first time a Neo4jRole's privileges fully match spec.privileges (neo4jrole_controller.go).",
+    "description": "Emitted when a Neo4jRole becomes Ready — privileges match spec.privileges — the first time, or back from a failure of its own (reportReady, neo4jrole_controller.go). Announced from the status write that moved the persisted phase into Ready, never from the pass's copy; a Ready role stays Ready while its target restarts (knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-role-deletion-failed",
     "name": "RoleDeletionFailed",
-    "description": "Emitted when DROP ROLE fails during Neo4jRole deletion; retryable failures requeue, otherwise the finalizer is released (neo4jrole_controller.go).",
+    "description": "Emitted when DROP ROLE fails during Neo4jRole deletion (neo4jrole_controller.go). A retryable failure is written to status (phase Failed, Ready reason RoleDeletionFailed) and announced once per failure, not on every retry; after finalizerDeletionGracePeriod the finalizer is released (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -620,13 +614,13 @@
   {
     "id": "ev-binding-created",
     "name": "BindingCreated",
-    "description": "Emitted the first time a Neo4jRoleBinding reaches Ready with all desired roles granted to its target user (neo4jrolebinding_controller.go).",
+    "description": "Emitted when a Neo4jRoleBinding becomes Ready with all desired roles granted to its target user, the first time or back from a failure of its own (neo4jrolebinding_controller.go). Announced from the status write that moved the persisted phase into Ready, never from the pass's copy; a Ready binding stays Ready while its target restarts (knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-binding-updated",
     "name": "BindingUpdated",
-    "description": "Emitted when an already-Ready Neo4jRoleBinding's granted-role set changes on a subsequent reconcile (neo4jrolebinding_controller.go).",
+    "description": "Emitted when an already-Ready Neo4jRoleBinding's granted-role set changes on a subsequent reconcile, as the status write that records it reports (neo4jrolebinding_controller.go; knowledge operations.md id 158).",
     "moduleId": "mod-security"
   },
   {
@@ -638,7 +632,7 @@
   {
     "id": "ev-binding-failed",
     "name": "BindingFailed",
-    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart — a revoke the deletion retries included (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -668,7 +662,7 @@
   {
     "id": "ev-authrule-failed",
     "name": "AuthRuleFailed",
-    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation, and on a failed DROP AUTH RULE during deletion (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-security"
   },
   {
@@ -728,13 +722,13 @@
   {
     "id": "ev-aura-instance-orphaned",
     "name": "AuraInstanceOrphaned",
-    "description": "Emitted when handleDeletion leaves the cloud instance running under the default Orphan deletionPolicy.",
+    "description": "Emitted (Normal) when handleDeletion leaves the cloud instance running under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-instance-failed",
     "name": "AuraInstanceFailed",
-    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -776,7 +770,7 @@
   {
     "id": "ev-aura-database-ready",
     "name": "AuraDatabaseReady",
-    "description": "Emitted every reconcile once GetDatabase succeeds and status is synced.",
+    "description": "Emitted when the database becomes Ready. Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -794,7 +788,7 @@
   {
     "id": "ev-aura-database-failed",
     "name": "AuraDatabaseFailed",
-    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The InstanceNotMultiDatabase refusal, once on status for the current generation and the same Aura instance, is not asked again (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -806,7 +800,7 @@
   {
     "id": "ev-aura-database-backup-failed",
     "name": "AuraDatabaseBackupFailed",
-    "description": "Emitted by fail() when resolving the database/target or taking the backup fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() when resolving the database/target or taking the backup fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx, a transport failure or a 409 (another operation in flight) of the backup create is retried without it, as the snapshot create does (id 88).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -842,7 +836,7 @@
   {
     "id": "ev-aura-member-ready",
     "name": "AuraMemberReady",
-    "description": "Emitted once the member's role matches spec.role and status is synced.",
+    "description": "Emitted when an organization or project membership becomes Ready (the member's role matches spec.role). Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -872,7 +866,7 @@
   {
     "id": "ev-aura-invite-ready",
     "name": "AuraInviteReady",
-    "description": "Emitted every reconcile once the invite's v2beta1 status has been mapped to a CR phase.",
+    "description": "Emitted when the invite's v2beta1 status, mapped to a CR phase, changes: once per state (Sent, Accepted, Declined, Expired, Revoked); the message names the phase. Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -890,13 +884,13 @@
   {
     "id": "ev-aura-invite-failed",
     "name": "AuraInviteFailed",
-    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156).",
     "moduleId": "mod-aura-rbac"
   },
   {
     "id": "ev-aura-credentials-validated",
     "name": "AuraCredentialsValidated",
-    "description": "Emitted when the AuraProviderConfig's credentials produce a working token and a successful ListInstances call.",
+    "description": "Emitted when the AuraProviderConfig's credentials produce a working token and a successful ListInstances call and the status write changed the Ready condition: when they become valid, and again after a failure — not on every 30s revalidation (knowledge operations.md id 136).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -920,7 +914,7 @@
   {
     "id": "ev-aura-customer-managed-key-ready",
     "name": "AuraCustomerManagedKeyReady",
-    "description": "Emitted once aura.IsCMKReady(observed.Status) is true.",
+    "description": "Emitted when the key becomes ready (aura.IsCMKReady(observed.Status)). Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -938,13 +932,13 @@
   {
     "id": "ev-aura-customer-managed-key-orphaned",
     "name": "AuraCustomerManagedKeyOrphaned",
-    "description": "Emitted when handleDeletion leaves the key registered under the default Orphan deletionPolicy.",
+    "description": "Emitted (Normal) when handleDeletion leaves the key registered under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-customer-managed-key-failed",
     "name": "AuraCustomerManagedKeyFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -968,7 +962,7 @@
   {
     "id": "ev-aura-ip-filter-ready",
     "name": "AuraIPFilterReady",
-    "description": "Emitted every reconcile once GetIPFilter succeeds and status is synced.",
+    "description": "Emitted when the IP filter becomes Ready. Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -980,19 +974,19 @@
   {
     "id": "ev-aura-ip-filter-orphaned",
     "name": "AuraIPFilterOrphaned",
-    "description": "Emitted when handleDeletion leaves the filter in place under deletionPolicy=Orphan.",
+    "description": "Emitted (Normal) when handleDeletion leaves the filter in place under deletionPolicy=Orphan, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials or organization could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-ip-filter-failed",
     "name": "AuraIPFilterFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-plugin-installed",
     "name": "PluginInstalled",
-    "description": "Emitted once a Neo4jPlugin's env/init-container merge succeeds and the target's rolling restart is triggered.",
+    "description": "Normal event, once per install, from the status write that turns a Neo4jPlugin Ready: its write reached every server (the target's StatefulSet rolled the template out and the pods are ready). A pass that read an older copy of the plugin writes nothing and announces nothing (operations.md id 136).",
     "moduleId": "mod-plugins"
   },
   {
@@ -1016,7 +1010,7 @@
   {
     "id": "ev-plugin-install-deferred",
     "name": "PluginInstallDeferred",
-    "description": "Normal event, once per wait, on a Neo4jPlugin whose install — or, for a VerifiedDownload plugin, whose update of its plugin-ca volume after the target's spec.trustedCASecrets changed (\"updating the plugin's trusted CAs restarts every server\") — would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available, or has not rolled out its latest spec: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a target whose status.observedGeneration lags its generation, or whose StatefulSet is still rolling its template out; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held, nor is a write that repairs the plugin's own failing init container (PluginInitContainerFailing).",
+    "description": "Normal event, once per wait, on a Neo4jPlugin whose install — or, for a VerifiedDownload plugin, whose update of its plugin-ca volume after the target's spec.trustedCASecrets changed (\"updating the plugin's trusted CAs restarts every server\") — would change its target's StatefulSet (restarting every server) while the target is not Ready with every server available, or has not rolled out its latest spec: a cluster with a server down (Degraded condition True, or phase Degraded), or still forming, rolling or upgrading; a target whose status.observedGeneration lags its generation, or whose StatefulSet is still rolling its template out; a standalone not Ready. The plugin is Waiting and installs once the target is fully available. A pass with nothing to write (waiting for the servers its own install restarted) is not held, nor is a write that repairs the plugin's own failing init container (PluginInitContainerFailing). Also emitted when the removal of a plugin set to spec.enabled false waits (\"removing the disabled plugin restarts every server\").",
     "moduleId": "mod-plugins"
   },
   {
@@ -1028,7 +1022,7 @@
   {
     "id": "ev-plugin-settings-failing",
     "name": "PluginSettingsFailing",
-    "description": "On a Neo4jPlugin whose write changes the settings (NEO4J_<setting> variables) that every server that is down keeps failing with — typically a spec.config key Neo4j refuses at startup, removed from the plugin. A Warning, once, when the plugin writes that change to a target that is not Ready: every server pod that is down has its neo4j container exited non-zero and not running again while running a variable the write changes, those pods are the highest ordinals at or above the partition, no pod is missing or terminating, and Neo4j's last diagnostics report no other server unavailable — so the roll replaces the failing pods first and costs no server that is up (knowledge operations.md id 155). A Normal event when the plugin deletes a standalone's pod stuck on the old settings on an older revision, which its OrderedReady StatefulSet does not replace.",
+    "description": "On a Neo4jPlugin whose write changes the settings (NEO4J_<setting> variables) that every server that is down keeps failing with — typically a spec.config key Neo4j refuses at startup, removed from the plugin, or the plugin's removal when it is disabled or refused by its target's image (operations.md id 170). A Warning, once, when the plugin writes that change to a target that is not Ready: every server pod that is down has its neo4j container exited non-zero and not running again while running a variable the write changes, those pods are the highest ordinals at or above the partition, no pod is missing or terminating, and Neo4j's last diagnostics report no other server unavailable — so the roll replaces the failing pods first and costs no server that is up (knowledge operations.md id 155). A Normal event when the plugin deletes a standalone's pod stuck on the old settings on an older revision, which its OrderedReady StatefulSet does not replace.",
     "moduleId": "mod-plugins"
   },
   {
@@ -1070,13 +1064,13 @@
   {
     "id": "ev-cluster-degraded",
     "name": "ClusterDegraded",
-    "description": "Warning, once per transition: a formed cluster has been short of one or more servers for longer than the grace period (--server-unavailable-grace, default 5m) while a majority keeps it serving, and its phase turns Degraded (#444).",
+    "description": "Warning, once per transition: a formed cluster has been short of one or more servers for longer than the grace period (--server-unavailable-grace, default 5m) while a majority keeps it serving, and its phase turns Degraded (#444). Its message, like the Degraded condition's, says what Neo4j and Kubernetes report about the servers (outageDetail), never the formation check's words (#553).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-cluster-quorum-lost",
     "name": "ClusterQuorumLost",
-    "description": "Warning, once per transition: a formed cluster has half or fewer of its servers available; its phase goes to Forming and dependents pause until a majority is back (#444).",
+    "description": "Warning, once per transition: a formed cluster has half or fewer of its servers available; its phase goes to Forming and dependents pause until a majority is back (#444). Its message, like the Degraded condition's, says what Neo4j and Kubernetes report about the servers (outageDetail), never the formation check's words (#553).",
     "moduleId": "mod-cluster"
   },
   {
@@ -1108,5 +1102,23 @@
     "name": "TLSCertificateNeedsRestart",
     "description": "Warning when a renewed TLS certificate could not be reloaded on the named servers (TLS reload not enabled on them yet, or still the old certificate ten minutes after the new one was issued); they serve the previous certificate until they restart.",
     "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-plugin-disabled",
+    "name": "PluginDisabled",
+    "description": "Normal event, once, when a Neo4jPlugin with spec.enabled false reaches phase Disabled: nothing of it is on its target's servers any more — its removal written and rolled out, or nothing there to remove (operations.md id 160).",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-procedures-hidden",
+    "name": "PluginProceduresHidden",
+    "description": "Warning event on a Neo4jPlugin whose procedures the target's effective dbms.security.procedures.allowlist — shared by every plugin of the target — loads none of, emitted when its ProceduresHidden condition appears or its message changes. The plugin stays Ready; the list is not widened (operations.md id 161).",
+    "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-plugin-unknown-to-image",
+    "name": "PluginUnknownToImage",
+    "description": "Warning, once, when a Managed Neo4jPlugin is refused because the image its target runs cannot install one of its NEO4J_PLUGINS names (graphql on every supported release, n10s on CalVer from 2025.05, a custom JAR's name): the entrypoint exits on such a name. Announced from the status write that moves the plugin into the refusal; again only for a different refusal (the target's image changed). The plugin is Failed, and what an earlier write of it left on the target is taken off (operations.md id 170).",
+    "moduleId": "mod-plugins"
   }
 ]

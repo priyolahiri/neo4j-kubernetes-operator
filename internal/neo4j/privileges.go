@@ -617,6 +617,41 @@ func PrivilegeAliasDependence(stmt string) (names []string, anyAlias bool) {
 	return s.names, false
 }
 
+// FoldPrivilegeDatabaseNames returns a key for a privilege statement under
+// which two statements that differ only in the case of the database and graph
+// names they are scoped to compare equal: the statement canonicalised, those
+// names lower-cased, the rest untouched. Neo4j compares database names that
+// way — they "are case-insensitive and normalized to lowercase" — and stores
+// `GRANT ACCESS ON DATABASE TOPODB TO r` as `GRANT ACCESS ON DATABASE topodb TO
+// r`. Every other name (labels, properties, the role) is case-sensitive and
+// keeps its case. A key for comparisons only; never a statement to run.
+func FoldPrivilegeDatabaseNames(stmt string) string {
+	tokens := privilegeTokens(CanonicalisePrivilegeStatement(stmt))
+	for i := 0; i+1 < len(tokens); i++ {
+		if tokens[i] != "ON" {
+			continue
+		}
+		switch tokens[i+1] {
+		case "DATABASE", "DATABASES", "GRAPH", "GRAPHS":
+		default:
+			continue
+		}
+		// The comma-separated name list runs up to the next keyword, as
+		// scanPrivilegeScopes reads it.
+		for k := i + 2; k < len(tokens); k++ {
+			t := tokens[k]
+			if t == "," || t == "*" {
+				continue
+			}
+			if _, reserved := privilegeKeywords[t]; reserved {
+				break
+			}
+			tokens[k] = strings.ToLower(t)
+		}
+	}
+	return strings.Join(tokens, " ")
+}
+
 // privilegeScope is what a statement's ON clauses say.
 type privilegeScope struct {
 	names      []string // under the scopes asked for, as Neo4j lists them

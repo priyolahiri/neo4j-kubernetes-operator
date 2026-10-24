@@ -69,6 +69,45 @@ func (v *UpgradeValidator) ValidateVersionUpgrade(currentVersion, targetVersion 
 	return v.validateVersionMove(currentVersion, targetVersion, "the servers run")
 }
 
+// ValidateTagAgainstRunning checks a cluster's spec.image.tag against what it
+// runs, read from its status: status.version (ValidateVersionUpgrade), what
+// the servers report for a status.version without a patch
+// (status.runningVersion), and an unfinished upgrade that has restarted a
+// server on its target (validateTagAgainstUpgrade, with
+// status.upgradeStatus.resolvedTargetVersion). It is the whole rule the
+// reconciler runs on every pass (ClusterValidator.validateAgainstRunning),
+// and the rolling-upgrade state machine asks it again before it starts, so the
+// two never disagree. The machine's check used to ask ValidateVersionUpgrade
+// alone, which ignores the reported versions (#550; operations.md ids 139,
+// 149 and 153).
+func (v *UpgradeValidator) ValidateTagAgainstRunning(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) field.ErrorList {
+	tag := cluster.Spec.Image.Tag
+	if v.parseVersion(tag) == nil {
+		// A tag the image rule already refuses.
+		return nil
+	}
+	if cluster.Status.Version != "" {
+		if errs := v.ValidateVersionUpgrade(cluster.Status.Version, tag); len(errs) > 0 {
+			return errs
+		}
+	}
+	if errs := v.validateTagAgainstRunningVersion(
+		cluster.Status.RunningVersion, cluster.Status.Version, tag, "the servers run"); len(errs) > 0 {
+		return errs
+	}
+	return v.validateTagAgainstUpgrade(cluster.Status.UpgradeStatus, tag)
+}
+
+// TagBelowReportedVersion reports whether tag names a version earlier than
+// reported, a version a server reports in SHOW SERVERS, ordered as the
+// version rule orders them (belowReported): a tag without a patch on the same
+// line is not below it. The rolling-upgrade state machine asks it with what
+// the servers report when it starts, before the operator may have recorded
+// it (operations.md id 153).
+func TagBelowReportedVersion(reported, tag string) bool {
+	return NewUpgradeValidator().belowReported(reported, tag)
+}
+
 // validateVersionMove is ValidateVersionUpgrade for any deployment; runs names
 // what runs currentVersion in a refusal ("the servers run", "the standalone
 // runs"). Neo4j's upgrade rules are the same for a cluster and a standalone

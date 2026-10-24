@@ -19,8 +19,14 @@ Health state mapping:
 | ArgoCD Status  | Neo4j Phase(s)                        |
 |----------------|---------------------------------------|
 | Healthy        | Ready, Completed, Succeeded, Installed; `Neo4jBackup` also `Scheduled` and `Suspended` |
-| Degraded       | Failed, Degraded; `Neo4jBackup` and `Neo4jPlugin` also `Invalid` |
+| Degraded       | Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — every phase `kubectl neo4j status --problems` reports, on every self-managed kind |
 | Progressing    | Forming, Pending, Creating, Waiting, Running, or empty |
+
+A `Neo4jDatabase` the operator refused (`ValidationFailed`) is Degraded: nothing
+was created, and nothing changes until the spec is edited. As Progressing (the
+health checks of v1.22.0 and earlier), Argo CD showed the Application still syncing
+and a later sync wave waited for ever. So is one whose deletion keeps retrying a
+refused `DROP DATABASE` (`Error`).
 
 A `Neo4jBackup` with `spec.schedule` stays in `Scheduled` for its whole life (it
 never reaches `Completed`), and `spec.suspend: true` is declared state rather
@@ -45,7 +51,9 @@ Health checks are configured for **all 27 CRDs** in the `neo4j.neo4j.com`
 group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
 replication) and all 12 Aura CRDs.
 
-**Self-managed CRDs** key off `status.phase`, per the table above.
+**Self-managed CRDs** key off `status.phase`, per the table above. A test pins
+the Degraded list to the CLI's (`TestArgoCDHealthChecks_EveryProblemPhaseIsDegraded`),
+so a refusal phase cannot be added to one and not the other.
 
 **Aura CRDs** key off the `Ready` **condition** instead. Their `status.phase`
 largely mirrors Aura's *own* API status (`AuraInstance` copies the live instance
@@ -98,6 +106,18 @@ resources is a merge patch of what it changes:
 The last two are spec changes you opted into with the annotation, and a GitOps
 tool reports them: add them to your manifests, or tell the tool to ignore those
 fields.
+
+With `kubectl apply --server-side` (and Argo CD's `ServerSideApply=true`), a
+manifest that sets `spec.env` or `spec.extraEnvFrom` owns the whole list, even
+an empty one (`env: []`). Once the operator has added its entry, the next apply
+of that manifest stops with a conflict on `.spec.env` or `.spec.extraEnvFrom`.
+Either add the operator's entry to your manifest (the same value applied by two
+managers is not a conflict), or leave the field out of the manifest when you
+have nothing to put in it. `--force-conflicts` makes the apply go through, and
+takes the entry away again: the servers restart without the credentials, and
+restart once more when the next seed or restore puts them back. Client-side
+`kubectl apply` does not conflict: it sends only what changed since its last
+apply, so a list you did not change keeps the operator's entry.
 
 Releases before this one sent the whole object back with every one of these
 writes, so an object they created may carry fields you did not write:

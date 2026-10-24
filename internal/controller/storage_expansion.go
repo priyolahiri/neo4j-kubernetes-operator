@@ -54,6 +54,10 @@ type storageExpansionResult struct {
 func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (bool, error) {
 	logger := log.FromContext(ctx)
 
+	// A size can grow; a StorageClass cannot change. Say so while the spec
+	// asks for one the volumes do not use.
+	r.recordStorageClassChange(ctx, cluster)
+
 	result, err := r.checkStorageExpansionNeeded(ctx, cluster)
 	if err != nil {
 		return false, err

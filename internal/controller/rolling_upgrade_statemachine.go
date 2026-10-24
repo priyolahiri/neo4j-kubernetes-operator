@@ -42,6 +42,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -226,14 +227,19 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 		if err := r.reconcileScaleDownDrain(ctx, cluster); err != nil {
 			logger.Error(err, "Scale-down drain step failed while deferring upgrade (non-fatal)")
 		}
-		r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonUpgradeDeferred,
-			"Rolling upgrade deferred until the in-progress scale-down drain completes")
+		r.announceUpgradeDeferredByDrain(cluster)
 		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
 	}
 
 	orch := NewRollingUpgradeOrchestrator(r.Client, cluster.Name, cluster.Namespace)
 
+	// The servers the walk covers are the StatefulSet's: an upgrade changes no
+	// topology, and a change of spec.topology.servers waits for it (Staging
+	// keeps the replica count; holdTopologyWhileUpgradeHolds).
 	servers := cluster.Spec.Topology.Servers
+	if live, err := orch.getServerStatefulSet(ctx, cluster); err == nil && live.Spec.Replicas != nil {
+		servers = *live.Spec.Replicas
+	}
 	previousVersion := cluster.Status.Version
 	targetVersion := cluster.Spec.Image.Tag
 	// The record this attempt writes, also when a gate below refuses it: a
@@ -246,26 +252,29 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 	record := func(us *neo4jv1beta1.UpgradeStatus) {
 		*us = newUpgradeRecord(held, previousVersion, targetVersion, servers, metav1.Now())
 	}
+	// A held upgrade whose restarted servers cannot start on its target goes
+	// on towards the new tag although they are down: replacing them is the
+	// only way they come back, and it touches no server that is up
+	// (heldUpgradeRepair, operations.md id 162).
+	repair := r.heldUpgradeRepair(ctx, cluster)
 
-	// Version-compatibility and StatefulSet readiness gates (no Neo4j I/O).
-	if err := orch.validateVersionCompatibility(cluster.Status.Version, cluster.Spec.Image.Tag); err != nil {
-		return r.failUpgrade(ctx, cluster, fmt.Errorf("version compatibility check failed: %w", err), record)
+	// The version rule, as validation ran it on this pass (no Neo4j I/O).
+	if err := orch.validateVersionCompatibility(cluster); err != nil {
+		return r.refuseUpgradeStart(ctx, cluster, fmt.Errorf("version compatibility check failed: %w", err), record)
 	}
-	if err := orch.validateStatefulSetsReady(ctx, cluster); err != nil {
-		// Not an upgrade failure — the cluster isn't quiescent yet. Retry.
-		logger.Info("Upgrade waiting for StatefulSet readiness", "reason", err.Error())
-		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
-	}
-
-	// Pre-upgrade Neo4j health gate (one-shot), unless disabled.
-	if cluster.Spec.UpgradeStrategy == nil || cluster.Spec.UpgradeStrategy.PreUpgradeHealthCheck {
-		neo4jClient, err := r.createNeo4jClient(ctx, cluster)
-		if err != nil {
-			return r.failUpgrade(ctx, cluster, fmt.Errorf("failed to create Neo4j client: %w", err), record)
+	if repair == nil {
+		if err := orch.validateStatefulSetsReady(ctx, cluster); err != nil {
+			// Not an upgrade failure — the cluster isn't quiescent yet. Retry.
+			logger.Info("Upgrade waiting for StatefulSet readiness", "reason", err.Error())
+			return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
 		}
-		defer func() { _ = neo4jClient.Close() }()
-		if err := neo4jClient.ValidateUpgradeSafety(ctx, cluster.Spec.Image.Tag); err != nil {
-			return r.failUpgrade(ctx, cluster, fmt.Errorf("upgrade safety validation failed: %w", err), record)
+	}
+
+	// Pre-upgrade Neo4j health gate (one-shot), unless disabled. A repair
+	// skips it: the cluster is short of the servers it is about to replace.
+	if repair == nil && (cluster.Spec.UpgradeStrategy == nil || cluster.Spec.UpgradeStrategy.PreUpgradeHealthCheck) {
+		if err := r.preUpgradeCheck(ctx, cluster); err != nil {
+			return r.refuseUpgradeStart(ctx, cluster, err, record)
 		}
 	}
 
@@ -273,7 +282,19 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 		logger.Error(err, "Failed to initialize upgrade status")
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 	}
+	// The image change is no longer held back, and the cluster's message no
+	// longer says the upgrade is paused or failed (#553).
+	r.deferredUpgradeTargets.Delete(clusterKey(cluster))
+	r.noteUpgradeInClusterMessage(ctx, cluster)
 
+	if repair != nil {
+		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeStarted,
+			"Rolling upgrade resumed after it was %s: %s -> %s; %s cannot start on %s and is replaced first",
+			held.Phase, previousVersion, targetVersion, strings.Join(repair.failing, ", "), held.TargetVersion)
+		logger.Info("Rolling upgrade resumed to replace servers that cannot start on the earlier target",
+			"after", held.Phase, "from", previousVersion, "to", targetVersion, "servers", repair.failing)
+		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+	}
 	if resumed {
 		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeStarted,
 			"Rolling upgrade resumed after it was %s: %s -> %s", held.Phase, previousVersion, targetVersion)
@@ -343,11 +364,27 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 	if err != nil {
 		return r.failUpgrade(ctx, cluster, err)
 	}
+	// An upgrade changes no topology: the builder renders spec.topology.servers,
+	// and a scale-down applied here removed servers with no drain, a scale-up
+	// added them on the target mid-upgrade (#538). The change waits for the
+	// upgrade to complete (holdTopologyWhileUpgradeHolds).
+	desired.Spec.Replicas = &replicas
 	// Freeze every pod restart in the SAME update that lands the new template.
 	if desired.Spec.UpdateStrategy.RollingUpdate == nil {
 		desired.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{}
 	}
 	partition := replicas
+	// Servers the upgrade restarted that cannot start on their image are
+	// replaced on the new one first: they are down, and freezing them too
+	// left them down for good — the walk waits for every pod to be ready
+	// before it lowers the partition (operations.md id 162).
+	if imageChanges(live, desired) {
+		if down := r.serversDownOnTarget(ctx, cluster, live); down != nil {
+			partition = down.partition
+			logger.Info("Staging the target above the servers that cannot start on the image they run; they are replaced first",
+				"partition", partition, "servers", down.failing)
+		}
+	}
 	desired.Spec.UpdateStrategy.RollingUpdate.Partition = &partition
 
 	if err := r.createOrUpdateResource(ctx, desired, cluster); err != nil {
@@ -404,14 +441,11 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeRolling(
 		return r.failUpgrade(ctx, cluster, fmt.Errorf("server StatefulSet has zero replicas configured"))
 	}
 
-	// Surface (don't act on) a topology change requested mid-upgrade; the
-	// scale-down drain runs after the upgrade completes (#173 / #174 mutual
-	// exclusion — upgrade wins).
-	if cluster.Spec.Topology.Servers < replicas {
-		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue,
-			ConditionReasonScaleDownDeferredByUpgrade,
-			"Scale-down deferred until the rolling upgrade completes")
-	}
+	// Surface (don't act on) a topology change requested mid-upgrade: Staging
+	// kept the replica count, and the change — a scale-down's drain, a
+	// scale-up's new servers — is applied after the upgrade completes (#173 /
+	// #174 mutual exclusion — upgrade wins; operations.md id 163).
+	r.reportTopologyDeferral(ctx, cluster, cluster.Spec.Topology.Servers, replicas)
 
 	// Resolve the partition: the machine's persisted currentPartition is
 	// authoritative — the live StatefulSet value can be a STALE informer read

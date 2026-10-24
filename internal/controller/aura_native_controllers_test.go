@@ -33,15 +33,18 @@ import (
 // ---------------------------------------------------------------------------
 
 type fakeDatabaseAPI struct {
-	createCalled   bool
-	createErr      error
-	restoreErr     error
-	listFn         func() ([]aura.Database, error)
-	getFn          func(id string) (*aura.Database, error)
-	listBackupsFn  func() ([]aura.DatabaseBackup, error)
-	backupStatus   string
-	restoreCalls   int
-	lastRestoreReq aura.RestoreDatabaseRequest
+	createCalled    bool
+	createCalls     int
+	createErr       error
+	listCalls       int
+	createBackupErr error
+	restoreErr      error
+	listFn          func() ([]aura.Database, error)
+	getFn           func(id string) (*aura.Database, error)
+	listBackupsFn   func() ([]aura.DatabaseBackup, error)
+	backupStatus    string
+	restoreCalls    int
+	lastRestoreReq  aura.RestoreDatabaseRequest
 }
 
 // NOTE: these fakes mirror the PUBLISHED v2beta1 shapes. A Database carries only
@@ -51,6 +54,7 @@ type fakeDatabaseAPI struct {
 // broken contract pass CI.
 func (f *fakeDatabaseAPI) CreateDatabase(_ context.Context, _, _, _ string, _ aura.CreateDatabaseRequest) (*aura.Database, error) {
 	f.createCalled = true
+	f.createCalls++
 	if f.createErr != nil {
 		return nil, f.createErr
 	}
@@ -63,6 +67,7 @@ func (f *fakeDatabaseAPI) GetDatabase(_ context.Context, _, _, _, id string) (*a
 	return &aura.Database{ID: id}, nil
 }
 func (f *fakeDatabaseAPI) ListDatabases(_ context.Context, _, _, _ string) ([]aura.Database, error) {
+	f.listCalls++
 	if f.listFn != nil {
 		return f.listFn()
 	}
@@ -72,6 +77,9 @@ func (f *fakeDatabaseAPI) DeleteDatabase(_ context.Context, _, _, _, _ string) e
 
 // The create response is `{id}` only — no status.
 func (f *fakeDatabaseAPI) CreateDatabaseBackup(_ context.Context, _, _, _, _ string) (*aura.DatabaseBackup, error) {
+	if f.createBackupErr != nil {
+		return nil, f.createBackupErr
+	}
 	return &aura.DatabaseBackup{ID: "bk-new"}, nil
 }
 func (f *fakeDatabaseAPI) ListDatabaseBackups(_ context.Context, _, _, _, _ string) ([]aura.DatabaseBackup, error) {
@@ -108,8 +116,10 @@ type fakeMemberAPI struct {
 	addedUserID      string
 	addedRole        string
 	createInvite     bool
+	createInviteErr  error
 	deleteInvite     bool
 	invites          []aura.Invite
+	listInviteCalls  int
 	lastInviteReq    aura.CreateInviteRequest
 }
 
@@ -141,6 +151,9 @@ func (f *fakeMemberAPI) DeleteProjectMember(_ context.Context, _, _, _ string) e
 func (f *fakeMemberAPI) CreateInvite(_ context.Context, _ string, req aura.CreateInviteRequest) (*aura.Invite, error) {
 	f.createInvite = true
 	f.lastInviteReq = req
+	if f.createInviteErr != nil {
+		return nil, f.createInviteErr
+	}
 	return &aura.Invite{
 		ID:                "inv-new",
 		Email:             req.Email,
@@ -162,6 +175,7 @@ func (f *fakeMemberAPI) FindInvite(_ context.Context, _, id string) (*aura.Invit
 	return nil, nil
 }
 func (f *fakeMemberAPI) ListInvites(_ context.Context, _ string) ([]aura.Invite, error) {
+	f.listInviteCalls++
 	return f.invites, nil
 }
 func (f *fakeMemberAPI) DeleteInvite(_ context.Context, _, _ string) error {

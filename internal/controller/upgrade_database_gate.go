@@ -64,6 +64,10 @@ type upgradeGates struct {
 	databasesCaughtUp func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (bool, []string, error)
 	// diagnostics replaces CollectDiagnostics during an upgrade.
 	diagnostics func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error
+	// preUpgrade replaces the pre-upgrade check of startRollingUpgrade:
+	// ValidateUpgradeSafety, then SHOW SERVERS, whose versions the target is
+	// held to (preUpgradeCheck).
+	preUpgrade func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ([]neo4jclient.ServerInfo, error)
 }
 
 // addressIsPod reports whether a Neo4j server address ("host:port") belongs

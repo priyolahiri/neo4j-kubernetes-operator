@@ -32,7 +32,7 @@ phase: Degraded
     → When false, ... Check their pod logs for OOMKilled (exit 137).
 ```
 
-A few conditions are **negative**: `True` is the problem, so `False` is healthy. `ClusterNotReady`, `Degraded`, `ServersPendingDrain`, `RestartPending`, `UserNotFound`, `PendingDependencies` and `AuthRuleVersionTooOld` are marked `✓` when `False` — a role that shows `✓ ClusterNotReady = False` is on a ready cluster — and their guidance is printed only when they are `True`.
+A few conditions are **negative**: `True` is the problem, so `False` is healthy. `ClusterNotReady`, `Degraded`, `ServersPendingDrain`, `TopologyChangeDeferred`, `RestartPending`, `UserNotFound`, `PendingDependencies` and `AuthRuleVersionTooOld` are marked `✓` when `False` — a role that shows `✓ ClusterNotReady = False` is on a ready cluster — and their guidance is printed only when they are `True`.
 
 ### Reasons, not just conditions
 

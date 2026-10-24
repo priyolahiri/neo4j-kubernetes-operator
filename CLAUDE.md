@@ -176,7 +176,7 @@ Auto-generates SSL policies for `https`/`bolt`, certs at `/ssl/`. Cluster SSL de
 `spec.auraFleetManagement.{enabled, tokenSecretRef{name,key}}` — default key is `token`.
 
 **Two-phase reconciliation** (never collapse):
-1. Install plugin via `mergeFleetManagementPlugin` — every reconcile when enabled.
+1. Install plugin via `mergeFleetManagementPlugin` — every reconcile when enabled. A new StatefulSet is created with it already listed (`addFleetManagementPlugin`, outside the owned-env record; `docs/knowledge/operations.md` id 175), so a new deployment's servers do not restart for it.
 2. Register token via `CALL fleetManagement.registerToken($token)` — only when cluster `Ready` AND token not yet registered.
 
 Plugin-only mode: omit `tokenSecretRef` to defer registration. Implementation: `reconcileAuraFleetManagement` + `mergeFleetManagementPlugin` on both controllers; `RegisterFleetManagementToken` / `IsFleetManagementInstalled` in `internal/neo4j/client.go`; `internal/validation/fleet_validator.go`.

@@ -288,7 +288,8 @@ type AuraInstanceStatus struct {
 	InstanceID string `json:"instanceId,omitempty"`
 
 	// Phase mirrors the Aura instance status (Creating, Running, Pausing,
-	// Paused, Resuming, Updating, Restoring, Destroying, ...).
+	// Paused, Resuming, Updating, Restoring, Destroying, ...), or is Error
+	// while the operator cannot reconcile the instance.
 	// +optional
 	Phase string `json:"phase,omitempty"`
 
@@ -314,7 +315,9 @@ type AuraInstanceStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
-	// LastSyncedTime is when the instance was last observed from the Aura API.
+	// LastSyncedTime is when the operator last recorded the instance as
+	// observed from the Aura API: written with every change to the status,
+	// and at least every 15 minutes while nothing changes.
 	// +optional
 	LastSyncedTime *metav1.Time `json:"lastSyncedTime,omitempty"`
 

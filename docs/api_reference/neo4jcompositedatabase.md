@@ -120,6 +120,13 @@ If the referenced deployment is gone or not Ready at deletion time, the
 finalizer is released anyway rather than wedging the CR in `Terminating` for a
 database that may no longer exist.
 
+If Neo4j refuses the drop, the composite is `Failed` with the refusal in
+`status.message` and one `CompositeDatabaseFailed` Warning, and the drop is
+retried. After 5 minutes of refusals the finalizer is released, with a
+Warning saying so, and the composite is left in Neo4j for an admin to drop —
+the same bounded retry every resource whose deletion runs Cypher has. Before,
+a refused drop kept the CR in `Terminating` for ever.
+
 ## Privileges do not go on the composite
 
 This is the most common mistake, and Neo4j does not warn about it:
