@@ -37,6 +37,7 @@ import (
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -373,6 +374,56 @@ func TestRecordStandaloneRunningVersion_ReadsOncePerImage(t *testing.T) {
 	r.recordStandaloneRunningVersion(ctx, sa)
 	assert.Equal(t, 2, reads)
 	assert.Empty(t, got().Status.RunningVersion)
+}
+
+// A standalone whose CRD lacks status.runningVersion (the CRDs applied only
+// after the operator was upgraded) has the field dropped on every write. The
+// read is not repeated, but the write is, so once the CRDs are in the next pass
+// records it — no operator restart (v1.22.0 re-walk: the field stayed empty
+// until the operator restarted).
+func TestRecordStandaloneRunningVersion_RecordsOnceTheCRDKeepsTheField(t *testing.T) {
+	ctx := context.Background()
+	key := types.NamespacedName{Name: "sa", Namespace: "default"}
+	sa := standaloneForSTS(floating)
+	sa.Status.Phase, sa.Status.Version = "Ready", floating
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: "sa-0", Namespace: "default", UID: "pod-1"},
+		Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{
+			{Name: "neo4j", ImageID: "docker.io/library/neo4j@sha256:aaa"}}},
+	}
+	oldCRD := true
+	scheme := newTestScheme()
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(sa, pod).
+		WithStatusSubresource(&neo4jv1beta1.Neo4jEnterpriseStandalone{}).
+		WithInterceptorFuncs(interceptor.Funcs{
+			SubResourceUpdate: func(ctx context.Context, cl client.Client, sub string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
+				if s, ok := obj.(*neo4jv1beta1.Neo4jEnterpriseStandalone); ok && oldCRD {
+					s.Status.RunningVersion = "" // pruned: the installed CRD has no such field
+				}
+				return cl.SubResource(sub).Update(ctx, obj, opts...)
+			},
+		}).Build()
+	r := &Neo4jEnterpriseStandaloneReconciler{Client: c, Scheme: scheme, Recorder: record.NewFakeRecorder(16)}
+	reads := 0
+	r.ServerVersionReader = func(context.Context, *neo4jv1beta1.Neo4jEnterpriseStandalone) (string, error) {
+		reads++
+		return resolved, nil
+	}
+	got := func() string {
+		s := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
+		require.NoError(t, r.Get(ctx, key, s))
+		return s.Status.RunningVersion
+	}
+
+	r.recordStandaloneRunningVersion(ctx, sa)
+	r.recordStandaloneRunningVersion(ctx, sa)
+	assert.Equal(t, 1, reads, "the server is asked once, not on every pass")
+	assert.Empty(t, got(), "the old CRD drops the field")
+
+	oldCRD = false // the CRDs are applied
+	r.recordStandaloneRunningVersion(ctx, sa)
+	assert.Equal(t, 1, reads, "recorded from the read already made")
+	assert.Equal(t, resolved, got(), "the next pass records it, with no operator restart")
 }
 
 // updateStatus clears status.runningVersion when status.version moves: it

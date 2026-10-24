@@ -42,6 +42,10 @@ import (
 // standaloneVersionReadTimeout bounds the one query that reads the version.
 const standaloneVersionReadTimeout = 15 * time.Second
 
+// standaloneVersionRead is a standalone's last read: the image its container
+// ran (standaloneRunningImage) and the version the server reported then.
+type standaloneVersionRead struct{ image, version string }
+
 // standaloneRunningImage identifies the image the standalone's Neo4j
 // container runs: its pod's UID and the container's image ID (the digest the
 // kubelet started). "" when the pod or the container is not running yet.
@@ -82,8 +86,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) readStandaloneServerVersion(ctx co
 // Ready standalone. For a status.version that names a patch it is cleared (the
 // tag says the version). For one that does not, the server is asked once, and
 // asked again only when its container runs another image than at the last
-// read: no query on every pass. Non-fatal: a read that fails leaves the field
-// as it is, and the next pass asks again.
+// read: no query on every pass. The status, though, is compared with that read
+// on every pass, and written while it does not say it — as the cluster does
+// with the SHOW SERVERS it runs anyway. A standalone whose CRD lacks the field
+// (CRDs applied only after the operator was upgraded) has every write dropped
+// by the API server; once the CRDs are in, the next pass records it, without
+// another query or an operator restart (v1.22.0 re-walk: remembering the read
+// alone left the field empty until the operator restarted). Non-fatal: a read
+// that fails leaves the field as it is, and the next pass asks again.
 func (r *Neo4jEnterpriseStandaloneReconciler) recordStandaloneRunningVersion(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) {
 	logger := log.FromContext(ctx)
 	latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
@@ -91,38 +101,32 @@ func (r *Neo4jEnterpriseStandaloneReconciler) recordStandaloneRunningVersion(ctx
 		return
 	}
 	key := standalone.Namespace + "/" + standalone.Name
-	want, image := "", ""
+	want := ""
 	if tagFloats(latest.Status.Version) {
 		// Any rollout replaces the pod, so a new status.version always comes
 		// with a new image here.
-		if image = r.standaloneRunningImage(ctx, standalone); image == "" {
+		image := r.standaloneRunningImage(ctx, standalone)
+		if image == "" {
 			return
 		}
-		if read, ok := r.runningVersionReads.Load(key); ok && read == image {
-			return
-		}
-		version, err := r.readStandaloneServerVersion(ctx, standalone)
-		if err != nil || version == "" {
-			logger.V(1).Info("Could not read the version the standalone runs; trying again on the next pass",
-				"error", fmt.Sprint(err))
-			return
-		}
-		want = version
-	}
-	// The read is remembered once the status says it, so a write that fails
-	// is read again on the next pass. A standalone whose CRD lacks the field
-	// (CRDs not applied after an operator upgrade) has it dropped by the API
-	// server; that is remembered too, rather than asked on every pass.
-	remember := func() {
-		if image != "" {
-			r.runningVersionReads.Store(key, image)
+		v, _ := r.runningVersionReads.Load(key)
+		if read, ok := v.(standaloneVersionRead); ok && read.image == image {
+			want = read.version
+		} else {
+			version, err := r.readStandaloneServerVersion(ctx, standalone)
+			if err != nil || version == "" {
+				logger.V(1).Info("Could not read the version the standalone runs; trying again on the next pass",
+					"error", fmt.Sprint(err))
+				return
+			}
+			want = version
+			r.runningVersionReads.Store(key, standaloneVersionRead{image: image, version: version})
 		}
 	}
 	if latest.Status.RunningVersion == want {
-		remember()
 		return
 	}
-	moved := false
+	moved, stored := false, false
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		current := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(standalone), current); err != nil {
@@ -132,11 +136,17 @@ func (r *Neo4jEnterpriseStandaloneReconciler) recordStandaloneRunningVersion(ctx
 			// status.version moved meanwhile: the next pass reads again.
 			return nil
 		}
-		if current.Status.RunningVersion == want {
+		if stored = current.Status.RunningVersion == want; stored {
 			return nil
 		}
 		current.Status.RunningVersion = want
-		return r.Status().Update(ctx, current)
+		if err := r.Status().Update(ctx, current); err != nil {
+			return err
+		}
+		// The update returns the object as stored: without the field when the
+		// CRD does not have it.
+		stored = current.Status.RunningVersion == want
+		return nil
 	})
 	if err != nil {
 		logger.Error(err, "Failed to record the version the standalone runs (non-fatal)")
@@ -145,6 +155,10 @@ func (r *Neo4jEnterpriseStandaloneReconciler) recordStandaloneRunningVersion(ctx
 	if moved {
 		return
 	}
-	remember()
+	if !stored {
+		logger.V(1).Info("The API server dropped status.runningVersion (this release's CRDs are not applied); sending it again on the next pass",
+			"version", latest.Status.Version, "reported", want)
+		return
+	}
 	logger.Info("Recorded the version the standalone reports", "version", latest.Status.Version, "reported", want)
 }
