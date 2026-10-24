@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -44,13 +45,29 @@ type fakeAuthServer struct {
 	granted   []string // "role->user", in order
 	dropErr   error    // returned by every drop and revoke while set
 	drops     int      // drop and revoke attempts
+	alterErr  error    // returned by every ALTER USER while set
+	alters    int      // ALTER USER attempts
+	showErr   error    // returned by SHOW USERS while set
 }
+
+// errPasswordUnchanged is Neo4j refusing an ALTER USER … SET PASSWORD to the
+// password the user already has.
+var errPasswordUnchanged = errors.New("Neo.ClientError.General.InvalidArguments: ArgumentError: " +
+	"Failed to alter the specified user 'alice': Old password and new password cannot be the same")
+
+// errBoltRefused is what connecting to a server whose Bolt port is not open yet
+// returns.
+var errBoltRefused = errors.New("failed to verify Neo4j connectivity: ConnectivityError: " +
+	"dial tcp 10.96.12.7:7687: connect: connection refused")
 
 func newFakeAuthServer() *fakeAuthServer {
 	return &fakeAuthServer{users: map[string][]string{}, roles: map[string]bool{}}
 }
 
 func (s *fakeAuthServer) ShowUser(_ context.Context, username string) (*neo4jclient.UserInfo, error) {
+	if s.showErr != nil {
+		return nil, s.showErr
+	}
 	roles, ok := s.users[username]
 	if !ok {
 		return nil, nil
@@ -66,7 +83,8 @@ func (s *fakeAuthServer) CreateUserAdvanced(_ context.Context, username string, 
 }
 
 func (s *fakeAuthServer) AlterUser(context.Context, string, *neo4jclient.AlterUserOptions) error {
-	return nil
+	s.alters++
+	return s.alterErr
 }
 
 func (s *fakeAuthServer) ListUserRoles(_ context.Context, username string) ([]string, error) {

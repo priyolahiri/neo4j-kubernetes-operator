@@ -55,7 +55,7 @@ Before applying a `Neo4jAuthRule`:
 | `RolesSynced` | Granted roles match `spec.grantedRoles`. |
 | `OIDCProviderConfigured` | Cluster has `dbms.security.abac.authorization_providers` set. |
 | `AuthRuleVersionTooOld` | Cluster version is below 2026.03; reconcile is paused. |
-| `ClusterNotReady` | Cluster has not reached its `Ready` phase. A rule that is `Ready` keeps phase `Ready` meanwhile (a restart); any other waits in `Pending`. |
+| `ClusterNotReady` | Cluster has not reached its `Ready` phase (reason `ClusterNotReady`), or reads `Ready` but refuses the connection (reason `ClusterUnreachable`; a `ConnectionFailed` failure only after 5 minutes). A rule that is `Ready` keeps phase `Ready` meanwhile (a restart); any other waits in `Pending`. |
 | `PendingDependencies` | One or more `grantedRoles` do not yet exist. |
 
 ## Cypher condition syntax

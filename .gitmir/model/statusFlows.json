@@ -673,7 +673,7 @@
       {
         "key": "pending",
         "name": "Pending",
-        "description": "status.phase=Pending — set on a missing target, a not-Ready target when the user is not yet Ready at its generation, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
+        "description": "status.phase=Pending — set on a missing target, a target that is not Ready or reads Ready but cannot be reached when the user is not yet Ready at its generation, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
       },
       {
         "key": "failed",
@@ -754,6 +754,11 @@
       },
       {
         "from": "ready",
+        "to": "ready",
+        "label": "ClusterUnreachable (ConditionTypeClusterNotReady=True) — the target reads Ready but refuses the connection; a user Ready at its generation keeps phase Ready, logged at info, for up to 5 minutes"
+      },
+      {
+        "from": "ready",
         "to": "pending",
         "label": "RolesPending — a later spec.roles edit reopens a role gap"
       },
@@ -811,6 +816,11 @@
         "from": "deletion-failed",
         "to": "removed",
         "label": "UserDeletionFailed (non-retryable) — cleanup gives up, finalizer released to avoid wedging deletion"
+      },
+      {
+        "from": "ready",
+        "to": "failed",
+        "label": "ConnectionFailed — the target has been unreachable for more than 5 minutes (id 172)"
       }
     ]
   },

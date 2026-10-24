@@ -27,6 +27,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -138,7 +139,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			msg := fmt.Sprintf("validation failed: %s", res.Errors.ToAggregate().Error())
 			// Announced when the failure starts or its message changes, not on
 			// every pass while the spec stays invalid (knowledge rule 136).
-			if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, nil, "", nil) {
+			if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonValidationFailed, msg, nil, "") {
 				r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
 			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
@@ -148,7 +149,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			// yet): Pending + requeue, like missing roles — apply order is
 			// documented as irrelevant (#259).
 			msg := strings.Join(res.Pending, "; ")
-			r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, "SecretPending", msg, nil, "", nil)
+			r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, "SecretPending", msg, nil, "")
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 	}
@@ -161,14 +162,14 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(user.Spec.ClusterRef))
-		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, "", nil)
+		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, "")
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		r.waitForTarget(ctx, user, fmt.Sprintf("%s is not Ready", targetRefDisplay(user.Spec.ClusterRef)))
+		r.waitForTarget(ctx, user, ConditionReasonClusterNotReady,
+			fmt.Sprintf("%s is not Ready", targetRefDisplay(user.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
-	r.setNamedCondition(ctx, user, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Read password Secret if configured
 	var passwordValue string
@@ -177,7 +178,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		pw, token, err := r.readPasswordSecret(ctx, user)
 		if err != nil {
 			msg := fmt.Sprintf("password secret read failed: %v", err)
-			r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "", nil)
+			r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "")
 			return ctrl.Result{}, err
 		}
 		passwordValue = pw
@@ -188,10 +189,13 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	// Connect
 	nc, err := r.connect(target)
 	if err != nil {
+		if targetUnreachable(err) {
+			return r.unreachable(ctx, user, err, requeue)
+		}
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (knowledge
 		// rule 145).
-		if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, "", nil) {
+		if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, "") {
 			r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
 		}
 		return ctrl.Result{}, err
@@ -201,6 +205,9 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
+	// Only a target that answered is ready for this user: written after the
+	// connection, so an unreachable one keeps the time its outage began.
+	r.setNamedCondition(ctx, user, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Existence
 	info, err := nc.ShowUser(ctx, username)
@@ -228,6 +235,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return r.fail(ctx, user, "create user failed", err, requeue)
 		}
 		r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserCreated, "User %q created", username)
+		r.passwordApplied(ctx, user, passwordHash)
 		// Re-read so we have fresh state for the rest of the loop.
 		info, err = nc.ShowUser(ctx, username)
 		if err != nil {
@@ -253,6 +261,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	} else {
 		// Diff and ALTER existing user.
 		opts := r.computeAlter(user, info, passwordHash, passwordValue, desiredSuspended)
+		setsPassword := passwordRotationDue(user, passwordHash)
 		if !opts.IsEmpty() {
 			if err := nc.AlterUser(ctx, username, &opts); err != nil {
 				// "Old password and new password cannot be the same" means the
@@ -260,14 +269,21 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				// desired state holds. Treat it as success so the reconcile
 				// proceeds and records the hash; failing here instead makes the
 				// condition permanent, because the hash is what would stop us
-				// re-issuing the same ALTER next time.
+				// re-issuing the same ALTER next time. Announced only by the
+				// write that records it: a pass on a copy from before that
+				// write sends the same ALTER again and says nothing.
 				if !neo4jclient.IsPasswordUnchangedError(err) {
 					return r.fail(ctx, user, "alter user failed", err, requeue)
 				}
-				r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserUpdated,
-					"User %q password already matches spec; recording as applied", username)
+				if r.passwordApplied(ctx, user, passwordHash) {
+					r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserUpdated,
+						"User %q password already matches spec; recording as applied", username)
+				}
 			} else {
 				r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserUpdated, "User %q updated", username)
+				if setsPassword {
+					r.passwordApplied(ctx, user, passwordHash)
+				}
 			}
 		}
 	}
@@ -334,15 +350,9 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			"password secret hash applied")
 	}
 
-	// Phase / Ready
+	// Phase / Ready. PasswordRotated was announced by the write that recorded
+	// the password as applied (passwordApplied), not here from this pass's copy.
 	overallReady := rolesEqual && len(missing) == 0
-	var rotated *metav1.Time
-	if user.Status.PasswordSecretHash != passwordHash && passwordHash != "" {
-		now := metav1.Now()
-		rotated = &now
-		r.Recorder.Event(user, corev1.EventTypeNormal, EventReasonPasswordRotated, "password updated from Secret")
-	}
-
 	if overallReady {
 		// UserReady is announced when the write moves the persisted phase into
 		// Ready — never from this pass's copy, which the informer cache may
@@ -351,14 +361,14 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		// 158).
 		if _, entered := r.writeStatus(ctx, user, "Ready", metav1.ConditionTrue, ConditionReasonUserReady,
 			fmt.Sprintf("user %q is in sync (%d roles)", username, len(finalRoles)),
-			finalRoles, passwordHash, rotated); entered {
+			finalRoles, passwordHash); entered {
 			r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserReady,
 				"User %q is ready (%d roles in sync)", username, len(finalRoles))
 		}
 	} else {
 		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, ConditionReasonRolesPending,
 			fmt.Sprintf("user %q reconciled with pending dependencies", username),
-			finalRoles, passwordHash, rotated)
+			finalRoles, passwordHash)
 	}
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
@@ -400,7 +410,7 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 			// failure is written to status and announced when it starts or
 			// its message changes, not on every retry (knowledge rule 145).
 			msg := fmt.Sprintf("DROP USER %q failed, will retry: %v", username, err)
-			if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserDeletionFailed, msg, nil, "", nil) {
+			if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserDeletionFailed, msg, nil, "") {
 				r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonUserDeletionFailed, msg)
 			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
@@ -425,7 +435,7 @@ func (r *Neo4jUserReconciler) computeAlter(
 
 	// Password rotation: triggered when the Secret value SHA-256 differs
 	// from the last-applied hash recorded in status.
-	if user.Spec.PasswordSecretRef != nil && passwordHash != "" && passwordHash != user.Status.PasswordSecretHash {
+	if passwordRotationDue(user, passwordHash) {
 		opts.WithPassword(passwordValue)
 	}
 
@@ -585,13 +595,18 @@ func (r *Neo4jUserReconciler) requeueAfter() time.Duration {
 }
 
 func (r *Neo4jUserReconciler) fail(ctx context.Context, user *neo4jv1beta1.Neo4jUser, label string, err error, requeue time.Duration) (ctrl.Result, error) {
+	if targetUnreachable(err) {
+		// The target went away mid-pass: an outage, not this user's failure
+		// (knowledge rule 172).
+		return r.unreachable(ctx, user, err, requeue)
+	}
 	msg := label
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
 	}
 	// Announced when the failure starts or its message changes, not on every
 	// retry of the same failure (knowledge rule 145).
-	if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "", nil) {
+	if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserSyncFailed, msg, nil, "") {
 		r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonUserSyncFailed, msg)
 	}
 	// A rejection the server will repeat (Neo.ClientError.*: a malformed
@@ -621,9 +636,8 @@ func (r *Neo4jUserReconciler) setStatus(
 	readyReason, message string,
 	currentRoles []string,
 	passwordHash string,
-	rotated *metav1.Time,
 ) bool {
-	changed, _ := r.writeStatus(ctx, user, phase, readyStatus, readyReason, message, currentRoles, passwordHash, rotated)
+	changed, _ := r.writeStatus(ctx, user, phase, readyStatus, readyReason, message, currentRoles, passwordHash)
 	return changed
 }
 
@@ -638,7 +652,6 @@ func (r *Neo4jUserReconciler) writeStatus(
 	readyReason, message string,
 	currentRoles []string,
 	passwordHash string,
-	rotated *metav1.Time,
 ) (transitioned, entered bool) {
 	update := func() error {
 		transitioned, entered = false, false
@@ -657,11 +670,12 @@ func (r *Neo4jUserReconciler) writeStatus(
 		if currentRoles != nil {
 			latest.Status.CurrentRoles = currentRoles
 		}
-		if passwordHash != "" {
+		if passwordHash != "" && latest.Status.PasswordSecretHash != passwordHash {
+			// Normally recorded already, by passwordApplied; this covers a
+			// pass whose earlier write did not land.
 			latest.Status.PasswordSecretHash = passwordHash
-		}
-		if rotated != nil {
-			latest.Status.PasswordLastRotated = rotated
+			now := metav1.Now()
+			latest.Status.PasswordLastRotated = &now
 		}
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
@@ -676,26 +690,112 @@ func (r *Neo4jUserReconciler) writeStatus(
 	return transitioned, entered
 }
 
-// waitForTarget records that the target is not Ready: the ClusterNotReady
-// condition, and phase Pending unless the user is already Ready at its
-// generation. A Ready user stays Ready while its target restarts — nothing
-// about the user changed, and the target announces its own state — so the
-// pass that finds the target back is not a transition and announces nothing.
-// Demoting it to Pending made every restart of a standalone a UserReady event
-// (28 in 40 minutes of restarts, v1.22.0 re-walk; knowledge rule 158).
-func (r *Neo4jUserReconciler) waitForTarget(ctx context.Context, user *neo4jv1beta1.Neo4jUser, msg string) {
+// passwordRotationDue reports whether the password Secret, by its change
+// token, is not the one status records as applied: the pass sends SET PASSWORD.
+func passwordRotationDue(user *neo4jv1beta1.Neo4jUser, passwordHash string) bool {
+	return user.Spec.PasswordSecretRef != nil && passwordHash != "" && passwordHash != user.Status.PasswordSecretHash
+}
+
+// passwordApplied records that the Secret's password — its change token — is
+// the user's, in a status write right after the statement that applied it:
+// CREATE USER, ALTER USER … SET PASSWORD, or the refusal that says the
+// password was already set. It reports whether the write changed the recorded
+// token, and announces PasswordRotated when it did (knowledge rule 15).
+//
+// The token used to be written only at the end of a successful pass. A pass
+// that stopped at a failing grant never wrote it, so every retry sent the same
+// ALTER again and announced "password already matches spec" (18 times in two
+// minutes on the v1.22.0 walk), and a pass on a copy from before the end write
+// announced PasswordRotated a second time for a new user. Announced from this
+// write, re-read inside the conflict retry, each is said once.
+func (r *Neo4jUserReconciler) passwordApplied(ctx context.Context, user *neo4jv1beta1.Neo4jUser, passwordHash string) bool {
+	if passwordHash == "" {
+		return false
+	}
+	changed := false
+	update := func() error {
+		changed = false
+		latest := &neo4jv1beta1.Neo4jUser{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(user), latest); err != nil {
+			return err
+		}
+		if latest.Status.PasswordSecretHash == passwordHash {
+			return nil
+		}
+		latest.Status.PasswordSecretHash = passwordHash
+		now := metav1.Now()
+		latest.Status.PasswordLastRotated = &now
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed = true
+		return nil
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the applied password on Neo4jUser")
+		return false
+	}
+	if changed {
+		r.Recorder.Event(user, corev1.EventTypeNormal, EventReasonPasswordRotated, "password updated from Secret")
+	}
+	return changed
+}
+
+// waitForTarget records that the target cannot serve the user — reason
+// ClusterNotReady (not Ready) or ClusterUnreachable (reads Ready, cannot be
+// reached): the ClusterNotReady condition, and phase Pending unless the user
+// is already Ready at its generation. A Ready user stays Ready while its target
+// restarts — nothing about the user changed, and the target announces its own
+// state — so the pass that finds the target back is not a transition and
+// announces nothing. Demoting it to Pending made every restart of a standalone
+// a UserReady event (28 in 40 minutes of restarts, v1.22.0 re-walk; knowledge
+// rule 158). The status is written only when it changes. It reports lasting
+// when an unreachable target has outlasted targetUnreachableGrace (id 172).
+func (r *Neo4jUserReconciler) waitForTarget(ctx context.Context, user *neo4jv1beta1.Neo4jUser, reason, msg string) (lasting bool) {
 	update := func() error {
 		latest := &neo4jv1beta1.Neo4jUser{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(user), latest); err != nil {
 			return err
 		}
-		recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message, latest.Generation, msg)
+		before := latest.Status.DeepCopy()
+		lasting = recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message,
+			latest.Generation, reason, msg, time.Now())
 		latest.Status.ObservedGeneration = latest.Generation
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
 		return r.Status().Update(ctx, latest)
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jUser")
+		return false
 	}
+	return lasting
+}
+
+// unreachable handles a target that reads Ready but cannot be reached: a
+// standalone whose Bolt port refuses connections for a few seconds after it
+// reads Ready, or for longer during a stopCluster restore. That is the rest of
+// the same outage waitForTarget waits through, not a failure of this user: a
+// user Ready at its generation stays Ready (ClusterNotReady=True, reason
+// ClusterUnreachable), any other waits in Pending, it is logged at info and
+// retried on the fixed interval — an error would be logged at ERROR by
+// controller-runtime and retried within milliseconds. It used to write Failed
+// with a ConnectionFailed Warning and announce UserReady again on the next
+// pass (v1.22.0 combined-build walk, #559). Only an outage that outlasts
+// targetUnreachableGrace is this user's failure, announced once (knowledge
+// rule 172).
+func (r *Neo4jUserReconciler) unreachable(ctx context.Context, user *neo4jv1beta1.Neo4jUser, err error, requeue time.Duration) (ctrl.Result, error) {
+	if r.waitForTarget(ctx, user, ConditionReasonClusterUnreachable, targetUnreachableMessage(user.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil, "") {
+			r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	log.FromContext(ctx).Info("Target reads Ready but cannot be reached; retrying",
+		"clusterRef", user.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
 // reportPendingRoles writes the PendingDependencies condition and announces
