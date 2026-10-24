@@ -147,10 +147,8 @@ func TestNormaliseDesired_MatchesServerStorage(t *testing.T) {
 // Pins why normalisation exists, so no one "simplifies" it back to textual
 // comparison: the shipped sample's own statement does not match its storage.
 func TestTextualComparisonCannotMatchStorage(t *testing.T) {
-	r := &Neo4jRoleReconciler{}
 	spec := "GRANT MATCH {*} ON GRAPH sales NODES * TO salesReader"
-	textual, _, err := r.canonicaliseDesired([]string{spec})
-	require.NoError(t, err)
+	textual := []string{neo4jclient.CanonicalisePrivilegeStatement(spec)}
 	current := storedFor(t, []string{"GRANT MATCH {*} ON GRAPH `sales` NODE * TO `probe`"}, "salesReader")
 	assert.NotEqual(t, current, textual)
 }

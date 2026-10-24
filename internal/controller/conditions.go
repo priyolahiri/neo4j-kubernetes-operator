@@ -165,7 +165,8 @@ func PhaseToConditionStatus(phase string) (metav1.ConditionStatus, string) {
 	case neo4jv1beta1.PhaseForming, neo4jv1beta1.PhaseCreating:
 		return metav1.ConditionUnknown, ConditionReasonForming
 	case neo4jv1beta1.PhaseInstalling, neo4jv1beta1.PhaseRunning,
-		neo4jv1beta1.PhaseValidating, neo4jv1beta1.PhasePending, neo4jv1beta1.PhaseWaiting:
+		neo4jv1beta1.PhaseValidating, neo4jv1beta1.PhasePending, neo4jv1beta1.PhaseWaiting,
+		neo4jv1beta1.PhasePendingDependencies:
 		return metav1.ConditionUnknown, ConditionReasonPending
 	default:
 		return metav1.ConditionUnknown, ConditionReasonPending

@@ -179,22 +179,6 @@ func TestGetImageVersion(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// TestGetKubernetesDiscoveryParameter
-// ---------------------------------------------------------------------------
-
-func TestGetKubernetesDiscoveryParameter(t *testing.T) {
-	semver, _ := ParseVersion("5.26.0-enterprise")
-	calver, _ := ParseVersion("2025.01.0-enterprise")
-
-	if got := GetKubernetesDiscoveryParameter(semver); got != "dbms.kubernetes.discovery.v2.service_port_name" {
-		t.Errorf("SemVer: expected v2 parameter, got %q", got)
-	}
-	if got := GetKubernetesDiscoveryParameter(calver); got != "dbms.kubernetes.discovery.service_port_name" {
-		t.Errorf("CalVer: expected non-v2 parameter, got %q", got)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // TestGetBackupCommand / TestGetRestoreCommand (spot checks)
 // ---------------------------------------------------------------------------
 

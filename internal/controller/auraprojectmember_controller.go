@@ -163,12 +163,17 @@ func (r *AuraProjectMemberReconciler) Reconcile(ctx context.Context, req ctrl.Re
 		r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberUpdated,
 			fmt.Sprintf("Set %q project role to %s", m.Spec.Email, m.Spec.Role))
 	}
-	if err := r.setStatus(ctx, req, member.UserID, "Ready", metav1.ConditionTrue, "Reconciled",
-		"Project membership reconciled (v2beta1, beta)"); err != nil {
+	changed, err := r.setStatusChanged(ctx, req, member.UserID, neo4jv1beta1.PhaseReady, metav1.ConditionTrue, "Reconciled",
+		"Project membership reconciled (v2beta1, beta)")
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberReady,
-		fmt.Sprintf("Project member %q reconciled", m.Spec.Email))
+	// Announced when the membership becomes Ready, not on every re-observe
+	// while it stays so (knowledge rule 136).
+	if changed {
+		r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberReady,
+			fmt.Sprintf("Project member %q reconciled", m.Spec.Email))
+	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
 
@@ -235,6 +240,11 @@ func (r *AuraProjectMemberReconciler) setStatus(ctx context.Context, req ctrl.Re
 // phase or the Ready condition's status, reason or message (LastSyncedTime is
 // bookkeeping), from the attempt whose write succeeded, so a caller can announce
 // a state once (knowledge rule 145).
+//
+// It writes only when something changed or the stored lastSyncedTime is due a
+// refresh: a status write is a watch event, and stamping lastSyncedTime on
+// every pass started the next one at once, about twice every 30s while a
+// member was failing or waiting (auraSyncedTimeRefresh).
 func (r *AuraProjectMemberReconciler) setStatusChanged(ctx context.Context, req ctrl.Request, userID, phase string, condStatus metav1.ConditionStatus, reason, msg string) (bool, error) {
 	changed := false
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -243,16 +253,20 @@ func (r *AuraProjectMemberReconciler) setStatusChanged(ctx context.Context, req 
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
+		before := latest.Status.DeepCopy()
 		want := metav1.Condition{Type: "Ready", Status: condStatus, Reason: reason, Message: msg}
 		wouldChange := latest.Status.Phase != phase || auraConditionChanged(latest.Status.Conditions, want)
 		if userID != "" {
 			latest.Status.UserID = userID
 		}
 		latest.Status.Phase = phase
-		now := metav1.Now()
-		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
 		meta.SetStatusCondition(&latest.Status.Conditions, want)
+		now := metav1.Now()
+		if !auraStatusWriteNeeded(*before, latest.Status, before.LastSyncedTime, now.Time) {
+			return nil
+		}
+		latest.Status.LastSyncedTime = &now
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}

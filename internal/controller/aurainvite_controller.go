@@ -106,15 +106,29 @@ func (r *AuraInviteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		externalID = inv.Status.InviteID
 	}
 	if externalID == "" {
+		// The refusal depends on the spec alone, so once status records it for
+		// this generation the pass stops before listing the invites again
+		// (knowledge rule 156).
+		if _, refusal := buildInviteRequest(inv); refusal != nil &&
+			auraRefusalRecorded(inv.Status.Conditions, inv.Status.ObservedGeneration, inv.Generation,
+				auraReasonOrganizationRoleRequired, refusal.Error()) {
+			return ctrl.Result{}, nil
+		}
 		id, adopted, err := r.observeOrCreate(ctx, req, inv, apiClient, orgID)
 		if err != nil {
 			// A refusal describes a spec that Aura can never accept (see
 			// buildInviteRequest), so retrying it every 30s only rewrites the same
 			// status. The spec edit that fixes it triggers its own reconcile.
 			if isAuraRefusal(err) {
-				res, ferr := r.fail(ctx, req, inv, "OrganizationRoleRequired", err)
+				res, ferr := r.fail(ctx, req, inv, auraReasonOrganizationRoleRequired, err)
 				res.RequeueAfter = 0
 				return res, ferr
+			}
+			// A 429, a 5xx or a transport failure of an Aura call is retried as it
+			// is, not recorded as a failure (knowledge rule 88).
+			if isRetryableAuraCall(err) {
+				logger.Info("invite create deferred by a transient API failure; retrying", "error", err.Error())
+				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
 			return r.fail(ctx, req, inv, "CreateFailed", err)
 		}
@@ -151,13 +165,23 @@ func (r *AuraInviteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// The invite IS listed, so use its own status field rather than inferring
 	// from existence. Only `active` is genuinely still pending.
 	phase, condition, reason, message := inviteStatusToPhase(observed.Status)
-	if err := r.setStatus(ctx, req, observed.ID, phase, condition, reason, message); err != nil {
+	changed, err := r.setStatusChanged(ctx, req, observed.ID, phase, condition, reason, message)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteReady,
-		fmt.Sprintf("Invite for %q reconciled (%s)", inv.Spec.Email, phase))
+	// Announced when the invite's state changes (sent, accepted, expired, …),
+	// not on every re-observe while it stays (knowledge rule 136).
+	if changed {
+		r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteReady,
+			fmt.Sprintf("Invite for %q reconciled (%s)", inv.Spec.Email, phase))
+	}
 	return ctrl.Result{RequeueAfter: 5 * time.Minute}, nil
 }
+
+// auraReasonOrganizationRoleRequired is the Ready reason of the terminal
+// refusal of an invite without an organization role, and what the refusal
+// guard looks for (knowledge rule 91: guard and writer share the name).
+const auraReasonOrganizationRoleRequired = "OrganizationRoleRequired"
 
 // inviteStatusToPhase maps the v2beta1 OrganizationInvite.status enum onto the
 // CR's phase + Ready condition. An empty status (older/partial payload) is
@@ -236,7 +260,7 @@ func inviteCoversProject(existing aura.Invite, projectID string) bool {
 func (r *AuraInviteReconciler) observeOrCreate(ctx context.Context, req ctrl.Request, inv *neo4jv1beta1.AuraInvite, apiClient auraMemberAPI, orgID string) (id string, adopted bool, err error) {
 	existing, err := apiClient.ListInvites(ctx, orgID)
 	if err != nil {
-		return "", false, fmt.Errorf("listing invites before create: %w", err)
+		return "", false, retryableAuraCall(fmt.Errorf("listing invites before create: %w", err))
 	}
 	for i := range existing {
 		if strings.EqualFold(existing[i].Email, inv.Spec.Email) && inviteCoversProject(existing[i], inv.Spec.ProjectID) {
@@ -255,7 +279,7 @@ func (r *AuraInviteReconciler) observeOrCreate(ctx context.Context, req ctrl.Req
 	}
 	created, err := apiClient.CreateInvite(ctx, orgID, body)
 	if err != nil {
-		return "", false, err
+		return "", false, retryableAuraCall(err)
 	}
 	if err := r.setExternalID(ctx, req, created.ID); err != nil {
 		return "", false, err
@@ -316,6 +340,11 @@ func (r *AuraInviteReconciler) setStatus(ctx context.Context, req ctrl.Request, 
 // phase or the Ready condition's status, reason or message (LastSyncedTime is
 // bookkeeping), from the attempt whose write succeeded, so a caller can announce
 // a state once (knowledge rule 145).
+//
+// It writes only when something changed or the stored lastSyncedTime is due a
+// refresh: a status write is a watch event, and stamping lastSyncedTime on
+// every pass started the next one at once, about twice every 30s while an
+// invite was failing (auraSyncedTimeRefresh).
 func (r *AuraInviteReconciler) setStatusChanged(ctx context.Context, req ctrl.Request, inviteID, phase string, condStatus metav1.ConditionStatus, reason, msg string) (bool, error) {
 	changed := false
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -324,16 +353,20 @@ func (r *AuraInviteReconciler) setStatusChanged(ctx context.Context, req ctrl.Re
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return err
 		}
+		before := latest.Status.DeepCopy()
 		want := metav1.Condition{Type: "Ready", Status: condStatus, Reason: reason, Message: msg}
 		wouldChange := latest.Status.Phase != phase || auraConditionChanged(latest.Status.Conditions, want)
 		if inviteID != "" {
 			latest.Status.InviteID = inviteID
 		}
 		latest.Status.Phase = phase
-		now := metav1.Now()
-		latest.Status.LastSyncedTime = &now
 		latest.Status.ObservedGeneration = latest.Generation
 		meta.SetStatusCondition(&latest.Status.Conditions, want)
+		now := metav1.Now()
+		if !auraStatusWriteNeeded(*before, latest.Status, before.LastSyncedTime, now.Time) {
+			return nil
+		}
+		latest.Status.LastSyncedTime = &now
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
