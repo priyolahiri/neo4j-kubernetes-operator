@@ -177,7 +177,7 @@ func TestOtherPlugins_LeavesOutDisabledPlugins(t *testing.T) {
 	r, _, _, _ := gateReconciler(t, nil, apoc, genai, gds, readyCluster(), sts)
 	target := &DeploymentInfo{Type: "cluster", Name: "c", Namespace: selfHealNS, Object: readyCluster()}
 
-	others, err := r.otherPlugins(context.Background(), apoc)
+	others, err := r.otherPlugins(context.Background(), apoc, target)
 	require.NoError(t, err)
 	require.Len(t, others, 1)
 	assert.Equal(t, "gds", others[0].Name)

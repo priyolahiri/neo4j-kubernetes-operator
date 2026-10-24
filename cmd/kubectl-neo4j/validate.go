@@ -88,7 +88,8 @@ type kindValidator struct {
 //
 // needsClient:false is a claim that the validator tolerates a nil client,
 // established per kind and pinned by TestOfflineValidatorsAreNilClientSafe:
-//   - Plugin — constructor takes no client.
+//   - Plugin — constructor takes no client; reading its target's image tag,
+//     its one client call, is skipped on nil.
 //   - Backup — constructor takes no client; resolving spec.shardedDatabase,
 //     its one client call, is skipped on nil.
 //   - DatabaseAlias, ReplicaDatabase — accept a client and never dereference it.
@@ -163,14 +164,43 @@ var validators = map[string]kindValidator{
 			return errs, warnings, nil, nil
 		},
 	},
-	"Neo4jPlugin": {fn: func(doc []byte, _ client.Client) (field.ErrorList, []string, []string, error) {
-		var obj neo4jv1beta1.Neo4jPlugin
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			return nil, nil, nil, err
-		}
-		out := validation.NewPluginValidator().Validate(&obj)
-		return out.Errors, out.Warnings, nil, nil
-	}},
+	// Connected, a Managed plugin's NEO4J_PLUGINS names are held to the image
+	// its target runs, the target resolved as the plugin controller resolves it
+	// (validation.PluginTargetImageTag): the operator refuses a name the image's
+	// entrypoint does not install (operations.md id 170). Offline the image is
+	// unknown, so only a name no supported release installs is reported, as a
+	// warning.
+	"Neo4jPlugin": {
+		connectedChecks: "a Managed Neo4jPlugin's NEO4J_PLUGINS names against the image its target runs",
+		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+			var obj neo4jv1beta1.Neo4jPlugin
+			if err := yaml.Unmarshal(doc, &obj); err != nil {
+				return nil, nil, nil, err
+			}
+			out := validation.NewPluginValidator().Validate(&obj)
+			errs, warnings := out.Errors, out.Warnings
+			if c == nil {
+				return errs, append(warnings, validation.ManagedPluginNameWarnings(&obj)...), nil, nil
+			}
+			tag, _, found, err := validation.PluginTargetImageTag(context.Background(), c, &obj)
+			switch {
+			case err != nil:
+				warnings = append(warnings, fmt.Sprintf(
+					"could not read the target %s/%s, so spec.name was checked against every supported Neo4j image, not the one it runs: %v",
+					obj.Namespace, obj.Spec.ClusterRef, err))
+				warnings = append(warnings, validation.ManagedPluginNameWarnings(&obj)...)
+			case !found:
+				warnings = append(warnings, fmt.Sprintf(
+					"no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone %s/%s, so spec.name was checked against every supported Neo4j image, not the one it will run",
+					obj.Namespace, obj.Spec.ClusterRef))
+				warnings = append(warnings, validation.ManagedPluginNameWarnings(&obj)...)
+			default:
+				// The operator's own refusal, word for word.
+				errs = append(errs, validation.ManagedPluginImageErrors(&obj, tag)...)
+			}
+			return errs, warnings, nil, nil
+		},
+	},
 	"Neo4jDatabaseAlias": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jDatabaseAlias
 		if err := yaml.Unmarshal(doc, &obj); err != nil {

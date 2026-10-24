@@ -61,7 +61,9 @@ func TestOfflineValidatorsAreNilClientSafe(t *testing.T) {
 		// client call.
 		"Neo4jBackup": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jBackup\n" +
 			"metadata: {name: b}\nspec: {instanceRef: sc, shardedDatabase: products}\n",
-		"Neo4jPlugin":          "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jPlugin\nmetadata: {name: p}\nspec: {}\n",
+		// A Managed plugin with a target: reading the target's image tag is
+		// its one client call.
+		"Neo4jPlugin":          "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jPlugin\nmetadata: {name: p}\nspec: {clusterRef: prod, name: graphql, version: \"1\", enabled: true}\n",
 		"Neo4jDatabaseAlias":   "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jDatabaseAlias\nmetadata: {name: a}\nspec: {}\n",
 		"Neo4jReplicaDatabase": "apiVersion: neo4j.neo4j.com/v1beta1\nkind: Neo4jReplicaDatabase\nmetadata: {name: r}\nspec: {}\n",
 		// Set defaultCypherLanguage deliberately: it is the one field whose

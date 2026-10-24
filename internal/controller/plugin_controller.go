@@ -356,6 +356,14 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return r.reconcileDisabled(ctx, plugin, deployment)
 	}
 
+	// A Managed plugin whose NEO4J_PLUGINS names the target's image does not
+	// install is refused, and an earlier write of it taken off the target
+	// (operations.md id 170; #563): the entrypoint exits on such a name, so
+	// writing it crash-loops every server it reaches.
+	if refusal := pluginRefusal(plugin, targetImageTag(deployment)); refusal != "" {
+		return r.reconcileRefused(ctx, plugin, deployment, refusal)
+	}
+
 	// Standalone neo4j.conf (plugin security settings) is owned by the standalone
 	// controller, which folds in the union of all Neo4jPlugin CRs for the target
 	// and rolls the pod on change (issue #146). It watches Neo4jPlugin, so creating
@@ -653,7 +661,7 @@ func (r *Neo4jPluginReconciler) trustedCAUpdate(ctx context.Context, plugin *neo
 // installChangesTarget reports whether the plugin's next write would change
 // its target's StatefulSet, which restarts the servers: the plugin's edits
 // (desiredTarget) made on a copy of the live pod template — its install, or
-// for a disabled plugin its removal.
+// for a disabled or refused plugin its removal.
 func (r *Neo4jPluginReconciler) installChangesTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (bool, error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
@@ -669,15 +677,16 @@ func (r *Neo4jPluginReconciler) installChangesTarget(ctx context.Context, plugin
 }
 
 // desiredTarget makes on sts, a copy of the target's StatefulSet, what the
-// plugin's next write makes of it: its edits (applyPlugin), or, for a disabled
-// plugin (spec.enabled: false), its removal (withoutPlugin) — the write the
-// gate (id 141) and its repair exception (selfRepair, ids 152 and 155) judge.
+// plugin's next write makes of it: its edits (applyPlugin), or, for a plugin
+// that is to be off its target — disabled (spec.enabled: false), or refused by
+// the target's image (id 170) — its removal (withoutPlugin): the write the gate
+// (id 141) and its repair exception (selfRepair, ids 152 and 155) judge.
 func (r *Neo4jPluginReconciler) desiredTarget(ctx context.Context, sts *appsv1.StatefulSet, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
-	if plugin.Spec.Enabled {
+	if pluginOnTarget(plugin, deployment) {
 		_, err := r.applyPlugin(ctx, sts, plugin, deployment)
 		return err
 	}
-	others, err := r.otherPlugins(ctx, plugin)
+	others, err := r.otherPlugins(ctx, plugin, deployment)
 	if err != nil {
 		return err
 	}
@@ -845,18 +854,27 @@ func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo
 // transition — from the attempt whose write succeeded, so a caller can emit
 // the matching event once, on the transition.
 func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) bool {
+	transitioned, _, _ := r.writePluginStatus(ctx, plugin, phase, message)
+	return transitioned
+}
+
+// writePluginStatus is updatePluginStatus, and also returns the phase and
+// message the status held before, as the attempt that decided read them — so
+// a caller can tell a change within a state it already announced from a new
+// one (reportRefused).
+func (r *Neo4jPluginReconciler) writePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) (transitioned bool, prevPhase, prevMessage string) {
 	// The version this reconcile installed: what spec.version asked for when
 	// the install ran (not whatever the spec says by the time the status write
 	// lands).
 	installedVersion := plugin.Spec.Version
 
-	transitioned := false
 	update := func() error {
 		transitioned = false
 		latest := &neo4jv1beta1.Neo4jPlugin{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(plugin), latest); err != nil {
 			return err
 		}
+		prevPhase, prevMessage = latest.Status.Phase, latest.Status.Message
 		// status.installedVersion / installationTime are recorded when the
 		// plugin reaches Ready, and only then: a plugin that is still
 		// Installing or has Failed keeps reporting the last install that
@@ -901,9 +919,9 @@ func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to update plugin status")
-		return false
+		return false, prevPhase, prevMessage
 	}
-	return transitioned
+	return transitioned, prevPhase, prevMessage
 }
 
 // installPluginViaEnvironment writes the plugin onto its target's StatefulSet,
@@ -1734,28 +1752,13 @@ func formatPluginInitOwned(set map[string]struct{}) string {
 	return strings.Join(names, ",")
 }
 
-// mapPluginName maps our plugin names to Neo4j's expected plugin names for NEO4J_PLUGINS
+// mapPluginName maps a plugin name to the one the Neo4j Docker entrypoint knows
+// in NEO4J_PLUGINS (validation.EntrypointPluginName: the aliases gds and
+// neosemantics; any other name as it is). Which names the target's image
+// installs depends on its release (validation.ManagedPluginImageErrors,
+// operations.md id 170): graphql is on none, n10s on 5.26 only.
 func (r *Neo4jPluginReconciler) mapPluginName(pluginName string) string {
-	switch pluginName {
-	case "apoc":
-		return "apoc"
-	case "apoc-extended":
-		return "apoc-extended"
-	case "graph-data-science", "gds":
-		return "graph-data-science"
-	case "bloom":
-		return "bloom"
-	case "genai":
-		return "genai"
-	case "n10s", "neosemantics":
-		return "n10s"
-	case "graphql":
-		return "graphql"
-	case "fleet-management":
-		return "fleet-management"
-	default:
-		return pluginName // Use as-is for custom plugins
-	}
+	return validation.EntrypointPluginName(pluginName)
 }
 
 // isDeploymentFunctional checks if the deployment is actually functional by testing Neo4j connectivity

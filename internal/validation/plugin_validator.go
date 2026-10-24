@@ -212,6 +212,13 @@ func (v *PluginValidator) pluginCompatibilityWarning(name, version string) strin
 	// examples raised a ValidationWarning (#553). GenAI ships with the server
 	// (products/), so its version is the server's. "" is a known plugin with no
 	// recorded minimum.
+	//
+	// Whether the target's image can install a Managed plugin at all is not
+	// this matrix's question: n10s is a NEO4J_PLUGINS name on 5.26 and on
+	// CalVer before 2025.05 only, and graphql on no supported release — it was
+	// recorded here as "neo4j-graphql" and has been removed. The plugin
+	// controller refuses such a name against its target's image tag
+	// (ManagedPluginImageErrors, operations.md id 170).
 	compatibilityMatrix := map[string]string{
 		"apoc":                   "5.26.0",
 		"apoc-extended":          "5.26.0",
@@ -228,7 +235,6 @@ func (v *PluginValidator) pluginCompatibilityWarning(name, version string) strin
 		"neo4j-desktop":          "1.6.0",
 		"neo4j-etl":              "1.6.0",
 		"neo4j-graph-algorithms": "deprecated", // Deprecated in favor of GDS
-		"neo4j-graphql":          "5.26.0",
 		"neo4j-spark-connector":  "5.3.0",
 		"neo4j-fabric":           "5.26.0", // Part of core in 5.26+
 		"neo4j-vector":           "5.26.0",

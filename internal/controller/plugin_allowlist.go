@@ -160,7 +160,7 @@ func (r *Neo4jPluginReconciler) hiddenProceduresMessage(ctx context.Context, plu
 	var setters []string
 	for i := range list.Items {
 		p := &list.Items[i]
-		if p.Spec.ClusterRef == plugin.Spec.ClusterRef && p.Spec.Enabled && p.DeletionTimestamp == nil &&
+		if p.Spec.ClusterRef == plugin.Spec.ClusterRef && pluginOnTarget(p, deployment) && p.DeletionTimestamp == nil &&
 			pluginListSettings(p)[allowlistSetting] != "" {
 			setters = append(setters, "Neo4jPlugin "+p.Name)
 		}
@@ -180,11 +180,12 @@ func (r *Neo4jPluginReconciler) hiddenProceduresMessage(ctx context.Context, plu
 // whether its target's allowlist hides its procedures (message "" when it does
 // not), and announces a new or changed message once, from the status write
 // that records it (operations.md ids 136, 145). A pass that finds the same
-// writes nothing — also a settled pass (id 135). A disabled plugin carries no
-// such condition.
+// writes nothing — also a settled pass (id 135). A plugin that is not on its
+// target — disabled, or refused by its image (id 170) — carries no such
+// condition.
 func (r *Neo4jPluginReconciler) reportHiddenProcedures(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) {
 	message := ""
-	if plugin.Spec.Enabled && deployment != nil {
+	if deployment != nil && pluginOnTarget(plugin, deployment) {
 		var err error
 		if message, err = r.hiddenProceduresMessage(ctx, plugin, deployment); err != nil {
 			log.FromContext(ctx).Error(err, "Cannot tell whether the target's allowlist hides the plugin's procedures")

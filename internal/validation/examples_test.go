@@ -75,6 +75,12 @@ func TestPublishedManifestsPassOurOwnValidators(t *testing.T) {
 // matrix — the matrix recorded "neo4j-genai", a name no Neo4jPlugin can use
 // (the entrypoint's key is genai), and "neo4j-bloom" for bloom. A published
 // plugin manifest raises no warning: a user copying it has nothing to fix.
+//
+// Nor is it refused on either supported line (#563, operations.md id 170): the
+// docs showed Managed graphql and n10s plugins, which no CalVer image (n10s) or
+// no supported image at all (graphql) can install from NEO4J_PLUGINS. Offline,
+// `kubectl neo4j validate` warns about such a name; against a target, the
+// operator refuses it.
 func TestPublishedPluginManifestsRaiseNoWarning(t *testing.T) {
 	seen := 0
 	for _, root := range []string{"../../examples", "../../config/samples"} {
@@ -94,6 +100,23 @@ func TestPublishedPluginManifestsRaiseNoWarning(t *testing.T) {
 				seen++
 				assert.Empty(t, NewPluginValidator().Validate(plugin).Warnings,
 					"document %d of %s (spec.name %q)", i+1, path, plugin.Spec.Name)
+				// The CRD defaults spec.enabled to true; decoded here without
+				// the API server, an omitted field reads false.
+				var enabled struct {
+					Spec struct {
+						Enabled *bool `json:"enabled"`
+					} `json:"spec"`
+				}
+				require.NoError(t, yaml.Unmarshal(doc, &enabled))
+				if enabled.Spec.Enabled == nil {
+					plugin.Spec.Enabled = true
+				}
+				assert.Empty(t, ManagedPluginNameWarnings(plugin),
+					"document %d of %s (spec.name %q)", i+1, path, plugin.Spec.Name)
+				for _, line := range []string{"5.26-enterprise", "2026.08-enterprise"} {
+					assert.Empty(t, ManagedPluginImageErrors(plugin, line),
+						"document %d of %s (spec.name %q) on %s", i+1, path, plugin.Spec.Name, line)
+				}
 			}
 			return nil
 		}))

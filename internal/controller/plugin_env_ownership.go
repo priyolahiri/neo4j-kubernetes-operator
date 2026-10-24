@@ -115,19 +115,20 @@ func (r *Neo4jPluginReconciler) pluginOwnedEnvNames(plugin *neo4jv1beta1.Neo4jPl
 }
 
 // otherPlugins lists, by name, the Neo4jPlugins of plugin's target other than
-// plugin: same namespace and clusterRef, enabled, not being deleted, and not a
+// plugin: same namespace and clusterRef, to be on the target (enabled, and not
+// refused by its image — pluginOnTarget), not being deleted, and not a
 // duplicate of it (same spec.name — checkForDuplicatePlugin refuses those, so
-// they write nothing). A disabled plugin (spec.enabled: false) needs nothing
-// on the target, so nothing is kept for it; what it still records there is
-// kept by its record (envOwnedElsewhere) until its own pass takes it away.
-func (r *Neo4jPluginReconciler) otherPlugins(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) ([]neo4jv1beta1.Neo4jPlugin, error) {
+// they write nothing). A disabled or refused plugin needs nothing on the
+// target, so nothing is kept for it; what it still records there is kept by
+// its record (envOwnedElsewhere) until its own pass takes it away.
+func (r *Neo4jPluginReconciler) otherPlugins(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) ([]neo4jv1beta1.Neo4jPlugin, error) {
 	list := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, list, client.InNamespace(plugin.Namespace)); err != nil {
 		return nil, fmt.Errorf("failed to list Neo4jPlugins in namespace %q: %w", plugin.Namespace, err)
 	}
 	var out []neo4jv1beta1.Neo4jPlugin
 	for _, other := range list.Items {
-		if other.Name == plugin.Name || other.Spec.ClusterRef != plugin.Spec.ClusterRef || !other.Spec.Enabled ||
+		if other.Name == plugin.Name || other.Spec.ClusterRef != plugin.Spec.ClusterRef || !pluginOnTarget(&other, deployment) ||
 			other.DeletionTimestamp != nil || other.Spec.Name == plugin.Spec.Name {
 			continue
 		}
@@ -195,7 +196,7 @@ func (r *Neo4jPluginReconciler) applyPlugin(ctx context.Context, sts *appsv1.Sta
 	if err := r.applyPluginToTemplate(&sts.Spec.Template, plugin, deployment); err != nil {
 		return nil, err
 	}
-	others, err := r.otherPlugins(ctx, plugin)
+	others, err := r.otherPlugins(ctx, plugin, deployment)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +473,7 @@ func (r *Neo4jPluginReconciler) writeRemoval(ctx context.Context, plugin *neo4jv
 			}
 			return err
 		}
-		others, err := r.otherPlugins(ctx, plugin)
+		others, err := r.otherPlugins(ctx, plugin, deployment)
 		if err != nil {
 			return err
 		}

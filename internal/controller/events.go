@@ -199,6 +199,13 @@ const (
 	// target's effective dbms.security.procedures.allowlist loads none of the
 	// plugin's procedures (operations.md id 161).
 	EventReasonPluginProceduresHidden = "PluginProceduresHidden"
+	// EventReasonPluginUnknownToImage is emitted once, as a Warning, when a
+	// Managed Neo4jPlugin is refused because the image its target runs cannot
+	// install one of its NEO4J_PLUGINS names (graphql on every supported
+	// release, n10s on CalVer from 2025.05, a custom JAR's name): the
+	// entrypoint exits on such a name. The plugin is Failed, and what an earlier
+	// write of it left on the target is taken off (operations.md id 170).
+	EventReasonPluginUnknownToImage = "PluginUnknownToImage"
 )
 
 // Split-brain events
