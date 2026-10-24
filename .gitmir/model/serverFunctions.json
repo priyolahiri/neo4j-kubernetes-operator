@@ -34,7 +34,8 @@
       "sf-reconcile-server-shortfall",
       "sf-reload-renewed-tls",
       "sf-hold-stopped-upgrade",
-      "sf-reconcile-route"
+      "sf-reconcile-route",
+      "sf-merge-fleet-plugin"
     ],
     "emitsEventIds": [
       "ev-topology-warning",
@@ -46,7 +47,6 @@
       "ev-route-api-not-found",
       "ev-mcp-apoc-missing",
       "ev-aura-fleet-management-failed",
-      "ev-aura-fleet-management-plugin-patch-failed",
       "ev-aura-fleet-management-registered"
     ],
     "subscribesEventIds": [],
@@ -114,6 +114,23 @@
     "moduleId": "mod-cluster"
   },
   {
+    "id": "sf-merge-fleet-plugin",
+    "name": "Merge Fleet Management Plugin",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Phase 1 of Aura Fleet Management, for a cluster or standalone with spec.auraFleetManagement.enabled: addFleetManagementPlugin merges fleet-management into the neo4j container's NEO4J_PLUGINS with MergeNeo4jPluginList. It runs in the write that creates the StatefulSet — after the record of the env the deployment owns, so NEO4J_PLUGINS stays out of the static template and out of that record — so a new deployment's servers start with the plugin; and on every pass as mergeFleetManagementPlugin, which writes only when the entry is missing (enabling it on a running deployment restarts the servers once). A StatefulSet that does not exist yet is not a failure; anything else raises AuraFleetManagementPluginPatchFailed (knowledge operations.md ids 164, 175).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-merge-plugin-list"
+    ],
+    "emitsEventIds": [
+      "ev-aura-fleet-management-plugin-patch-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
     "id": "sf-reconcile-standalone",
     "name": "Reconcile Standalone",
     "serverUnitId": "su-neo4jenterprisestandalone",
@@ -133,7 +150,8 @@
       "sf-expand-standalone-storage",
       "sf-collect-standalone-diagnostics",
       "sf-reload-renewed-tls",
-      "sf-reconcile-route"
+      "sf-reconcile-route",
+      "sf-merge-fleet-plugin"
     ],
     "emitsEventIds": [
       "ev-validation-failed",
@@ -144,7 +162,6 @@
       "ev-route-api-not-found",
       "ev-mcp-apoc-missing",
       "ev-aura-fleet-management-failed",
-      "ev-aura-fleet-management-plugin-patch-failed",
       "ev-aura-fleet-management-registered",
       "ev-config-applied-live",
       "ev-config-needs-restart"
@@ -183,7 +200,7 @@
     "name": "Collect Cluster Diagnostics",
     "serverUnitId": "su-diagnostics",
     "operation": "business_action",
-    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down —, fills the address of a server that is down from the per-cluster address book (SHOW SERVERS reports none for it), and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475). A query that fails because a server could not be reached (a pod deleted or restarting, ConnectivityError: EOF) is logged at info; any other failure is logged as an error (#549; knowledge operations.md id 164).",
+    "description": "Runs SHOW SERVERS and SHOW DATABASES against a cluster that has formed — Ready, Degraded, or mid-rollout with ClusterFormed=True, so it keeps reporting while a server is down —, fills the address of a server that is down from the per-cluster address book (SHOW SERVERS reports none for it), and writes results plus ServersHealthy/DatabasesHealthy conditions into status.diagnostics; non-fatal — every error is surfaced only in status.diagnostics.collectionError, never returned to the caller. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475). A query that fails because a server could not be reached (a pod deleted or restarting, ConnectivityError: EOF) is logged at info; any other failure is logged as an error (#549; knowledge operations.md id 164). Neo4j answering \"not now\" — a Neo.TransientError.* (a database unavailable while it restarts or fails over), NotALeader — is logged at info like a server that cannot be reached (IsTransientError); a real error stays at error (knowledge operations.md id 164).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -198,7 +215,7 @@
     "name": "Collect Standalone Diagnostics",
     "serverUnitId": "su-diagnostics",
     "operation": "business_action",
-    "description": "Runs SHOW DATABASES (plus users/roles) against a Ready standalone instance and writes status.diagnostics; non-fatal, mirroring the cluster path's collectionError-only error handling. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475). A query that fails because the server could not be reached is logged at info; any other failure as an error (#549).",
+    "description": "Runs SHOW DATABASES (plus users/roles) against a Ready standalone instance and writes status.diagnostics; non-fatal, mirroring the cluster path's collectionError-only error handling. The result is written to status only when it changed (lists sorted; databases' transaction counters ignored) or lastCollected is 5 minutes old: a status write re-enqueues the reconcile, so writing every pass looped it (#475). A query that fails because the server could not be reached is logged at info; any other failure as an error (#549). Neo4j answering \"not now\" — a Neo.TransientError.* (a database unavailable while it restarts or fails over), NotALeader — is logged at info like a server that cannot be reached (IsTransientError); a real error stays at error (knowledge operations.md id 164).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [

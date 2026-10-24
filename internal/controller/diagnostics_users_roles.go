@@ -96,15 +96,20 @@ func collectUsersAndRoles(
 	}
 }
 
-// logDiagnosticsQueryFailure logs a diagnostics query that failed. A server
-// that cannot be reached — its pod deleted or restarting, the connection cut
-// mid-query ("ConnectivityError: EOF") — is part of a restart the cluster's
-// status already reports, so it is logged at info; any other failure is an
-// error. Either way it is in status.diagnostics.collectionError and the pass
-// carries on (#549).
+// logDiagnosticsQueryFailure logs a diagnostics query that failed. A transient
+// failure (neo4jclient.IsTransientError) is part of a restart, a leader change
+// or a lost majority that the cluster's status already reports, so it is
+// logged at info: a server that cannot be reached (its pod deleted or
+// restarting, the connection cut mid-query, "ConnectivityError: EOF"), or
+// Neo4j answering "not now" (Neo.TransientError.*, NotALeader). Any other
+// failure is an error. Either way it is in status.diagnostics.collectionError
+// and the pass carries on (#549; operations.md id 164). Classifying only the
+// connection failures, the walk of the v1.22.x fixes still logged 25 errors in
+// one second while a majority was lost, and one for SHOW USERS during an
+// upgrade.
 func logDiagnosticsQueryFailure(logger logr.Logger, query string, err error) {
-	if neo4jclient.IsConnectivityError(err) {
-		logger.Info("Could not collect "+query+": a server could not be reached; the next pass tries again",
+	if neo4jclient.IsTransientError(err) {
+		logger.Info("Could not collect "+query+" while servers restart or change leader; the next pass tries again",
 			"error", err.Error())
 		return
 	}
