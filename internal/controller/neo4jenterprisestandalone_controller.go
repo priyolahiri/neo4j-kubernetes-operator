@@ -95,9 +95,10 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// (status.runningVersion, operations.md id 153); nil uses Bolt. Tests
 	// inject a fake.
 	ServerVersionReader func(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (string, error)
-	// runningVersionReads records, per standalone (key ns/name), the running
-	// image (standaloneRunningImage) its version was last read for, so it is
-	// read again only when the container runs another image.
+	// runningVersionReads records, per standalone (key ns/name), its last
+	// version read (standaloneVersionRead): the running image and the version
+	// the server reported, so it is read again only when the container runs
+	// another image.
 	runningVersionReads sync.Map
 }
 

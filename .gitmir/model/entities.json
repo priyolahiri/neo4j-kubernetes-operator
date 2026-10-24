@@ -432,7 +432,7 @@
         "name": "status.runningVersion",
         "type": "string",
         "isNullable": true,
-        "note": "The Neo4j version the server reports (SHOW SERVERS version) when status.version is a tag without a patch: read with one query once the standalone is Ready, again only when its container runs another image (pod UID + imageID), written when it changes, cleared when status.version moves or names a patch. spec.image.tag below it is refused (operations.md id 153)."
+        "note": "The Neo4j version the server reports (SHOW SERVERS version) when status.version is a tag without a patch: read with one query once the standalone is Ready, again only when its container runs another image (pod UID + imageID), written on any pass whose status does not say it (so a field an old CRD dropped is recorded on the first pass after the CRDs are applied, with no new query), cleared when status.version moves or names a patch. spec.image.tag below it is refused (operations.md id 153)."
       },
       {
         "id": "f-neo4jenterprisestandalone-status-pod-status-pod-name",
