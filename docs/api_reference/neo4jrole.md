@@ -55,10 +55,10 @@ The `Neo4jRole` Custom Resource Definition (CRD) provides declarative management
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `RoleReady`, `RoleSyncFailed`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `RoleDeletionFailed`, `ValidationFailed` | True when role exists and privileges are reconciled. A role that is `Ready` stays `Ready` while its target is not (a restart); `ClusterNotReady` here means the role was not yet `Ready` at its generation when the target went away. `RoleDeletionFailed` (phase `Failed`): the deletion's `DROP ROLE` failed and is retried. |
+| `Ready` | `RoleReady`, `RoleSyncFailed`, `ClusterNotFound`, `ClusterNotReady`, `ClusterUnreachable`, `ConnectionFailed`, `RoleDeletionFailed`, `ValidationFailed` | True when role exists and privileges are reconciled. A role that is `Ready` stays `Ready` while its target is not (a restart); `ClusterNotReady` here means the role was not yet `Ready` at its generation when the target went away. `ClusterUnreachable` is the same wait for a target that reads `Ready` but refuses the connection (Bolt not open yet after a restart, a `stopCluster` restore); `ConnectionFailed` is a connection failure that is not such an outage (no admin Secret, a refused login), or one that lasted more than 5 minutes. `RoleDeletionFailed` (phase `Failed`): the deletion's `DROP ROLE` failed and is retried. |
 | `PrivilegesSynced` | `PrivilegesMatch`, `PrivilegesDrifted`, `UnattributedPrivileges` | True when live privileges match `spec.privileges`. `Unknown`/`UnattributedPrivileges` (learn mode, the default) means the role holds rows the operator cannot attribute to a spec statement and so will not revoke; the message lists them. |
 | `PrivilegesResolve` | `AllDatabasesResolve`, `NoDatabaseScopedPrivileges`, `DatabaseNotFound`, `GraphPrivilegeOnComposite` | True when every database named by a privilege exists on this cluster (or is an alias for one). **False means those privileges are not on the role**: Neo4j refuses a grant on a database that does not exist, and drops a role's privileges along with a dropped database, so the operator skips them — the rest of the role is applied. The usual cause on a DR cluster is the replica's name: a replica of `foo` is called `foo-replica`, and privileges attach to the database, not to an alias. Reported, never enforced: the database may simply not be created yet, and the condition clears on its own when it is. `GraphPrivilegeOnComposite` is the same class of silent failure on a [composite database](neo4jcompositedatabase.md): a GRAPH privilege on a composite is accepted and shown back by `SHOW ROLE PRIVILEGES`, but graph privileges attach to the constituents' target databases, so it does nothing. (`ACCESS ON DATABASE <composite>` is correct and is not flagged.) |
-| `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
+| `ClusterNotReady` | `ClusterNotReady`, `ClusterUnreachable`, `ClusterReady` | Mirrors the readiness of the referenced cluster: `ClusterUnreachable` while it reads `Ready` but cannot be reached. `ClusterReady` is written once a connection succeeds. |
 
 ### PrivilegeRule
 
@@ -131,7 +131,7 @@ When `enforcePrivileges: false`, step 3's revoke pass is skipped — adds still 
 | Update | Privilege diff + apply |
 | Delete (`Delete` policy, custom role) | `DROP ROLE name IF EXISTS`, then remove finalizer |
 | Delete (built-in or `Retain`) | Remove finalizer only |
-| Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition. A `Ready` role stays `Ready` (a target restart announces nothing); any other waits in `Pending` |
+| Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition. A `Ready` role stays `Ready` (a target restart announces nothing); any other waits in `Pending`. So does a target that reads `Ready` but refuses the connection (`ClusterUnreachable`, logged at info), for up to 5 minutes |
 | Drop refused | Recorded in status (phase `Failed`, reason `RoleDeletionFailed`) and announced once; the drop is retried for up to 5 minutes, then the finalizer is released and the role is left for an admin to drop |
 
 ## Examples

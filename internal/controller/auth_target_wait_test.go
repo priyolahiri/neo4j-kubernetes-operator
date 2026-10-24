@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -255,20 +256,44 @@ func TestRecordTargetWait(t *testing.T) {
 		{"a spec change not yet applied waits", "Ready", ready(gen - 1), "Pending"},
 		{"a failed object waits", "Failed", nil, "Pending"},
 	} {
-		t.Run(tc.name, func(t *testing.T) {
-			phase, message, conds := tc.phase, "in sync", tc.conds
-			recordTargetWait(&conds, &phase, &message, gen, `clusterRef "sa" is not Ready`)
-			assert.Equal(t, tc.wantPhase, phase)
-			assert.True(t, meta.IsStatusConditionTrue(conds, ConditionTypeClusterNotReady))
-			readyCond := meta.FindStatusCondition(conds, ConditionTypeReady)
-			require.NotNil(t, readyCond)
-			if tc.wantPhase == "Ready" {
-				assert.Equal(t, metav1.ConditionTrue, readyCond.Status)
-				assert.Equal(t, "in sync", message)
-			} else {
-				assert.Equal(t, ConditionReasonClusterNotReady, readyCond.Reason)
-				assert.Equal(t, `clusterRef "sa" is not Ready`, message)
-			}
-		})
+		for _, reason := range []string{ConditionReasonClusterNotReady, ConditionReasonClusterUnreachable} {
+			t.Run(tc.name+"/"+reason, func(t *testing.T) {
+				phase, message, conds := tc.phase, "in sync", append([]metav1.Condition(nil), tc.conds...)
+				lasting := recordTargetWait(&conds, &phase, &message, gen, reason, `clusterRef "sa" is not Ready`, time.Now())
+				assert.False(t, lasting, "a wait that just started has not lasted")
+				assert.Equal(t, tc.wantPhase, phase)
+				cnr := meta.FindStatusCondition(conds, ConditionTypeClusterNotReady)
+				require.NotNil(t, cnr)
+				assert.Equal(t, metav1.ConditionTrue, cnr.Status)
+				assert.Equal(t, reason, cnr.Reason)
+				readyCond := meta.FindStatusCondition(conds, ConditionTypeReady)
+				require.NotNil(t, readyCond)
+				if tc.wantPhase == "Ready" {
+					assert.Equal(t, metav1.ConditionTrue, readyCond.Status)
+					assert.Equal(t, "in sync", message)
+				} else {
+					assert.Equal(t, reason, readyCond.Reason)
+					assert.Equal(t, `clusterRef "sa" is not Ready`, message)
+				}
+			})
+		}
 	}
+
+	// An unreachable target that has been so for longer than the grace has
+	// lasted: the phase is left for the caller, which records the failure. A
+	// target that is not Ready never lasts this way (id 158 waits for it).
+	since := func(reason string, ago time.Duration) []metav1.Condition {
+		return append(ready(gen), metav1.Condition{Type: ConditionTypeClusterNotReady, Status: metav1.ConditionTrue,
+			Reason: reason, LastTransitionTime: metav1.NewTime(time.Now().Add(-ago))})
+	}
+	phase, message := "Ready", "in sync"
+	conds := since(ConditionReasonClusterUnreachable, targetUnreachableGrace+time.Minute)
+	assert.True(t, recordTargetWait(&conds, &phase, &message, gen, ConditionReasonClusterUnreachable, "unreachable", time.Now()))
+	conds = since(ConditionReasonClusterUnreachable, targetUnreachableGrace-time.Minute)
+	assert.False(t, recordTargetWait(&conds, &phase, &message, gen, ConditionReasonClusterUnreachable, "unreachable", time.Now()))
+	conds = since(ConditionReasonClusterNotReady, targetUnreachableGrace+time.Minute)
+	assert.False(t, recordTargetWait(&conds, &phase, &message, gen, ConditionReasonClusterNotReady, "not ready", time.Now()))
+	conds = since(ConditionReasonClusterNotReady, targetUnreachableGrace+time.Minute)
+	assert.False(t, recordTargetWait(&conds, &phase, &message, gen, ConditionReasonClusterUnreachable, "unreachable", time.Now()),
+		"a not-Ready target that now reads Ready but refuses starts a new wait")
 }

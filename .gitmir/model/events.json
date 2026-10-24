@@ -200,7 +200,7 @@
   {
     "id": "ev-connection-failed",
     "name": "ConnectionFailed",
-    "description": "The operator could not open a Bolt client connection to the resolved cluster/standalone target. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "The operator could not open a Bolt client connection to the resolved cluster/standalone target. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). For a Neo4jUser, Neo4jRole, Neo4jRoleBinding or Neo4jAuthRule whose target reads Ready but cannot be reached (connection refused, EOF, a timeout, an unresolvable host, the system database unavailable), it is raised only when that outage has lasted more than 5 minutes; until then the object waits with ClusterNotReady=True, reason ClusterUnreachable, and a Ready one stays Ready (operations.md id 172).",
     "moduleId": "mod-database"
   },
   {
@@ -512,7 +512,7 @@
   {
     "id": "ev-user-updated",
     "name": "UserUpdated",
-    "description": "Emitted when an ALTER USER clause set is applied (or the password already matched, treated as satisfied) for an existing Neo4jUser CR (neo4juser_controller.go).",
+    "description": "Emitted when an ALTER USER clause set is applied for an existing Neo4jUser CR, or when Neo4j says the password is already the Secret's — the latter only when the status write that records the password as applied changed it, so once, not on every retry of a pass that then fails (neo4juser_controller.go; operations.md id 15).",
     "moduleId": "mod-security"
   },
   {
@@ -542,7 +542,7 @@
   {
     "id": "ev-password-rotated",
     "name": "PasswordRotated",
-    "description": "Emitted when the password Secret's change-detection fingerprint differs from status.passwordSecretHash, indicating a real password rotation was applied (neo4juser_controller.go).",
+    "description": "Emitted when the status write right after the statement that applied the password (CREATE USER, ALTER USER … SET PASSWORD, or Neo4j's 'already the same' refusal) changed status.passwordSecretHash — once per Secret version, at a user's creation and at each change of its Secret, never from the pass's copy (passwordApplied, neo4juser_controller.go; operations.md id 15).",
     "moduleId": "mod-security"
   },
   {

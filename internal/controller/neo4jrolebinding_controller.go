@@ -24,6 +24,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -156,14 +157,17 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		r.waitForTarget(ctx, rb, fmt.Sprintf("%s is not Ready", targetRefDisplay(rb.Spec.ClusterRef)))
+		r.waitForTarget(ctx, rb, ConditionReasonClusterNotReady,
+			fmt.Sprintf("%s is not Ready", targetRefDisplay(rb.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
-	r.setNamedCondition(ctx, rb, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Connect
 	nc, err := r.connect(target)
 	if err != nil {
+		if targetUnreachable(err) {
+			return r.unreachable(ctx, rb, err, requeue)
+		}
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (knowledge
 		// rule 145).
@@ -173,6 +177,9 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		return ctrl.Result{}, err
 	}
 	defer func() { _ = nc.Close() }()
+	// Only a target that answered is ready for this binding: written after
+	// the connection, so an unreachable one keeps the time its outage began.
+	r.setNamedCondition(ctx, rb, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Verify the user exists. We never create users from a binding.
 	info, err := nc.ShowUser(ctx, rb.Spec.Username)
@@ -407,6 +414,11 @@ func (r *Neo4jRoleBindingReconciler) requeueAfter() time.Duration {
 }
 
 func (r *Neo4jRoleBindingReconciler) fail(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, label string, err error, requeue time.Duration) (ctrl.Result, error) {
+	if targetUnreachable(err) {
+		// The target went away mid-pass: an outage, not this binding's
+		// failure (knowledge rule 172).
+		return r.unreachable(ctx, rb, err, requeue)
+	}
 	msg := label
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
@@ -491,24 +503,51 @@ func (r *Neo4jRoleBindingReconciler) writeStatus(
 	return transitioned, entered, grantedChanged
 }
 
-// waitForTarget records that the target is not Ready: the ClusterNotReady
-// condition, and phase Pending unless the binding is already Ready at its
-// generation, which it stays while the target restarts — so the pass that
-// finds the target back announces nothing (recordTargetWait; knowledge rule
-// 158).
-func (r *Neo4jRoleBindingReconciler) waitForTarget(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, msg string) {
+// waitForTarget records that the target cannot serve the binding (reason
+// ClusterNotReady or ClusterUnreachable): the ClusterNotReady condition, and
+// phase Pending unless the binding is already Ready at its generation, which
+// it stays while the target restarts — so the pass that finds the target back
+// announces nothing (recordTargetWait; knowledge rule 158). The status is
+// written only when it changes. It reports lasting when an unreachable target
+// has outlasted targetUnreachableGrace (id 172).
+func (r *Neo4jRoleBindingReconciler) waitForTarget(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, reason, msg string) (lasting bool) {
 	update := func() error {
 		latest := &neo4jv1beta1.Neo4jRoleBinding{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(rb), latest); err != nil {
 			return err
 		}
-		recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message, latest.Generation, msg)
+		before := latest.Status.DeepCopy()
+		lasting = recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message,
+			latest.Generation, reason, msg, time.Now())
 		latest.Status.ObservedGeneration = latest.Generation
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
 		return r.Status().Update(ctx, latest)
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jRoleBinding")
+		return false
 	}
+	return lasting
+}
+
+// unreachable handles a target that reads Ready but cannot be reached, as the
+// user's does (Neo4jUserReconciler.unreachable): a binding Ready at its
+// generation stays Ready, any other waits in Pending, logged at info and
+// retried on the fixed interval; only an outage that outlasts
+// targetUnreachableGrace is announced, once (knowledge rule 172).
+func (r *Neo4jRoleBindingReconciler) unreachable(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, err error, requeue time.Duration) (ctrl.Result, error) {
+	if r.waitForTarget(ctx, rb, ConditionReasonClusterUnreachable, targetUnreachableMessage(rb.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		if r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil) {
+			r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	log.FromContext(ctx).Info("Target reads Ready but cannot be reached; retrying",
+		"clusterRef", rb.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
 // reportUserNotFound records that the bound user does not exist (yet) and

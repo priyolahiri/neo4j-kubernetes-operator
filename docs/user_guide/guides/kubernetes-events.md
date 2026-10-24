@@ -118,7 +118,7 @@ is met on many passes. It is announced once:
 | `ValidationWarning` | Warning | Database spec produced validation warnings, including a set field that nothing reads (`spec.initialData.configMapRef`, `secretRef`, `storage`, or a `source` other than `cypher`) |
 | `ClusterNotFound` | Warning | Referenced cluster or standalone not found; the database waits in phase `Pending` and carries on once it exists. Once per wait. Also emitted by `Neo4jShardedDatabase` (for a cluster) |
 | `ClusterNotReady` | Warning | On a `Neo4jShardedDatabase`: the referenced cluster cannot host it — property sharding needs Neo4j 2025.12+ and `spec.propertySharding.enabled` on the cluster; phase `Failed`. Once per failure. A cluster that is simply not Ready yet is phase `Waiting`, with no event |
-| `ConnectionFailed` | Warning | Could not connect to Neo4j via Bolt; retried with backoff. Once per failure. Emitted by `Neo4jReplicaDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jCompositeDatabase` and `Neo4jDatabaseAlias` |
+| `ConnectionFailed` | Warning | Could not connect to Neo4j via Bolt; retried with backoff. Once per failure. Emitted by `Neo4jReplicaDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jCompositeDatabase` and `Neo4jDatabaseAlias`. A user, role, binding or auth rule whose target reads `Ready` but refuses the connection — Bolt not open yet after a restart, a `stopCluster` restore — waits quietly instead (condition `ClusterNotReady`, reason `ClusterUnreachable`) and raises this only if that lasts more than 5 minutes |
 | `ClientCreationFailed` | Warning | Failed to create Neo4j Bolt client for the cluster (`Neo4jShardedDatabase`); retried with backoff. Once per failure |
 
 ### Plugins
@@ -185,12 +185,12 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | Reason | Type | Description |
 |---|---|---|
 | `UserCreated` | Normal | User created in Neo4j |
-| `UserUpdated` | Normal | User updated (or its password recorded as already applied) |
+| `UserUpdated` | Normal | User updated (or its password recorded as already applied — once, when status first records it, not on every retry of a pass that then fails) |
 | `UserReady` | Normal | User exists and its roles are in sync. When the user becomes `Ready` — first, or back from a failure of its own — not on a restart of its target: a `Ready` user stays `Ready` (with `ClusterNotReady=True`) while the target is down |
 | `UserDeleted` | Normal | User dropped |
 | `UserDeletionFailed` | Warning | `DROP USER` failed; the user is `Failed` with the error in `status.message`, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes so deletion is not wedged. Once per failure, not on every retry |
 | `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed. Once per failure |
-| `PasswordRotated` | Normal | Password updated from the referenced Secret |
+| `PasswordRotated` | Normal | Password updated from the referenced Secret. Once per Secret version — at a user's creation, and at each change of its Secret — announced by the status write that records it |
 | `RolesGranted` / `RolesRevoked` | Normal | Roles granted to / revoked from a user, role binding or auth rule |
 | `RolesResolved` | Normal | `spec.roles` names `Neo4jRole` resources by their CR name, and those were granted as the Neo4j roles they manage; the message maps each, as the `RoleNamesResolved` condition does. Once when the mapping appears or changes, not on every reconcile. Emitted by `Neo4jUser` and `Neo4jRoleBinding` |
 | `RolePending` | Warning | Waiting for referenced roles to exist — not built in, not a `Neo4jRole`, not in `SHOW ROLES`; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
