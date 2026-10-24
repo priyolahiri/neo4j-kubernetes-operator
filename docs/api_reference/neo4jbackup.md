@@ -360,7 +360,7 @@ A typical setup is a daily `FULL` backup CR plus an hourly `DIFF` backup CR that
 
 - Must reference a CR in the **same namespace**.
 - Cannot self-reference (`chainFromBackup: <this-cr-name>` is rejected).
-- Scope (`instanceRef` + database/sharded/all-databases scope) must match the referenced CR.
+- Scope (`instanceRef` + database/sharded/all-databases scope) must match the referenced CR. A database name matches in any case (`Orders` and `orders` are one database, and `neo4j-admin` writes both as `orders-<timestamp>.backup`).
 - Storage backend (type + bucket/path) must match.
 
 **Runtime safety**: the operator labels every backup Job with `app.kubernetes.io/part-of: <chain-root-name>` and refuses to submit a new Job while another Job sharing the same `part-of` label is still active — preventing the daily FULL and hourly DIFF from racing against the same artifact directory.

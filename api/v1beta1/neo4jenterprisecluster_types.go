@@ -276,7 +276,9 @@ type StorageSpec struct {
 	// ClassName is the StorageClass for the data PVCs. If omitted (or empty),
 	// the PVCs inherit the cluster's default StorageClass. When set, the named
 	// class must exist — the operator verifies this at apply time and reports an
-	// explicit error rather than leaving pods Pending indefinitely.
+	// explicit error rather than leaving pods Pending indefinitely. It applies to
+	// volumes when they are created: an existing volume keeps its StorageClass,
+	// so a later change has no effect on it, and a ValidationWarning says so.
 	// +optional
 	ClassName string `json:"className,omitempty"`
 
@@ -1517,21 +1519,29 @@ type UpgradeStrategySpec struct {
 
 	// UpgradeTimeout bounds each step of a cluster's rolling upgrade: staging
 	// the new template, and each server's restart until its databases have
-	// caught up. A Go duration above zero ("30m", "1h30m").
+	// caught up. A Go duration above zero ("30m", "1h30m"). A
+	// Neo4jEnterpriseStandalone's upgrade has no such step: there a value
+	// other than the default raises a ValidationWarning.
 	// +kubebuilder:default="30m"
 	UpgradeTimeout string `json:"upgradeTimeout,omitempty"`
 
-	// PostUpgradeHealthCheck enables cluster health validation after upgrade
+	// PostUpgradeHealthCheck enables cluster health validation after upgrade.
+	// A Neo4jEnterpriseStandalone runs no check after its upgrade, whatever
+	// the value.
 	// +kubebuilder:default=true
 	PostUpgradeHealthCheck bool `json:"postUpgradeHealthCheck,omitempty"`
 
 	// HealthCheckTimeout bounds the check, after a cluster's upgrade, that every
-	// server runs the new version. A Go duration above zero ("5m").
+	// server runs the new version. A Go duration above zero ("5m"). A
+	// Neo4jEnterpriseStandalone runs no such check: there a value other than
+	// the default raises a ValidationWarning.
 	// +kubebuilder:default="5m"
 	HealthCheckTimeout string `json:"healthCheckTimeout,omitempty"`
 
 	// StabilizationTimeout specifies how long to wait for cluster stabilization
-	// after its upgrade. A Go duration above zero ("3m").
+	// after its upgrade. A Go duration above zero ("3m"). A
+	// Neo4jEnterpriseStandalone has no such wait: there a value other than the
+	// default raises a ValidationWarning.
 	// +kubebuilder:default="3m"
 	StabilizationTimeout string `json:"stabilizationTimeout,omitempty"`
 

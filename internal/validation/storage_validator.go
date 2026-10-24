@@ -17,6 +17,10 @@ limitations under the License.
 package validation
 
 import (
+	"fmt"
+	"sort"
+	"strings"
+
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -79,4 +83,54 @@ func storageSizeError(fldPath *field.Path, size string) *field.Error {
 		return field.Invalid(fldPath, size, "storage size must be greater than zero")
 	}
 	return nil
+}
+
+// StorageClassChangeWarning reports a spec.storage.className that the data
+// volumes already there do not use, or "". volumeClasses maps each data
+// volume (its PVC name) to the StorageClass it names, "" for none.
+//
+// A volume keeps the StorageClass it was created with (a PVC's
+// storageClassName cannot change), and so does the StatefulSet's volume claim
+// template, so an edit of className changes nothing for a running deployment,
+// and nothing said so (#532). Only a className that is set is compared: an
+// empty one means the cluster's default StorageClass, which a volume created
+// under it names already. Shared by the cluster and the standalone; the
+// reconciler reads the PVCs and turns the result into an advisory
+// ValidationWarning.
+func StorageClassChangeWarning(className string, volumeClasses map[string]string) string {
+	if className == "" {
+		return ""
+	}
+	byClass := map[string][]string{}
+	for volume, class := range volumeClasses {
+		if class != className {
+			byClass[class] = append(byClass[class], volume)
+		}
+	}
+	if len(byClass) == 0 {
+		return ""
+	}
+	classes := make([]string, 0, len(byClass))
+	for class := range byClass {
+		classes = append(classes, class)
+	}
+	sort.Strings(classes)
+	parts := make([]string, 0, len(classes))
+	for _, class := range classes {
+		volumes := byClass[class]
+		sort.Strings(volumes)
+		uses := fmt.Sprintf("StorageClass %q", class)
+		if class == "" {
+			uses = "no StorageClass"
+		}
+		verb := "use"
+		if len(volumes) == 1 {
+			verb = "uses"
+		}
+		parts = append(parts, fmt.Sprintf("%s %s %s", strings.Join(volumes, ", "), verb, uses))
+	}
+	return fmt.Sprintf("spec.storage.className %q has no effect on the data volumes that already exist (%s): a volume "+
+		"keeps the StorageClass it was created with, and so does the StatefulSet's volume claim template. To move the "+
+		"data to %q, back it up and restore it into a deployment created with that class; otherwise set "+
+		"spec.storage.className to the class the volumes use", className, strings.Join(parts, "; "), className)
 }

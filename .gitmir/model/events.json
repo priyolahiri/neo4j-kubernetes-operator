@@ -188,7 +188,7 @@
   {
     "id": "ev-validation-warning",
     "name": "ValidationWarning",
-    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set, or a value that has no effect (upgradeStrategy.strategy Recreate on a cluster) (Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore, AuraInstance). Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
+    "description": "An inline spec validator (DatabaseValidator, AliasValidator, ReplicaValidator, etc.) surfaced a non-fatal warning; reconciliation continues. Also raised, in the form 'spec.<path> is accepted but has no effect today: <what to do instead>', when a spec field the schema accepts but nothing reads is set, or a value that has no effect (upgradeStrategy.strategy Recreate on a cluster; a standalone's upgradeStrategy timeouts other than their defaults); and while spec.storage.className names a StorageClass the existing data volumes do not use. Raised on Neo4jEnterpriseCluster, Neo4jEnterpriseStandalone, Neo4jPlugin, Neo4jDatabase, Neo4jBackup, Neo4jRestore and AuraInstance. Emitted when the warning starts to apply and again every 30 minutes while it still does (advisoryWarnings in internal/controller/advisory_warnings.go), not on every reconcile pass; a warning that stops applying is forgotten, so one that returns is announced at once.",
     "moduleId": "mod-database"
   },
   {
@@ -464,19 +464,19 @@
   {
     "id": "ev-restore-started",
     "name": "RestoreStarted",
-    "description": "A restore Job was created, a cluster-native Cypher recreate was issued, or an all-databases per-database seed began. For a standalone restore that runs offline with neo4j-admin, a first RestoreStarted names the reason; it is emitted only once the existence check, the pre-restore hooks and the stop (or, with stopCluster false, the refusal of a running standalone) have passed, and with stopCluster false it says the standalone is already stopped (knowledge operations.md id 145).",
+    "description": "A restore Job was created (announced from the status write that made the restore Running, so a pass on a stale copy does not repeat it), a cluster-native Cypher recreate was issued, or an all-databases per-database seed began (from the source neo4j-restore-progress). For a standalone restore that runs offline with neo4j-admin, a first RestoreStarted names the reason; it is emitted only once the existence check, the pre-restore hooks and the stop (or, with stopCluster false, the refusal of a running standalone) have passed — with stopCluster true at the stop, with stopCluster false with the Job's start, saying the standalone is already stopped — and once per attempt (knowledge operations.md id 145).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-restore-completed",
     "name": "RestoreCompleted",
-    "description": "The Neo4jRestore reconcile reached its terminal Completed phase.",
+    "description": "The Neo4jRestore reconcile reached its terminal Completed phase; for an all-databases restore once, from the status write, on the restore's own event budget (knowledge operations.md id 166).",
     "moduleId": "mod-backup-restore"
   },
   {
     "id": "ev-restore-failed",
     "name": "RestoreFailed",
-    "description": "The restore Job, Cypher recreate/online-wait, or seed-proxy/seed-config setup failed terminally.",
+    "description": "The restore Job, Cypher recreate/online-wait, or seed-proxy/seed-config setup failed terminally; for an all-databases restore once, when a database failed, from the status write.",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -500,7 +500,7 @@
   {
     "id": "ev-restore-seed-progress",
     "name": "RestoreSeedProgress",
-    "description": "Periodic progress update while an all-databases restore's per-database seed is still coming online (allocation counts or the last poll's error).",
+    "description": "The progress of one database's seed in an all-databases restore (allocation counts or the last poll's error), announced when it changes and every 10 minutes while it does not, from the source neo4j-restore-progress — an event budget of its own, so a long seed cannot crowd out the restore's outcome (knowledge operations.md ids 92, 166).",
     "moduleId": "mod-backup-restore"
   },
   {

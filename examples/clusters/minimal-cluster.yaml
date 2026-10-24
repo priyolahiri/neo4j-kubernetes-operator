@@ -64,10 +64,16 @@ spec:
     authenticationProviders: ["native"]
     adminSecret: neo4j-admin-secret
 
-  # Additional environment variables (optional)
+  # Additional environment variables (optional; uncomment to add some).
   # NOTE: NEO4J_AUTH and NEO4J_ACCEPT_LICENSE_AGREEMENT are managed by the operator
-  # and should not be set manually
-  env: []
+  # and should not be set manually. Leave the field out rather than writing
+  # `env: []`: with `kubectl apply --server-side` a manifest that sets it owns
+  # the whole list, and an entry the operator adds under
+  # neo4j.com/auto-inherit-seed-creds then conflicts with your next apply
+  # (docs/gitops/README.md).
+  # env:
+  #   - name: EXAMPLE
+  #     value: "1"
 
 ---
 # Prerequisites:
