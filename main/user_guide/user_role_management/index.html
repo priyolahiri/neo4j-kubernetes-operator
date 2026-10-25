@@ -1536,6 +1536,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#deleting-while-the-target-restarts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleting while the target restarts
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4468,6 +4479,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#deleting-while-the-target-restarts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deleting while the target restarts
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -5105,7 +5127,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>kubectl delete</code></td>
-<td>Finalizer-protected: controller drops user/role first (unless <code>deletionPolicy: Retain</code>). A drop that fails is recorded in status (phase <code>Failed</code>) and announced once, retried, and given up after 5 minutes — the finalizer is released and the object left in Neo4j for an admin</td>
+<td>Finalizer-protected: controller drops user/role first (unless <code>deletionPolicy: Retain</code>). A drop that cannot run — the target restarting, refusing connections, or refusing the drop — is recorded in status (phase <code>Failed</code>) and announced once, retried, and given up after 5 minutes: the finalizer is released with one Warning naming what was left in Neo4j and the statement that removes it. See <a href="#deleting-while-the-target-restarts">Deleting while the target restarts</a></td>
 </tr>
 <tr>
 <td>Cluster neither Ready nor Degraded</td>
@@ -5127,8 +5149,11 @@ not change while the target is down, and the target reports its own state, so
 the pass that finds the target back is not a transition: no <code>UserReady</code>,
 <code>RoleReady</code> or <code>BindingCreated</code> event is announced for it. (Before, each
 restart of a standalone made every user on it <code>Pending</code> and then announced
-<code>UserReady</code> again.) An object that was not yet <code>Ready</code> — new, failed, or with
-a spec change not yet applied — waits in <code>Pending</code> as before.</p>
+<code>UserReady</code> again.) An object that failed keeps its failure the same way:
+its <code>UserSyncFailed</code> (<code>RoleSyncFailed</code>, <code>BindingFailed</code>, a binding's
+<code>UserNotFound</code>) is not announced again when the target comes back and the
+same thing fails, only when the cause changes. A new object, or one with a
+spec change not yet applied, waits in <code>Pending</code> as before.</p>
 <p>The same holds for the seconds after a restart when the target already reads
 <code>Ready</code> but its Bolt port does not accept connections yet, and for a
 <code>stopCluster</code> restore: the condition's reason is then <code>ClusterUnreachable</code>,
@@ -5137,6 +5162,28 @@ error. Only if the target cannot be reached for more than 5 minutes is the
 object <code>Failed</code>, with one <code>ConnectionFailed</code> Warning. A connection failure
 that is not about reaching the target — the admin Secret missing, a refused
 login — is reported at once.</p>
+<h3 id="deleting-while-the-target-restarts">Deleting while the target restarts<a class="headerlink" href="#deleting-while-the-target-restarts" title="Anchor link to this section">&para;</a></h3>
+<p>Deleting a <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code> or <code>Neo4jAuthRule</code>
+revokes access, so the finalizer is not released until the <code>DROP USER</code>,
+<code>DROP ROLE</code>, <code>REVOKE ROLE</code> or <code>DROP AUTH RULE</code> has run. If it cannot run —
+the target is not <code>Ready</code>, reads <code>Ready</code> but does not accept connections yet,
+its admin Secret cannot be read, or Neo4j refuses the statement — the
+deletion waits: phase <code>Failed</code>, the message <code>deletion waits to remove …</code>
+naming the object and the moment it stops waiting, and one Warning
+(<code>UserDeletionFailed</code>, <code>RoleDeletionFailed</code>, <code>BindingFailed</code> or
+<code>AuthRuleFailed</code>). It retries every 30 seconds and whenever the target's
+status changes, so it finishes as soon as the target is back.</p>
+<p>The wait is bounded so a target that never comes back cannot keep the CR
+(or its namespace) in <code>Terminating</code>: 5 minutes after the deletion was
+requested the finalizer is released, with one Warning that says
+<code>Released the finalizer without removing …</code>, names what is still in Neo4j,
+and gives the statement to run by hand, for example
+<code>DROP USER `alice`</code>. A target whose cluster or standalone CR is gone
+releases at once: nothing is left to remove. <code>deletionPolicy: Retain</code>
+releases at once and removes nothing.</p>
+<p>Before this, a deletion during a restart released the finalizer at once
+when the connection failed (and an auth rule's when the target was not
+<code>Ready</code>), leaving the user, grant or rule in Neo4j without a word.</p>
 <h2 id="cluster-vs-namespace-scope">Cluster vs namespace scope<a class="headerlink" href="#cluster-vs-namespace-scope" title="Anchor link to this section">&para;</a></h2>
 <p>All three CRDs are <strong>namespace-scoped</strong> with same-namespace <code>clusterRef</code> only. This matches the existing pattern of <code>Neo4jDatabase</code>, <code>Neo4jBackup</code>, <code>Neo4jPlugin</code>. It means:</p>
 <ul>

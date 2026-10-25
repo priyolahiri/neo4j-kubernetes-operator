@@ -2900,6 +2900,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3978,6 +3989,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4236,6 +4258,16 @@
 <li>The guard is live state, not status: every mutating path re-reads <code>type</code> from <code>SHOW DATABASES</code> first. Promoting by hand at a <code>cypher-shell</code> is therefore safe — the operator notices and goes terminal rather than "correcting" the drift.</li>
 </ul>
 <p>Promote via <a href="../neo4jreplicapromotion/"><code>Neo4jReplicaPromotion</code></a>. Adopt the promoted database with a <code>Neo4jDatabase</code> CR using <code>ifNotExists: true</code>.</p>
+<h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h2>
+<p><code>deletionPolicy: Delete</code> re-reads the database's type and, if it is still a replica, runs
+<code>DROP DATABASE</code>; <code>Retain</code>, a promoted database, and a database that is already gone only release the
+finalizer, as does a cluster or standalone CR that no longer exists.</p>
+<p>A replica holds the upstream's data and keeps pulling it, so a drop that cannot run — the downstream not
+Ready, refusing the connection, failing to report the type, or refusing the drop — waits: phase
+<code>Failed</code>, <code>deletion waits to remove …</code> in <code>status.message</code>, one <code>ReplicaFailed</code> Warning, a retry every
+30 seconds. A type that cannot be read is never taken for "not a replica": nothing is dropped. Five
+minutes after the deletion was requested the finalizer is released with one Warning naming the replica
+left in Neo4j and the <code>DROP DATABASE</code> that removes it.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jReplicaDatabase</span>

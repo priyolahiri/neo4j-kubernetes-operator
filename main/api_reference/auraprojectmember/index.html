@@ -3242,6 +3242,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3889,6 +3900,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4040,6 +4062,9 @@
 </tr>
 </tbody>
 </table>
+<h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h2>
+<p><code>deletionPolicy: Delete</code> removes the member from the project in Aura, then releases the finalizer. <code>Orphan</code> (the default), or a member whose Aura user ID was never recorded, calls nothing: it needs no credentials and the CR is removed at once (an <code>AuraMemberOrphaned</code> event names a member who keeps their role).</p>
+<p>Removing needs the credentials, the organization and the project. While they cannot be resolved — the credentials Secret or provider config deleted first in a namespace teardown, say — the CR waits with phase <code>Error</code>, <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, announced once. After 5 minutes it is removed anyway with a Warning <code>AuraMemberOrphaned</code>: the person keeps their project role in Aura, so remove them in the console. Before, the finalizer was released at once and without a word.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraProjectMember</span>

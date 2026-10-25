@@ -3270,6 +3270,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3889,6 +3900,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4044,6 +4066,9 @@
 </tr>
 </tbody>
 </table>
+<h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h2>
+<p><code>deletionPolicy: Delete</code> revokes the invite in Aura if it is still pending, then releases the finalizer. <code>Orphan</code>, or an invite the operator never recorded an ID for, calls nothing: it needs no credentials and the CR is removed at once (an <code>AuraInviteOrphaned</code> event names an invite left pending).</p>
+<p>Revoking needs the credentials and the organization. While they cannot be resolved — the credentials Secret or provider config deleted first in a namespace teardown, say — the CR waits with phase <code>Error</code>, <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, announced once. After 5 minutes it is removed anyway with a Warning <code>AuraInviteOrphaned</code>: the invite stays pending in Aura and can still be accepted, so revoke it in the console. Before, the finalizer was released at once and without a word.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraInvite</span>
