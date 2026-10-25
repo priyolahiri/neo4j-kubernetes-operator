@@ -8090,7 +8090,7 @@ for details.</p>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Cluster phase: <code>"Initializing"</code>, <code>"Forming"</code>, <code>"Ready"</code>, <code>"Degraded"</code> (formed and serving with a majority of its servers, one or more unavailable for longer than the grace period — see <a href="#server-availability">Server availability</a>), <code>"Expanding"</code> (storage expansion in progress), <code>"Paused"</code> (upgrade paused after a failure), <code>"Failed"</code></td>
+<td>Cluster phase: <code>"Initializing"</code>, <code>"Forming"</code>, <code>"Ready"</code>, <code>"Degraded"</code> (formed and serving with a majority of its servers, one or more unavailable for longer than the grace period — see <a href="#server-availability">Server availability</a>), <code>"Expanding"</code> (storage expansion in progress), <code>"Failed"</code>. An upgrade that stops (<code>status.upgradeStatus.phase</code> <code>Paused</code> or <code>Failed</code>) does not change it: a cluster with every server available stays <code>"Ready"</code>, its <code>message</code> naming the stopped upgrade. Releases up to v1.22.0 set <code>"Paused"</code> or <code>"Failed"</code> here for one pass</td>
 </tr>
 <tr>
 <td><code>ready</code></td>
@@ -8612,6 +8612,12 @@ visible via <code>kubectl get svc</code>.</p>
 <td><code>spec.topology.servers</code> asks for another number of servers than the server StatefulSet keeps, and the change waits: an upgrade is in progress, or a <code>Paused</code> or <code>Failed</code> one keeps a partition (reason <code>WaitsForUpgrade</code>; the message gives both counts and the upgrade). Applied once the upgrade completes — see <a href="../../user_guide/guides/upgrades/">Upgrades</a></td>
 <td>Nothing waits any more (reason <code>NoTopologyChangeWaits</code>)</td>
 <td>n/a — absent until a change first waits</td>
+</tr>
+<tr>
+<td><code>Stalled</code></td>
+<td>The cluster's upgrade stopped: <code>status.upgradeStatus.phase</code> is <code>Failed</code> (reason <code>UpgradeFailed</code>) or <code>Paused</code> (reason <code>UpgradePaused</code>); the message names the target and the upgrade's last error. The cluster keeps serving and <code>Ready</code> stays as it is, so this is what tells a kstatus reader such as a Flux health check that the image change did not land (kstatus reads <code>Stalled=True</code> as Failed). Written with the upgrade record, in the same status write</td>
+<td>The upgrade went on, completed, or its record was dropped (reason <code>UpgradeNotStopped</code>)</td>
+<td>n/a — absent until an upgrade first stops</td>
 </tr>
 <tr>
 <td><code>ServersPendingDrain</code></td>

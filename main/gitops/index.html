@@ -3845,7 +3845,11 @@ to interpret Neo4j operator resource states.</p>
 </tr>
 <tr>
 <td>Degraded</td>
-<td>Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — every phase <code>kubectl neo4j status --problems</code> reports, on every self-managed kind</td>
+<td>Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — every phase <code>kubectl neo4j status --problems</code> reports, on every self-managed kind; and a <code>Ready</code> <code>Neo4jEnterpriseCluster</code> whose upgrade <code>Failed</code></td>
+</tr>
+<tr>
+<td>Suspended</td>
+<td>A <code>Ready</code> <code>Neo4jEnterpriseCluster</code> whose upgrade is <code>Paused</code></td>
 </tr>
 <tr>
 <td>Progressing</td>
@@ -3853,6 +3857,15 @@ to interpret Neo4j operator resource states.</p>
 </tr>
 </tbody>
 </table>
+<p>A <code>Neo4jEnterpriseCluster</code> whose upgrade stops keeps its phase: it is <code>Ready</code>
+while every server is available, and serves, and its <code>status.message</code> names the
+stopped upgrade. So its health check also reads <code>status.upgradeStatus.phase</code>: a
+<code>Failed</code> upgrade is Degraded — your image change did not land, and the operator
+retries it — and a <code>Paused</code> one is Suspended, waiting for you (set another
+<code>spec.image.tag</code>, or turn <code>spec.upgradeStrategy.autoPauseOnFailure</code> off). An
+upgrade in progress stays Healthy. Releases up to v1.22.0 set the cluster's
+phase to <code>Failed</code> or <code>Paused</code> instead, which this check reported as Degraded and
+Progressing.</p>
 <p>A <code>Neo4jDatabase</code> the operator refused (<code>ValidationFailed</code>) is Degraded: nothing
 was created, and nothing changes until the spec is edited. As Progressing (the
 health checks of v1.22.0 and earlier), Argo CD showed the Application still syncing
@@ -3904,6 +3917,16 @@ Flux configuration is needed once the operator surfaces that condition.</p>
 (the grace period above); a <code>Degraded</code> one reports <code>Ready=False</code> with reason
 <code>ClusterDegraded</code>, so a Kustomization health-checking it fails until the
 missing server is back.</p>
+<p>A cluster whose upgrade stopped (<code>Paused</code> or <code>Failed</code>) keeps <code>Ready=True</code>: it
+serves. It also carries <code>Stalled=True</code> (reason <code>UpgradeFailed</code> or
+<code>UpgradePaused</code>, the message naming the target and the upgrade's last error),
+and Flux's health checks, which use kstatus, read a resource with
+<code>Stalled=True</code> as Failed whatever <code>Ready</code> says — so a Kustomization
+health-checking the cluster fails after an image change that did not land, as
+it did with v1.22.0. <code>Stalled</code> turns <code>False</code> once the upgrade goes on, completes
+or is dropped, and kstatus then reads <code>Ready</code> again. (kstatus:
+<code>checkGenericProperties</code> in <code>pkg/kstatus/status/generic.go</code> of
+<code>sigs.k8s.io/cli-utils</code>, and of Flux's fork <code>github.com/fluxcd/cli-utils</code>.)</p>
 <h2 id="the-operator-does-not-rewrite-your-spec">The operator does not rewrite your spec<a class="headerlink" href="#the-operator-does-not-rewrite-your-spec" title="Anchor link to this section">&para;</a></h2>
 <p>The stored spec of every custom resource of the operator is the one you
 applied, with the CRD's own defaults the API server fills in, so a GitOps diff

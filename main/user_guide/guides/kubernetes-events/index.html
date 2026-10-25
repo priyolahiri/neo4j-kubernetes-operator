@@ -4439,7 +4439,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UpgradeStarted</code></td>
 <td>Normal</td>
-<td>Rolling upgrade initiated, or a <code>Paused</code> or <code>Failed</code> one resumed ("Rolling upgrade resumed after it was …"). A resumed one whose restarted servers cannot start on the earlier target names them: "… cannot start on … and is replaced first"</td>
+<td>Rolling upgrade initiated, or a <code>Paused</code> or <code>Failed</code> one resumed ("Rolling upgrade resumed after it was …"). A resumed one whose restarted servers cannot start on the earlier target names them: "… cannot start on … and is replaced first". On a <code>Neo4jEnterpriseStandalone</code>, once per new image: emitted by the pass that writes it, read from the API server, not the cache</td>
 </tr>
 <tr>
 <td><code>UpgradeCompleted</code></td>
@@ -4449,12 +4449,17 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UpgradePaused</code></td>
 <td>Warning</td>
-<td>Upgrade paused after a failed check or step (<code>autoPauseOnFailure</code>); the servers stay where it stopped until you change <code>spec.image.tag</code> or turn <code>autoPauseOnFailure</code> off. A check that refuses the upgrade before it starts is announced once, not on every attempt</td>
+<td>Upgrade paused after a failed check or step (<code>autoPauseOnFailure</code>); the servers stay where it stopped until you change <code>spec.image.tag</code> or turn <code>autoPauseOnFailure</code> off. Announced once per target and cause; a check that refuses the upgrade before it starts is announced once, not on every attempt. The cluster's phase does not change (<code>Ready</code>, its message naming the paused upgrade)</td>
 </tr>
 <tr>
 <td><code>UpgradeFailed</code></td>
 <td>Warning</td>
-<td>Upgrade failed. A check that refuses it before it starts is announced once, and again only with a new error, while the operator tries it every minute; the cluster stays <code>Ready</code>. On a <code>Neo4jEnterpriseStandalone</code> with <code>upgradeStrategy.preUpgradeHealthCheck</code> and <code>autoPauseOnFailure</code>, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked</td>
+<td>Upgrade failed. Announced once per target and cause: a check that refuses it before it starts, while the operator tries it every minute, and an upgrade the operator retries that stops again where it stopped, are announced again only with a new error or a new target; the cluster stays <code>Ready</code>, with no <code>ClusterReady</code> on a retry. On a <code>Neo4jEnterpriseStandalone</code> with <code>upgradeStrategy.preUpgradeHealthCheck</code> and <code>autoPauseOnFailure</code>, also: the pre-upgrade health check failed and holds the upgrade back — advisory while it stays blocked</td>
+</tr>
+<tr>
+<td><code>UpgradeRetargeted</code></td>
+<td>Normal</td>
+<td><code>spec.image.tag</code> changed while an upgrade was in flight (<code>Staging</code>, <code>Rolling</code>, <code>Stabilizing</code> or <code>Verifying</code>): the upgrade goes on towards the new tag, staged again ("Rolling upgrade retargeted from … to … during …"). Once per new target. A <code>Paused</code> or <code>Failed</code> upgrade taken up towards a new tag is announced by <code>UpgradeStarted</code> ("resumed") instead</td>
 </tr>
 <tr>
 <td><code>UpgradeDeferred</code></td>

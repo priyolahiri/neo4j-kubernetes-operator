@@ -4018,6 +4018,10 @@
 <td>the Job's <code>Failed</code> condition being <code>True</code> (including a missed <code>activeDeadlineSeconds</code>, where no pod failed), plus its pods, container by container. The verdict is the Job's conditions, not its <code>status.failed</code> count: that counts failed <em>attempts</em> and never goes down, so a backup that retried and then completed is a success — it gets a <code>⚠</code> line noting the retries, and one still retrying gets <code>…</code>, neither of which changes the exit code</td>
 </tr>
 <tr>
+<td>Upgrade stopped</td>
+<td>a cluster whose <code>status.upgradeStatus.phase</code> is <code>Failed</code> or <code>Paused</code>, with the upgrade's last error and what to do. The cluster keeps its phase (<code>Ready</code>) when an upgrade stops, so this line is what says the image change did not land; it counts as a problem</td>
+</tr>
+<tr>
 <td>Nothing ever reconciled</td>
 <td>a CR with no status at all after two minutes</td>
 </tr>
