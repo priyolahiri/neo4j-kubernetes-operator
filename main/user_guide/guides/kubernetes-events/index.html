@@ -4486,12 +4486,12 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>BackupCompleted</code></td>
 <td>Normal</td>
-<td>Backup job completed successfully</td>
+<td>Backup job completed successfully. Once, from the write that makes the backup <code>Completed</code>; a one-time backup that is <code>Completed</code> is never reopened</td>
 </tr>
 <tr>
 <td><code>BackupFailed</code></td>
 <td>Warning</td>
-<td>Backup job failed, or the spec is invalid (phase <code>Invalid</code>, once per refusal)</td>
+<td>Backup job failed (once, from the write that makes the backup <code>Failed</code>), or the spec is invalid (phase <code>Invalid</code>, once per refusal)</td>
 </tr>
 <tr>
 <td><code>RestoreStarted</code></td>

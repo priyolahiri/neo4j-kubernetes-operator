@@ -4708,7 +4708,7 @@
 <tr>
 <td><code>shardedDatabase</code></td>
 <td><code>string</code></td>
-<td>The name of a <code>Neo4jShardedDatabase</code> CR; backs up all shards of that logical property-sharded database (e.g. a CR whose <code>spec.name</code> is <code>products</code> → <code>products-g000</code>, <code>products-p000</code>, …) in one <code>neo4j-admin</code> invocation via a glob.</td>
+<td>The name of a <code>Neo4jShardedDatabase</code> CR; backs up all shards of that logical property-sharded database (e.g. a CR whose <code>spec.name</code> is <code>products</code> → <code>products-g000</code>, <code>products-p000</code>, …) in one <code>neo4j-admin</code> invocation, with the patterns <code>"&lt;name&gt;-g*" "&lt;name&gt;-p*"</code> (the name lower-cased; a database that merely begins with the name, such as a restored <code>productscopy</code>, is not included).</td>
 </tr>
 <tr>
 <td><code>allDatabases</code></td>
@@ -5204,7 +5204,7 @@
 <tr>
 <td><code>lastRunTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the last backup Job started</td>
+<td>When the last backup Job started (set when the backup enters <code>Running</code>, not on each pass while it runs)</td>
 </tr>
 <tr>
 <td><code>lastSuccessTime</code></td>
@@ -5260,11 +5260,11 @@
 </tr>
 <tr>
 <td><code>Running</code></td>
-<td>A one-shot backup Job is executing.</td>
+<td>A one-shot backup Job is executing, or has succeeded and the operator is reading the artifact names from its Pod's log ("capturing artifact metadata"; at most 5 minutes after the Job finished, then the run is recorded with what was read).</td>
 </tr>
 <tr>
 <td><code>Completed</code></td>
-<td>The one-shot backup Job succeeded. Terminal — re-running requires deleting and recreating the CR.</td>
+<td>The one-shot backup Job succeeded. Terminal — re-running requires deleting and recreating the CR. Nothing the operator does afterwards changes it: a pass that read an older copy of the backup checks the phase with the API server before doing anything.</td>
 </tr>
 <tr>
 <td><code>Failed</code></td>

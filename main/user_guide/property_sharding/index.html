@@ -5144,11 +5144,15 @@ with <code>spec.instanceRef</code> (the cluster) + <code>spec.shardedDatabase</c
 <strong><code>Neo4jShardedDatabase</code> resource name</strong> (e.g. <code>products-sharded-db</code>) — the operator
 resolves the logical database name (<code>spec.name</code>, e.g. <code>products</code>) from that resource.
 A single backup captures every shard consistently in one <code>neo4j-admin database backup</code>
-invocation via a <code>{logical-name}*</code> glob — you do <strong>not</strong> list the individual shard
-databases (<code>products-g000</code>, <code>products-p000</code>, …). Because of the glob, the backup is
-refused while any other database's name starts with the logical name (for example
-<code>products-archive</code> beside <code>products</code>), naming it: rename or drop that database, or
-pick a logical name no other database begins with.</p>
+invocation via two patterns, <code>{logical-name}-g*</code> (the graph shard) and
+<code>{logical-name}-p*</code> (the property shards), with the name lower-cased as Neo4j names the
+shards — you do <strong>not</strong> list the individual shard databases (<code>products-g000</code>,
+<code>products-p000</code>, …). A database whose name only begins with the logical name (a copy
+restored beside it as <code>ProductsCopy</code>, or <code>productsales</code>) is not part of it. The backup is
+refused while another database matches the patterns without being a shard (for example
+<code>products-gold</code> beside <code>products</code>), naming it: rename or drop that database, or pick
+another logical name. The run's <code>status.history[].shardArtifacts</code> names each shard as
+<code>neo4j-admin</code> writes it, lower-cased, whatever capitals <code>spec.name</code> has.</p>
 <blockquote>
 <p>ℹ️ An <strong>all-databases</strong> backup (<code>spec.allDatabases</code>) <strong>catalogues</strong> each sharded
 family's per-shard artifacts in <code>status.history[].shardedFamilies</code> (family names also
