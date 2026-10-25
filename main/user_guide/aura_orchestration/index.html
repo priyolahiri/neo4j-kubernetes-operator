@@ -4821,6 +4821,14 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
 <li><strong><code>Delete</code></strong> — the cloud instance is destroyed. Set <code>deletionProtection: true</code>
   to block this until explicitly cleared.</li>
 </ul>
+<p>Only <code>Delete</code> calls Aura, so only it needs the credentials. When a namespace is
+torn down, its credentials Secret and <code>AuraProviderConfig</code> can go before the Aura
+CRs: an <code>Orphan</code> CR is removed regardless, while a <code>Delete</code> CR (<code>AuraInstance</code>,
+<code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>) waits for the credentials with
+<code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, and after 5 minutes is removed
+anyway, with a Warning (<code>AuraInstanceOrphaned</code>, …) saying the resource was left
+in Aura. Delete the Aura CRs before their credentials, or delete what was left
+in the Aura console.</p>
 <h2 id="known-limitations">Known limitations<a class="headerlink" href="#known-limitations" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>Credentials are create-once.</strong> Aura returns the instance password only at

@@ -4195,7 +4195,7 @@
 <tr>
 <td><code>deletionPolicy</code></td>
 <td><code>string</code></td>
-<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (keep the running instance on CR delete).</td>
+<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (keep the running instance on CR delete). <code>Orphan</code> needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). <code>Delete</code> needs them: while they cannot be read it waits, with <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, and after 5 minutes it removes the CR anyway and raises a Warning <code>AuraInstanceOrphaned</code> — the cloud instance keeps running, so delete it in the Aura console.</td>
 </tr>
 <tr>
 <td><code>deletionProtection</code></td>
@@ -4255,7 +4255,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Mirrors the Aura instance status (<code>Creating</code>, <code>Running</code>, <code>Pausing</code>, <code>Paused</code>, <code>Resuming</code>, <code>Updating</code>, <code>Restoring</code>, <code>Destroying</code>, …).</td>
+<td>Mirrors the Aura instance status (<code>Creating</code>, <code>Running</code>, <code>Pausing</code>, <code>Paused</code>, <code>Resuming</code>, <code>Updating</code>, <code>Restoring</code>, <code>Destroying</code>, …), or <code>Error</code> while the operator cannot reconcile the instance — the <code>Ready</code> condition says why, and the next observation of the instance writes Aura's status back.</td>
 </tr>
 <tr>
 <td><code>connectionUrl</code></td>
@@ -4285,7 +4285,7 @@
 <tr>
 <td><code>lastSyncedTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the instance was last observed from the Aura API.</td>
+<td>When the operator last recorded the instance as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile.</td>
 </tr>
 <tr>
 <td><code>atProvider</code></td>
@@ -4370,7 +4370,7 @@
 <li><strong>Only two tiers support it</strong>: <code>business-critical</code> and <code>enterprise-db</code> (Virtual Dedicated Cloud). <code>free-db</code> and <code>professional-db</code> are rejected by Aura outright (<code>multi-database-tier-not-supported</code>), so the CRD rejects them on write.</li>
 <li><strong>It needs an organization ID</strong>, because the v2beta1 paths are organization-scoped. Set <code>spec.organizationId</code> or <code>defaultOrganizationId</code> on the <a href="../auraproviderconfig/"><code>AuraProviderConfig</code></a>.</li>
 <li><strong>A smaller set of fields applies.</strong> The v2beta1 create takes name, type, cloudProvider, region, memory, <code>storage</code>, <code>graphAnalytics</code> (including <code>serverless</code>) and, for a serverless-only instance, <code>vectorOptimized</code>. <code>vectorOptimized: true</code> is <strong>rejected</strong> together with <code>multiDatabase</code>, because Aura refuses the combination. <code>secondariesCount</code>, <code>cdcEnrichmentMode</code>, <code>customerManagedKeyId</code> and <code>source</code> have no v2beta1 equivalent and are rejected too. <code>version</code> is not sent either — Aura picks the version — although the CRD still requires it.</li>
-<li><strong>A create the operator can already tell Aura will refuse is stopped before the API call</strong>, and stays stopped (the cause is in the spec, so retrying cannot help). The condition <code>Ready=False</code> carries one of two reasons: <code>MultiDatabaseUnsupported</code> for a <code>multiDatabase</code> instance, and <code>ServerlessGraphAnalyticsUnsupported</code> for a <code>graphAnalytics: serverless</code> one. The message names the cause — usually a missing organization ID, or a tier or field combination Aura rejects. Fix the spec and re-apply.</li>
+<li><strong>A create the operator can already tell Aura will refuse is stopped before the API call</strong>, and stays stopped (the cause is in the spec, so retrying cannot help). The condition <code>Ready=False</code> carries one of two reasons: <code>MultiDatabaseUnsupported</code> for a <code>multiDatabase</code> instance, and <code>ServerlessGraphAnalyticsUnsupported</code> for a <code>graphAnalytics: serverless</code> one. The message names the cause — usually a missing organization ID, or a tier or field combination Aura rejects. Fix the spec and re-apply. Until then the operator does not ask Aura again (phase <code>Error</code>); a missing organization ID is also looked at again once <code>defaultOrganizationId</code> on the <code>AuraProviderConfig</code> supplies one.</li>
 <li><strong>Instances created without it are not multi-database</strong>, and cannot be made so. An <code>AuraDatabase</code> against one is refused with <code>Ready=False</code>, reason <code>InstanceNotMultiDatabase</code>; the fix is a new <code>AuraInstance</code> (and a data migration), not a spec edit.</li>
 </ul>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">spec</span><span class="p">:</span>

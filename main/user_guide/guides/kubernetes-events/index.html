@@ -4764,7 +4764,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraFleetTokenRotated</code></td>
 <td>Warning</td>
-<td>The fleet token was rotated; any previous registration is now invalid</td>
+<td>The fleet token was rotated and the new one stored in its Secret; any previous registration is now invalid. Raised once the new token is stored: while the Secret cannot be written, each attempt rotates again and <code>status.auraFleetManagement.message</code> says why</td>
 </tr>
 </tbody>
 </table>
@@ -5149,7 +5149,7 @@ is met on many passes. It is announced once:</p>
 </tbody>
 </table>
 <h3 id="aura-orchestration">Aura Orchestration<a class="headerlink" href="#aura-orchestration" title="Anchor link to this section">&para;</a></h3>
-<p>Emitted by the Aura CRDs (<code>AuraProviderConfig</code>, <code>AuraInstance</code>, <code>AuraSnapshot</code>, <code>AuraRestore</code>, <code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>, <code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code>, <code>AuraOrganizationMember</code>, <code>AuraProjectMember</code>, <code>AuraInvite</code>). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place.</p>
+<p>Emitted by the Aura CRDs (<code>AuraProviderConfig</code>, <code>AuraInstance</code>, <code>AuraSnapshot</code>, <code>AuraRestore</code>, <code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>, <code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code>, <code>AuraOrganizationMember</code>, <code>AuraProjectMember</code>, <code>AuraInvite</code>). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The <code>…Ready</code> events and <code>AuraCredentialsValidated</code> are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call.</p>
 <table>
 <thead>
 <tr>
@@ -5162,17 +5162,17 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraCredentialsValidated</code> / <code>AuraCredentialsInvalid</code></td>
 <td>Normal / Warning</td>
-<td>The provider config's Aura API credentials were accepted / rejected (the Warning once per failure)</td>
+<td>The provider config's Aura API credentials were accepted / rejected. Each once per change: valid again after a failure is announced again</td>
 </tr>
 <tr>
 <td><code>AuraInstanceCreated</code>, <code>AuraInstanceAdopted</code>, <code>AuraInstanceUpdated</code>, <code>AuraInstancePaused</code>, <code>AuraInstanceResumed</code>, <code>AuraInstanceUpgraded</code>, <code>AuraInstanceDeleted</code>, <code>AuraInstanceOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the Aura instance</td>
+<td>Lifecycle of the Aura instance. <code>AuraInstanceOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials stayed unavailable for 5 minutes after deletion was requested: the cloud instance keeps running, so delete it in the Aura console</td>
 </tr>
 <tr>
 <td><code>AuraInstanceFailed</code></td>
 <td>Warning</td>
-<td>Aura instance reconcile failed (also: deletion refused while <code>deletionProtection</code> is set, recorded on the <code>Synced</code> condition, reason <code>DeletionProtected</code>). Once per failure</td>
+<td>Aura instance reconcile failed (also: deletion refused while <code>deletionProtection</code> is set, recorded on the <code>Synced</code> condition, reason <code>DeletionProtected</code>; a <code>Delete</code> waiting for credentials it cannot read, reason <code>CredentialsUnavailable</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraSnapshotCreated</code></td>
@@ -5192,7 +5192,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraCustomerManagedKeyCreated</code>, <code>AuraCustomerManagedKeyAdopted</code>, <code>AuraCustomerManagedKeyReady</code>, <code>AuraCustomerManagedKeyDeleted</code>, <code>AuraCustomerManagedKeyOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the customer-managed key</td>
+<td>Lifecycle of the customer-managed key (<code>AuraCustomerManagedKeyReady</code> once when the key becomes ready). <code>AuraCustomerManagedKeyOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials stayed unavailable for 5 minutes: the key stays registered in Aura</td>
 </tr>
 <tr>
 <td><code>AuraCustomerManagedKeyDeleteBlocked</code></td>
@@ -5202,22 +5202,22 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraCustomerManagedKeyFailed</code></td>
 <td>Warning</td>
-<td>Customer-managed key reconcile failed. Once per failure</td>
+<td>Customer-managed key reconcile failed (also: a <code>Delete</code> waiting for credentials, reason <code>CredentialsUnavailable</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraIPFilterCreated</code>, <code>AuraIPFilterAdopted</code>, <code>AuraIPFilterUpdated</code>, <code>AuraIPFilterReady</code>, <code>AuraIPFilterDeleted</code>, <code>AuraIPFilterOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the IP filter</td>
+<td>Lifecycle of the IP filter (<code>AuraIPFilterReady</code> once when it becomes Ready). <code>AuraIPFilterOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials or organization stayed unavailable for 5 minutes: the filter stays in place in Aura</td>
 </tr>
 <tr>
 <td><code>AuraIPFilterFailed</code></td>
 <td>Warning</td>
-<td>IP filter reconcile failed. Once per failure</td>
+<td>IP filter reconcile failed (also: a <code>Delete</code> waiting for credentials, reason <code>CredentialsUnavailable</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseCreated</code>, <code>AuraDatabaseAdopted</code>, <code>AuraDatabaseReady</code>, <code>AuraDatabaseDeleted</code>, <code>AuraDatabaseOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the Aura database (<code>AuraDatabaseCreated</code> is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created)</td>
+<td>Lifecycle of the Aura database (<code>AuraDatabaseReady</code> once when it becomes Ready; <code>AuraDatabaseCreated</code> is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created)</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseFailed</code></td>
@@ -5232,7 +5232,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraDatabaseBackupFailed</code></td>
 <td>Warning</td>
-<td>Per-database backup failed. Once per failure</td>
+<td>Per-database backup failed. Once per failure. Not raised while Aura is briefly unavailable or busy with another operation: the backup is retried</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseRestoreStarted</code>, <code>AuraDatabaseRestoreCompleted</code></td>
@@ -5247,7 +5247,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraMemberRoleUpdated</code>, <code>AuraMemberReady</code>, <code>AuraMemberRemoved</code></td>
 <td>Normal</td>
-<td>Organization/project member role set or member added/removed, reconciled, or removed on CR deletion</td>
+<td>Organization/project member role set or member added/removed, reconciled (<code>AuraMemberReady</code> once when the membership becomes Ready), or removed on CR deletion</td>
 </tr>
 <tr>
 <td><code>AuraMemberNotFound</code></td>
@@ -5262,7 +5262,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraInviteCreated</code>, <code>AuraInviteAdopted</code>, <code>AuraInviteReady</code>, <code>AuraInviteDeleted</code>, <code>AuraInviteOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the invite</td>
+<td>Lifecycle of the invite (<code>AuraInviteReady</code> names the invite's state, once per state: sent, accepted, declined, expired, revoked)</td>
 </tr>
 <tr>
 <td><code>AuraInviteFailed</code></td>

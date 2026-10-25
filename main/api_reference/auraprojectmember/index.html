@@ -4036,7 +4036,7 @@
 <tr>
 <td><code>lastSyncedTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the membership was last observed from the Aura API.</td>
+<td>When the operator last recorded the membership as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile.</td>
 </tr>
 </tbody>
 </table>

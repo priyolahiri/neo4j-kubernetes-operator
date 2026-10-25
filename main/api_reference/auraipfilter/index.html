@@ -4043,7 +4043,7 @@
 <tr>
 <td><code>deletionPolicy</code></td>
 <td><code>string</code></td>
-<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (leave the filter in place on CR delete — deleting it would open network access). <code>Delete</code> removes it from Aura.</td>
+<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (leave the filter in place on CR delete — deleting it would open network access). <code>Delete</code> removes it from Aura. <code>Orphan</code> needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone; <code>Delete</code> waits for the credentials and the organization (<code>Ready=False</code>, reason <code>CredentialsUnavailable</code>) and after 5 minutes removes the CR anyway with a Warning <code>AuraIPFilterOrphaned</code> — the filter stays in place in Aura.</td>
 </tr>
 <tr>
 <td><code>managementPolicies</code></td>
@@ -4112,7 +4112,7 @@
 <tr>
 <td><code>lastSyncedTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the filter was last observed from the Aura API.</td>
+<td>When the operator last recorded the filter as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile.</td>
 </tr>
 </tbody>
 </table>

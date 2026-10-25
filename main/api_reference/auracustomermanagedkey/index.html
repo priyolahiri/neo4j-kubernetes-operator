@@ -4064,7 +4064,7 @@ with a per-key <code>GET</code> — a key can never be matched on
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Mirrors the Aura key status: <code>Pending</code>, <code>Ready</code>, <code>Deleting</code>, <code>Error</code>.</td>
+<td>Mirrors the Aura key status: <code>Pending</code>, <code>Ready</code>, <code>Deleting</code>, <code>Error</code>. <code>Error</code> also while the operator cannot reconcile the key — the <code>Ready</code> condition says why.</td>
 </tr>
 <tr>
 <td><code>conditions</code></td>
@@ -4079,12 +4079,13 @@ with a per-key <code>GET</code> — a key can never be matched on
 <tr>
 <td><code>lastSyncedTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the key was last observed from the Aura API.</td>
+<td>When the operator last recorded the key as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile.</td>
 </tr>
 </tbody>
 </table>
 <h2 id="deletion-note">Deletion note<a class="headerlink" href="#deletion-note" title="Anchor link to this section">&para;</a></h2>
 <p>A key still bound to an instance <strong>cannot be deleted</strong> — Aura returns <code>encryption-key-is-active</code>. The CR then sets <code>Synced=False</code> with reason <code>KeyInUse</code> and keeps its finalizer until the key is no longer referenced by any instance.</p>
+<p><code>Orphan</code> needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). <code>Delete</code> needs them: while they cannot be read the CR waits, with <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, and after 5 minutes it is removed anyway with a Warning <code>AuraCustomerManagedKeyOrphaned</code> — the key stays registered in Aura.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraCustomerManagedKey</span>
