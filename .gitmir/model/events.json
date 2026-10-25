@@ -200,7 +200,7 @@
   {
     "id": "ev-connection-failed",
     "name": "ConnectionFailed",
-    "description": "The operator could not open a Bolt client connection to the resolved cluster/standalone target. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). For a Neo4jUser, Neo4jRole, Neo4jRoleBinding or Neo4jAuthRule whose target reads Ready but cannot be reached (connection refused, EOF, a timeout, an unresolvable host, the system database unavailable), it is raised only when that outage has lasted more than 5 minutes; until then the object waits with ClusterNotReady=True, reason ClusterUnreachable, and a Ready one stays Ready (operations.md id 172).",
+    "description": "The operator could not open a Bolt client connection to the resolved cluster/standalone target. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). For a Neo4jUser, Neo4jRole, Neo4jRoleBinding or Neo4jAuthRule whose target reads Ready but cannot be reached (connection refused, EOF, a timeout, an unresolvable host, the system database unavailable), it is raised only when that outage has lasted more than 5 minutes; until then the object waits with ClusterNotReady=True, reason ClusterUnreachable, and a Ready one stays Ready (operations.md id 172). A target that reads Ready but cannot be reached is a wait (ClusterNotReady=True, reason ClusterUnreachable), reported as ConnectionFailed only after 5 minutes — for users, roles, bindings and auth rules (id 172) and for Neo4jDatabase, Neo4jCompositeDatabase, Neo4jDatabaseAlias and Neo4jReplicaDatabase (id 183).",
     "moduleId": "mod-database"
   },
   {
@@ -230,7 +230,7 @@
   {
     "id": "ev-database-ready",
     "name": "DatabaseReady",
-    "description": "The Neo4jDatabase became ready: the status write set the Ready condition to True with reason DatabaseReady where it was not before (first creation, or back from a failure). Not emitted again while the database stays Ready, and not after an operator restart, since the transition is read from the persisted condition (reportDatabaseReady; knowledge operations.md id 136).",
+    "description": "The Neo4jDatabase became ready: the status write set the Ready condition to True with reason DatabaseReady where it was not before (first creation, or back from a failure of its own). Not emitted again while the database stays Ready, not after an operator restart, since the transition is read from the persisted condition (reportDatabaseReady; knowledge operations.md id 136), and not after a restart of its host: a Ready database stays Ready with ClusterNotReady=True while the host is not Ready or does not answer (operations.md id 183).",
     "moduleId": "mod-database"
   },
   {
@@ -266,7 +266,7 @@
   {
     "id": "ev-alias-ready",
     "name": "AliasReady",
-    "description": "The Neo4jDatabaseAlias resolves to its intended target database.",
+    "description": "The Neo4jDatabaseAlias resolves to its intended target database. Announced from the status write that moves the alias into Ready, once; a Ready alias stays Ready (ClusterNotReady=True) while its target restarts (operations.md id 183).",
     "moduleId": "mod-database"
   },
   {
@@ -284,13 +284,13 @@
   {
     "id": "ev-client-creation-failed",
     "name": "ClientCreationFailed",
-    "description": "The operator could not construct a Neo4j Bolt client for a Neo4jShardedDatabase's referenced cluster. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "The operator could not construct a Neo4j Bolt client for a Neo4jShardedDatabase's referenced cluster. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A cluster that reads Ready but cannot be reached is a wait (ClusterNotReady=True, reason ClusterUnreachable), reported only after 5 minutes (operations.md id 183).",
     "moduleId": "mod-database"
   },
   {
     "id": "ev-sharded-database-ready",
     "name": "ShardedDatabaseReady",
-    "description": "The property-sharded database became ready: the status write moved the CR to phase Ready (graph shard online in SHOW DATABASES), or a destructive replaceExisting pass recreated it. Not emitted again while it stays Ready (knowledge operations.md id 136). Each pass reads the CR through the uncached APIReader, so a pass started by the Ready write cannot read the earlier phase from the cache, write it over Ready and announce Ready a second time (knowledge operations.md ids 94, 136).",
+    "description": "The property-sharded database became ready: the status write moved the CR to phase Ready (graph shard online in SHOW DATABASES), or a destructive replaceExisting pass recreated it. Not emitted again while it stays Ready (knowledge operations.md id 136). Each pass reads the CR through the uncached APIReader, so a pass started by the Ready write cannot read the earlier phase from the cache, write it over Ready and announce Ready a second time (knowledge operations.md ids 94, 136). A Ready sharded database stays Ready with ClusterNotReady=True while its cluster rolls or restarts, so the cluster's return is not a transition (operations.md id 183).",
     "moduleId": "mod-database"
   },
   {
@@ -338,7 +338,7 @@
   {
     "id": "ev-replica-ready",
     "name": "ReplicaReady",
-    "description": "The replica database is online and actively replicating from its upstream (reported with its current transaction lag).",
+    "description": "The replica database is online and actively replicating from its upstream (reported with its current transaction lag). Announced from the status write that moves the replica into Replicating, once; a Replicating replica stays Replicating (ClusterNotReady=True) while its downstream target restarts (operations.md id 183).",
     "moduleId": "mod-database"
   },
   {
@@ -458,7 +458,7 @@
   {
     "id": "ev-restore-started",
     "name": "RestoreStarted",
-    "description": "A restore Job was created (announced from the status write that made the restore Running, so a pass on a stale copy does not repeat it), a cluster-native Cypher recreate was issued, or an all-databases per-database seed began (from the source neo4j-restore-progress). For a standalone restore that runs offline with neo4j-admin, a first RestoreStarted names the reason; it is emitted only once the existence check, the pre-restore hooks and the stop (or, with stopCluster false, the refusal of a running standalone) have passed — with stopCluster true at the stop, with stopCluster false with the Job's start, saying the standalone is already stopped — and once per attempt (knowledge operations.md id 145).",
+    "description": "A restore attempt started, announced once: a restore Job was created — \"Restore job … started\", from the status write that made the restore Running, so a pass on a stale copy does not repeat it — carrying, for a standalone restore that runs offline with neo4j-admin, the reason and, with stopCluster true, that it stops the standalone (with stopCluster false, that it is stopped already); emitted only once the existence check, the pre-restore hooks and the stop (or the refusal of a running standalone) have passed. The reason used to be a RestoreStarted of its own, so one offline restore emitted two (#573; restoreJobStartedMessage; knowledge operations.md id 145). Also: a cluster-native Cypher recreate was issued, or an all-databases restore started — once, from the markDatabaseResult write that made it Running, naming how many databases it restores; a database starting is recorded in status.databaseResults only (operations.md id 166).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -489,6 +489,12 @@
     "id": "ev-seed-endpoint-not-projected",
     "name": "SeedEndpointNotProjected",
     "description": "An online restore's target (cluster or standalone) has server pods that cannot reach the cloud seed source: the credentials Secret or custom S3 endpoint is missing and the target is not opted in to auto-inherit. Emitted when the restore starts waiting in Pending; it carries on once the target has them. Announced when the status write (transitionRestoreStatus, which re-reads the restore) changed the phase or message, not from the pass's own copy, so two passes on a copy from before the first write announce it once (knowledge operations.md id 145).",
+    "moduleId": "mod-backup-restore"
+  },
+  {
+    "id": "ev-restore-database-failed",
+    "name": "RestoreDatabaseFailed",
+    "description": "One database of an all-databases restore could not be restored (it exists and options.replaceExisting is not set, Neo4j refused the create or recreate, or the backup recorded no artifact for it); the others carry on and the restore ends Failed with RestoreFailed. A Warning, once per database, from the markDatabaseResult write that records the database Failed, through ProgressRecorder (source neo4j-restore-progress), so it spends neither the restore's own budget nor the Normal progress budget (knowledge operations.md id 166).",
     "moduleId": "mod-backup-restore"
   },
   {

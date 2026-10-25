@@ -150,7 +150,7 @@
     "id": "su-neo4jdatabase",
     "name": "Neo4jDatabase Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jDatabase CRD: creates/verifies a single logical database (with optional topology and seedURI) against a resolved cluster or standalone, imports initial Cypher data, and drops the database on CR deletion.",
+    "description": "Reconciler for the Neo4jDatabase CRD: creates/verifies a single logical database (with optional topology and seedURI) against a resolved cluster or standalone, imports initial Cypher data, and drops the database on CR deletion. A Ready database stays Ready while its host restarts or does not answer, with ClusterNotReady=True (operations.md id 183), and it writes only its documented phases, never Unknown (id 190).",
     "entityIds": [
       "ent-neo4jdatabase"
     ],
@@ -166,7 +166,7 @@
     "id": "su-neo4jdatabasealias",
     "name": "Neo4jDatabaseAlias Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jDatabaseAlias CRD: creates, retargets, and drops Neo4j database aliases (CREATE/ALTER/DROP ALIAS) against a resolved cluster or standalone.",
+    "description": "Reconciler for the Neo4jDatabaseAlias CRD: creates, retargets, and drops Neo4j database aliases (CREATE/ALTER/DROP ALIAS) against a resolved cluster or standalone. A Ready alias stays Ready while its target restarts or does not answer, with ClusterNotReady=True, and announces AliasReady from the write that enters Ready (operations.md id 183).",
     "entityIds": [
       "ent-neo4jdatabasealias"
     ],
@@ -182,7 +182,7 @@
     "id": "su-neo4jshardeddatabase",
     "name": "Neo4jShardedDatabase Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jShardedDatabase CRD: issues Cypher 25 CREATE DATABASE ... SET GRAPH SHARD / SET PROPERTY SHARDS, resolves seedBackupRef into per-shard seed URIs, and manages a PVC seed-proxy Deployment/Service for PVC-backed seeds.",
+    "description": "Reconciler for the Neo4jShardedDatabase CRD: issues Cypher 25 CREATE DATABASE ... SET GRAPH SHARD / SET PROPERTY SHARDS, resolves seedBackupRef into per-shard seed URIs, and manages a PVC seed-proxy Deployment/Service for PVC-backed seeds. A Ready sharded database stays Ready while its cluster rolls, restarts or does not answer, with ClusterNotReady=True (operations.md id 183).",
     "entityIds": [
       "ent-neo4jshardeddatabase"
     ],
@@ -201,7 +201,7 @@
     "id": "su-neo4jreplicadatabase",
     "name": "Neo4jReplicaDatabase Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jReplicaDatabase CRD: creates a cross-cluster replica database from an upstream backup/pull source and, on every pass, re-observes the live `type` column so an out-of-band promotion is detected before any mutating call is issued.",
+    "description": "Reconciler for the Neo4jReplicaDatabase CRD: creates a cross-cluster replica database from an upstream backup/pull source and, on every pass, re-observes the live `type` column so an out-of-band promotion is detected before any mutating call is issued. A Replicating replica stays Replicating while its downstream target restarts or does not answer, with ClusterNotReady=True, and announces ReplicaReady from the write that enters Replicating (operations.md id 183).",
     "entityIds": [
       "ent-neo4jreplicadatabase"
     ],

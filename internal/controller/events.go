@@ -106,7 +106,12 @@ const (
 	EventReasonRestoreCompleted         = "RestoreCompleted"
 	EventReasonRestoreFailed            = "RestoreFailed"
 	EventReasonRestoreFromChainParent   = "RestoreFromChainParent"
-	EventReasonDatabaseCreateFailed     = "DatabaseCreateFailed"
+	// EventReasonRestoreDatabaseFailed — one database of an all-databases
+	// restore could not be restored; the others carry on, and the restore's
+	// outcome (RestoreFailed) names how many failed. Emitted from the progress
+	// recorder, once per database, when its result is written Failed.
+	EventReasonRestoreDatabaseFailed = "RestoreDatabaseFailed"
+	EventReasonDatabaseCreateFailed  = "DatabaseCreateFailed"
 	// EventReasonRestoreSeedProgress reports one poll of an all-databases
 	// restore's per-database seed. It is emitted on EVERY non-terminal poll, not
 	// only when the message changes, deliberately: the apiserver aggregates

@@ -185,6 +185,11 @@ const (
 	// Cleared with the other one-shot markers on a fresh attempt.
 	AnnotationRestorePreHooksRan = "neo4j.com/restore-pre-hooks-ran"
 
+	// AnnotationRestoreAttempt is set on a restore Job to the generation of
+	// the Neo4jRestore — the attempt — that created it. A later attempt never
+	// adopts a Job whose attempt is not its own (createRestoreJob, #565).
+	AnnotationRestoreAttempt = "neo4j.com/restore-attempt"
+
 	// cypherRestoreOnlineTimeout bounds how long pollClusterRestoreOnline will
 	// wait (across requeues) for an asynchronously-recreated database to
 	// converge to online before marking the restore Failed.
@@ -280,8 +285,11 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
-	// Spec fields the schema accepts but nothing reads: advisory, never blocking.
-	r.advisoryWarnings.record(r.Recorder, restore, EventReasonValidationWarning, validation.RestoreNoEffectWarnings(restore))
+	// Spec fields the schema accepts but nothing reads, and a PVC backupPath
+	// that repeats the /backup mount path: advisory, never blocking. One list,
+	// so neither check's pass makes the other's warning look new.
+	r.advisoryWarnings.record(r.Recorder, restore, EventReasonValidationWarning,
+		append(validation.RestoreNoEffectWarnings(restore), validation.RestorePVCPathWarnings(restore)...))
 
 	// Get target cluster. Not-found is TRANSIENT (#218): `kubectl apply -f
 	// dir/` commonly creates the Neo4jRestore before its target CR, and a
@@ -479,18 +487,13 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	// online (point-in-time, a `source.type: storage` path, a DIFF on a PVC).
 	// An all-databases one runs a multi-database `neo4j-admin database
 	// restore` and handleRestoreSuccess brings every database online via
-	// registerAllDatabasesAfterRestore. Why it goes offline is announced once
-	// the checks below have passed: announced first, it said "Restoring
-	// offline" for a restore the next check refused (stopCluster: false
-	// against a running standalone, v1.22.0 journey). With stopCluster it is
-	// announced at the stop, and decided here, before stopCluster marks the
-	// instance as this restore's, so a re-entry after the stop does not
-	// announce it again. Without stopCluster nothing marks the instance, so it
-	// is announced with the Job's start, from the status write (below).
-	offlineReason := ""
-	if reason := standaloneOfflineReason(restore, r.restoreStandalone(ctx, restore)); reason != "" && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
-		offlineReason = reason
-	}
+	// registerAllDatabasesAfterRestore. Why it goes offline is said in the
+	// restore's one RestoreStarted, the Job's start (below), once every check
+	// has passed: announced first, it said "Restoring offline" for a restore
+	// the next check refused (stopCluster: false against a running standalone,
+	// v1.22.0 journey), and announced at the stop as well, one offline restore
+	// emitted two RestoreStarted (2026-10-25 re-walk, #573).
+	offlineReason := standaloneOfflineReason(restore, r.restoreStandalone(ctx, restore))
 
 	// Check if database exists and handle accordingly. Skipped when THIS
 	// restore already stopped the instance on a previous reconcile (re-entry
@@ -553,10 +556,6 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 			return ctrl.Result{}, err
 		}
 	}
-	if offlineReason != "" && restore.Spec.StopCluster {
-		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-			fmt.Sprintf("Restoring offline with neo4j-admin, which stops standalone %q: %s", cluster.Name, offlineReason))
-	}
 
 	// Create restore job
 	job, err := r.createRestoreJob(ctx, restore, cluster)
@@ -596,14 +595,29 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	// 46) and announced "Restore job … started" a second time (v1.22.0
 	// re-walk). Its write changes nothing, so it announces nothing.
 	if r.transitionRestoreStatus(ctx, restore, StatusRunning, fmt.Sprintf("Restore job %s created", job.Name)) {
-		if offlineReason != "" && !restore.Spec.StopCluster {
-			r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-				fmt.Sprintf("Restoring offline with neo4j-admin into standalone %q, which is stopped: %s", cluster.Name, offlineReason))
-		}
-		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted, fmt.Sprintf("Restore job %s started", job.Name))
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
+			restoreJobStartedMessage(job.Name, cluster.Name, offlineReason, restore.Spec.StopCluster))
 	}
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// restoreJobStartedMessage is the one RestoreStarted of a restore that runs a
+// neo4j-admin Job: the Job, and, when the restore is offline for a reason
+// standaloneOfflineReason gives, that reason and what it means for the
+// standalone — stopped by this restore (stopCluster: true) or stopped already
+// (stopCluster: false; the operator stops nothing then).
+func restoreJobStartedMessage(jobName, standalone, offlineReason string, stopCluster bool) string {
+	switch {
+	case offlineReason == "":
+		return fmt.Sprintf("Restore job %s started", jobName)
+	case stopCluster:
+		return fmt.Sprintf("Restore job %s started: restoring offline with neo4j-admin, which stops standalone %q: %s",
+			jobName, standalone, offlineReason)
+	default:
+		return fmt.Sprintf("Restore job %s started: restoring offline with neo4j-admin into standalone %q, which is stopped: %s",
+			jobName, standalone, offlineReason)
+	}
 }
 
 func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
@@ -1155,39 +1169,17 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 
 	jobName := restore.Name + "-restore"
 
-	// Fresh attempt after a terminal failure (#254): the Failed guard only
-	// lets a NEW generation through, but the previous attempt's failed Job
-	// still exists under this name — Create would hit AlreadyExists, the
-	// race fallback below would adopt the FAILED Job, and the retry would
-	// instantly re-fail. Delete the stale Job first and wait (bounded) for
-	// the name to free. Scoped to phase==Failed so the same-attempt race
-	// tolerance (two reconciles during the stopCluster window) is untouched.
-	if restore.Status.Phase == StatusFailed {
-		stale := &batchv1.Job{}
-		if err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: restore.Namespace}, stale); err == nil {
-			if jobConditionTrue(stale, batchv1.JobFailed) {
-				log.FromContext(ctx).Info("Deleting stale failed restore Job for fresh attempt", "job", jobName)
-				policy := metav1.DeletePropagationBackground
-				if delErr := r.Delete(ctx, stale, &client.DeleteOptions{PropagationPolicy: &policy}); delErr != nil && !errors.IsNotFound(delErr) {
-					return nil, fmt.Errorf("failed to delete stale restore Job %q for retry: %w", jobName, delErr)
-				}
-				freed := false
-				for i := 0; i < 20; i++ {
-					if getErr := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: restore.Namespace}, &batchv1.Job{}); errors.IsNotFound(getErr) {
-						freed = true
-						break
-					}
-					time.Sleep(500 * time.Millisecond)
-				}
-				if !freed {
-					// Don't fall through to Create — AlreadyExists would
-					// re-adopt the still-terminating failed Job and re-fail
-					// the fresh attempt (the exact #254 symptom). Transient:
-					// route to Pending and let the requeue retry.
-					return nil, fmt.Errorf("%w: stale restore Job %q is still terminating", errStaleRestoreJob, jobName)
-				}
-			}
-		}
+	// A fresh attempt never runs on an earlier attempt's Job (#254). The
+	// Failed guard lets a new generation through while the previous attempt's
+	// Job still exists under this name, so Create hit AlreadyExists and the
+	// race fallback below adopted it: a failed Job re-failed the new attempt at
+	// once, a completed one "completed" it without restoring anything. The
+	// earlier Job is deleted, and the name waited for (bounded). That used to
+	// run only while the restore read Failed; a retry that came back through
+	// Pending (errStaleRestoreJob, below) skipped it and adopted the Job still
+	// terminating (#565).
+	if err := r.clearEarlierRestoreJob(ctx, restore, jobName); err != nil {
+		return nil, err
 	}
 
 	// Resolve source.type=backup into a concrete StorageLocation + per-run
@@ -1228,6 +1220,11 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 				"app.kubernetes.io/instance":   restore.Name,
 				"app.kubernetes.io/component":  "restore",
 				"app.kubernetes.io/managed-by": "neo4j-operator",
+			},
+			// The attempt — the restore's generation — this Job runs, so a
+			// later attempt can tell it is not its own.
+			Annotations: map[string]string{
+				AnnotationRestoreAttempt: strconv.FormatInt(restore.Generation, 10),
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -1299,7 +1296,9 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 	// terminal-fails the restore via the "Restore previously failed"
 	// guard, even though the Job actually ran and succeeded.
 	// AlreadyExists is treated as "another reconcile got there first";
-	// re-fetch the existing Job so the caller sees a populated object.
+	// re-fetch the existing Job so the caller sees a populated object. Only
+	// this attempt's Job is adopted: one that is terminating, or that an
+	// earlier attempt created, is waited out through Pending.
 	if err := r.Create(ctx, job); err != nil {
 		if !errors.IsAlreadyExists(err) {
 			return nil, err
@@ -1311,10 +1310,67 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 			return nil, fmt.Errorf("restore Job %s/%s already exists but cannot be re-fetched: %w",
 				job.Namespace, job.Name, getErr)
 		}
+		if existing.DeletionTimestamp != nil || !restoreJobOfThisAttempt(restore, existing) {
+			return nil, fmt.Errorf("%w: restore Job %q belongs to an earlier attempt", errStaleRestoreJob, job.Name)
+		}
 		return existing, nil
 	}
 
 	return job, nil
+}
+
+// restoreJobOfThisAttempt reports whether job is the one this attempt of the
+// restore created: controlled by this Neo4jRestore (not a deleted one of the
+// same name), and annotated with its current generation. A Job from an
+// operator that did not record the attempt counts as this attempt's unless the
+// restore's phase says an earlier attempt ended: startRestore reaches a Failed
+// or Completed restore only at a new generation.
+func restoreJobOfThisAttempt(restore *neo4jv1beta1.Neo4jRestore, job *batchv1.Job) bool {
+	if !metav1.IsControlledBy(job, restore) {
+		return false
+	}
+	if attempt, ok := job.Annotations[AnnotationRestoreAttempt]; ok {
+		return attempt == strconv.FormatInt(restore.Generation, 10)
+	}
+	return restore.Status.Phase != StatusFailed && restore.Status.Phase != StatusCompleted
+}
+
+// clearEarlierRestoreJob deletes the Job under the restore's Job name when it
+// is not this attempt's (restoreJobOfThisAttempt), whatever its state, and
+// waits up to ten seconds for the name to free. It returns errStaleRestoreJob
+// while that Job — or one already being deleted — is still there, which
+// startRestore turns into Pending and a requeue. This attempt's own Job, which
+// a pass that raced this one created, is left for Create's AlreadyExists to
+// adopt (backup-restore.md Rule 46).
+func (r *Neo4jRestoreReconciler) clearEarlierRestoreJob(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, jobName string) error {
+	key := types.NamespacedName{Name: jobName, Namespace: restore.Namespace}
+	existing := &batchv1.Job{}
+	if err := r.Get(ctx, key, existing); err != nil {
+		if errors.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("failed to read restore Job %q: %w", jobName, err)
+	}
+	if existing.DeletionTimestamp == nil && restoreJobOfThisAttempt(restore, existing) {
+		return nil
+	}
+	if existing.DeletionTimestamp == nil {
+		log.FromContext(ctx).Info("Deleting an earlier attempt's restore Job for this attempt", "job", jobName,
+			"attempt", existing.Annotations[AnnotationRestoreAttempt], "generation", restore.Generation)
+		policy := metav1.DeletePropagationBackground
+		if err := r.Delete(ctx, existing, &client.DeleteOptions{PropagationPolicy: &policy}); err != nil && !errors.IsNotFound(err) {
+			return fmt.Errorf("failed to delete an earlier attempt's restore Job %q: %w", jobName, err)
+		}
+	}
+	for i := 0; i < 20; i++ {
+		if err := r.Get(ctx, key, &batchv1.Job{}); errors.IsNotFound(err) {
+			return nil
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	// Not Create: AlreadyExists would find the earlier Job again. Transient —
+	// Pending, and the requeue retries.
+	return fmt.Errorf("%w: restore Job %q of an earlier attempt is still terminating", errStaleRestoreJob, jobName)
 }
 
 // cloudBlockForRestore returns the CloudBlock from the restore's storage config.

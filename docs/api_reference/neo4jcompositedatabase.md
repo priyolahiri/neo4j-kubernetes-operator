@@ -155,8 +155,8 @@ name a composite reports `PrivilegesResolve=False`.
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `CompositeDatabaseReady`, `CompositeDatabaseFailed`, `CompositeDatabaseNameBlocked`, `ClusterNotFound` (phase `Pending`), `ClusterNotReady` (phase `Pending`), `Creating` (phase `Creating`), `ConnectionFailed`, `ValidationFailed` | True when the composite exists and its constituents match spec. |
-| `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced deployment. |
+| `Ready` | `CompositeDatabaseReady`, `CompositeDatabaseFailed`, `CompositeDatabaseNameBlocked`, `ClusterNotFound` (phase `Pending`), `ClusterNotReady` / `ClusterUnreachable` (phase `Pending`, for a composite not yet `Ready`), `Creating` (phase `Creating`), `ConnectionFailed`, `ValidationFailed` | True when the composite exists and its constituents match spec. A `Ready` composite stays `Ready` while its target restarts. |
+| `ClusterNotReady` | `ClusterNotReady`, `ClusterUnreachable`, `ClusterReady` | Mirrors the readiness of the referenced deployment: `ClusterUnreachable` while it reads `Ready` but does not accept the connection (reported as `ConnectionFailed` after 5 minutes). `ClusterReady` is written once a connection succeeds. |
 
 ## Limitations
 

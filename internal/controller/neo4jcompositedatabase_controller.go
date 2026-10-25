@@ -24,6 +24,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -58,6 +59,38 @@ type Neo4jCompositeDatabaseReconciler struct {
 	// newDeletionClient connects the deletion to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests script the server here.
 	newDeletionClient func(ResolvedTarget) (compositeDeletionClient, error)
+
+	// newNeo4jClient connects Reconcile to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newNeo4jClient func(ResolvedTarget) (compositeNeo4jClient, error)
+}
+
+// compositeNeo4jClient is what the Neo4jCompositeDatabase reconcile asks of
+// Neo4j. *neo4jclient.Client is one.
+type compositeNeo4jClient interface {
+	ShowCompositeDatabase(ctx context.Context, name string) (*neo4jclient.CompositeInfo, error)
+	ShowAliases(ctx context.Context) ([]neo4jclient.AliasInfo, error)
+	GetDatabaseInfo(ctx context.Context, databaseName string) (*neo4jclient.DatabaseInfo, error)
+	CreateCompositeDatabase(ctx context.Context, name string, wait bool, ifNotExists bool, cypherVersion string) error
+	AlterCompositeDatabaseLanguage(ctx context.Context, name, cypherVersion string) error
+	CreateCompositeConstituent(ctx context.Context, composite, constituent, targetDatabase string) error
+	AlterCompositeConstituent(ctx context.Context, composite, constituent, targetDatabase string) error
+	DropCompositeConstituent(ctx context.Context, composite, constituent string) error
+	CreateRemoteConstituent(ctx context.Context, composite, constituent, targetDatabase, url string, auth neo4jclient.RemoteConstituentAuth) error
+	AlterRemoteConstituent(ctx context.Context, composite, constituent, targetDatabase, url string, auth neo4jclient.RemoteConstituentAuth) error
+	Close() error
+}
+
+// connect returns the Neo4j client Reconcile uses for the resolved target.
+func (r *Neo4jCompositeDatabaseReconciler) connect(target ResolvedTarget) (compositeNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 // compositeDeletionClient is what the Neo4jCompositeDatabase deletion asks of
@@ -149,17 +182,18 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(cd.Spec.ClusterRef))
-		r.setNamedCondition(ctx, cd, ConditionTypeClusterNotReady, metav1.ConditionTrue,
-			ConditionReasonClusterNotReady, msg)
-		r.setStatus(ctx, cd, neo4jv1beta1.PhasePending, metav1.ConditionFalse,
-			ConditionReasonClusterNotReady, msg, nil)
+		// A composite Ready at its generation stays Ready while its target
+		// restarts (knowledge rule 183).
+		r.waitForTarget(ctx, cd, ConditionReasonClusterNotReady,
+			fmt.Sprintf("%s is not Ready", targetRefDisplay(cd.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
-	r.setNamedCondition(ctx, cd, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connect(target)
 	if err != nil {
+		if targetUnreachable(err) {
+			return r.unreachable(ctx, cd, err, requeue)
+		}
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (knowledge
 		// rule 145).
@@ -174,6 +208,9 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
+	// Only a target that answered serves this composite: written after the
+	// connection, so an unreachable one keeps the time its outage began.
+	r.setNamedCondition(ctx, cd, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// The DEFAULT LANGUAGE clause exists only on CalVer. On the 5.26 LTS a
 	// requested "5" is left out (every database there runs Cypher 5 already).
@@ -188,7 +225,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 	if err != nil {
 		// Includes the "exists but is not a composite" refusal, which is a
 		// spec-vs-reality conflict no reconcile should paper over.
-		return r.fail(ctx, cd, "composite lookup failed", err, requeue)
+		return r.failPass(ctx, cd, "composite lookup failed", err, requeue)
 	}
 	if info == nil {
 		if blocker := r.namespaceBlocker(ctx, nc, name); blocker != "" {
@@ -198,7 +235,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		r.setStatus(ctx, cd, neo4jv1beta1.PhaseCreating, metav1.ConditionFalse,
 			"Creating", fmt.Sprintf("creating composite database %q", name), nil)
 		if err := nc.CreateCompositeDatabase(ctx, name, compositeWait(cd), true, language); err != nil {
-			return r.fail(ctx, cd, "create composite database failed", err, requeue)
+			return r.failPass(ctx, cd, "create composite database failed", err, requeue)
 		}
 		r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeCreated,
 			"Composite database %q created", name)
@@ -207,20 +244,16 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		// server does not report it on SHOW DATABASE, so there is nothing to
 		// diff against; the statement is idempotent.
 		if err := nc.AlterCompositeDatabaseLanguage(ctx, name, language); err != nil {
-			return r.fail(ctx, cd, "set default Cypher language failed", err, requeue)
+			return r.failPass(ctx, cd, "set default Cypher language failed", err, requeue)
 		}
 	}
 
 	// STEP 2 — constituents, now that the namespace exists.
 	observed, lookalikes, err := r.reconcileConstituents(ctx, nc, cd, name, requeue)
 	if err != nil {
-		return r.fail(ctx, cd, "reconcile constituents failed", err, requeue)
+		return r.failPass(ctx, cd, "reconcile constituents failed", err, requeue)
 	}
 
-	if cd.Status.Phase != neo4jv1beta1.PhaseReady {
-		r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeReady,
-			"Composite database %q is ready with %d constituent(s)", name, len(observed))
-	}
 	msg := fmt.Sprintf("composite database %q exposes %d constituent(s)", name, len(observed))
 	// An ordinary alias named like a constituent is NOT one and is not ours to
 	// remove, but it is indistinguishable from a constituent in any listing
@@ -233,8 +266,14 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 			"this composite and so not managed by it: %s",
 			len(lookalikes), strings.Join(lookalikes, ", "))
 	}
-	r.setStatus(ctx, cd, neo4jv1beta1.PhaseReady, metav1.ConditionTrue,
-		EventReasonCompositeReady, msg, observed)
+	// Announced from the write that moves the composite into Ready, never from
+	// this pass's copy, which may predate the last write (knowledge rules 145
+	// and 183).
+	if _, entered := r.writeStatus(ctx, cd, neo4jv1beta1.PhaseReady, metav1.ConditionTrue,
+		EventReasonCompositeReady, msg, observed); entered {
+		r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeReady,
+			"Composite database %q is ready with %d constituent(s)", name, len(observed))
+	}
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
@@ -243,7 +282,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 // afterwards, plus any ordinary alias whose name merely looks like one of
 // ours.
 func (r *Neo4jCompositeDatabaseReconciler) reconcileConstituents(
-	ctx context.Context, nc *neo4jclient.Client,
+	ctx context.Context, nc compositeNeo4jClient,
 	cd *neo4jv1beta1.Neo4jCompositeDatabase, composite string, _ time.Duration,
 ) (constituents []string, lookalikes []string, err error) {
 	live, err := nc.ShowAliases(ctx)
@@ -478,7 +517,7 @@ func remoteConstituentDrifted(
 // namespace when the composite itself does not exist — the state that makes
 // creation impossible.
 func (r *Neo4jCompositeDatabaseReconciler) namespaceBlocker(
-	ctx context.Context, nc *neo4jclient.Client, composite string,
+	ctx context.Context, nc compositeNeo4jClient, composite string,
 ) string {
 	aliases, err := nc.ShowAliases(ctx)
 	if err != nil {
@@ -622,14 +661,25 @@ func (r *Neo4jCompositeDatabaseReconciler) setStatus(
 	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase,
 	phase string, readyStatus metav1.ConditionStatus, reason, message string, constituents []string,
 ) bool {
-	transitioned := false
+	transitioned, _ := r.writeStatus(ctx, cd, phase, readyStatus, reason, message, constituents)
+	return transitioned
+}
+
+// writeStatus is setStatus that also reports whether the write moved the
+// persisted phase into the one given (entered), the transition
+// CompositeDatabaseReady announces.
+func (r *Neo4jCompositeDatabaseReconciler) writeStatus(
+	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase,
+	phase string, readyStatus metav1.ConditionStatus, reason, message string, constituents []string,
+) (transitioned, entered bool) {
 	update := func() error {
-		transitioned = false
+		transitioned, entered = false, false
 		latest := &neo4jv1beta1.Neo4jCompositeDatabase{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(cd), latest); err != nil {
 			return err
 		}
-		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		phaseMoved := latest.Status.Phase != phase
+		changed := phaseMoved || latest.Status.Message != message
 		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, reason, message) {
 			changed = true
 		}
@@ -642,14 +692,80 @@ func (r *Neo4jCompositeDatabaseReconciler) setStatus(
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
-		transitioned = changed
+		transitioned, entered = changed, phaseMoved
 		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jCompositeDatabase status")
+		return false, false
+	}
+	return transitioned, entered
+}
+
+// failPass is fail for the reconcile pass: an error that says the target
+// cannot be reached is the target's outage, waited through (unreachable), not
+// a failure of this composite. The deletion keeps calling fail itself.
+func (r *Neo4jCompositeDatabaseReconciler) failPass(
+	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase,
+	label string, err error, requeue time.Duration,
+) (ctrl.Result, error) {
+	if targetUnreachable(err) {
+		return r.unreachable(ctx, cd, err, requeue)
+	}
+	return r.fail(ctx, cd, label, err, requeue)
+}
+
+// waitForTarget records that the target cannot serve the composite — reason
+// ClusterNotReady (not Ready) or ClusterUnreachable (reads Ready, does not
+// answer): the ClusterNotReady condition, and phase Pending unless the
+// composite is already Ready at its generation, which it stays. The composite
+// lives on the target and does not change while the target restarts, and the
+// target announces its own state; demoting it made the pass that found the
+// target back a CompositeDatabaseReady (#565; knowledge rule 183). The status
+// is written only when it changes. It reports lasting when an unreachable
+// target has outlasted targetUnreachableGrace.
+func (r *Neo4jCompositeDatabaseReconciler) waitForTarget(
+	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase, reason, msg string,
+) (lasting bool) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jCompositeDatabase{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(cd), latest); err != nil {
+			return err
+		}
+		before := latest.Status.DeepCopy()
+		lasting = recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message,
+			latest.Generation, reason, msg, time.Now())
+		latest.Status.ObservedGeneration = latest.Generation
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jCompositeDatabase")
 		return false
 	}
-	return transitioned
+	return lasting
+}
+
+// unreachable handles a target that reads Ready but cannot be reached:
+// waitForTarget with reason ClusterUnreachable, logged at info and retried on
+// the fixed interval. Only an outage that outlasts targetUnreachableGrace is
+// this composite's failure: Failed, ConnectionFailed, announced once
+// (knowledge rules 172 and 183).
+func (r *Neo4jCompositeDatabaseReconciler) unreachable(
+	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase, err error, requeue time.Duration,
+) (ctrl.Result, error) {
+	if r.waitForTarget(ctx, cd, ConditionReasonClusterUnreachable, targetUnreachableMessage(cd.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		if r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil) {
+			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	log.FromContext(ctx).Info("Target reads Ready but cannot be reached; retrying",
+		"clusterRef", cd.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
 func (r *Neo4jCompositeDatabaseReconciler) setNamedCondition(

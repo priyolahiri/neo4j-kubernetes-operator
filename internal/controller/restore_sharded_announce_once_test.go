@@ -72,7 +72,7 @@ func TestStartRestore_APassOnAStaleCopyDoesNotAnnounceTheJobAgain(t *testing.T) 
 
 	_, err := r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
 	require.NoError(t, err)
-	require.Len(t, restoreStartedEvents(t, r), 2, "why it is offline, then the Job")
+	require.Len(t, restoreStartedEvents(t, r), 1, "the Job, and why it is offline, in one event")
 
 	_, err = r.startRestore(context.Background(), stale, standaloneAsCluster(sa))
 	require.NoError(t, err)
@@ -124,9 +124,9 @@ func TestStartRestore_WithoutStopClusterARetryThroughPendingAnnouncesOnce(t *tes
 	_, err = r.startRestore(ctx, got, standaloneAsCluster(sa))
 	require.NoError(t, err)
 	started := restoreStartedEvents(t, r)
-	require.Len(t, started, 2, "%q", started)
-	assert.Contains(t, started[0], `Restoring offline with neo4j-admin into standalone "sa", which is stopped`)
-	assert.Contains(t, started[1], "Restore job r-restore started")
+	require.Len(t, started, 1, "%q", started)
+	assert.Contains(t, started[0], "Restore job r-restore started")
+	assert.Contains(t, started[0], `restoring offline with neo4j-admin into standalone "sa", which is stopped`)
 }
 
 // The first pass of a new Neo4jShardedDatabase wrote "Validating" to the API

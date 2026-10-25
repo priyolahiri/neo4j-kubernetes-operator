@@ -24,6 +24,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -183,14 +184,12 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	}
 	if !target.IsReady() {
 		withdrawReplicaLag(replica)
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(replica.Spec.ClusterRef))
-		r.setNamedCondition(ctx, replica, ConditionTypeClusterNotReady, metav1.ConditionTrue,
-			ConditionReasonClusterNotReady, msg)
-		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
-			ConditionReasonClusterNotReady, msg, nil)
+		// A Replicating replica stays Replicating while its target restarts
+		// (knowledge rule 183).
+		r.waitForTarget(ctx, replica, ConditionReasonClusterNotReady,
+			fmt.Sprintf("%s is not Ready", targetRefDisplay(replica.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
-	r.setNamedCondition(ctx, replica, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// Version gate — hosting a replica requires Neo4j 2026.08+.
 	if !targetSupportsCCDRReplica(target) {
@@ -208,6 +207,9 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 
 	nc, err := r.neo4jClientFor(target)
 	if err != nil {
+		if targetUnreachable(err) {
+			return r.unreachable(ctx, replica, err, requeue)
+		}
 		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (rule 145).
@@ -222,6 +224,9 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
+	// Only a target that answered serves this replica: written after the
+	// connection, so an unreachable one keeps the time its outage began.
+	r.setNamedCondition(ctx, replica, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// OBSERVE. Everything below branches on the live state, never on spec.
 	info, err := nc.GetDatabaseInfo(ctx, dbName)
@@ -406,12 +411,14 @@ func (r *Neo4jReplicaDatabaseReconciler) reportReplicating(
 	metrics.SetReplicaLagTransactions(replica.Namespace, replica.Spec.ClusterRef, replica.Name, dbName, info.ReplicationLag)
 
 	msg := fmt.Sprintf("replica of %q, %d transactions behind", replica.Spec.UpstreamDatabase, info.ReplicationLag)
-	if replica.Status.Phase != neo4jv1beta1.ReplicaPhaseReplicating {
+	// Announced from the write that moves the replica into Replicating, never
+	// from this pass's copy, which may predate the last write (knowledge rules
+	// 145 and 183).
+	if _, entered := r.writeStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseReplicating, metav1.ConditionTrue,
+		"Replicating", msg, info); entered {
 		r.Recorder.Eventf(replica, corev1.EventTypeNormal, EventReasonReplicaReady,
 			"Replica database %q is online (lag %d)", dbName, info.ReplicationLag)
 	}
-	r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseReplicating, metav1.ConditionTrue,
-		"Replicating", msg, info)
 }
 
 // markPromoted records the terminal Promoted phase. Called both when the
@@ -1036,6 +1043,11 @@ func missingObjectStoreEnv(target ResolvedTarget, live serverEnvironment, uris .
 }
 
 func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, label string, err error, requeue time.Duration) (ctrl.Result, error) {
+	if targetUnreachable(err) {
+		// The target went away mid-pass: an outage, not this replica's
+		// failure (knowledge rule 183). The deletion does not come through here.
+		return r.unreachable(ctx, replica, err, requeue)
+	}
 	msg := label
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
@@ -1086,8 +1098,24 @@ func (r *Neo4jReplicaDatabaseReconciler) setStatus(
 	readyReason, message string,
 	info *neo4jclient.DatabaseInfo,
 ) bool {
-	changed := false
+	changed, _ := r.writeStatus(ctx, replica, phase, readyStatus, readyReason, message, info)
+	return changed
+}
+
+// writeStatus is setStatus that also reports whether the write moved the
+// persisted phase into the one given (entered), the transition ReplicaReady
+// announces. changed is true for every write: one with an observation always
+// writes the lag.
+func (r *Neo4jReplicaDatabaseReconciler) writeStatus(
+	ctx context.Context,
+	replica *neo4jv1beta1.Neo4jReplicaDatabase,
+	phase string,
+	readyStatus metav1.ConditionStatus,
+	readyReason, message string,
+	info *neo4jclient.DatabaseInfo,
+) (changed, entered bool) {
 	update := func() error {
+		changed, entered = false, false
 		latest := &neo4jv1beta1.Neo4jReplicaDatabase{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(replica), latest); err != nil {
 			return err
@@ -1107,7 +1135,7 @@ func (r *Neo4jReplicaDatabaseReconciler) setStatus(
 			info == nil {
 			return nil
 		}
-		changed = true
+		phaseMoved := latest.Status.Phase != phase
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message)
 		latest.Status.Phase = phase
 		latest.Status.Message = message
@@ -1117,13 +1145,78 @@ func (r *Neo4jReplicaDatabaseReconciler) setStatus(
 			latest.Status.LastCommittedTxn = info.LastCommittedTxn
 			latest.Status.ReplicationLag = info.ReplicationLag
 		}
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		changed, entered = true, phaseMoved
+		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jReplicaDatabase status")
+		return false, false
+	}
+	return changed, entered
+}
+
+// waitForTarget records that the downstream target cannot serve the replica —
+// reason ClusterNotReady (not Ready) or ClusterUnreachable (reads Ready, does
+// not answer): the ClusterNotReady condition, and phase Pending unless the
+// replica is Replicating with a Ready condition stamped at its generation,
+// which it stays. A Promoted replica is never touched. Demoting a Replicating
+// replica made the pass that found the target back a ReplicaReady on every
+// restart of the target (#565; knowledge rule 183). The lag series is
+// withdrawn by the caller either way: nothing measures it while the target is
+// away. The status is written only when it changes. It reports lasting when
+// an unreachable target has outlasted targetUnreachableGrace.
+func (r *Neo4jReplicaDatabaseReconciler) waitForTarget(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, reason, msg string) (lasting bool) {
+	update := func() error {
+		lasting = false
+		latest := &neo4jv1beta1.Neo4jReplicaDatabase{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(replica), latest); err != nil {
+			return err
+		}
+		if latest.Status.Phase == neo4jv1beta1.ReplicaPhasePromoted {
+			return nil
+		}
+		before := latest.Status.DeepCopy()
+		var keepsReady bool
+		lasting, keepsReady = noteTargetWait(&latest.Status.Conditions, latest.Status.Phase, latest.Generation,
+			neo4jv1beta1.ReplicaPhaseReplicating, reason, msg, time.Now())
+		if !lasting && !keepsReady {
+			SetReadyCondition(&latest.Status.Conditions, latest.Generation, metav1.ConditionFalse, reason, msg)
+			latest.Status.Phase = neo4jv1beta1.ReplicaPhasePending
+			latest.Status.Message = msg
+		}
+		latest.Status.ObservedGeneration = latest.Generation
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jReplicaDatabase")
 		return false
 	}
-	return changed
+	return lasting
+}
+
+// unreachable handles a downstream target that reads Ready but cannot be
+// reached: waitForTarget with reason ClusterUnreachable, logged at info and
+// retried on the fixed interval. Only an outage that outlasts
+// targetUnreachableGrace is this replica's failure: Failed, ConnectionFailed,
+// announced once (knowledge rules 172 and 183).
+func (r *Neo4jReplicaDatabaseReconciler) unreachable(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, err error, requeue time.Duration) (ctrl.Result, error) {
+	withdrawReplicaLag(replica)
+	if r.waitForTarget(ctx, replica, ConditionReasonClusterUnreachable, targetUnreachableMessage(replica.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil) {
+			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	log.FromContext(ctx).Info("Target reads Ready but cannot be reached; retrying",
+		"clusterRef", replica.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
 func (r *Neo4jReplicaDatabaseReconciler) setNamedCondition(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, condType string, status metav1.ConditionStatus, reason, message string) {
