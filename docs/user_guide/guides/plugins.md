@@ -1,22 +1,70 @@
 # Plugin Management
 
-Install and manage Neo4j plugins (APOC, Graph Data Science, Bloom, GenAI, N10s, GraphQL, and custom JARs) declaratively via the `Neo4jPlugin` CRD. Works against both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone` — the controller auto-detects the target from `spec.clusterRef`.
+Install and manage Neo4j plugins (APOC, Graph Data Science, Bloom, GenAI, N10s on 5.26, and custom JARs) declaratively via the `Neo4jPlugin` CRD. Works against both `Neo4jEnterpriseCluster` and `Neo4jEnterpriseStandalone` — the controller auto-detects the target from `spec.clusterRef`.
 
 This guide is task-oriented. For the full field reference, see the [Neo4jPlugin API Reference](../../api_reference/neo4jplugin.md).
 
 ## Overview: choosing an install mode
 
-The Neo4j Enterprise Docker entrypoint resolves the `NEO4J_PLUGINS` environment variable at pod startup. **Plugins the image ships are copied, not downloaded**: APOC core from `/var/lib/neo4j/labs/`, and GenAI, Graph Data Science and Fleet Management from `/var/lib/neo4j/products/` (the Operations Manual lists them as pre-installed; Bloom too, on CalVer) — no internet needed. The entrypoint downloads one of these only when the image does not have it. **Every other plugin** (`apoc-extended`, `n10s`) is **downloaded from the internet on every pod start** when installed this way.
+The Neo4j Enterprise Docker entrypoint resolves the `NEO4J_PLUGINS` environment variable at pod startup. **Plugins the image ships are copied, not downloaded**: APOC core from `/var/lib/neo4j/labs/`, and GenAI, Graph Data Science and Fleet Management from `/var/lib/neo4j/products/` (the Operations Manual lists them as pre-installed; Bloom too, on CalVer) — no internet needed. The entrypoint downloads one of these only when the image does not have it. **The other plugins it knows** (`apoc-extended`, and `n10s` on 5.26) are **downloaded from the internet on every pod start** when installed this way. **Any other name it refuses**: see [Which plugins `Managed` installs](#which-plugins-managed-installs).
 
 `spec.installMode` controls how the JAR reaches the pod:
 
 | Mode | How the JAR arrives | Egress required | Artifact pinned? | When to use |
 |------|--------------------|-----------------|------------------|-------------|
-| `Managed` (default) | Operator adds the plugin to `NEO4J_PLUGINS`; the Neo4j entrypoint installs it at pod start | Only for plugins the image does not ship (APOC core, GenAI, GDS and Fleet Management are copied from the image) | Pinned by the image for a plugin it ships; otherwise no — a restart can pull a different artifact | Plugins the image ships, anywhere; others in dev/test where re-download on restart is acceptable |
+| `Managed` (default) | Operator adds the plugin to `NEO4J_PLUGINS`; the Neo4j entrypoint installs it at pod start — only [a name its image lists](#which-plugins-managed-installs) | Only for plugins the image does not ship (APOC core, GenAI, GDS and Fleet Management are copied from the image) | Pinned by the image for a plugin it ships; otherwise no — a restart can pull a different artifact | Plugins the image ships, anywhere; others in dev/test where re-download on restart is acceptable |
 | `PreBaked` | You build a custom image with the JAR in `/plugins/`; operator writes **only** the plugin's configuration, never touches `NEO4J_PLUGINS` | None | Yes — pinned, signed, scannable image | **Recommended for production** and air-gapped clusters |
 | `VerifiedDownload` | Operator injects an init container that downloads `source.url`, verifies it against `source.checksum`, and writes the JAR to `/plugins` **before** Neo4j starts | Yes (https to your mirror or the vendor) | Yes — checksum enforced at download time | Production when you can't build custom images but must pin the exact artifact |
 
 Regardless of mode, the operator always writes the plugin's required configuration (security allowlists, unrestricted procedures, plugin settings) and triggers a rolling restart of the target StatefulSet to apply changes.
+
+### Which plugins `Managed` installs
+
+The entrypoint looks every `NEO4J_PLUGINS` name up in the image's `/startup/neo4j-plugins.json` and **exits on a name it does not list** (`"graphql" is not a known Neo4j plugin`), so the server never starts. The lists per release, read from [neo4j/docker-neo4j](https://github.com/neo4j/docker-neo4j) at every release tag and checked on the images (2026-10-24):
+
+| Neo4j image | Names `NEO4J_PLUGINS` may hold |
+|---|---|
+| 5.26.0 – 5.26.10 | `apoc`, `apoc-extended`, `bloom`, `genai`, `graph-data-science`, `n10s` |
+| 5.26.11 and later (also `5.26-enterprise`) | the above and `fleet-management` |
+| 2025.01 – 2025.04 | `apoc`, `apoc-extended`, `bloom`, `genai`, `graph-data-science`, `n10s` |
+| 2025.05 – 2025.07 | `apoc`, `apoc-extended`, `bloom`, `genai`, `graph-data-science` (no `n10s`) |
+| 2025.08 and later | `apoc`, `apoc-extended`, `bloom`, `fleet-management`, `genai`, `graph-data-science` |
+
+`spec.name` and a dependency's `name` may also use the aliases `gds` (`graph-data-science`) and `neosemantics` (`n10s`). So **`n10s` is a `Managed` plugin on 5.26 only** (and on CalVer before 2025.05), and **`graphql` is one on no supported release**: it left the list before 5.26.0. A floating tag (`5.26-enterprise`, `2026.08-enterprise`) is judged as the newest patch of its line, and a CalVer newer than the operator release by the newest list the operator knows.
+
+**The operator refuses such a name before it reaches a server.** A `Managed` plugin whose name, or a dependency's, the image of its target does not list — judged by the cluster's or standalone's `spec.image.tag` — goes `Failed`, with one `PluginUnknownToImage` Warning:
+
+```
+spec.name: Invalid value: "graphql": not a plugin the neo4j:2026.08.1-enterprise image can install: its entrypoint installs only apoc, apoc-extended, bloom, fleet-management, genai and graph-data-science from NEO4J_PLUGINS and exits on any other name, so the server would not start; install its JAR with installMode: VerifiedDownload (source.url + source.checksum) instead
+```
+
+Nothing is written to the target. The plugin is looked at again every 30 seconds, because the target's image can change. `kubectl neo4j validate --connect` reports the same error; offline, without the target's image, it warns about a name no supported release installs.
+
+**Servers that already crash-loop on such a name recover.** Operators up to v1.22.x wrote these names. A refused plugin takes what it wrote off its target, in the one write that [disabling a plugin](#plugin-configuration) makes: its `NEO4J_PLUGINS` names, its settings and its records. The names are those it recorded and, as for every plugin an earlier operator installed, which has no record, its own and its dependencies' as the entrypoint knows them. Another plugin's names stay. When every server that is down keeps failing on the name, the write goes at once, with one `PluginSettingsFailing` Warning, and the restart replaces the failing servers first. Otherwise it waits until the target is `Ready` with every server available. The same happens when a target moves to an image that no longer lists the name, such as a 5.26 cluster with `n10s` upgraded to CalVer.
+
+**Install any other JAR with `VerifiedDownload`.** It never touches `NEO4J_PLUGINS`, so the entrypoint's list does not apply; see [`installMode: VerifiedDownload`](#installmode-verifieddownload). For **N10s (neosemantics) on CalVer**, its GitHub releases carry CalVer-numbered JARs. [`2025.06.1`](https://github.com/neo4j-labs/neosemantics/releases/tag/2025.06.1) is built against Neo4j 2025.06, so check that a release supports the version you run before you install it:
+
+```yaml
+apiVersion: neo4j.neo4j.com/v1beta1
+kind: Neo4jPlugin
+metadata:
+  name: n10s
+spec:
+  clusterRef: my-cluster          # a CalVer cluster
+  name: n10s
+  version: "2025.06.1"
+  installMode: VerifiedDownload
+  source:
+    type: url
+    url: https://github.com/neo4j-labs/neosemantics/releases/download/2025.06.1/neosemantics-2025.06.1.jar
+    # the digest GitHub lists for that asset; pin the JAR you reviewed
+    checksum: sha256:4c461087e08405c7cb472ecfefc043e9e8ed93628ed74988e4fda1f1bac54b3e
+  config:
+    # n10s procedures need unrestricted access; a list key adds to the shared list
+    dbms.security.procedures.unrestricted: "n10s.*"
+```
+
+**GraphQL** has no server plugin for any supported release: the old `neo4j-graphql` server extension stopped at Neo4j 3.5 (its last release, 3.5.21.5, is from 2020). The [Neo4j GraphQL Library](https://neo4j.com/docs/graphql/current/) that replaced it is a JavaScript library: you run it in your own GraphQL server, which sends Cypher to Neo4j over a driver like any other client. Nothing is installed in the database, and no `Neo4jPlugin` is involved.
 
 > **Multi-controller coexistence**: the plugin controller merges plugin names into `NEO4J_PLUGINS` additively — it never overwrites entries added by other controllers (e.g. the Aura Fleet Management reconciler). Installing APOC via `Neo4jPlugin` alongside `spec.auraFleetManagement` on the cluster yields `["apoc","fleet-management"]`, and neither entry is removed on subsequent reconciles. Fleet Management itself is managed via the cluster/standalone CRD, not via `Neo4jPlugin`.
 
@@ -124,7 +172,7 @@ More examples (GenAI, standalone targets, multi-plugin setups): [examples/plugin
 
 ## Custom and URL plugins
 
-For plugins not in Neo4j's official/community catalogs, use `source.type: url` (direct download) or `source.type: custom` (private registry). Two rules are enforced — the https rule (and the `VerifiedDownload` gates below) also as CRD CEL validation, so `kubectl apply` of a violating CR is usually rejected by the apiserver before the operator sees it; the controller-side validator enforces them again (and the checksum rule), and a CR that reaches it goes to `status.phase: Invalid` and stops reconciling until you fix the spec:
+For plugins not in Neo4j's official/community catalogs, use `source.type: url` (direct download) or `source.type: custom` (private registry) with `installMode: VerifiedDownload`. In the default `Managed` mode the operator writes only the plugin's name to `NEO4J_PLUGINS` and never reads `source.url`, and a name the image does not list is [refused](#which-plugins-managed-installs). Two rules are enforced — the https rule (and the `VerifiedDownload` gates below) also as CRD CEL validation, so `kubectl apply` of a violating CR is usually rejected by the apiserver before the operator sees it; the controller-side validator enforces them again (and the checksum rule), and a CR that reaches it goes to `status.phase: Invalid` and stops reconciling until you fix the spec:
 
 ### 1. The URL must be `https://`
 
@@ -154,13 +202,14 @@ spec:
   clusterRef: my-cluster
   name: my-custom-plugin
   version: "2.0.0"
+  installMode: VerifiedDownload
   source:
     type: url
     url: "https://artifacts.example.com/plugins/my-plugin-2.0.0.jar"
     checksum: "sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"
 ```
 
-> **Important — when is the checksum enforced?** In the default `Managed` mode the upstream Neo4j Docker entrypoint does **not** verify this checksum at download time. The operator records it (and surfaces it on the StatefulSet) for audit and out-of-band verification. If you need enforcement at the moment of download, use `installMode: VerifiedDownload` (below) or pin the artifact with `PreBaked`.
+> **Important — `source` needs `VerifiedDownload`.** Its init container downloads `source.url` and checks the JAR against `source.checksum` before Neo4j starts ([below](#installmode-verifieddownload)). In the default `Managed` mode neither field is used: the entrypoint installs by name, from its own list, and the operator refuses a custom name. `PreBaked` pins the artifact in your image instead.
 
 ### Private endpoints (`authSecret`)
 
@@ -317,7 +366,8 @@ kubectl exec <pod-name> -c neo4j -- \
 | `PluginMissing` | Warning | A `Ready` plugin's target StatefulSet no longer carries what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or its volumes); the plugin goes back to `Installing` and restores it, which restarts the servers. If the target is not `Ready` with every server available, the event says so and the plugin is `Waiting` until it is |
 | `PluginInstallDeferred` | Normal | The install — or a `VerifiedDownload` plugin's update of its trusted CAs after `spec.trustedCASecrets` changed, or the removal of a disabled plugin — would restart the servers of a target that is not `Ready` with every server available (`Degraded`, or still forming, rolling or upgrading); the plugin is `Waiting` and writes once the target is. Emitted once per wait |
 | `PluginInitContainerFailing` | Warning / Normal | A `VerifiedDownload` plugin writes a fix of its own failing download to a target that is not `Ready` (Warning, once), or deletes a standalone's pod stuck in that download (Normal) |
-| `PluginSettingsFailing` | Warning / Normal | The plugin writes a change of its settings to a target that is not `Ready`, because every server that is down keeps failing while running them (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal) |
+| `PluginSettingsFailing` | Warning / Normal | The plugin writes a change of its settings — or its removal, disabled or refused — to a target that is not `Ready`, because every server that is down keeps failing while running them (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal) |
+| `PluginUnknownToImage` | Warning | A `Managed` plugin's `NEO4J_PLUGINS` name, its own or a dependency's, is not one the image of its target installs (`graphql` anywhere, `n10s` on CalVer, a custom JAR's name): phase `Failed`, nothing written, and what an earlier operator wrote taken off. Emitted once, and again only for a different refusal (the target's image changed) |
 | `PluginDuplicate` | Warning | Another CR already owns this `(clusterRef, name)` pair — delete one |
 | `ValidationFailed` | Warning | Spec rejected by the validator (hard error, no requeue) |
 | `ValidationWarning` | Warning | Advisory compatibility note, or a set field that nothing reads — does not block install |
@@ -330,6 +380,7 @@ kubectl exec <pod-name> -c neo4j -- \
 - **VerifiedDownload pod stuck `Pending`**: checksum mismatch or unreachable URL — `kubectl describe pod` and read the init container's termination message.
 - **Servers crash-loop after a plugin install, `Installing` "… cannot start: c-server-2 (container neo4j exited with code 1)"**: Neo4j refused to start, typically on a `spec.config` key it does not know — `kubectl logs <pod> -c neo4j --previous` names the setting. Remove the key from the plugin: the plugin writes the removal even though the cluster is not `Ready` (see [Plugin configuration](#plugin-configuration)).
 - **Plugin loads but procedures fail as unknown**: look for the `ProceduresHidden` condition (`kubectl describe neo4jplugin <name>`) — another plugin's, or your own, `allowedProcedures` set the shared allowlist without this plugin's namespace (see [Plugin configuration](#plugin-configuration)). Otherwise check `spec.security.allowedProcedures` and whether the plugin needs unrestricted procedures; for license-bound plugins (Bloom, GDS Enterprise) verify the license file is mounted (`kubectl exec <pod> -c neo4j -- ls /licenses/`).
+- **`Failed` with "not a plugin the neo4j:<tag> image can install"**: the plugin is `Managed`, and the image of its target cannot install the name (see [Which plugins `Managed` installs](#which-plugins-managed-installs)). Switch the plugin to `installMode: VerifiedDownload` with the JAR's `source.url` and `source.checksum`, or use a name the image lists; the plugin installs on its next look, within 30 seconds. If the servers were crash-looping on the name (`"graphql" is not a known Neo4j plugin` in `kubectl logs <pod> -c neo4j --previous`), the operator has taken it off already.
 - **`status.phase: Disabled`**: the plugin has `spec.enabled: false` and is off its target's servers, as asked. Set `spec.enabled: true` to install it again.
 
 More general debugging recipes: [Troubleshooting Guide](troubleshooting.md).

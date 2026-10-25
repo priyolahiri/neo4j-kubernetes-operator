@@ -131,16 +131,19 @@ func pluginConfSettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 	return settings
 }
 
-// unionPluginConfSettings merges the conf settings of every enabled Neo4jPlugin
-// targeting targetRef. Additive keys (procedure allowlists, http_auth_allowlist)
-// are unioned across plugins (so GDS + APOC keep both token sets); other keys
-// take the last value in plugin-name order (deterministic). Plugins are sorted
-// by name so the result is stable between reconciles (no ConfigMap churn).
-func unionPluginConfSettings(plugins []neo4jv1beta1.Neo4jPlugin, targetRef string) map[string]string {
+// unionPluginConfSettings merges the conf settings of every Neo4jPlugin
+// targeting targetRef that is to be on it: enabled, and not refused by the
+// image tagged imageTag (pluginOnImage, operations.md id 170) — a refused plugin
+// writes nothing to its target. Additive keys (procedure allowlists,
+// http_auth_allowlist) are unioned across plugins (so GDS + APOC keep both token
+// sets); other keys take the last value in plugin-name order (deterministic).
+// Plugins are sorted by name so the result is stable between reconciles (no
+// ConfigMap churn).
+func unionPluginConfSettings(plugins []neo4jv1beta1.Neo4jPlugin, targetRef, imageTag string) map[string]string {
 	sorted := make([]*neo4jv1beta1.Neo4jPlugin, 0, len(plugins))
 	for i := range plugins {
 		p := &plugins[i]
-		if p.Spec.ClusterRef == targetRef && p.Spec.Enabled {
+		if p.Spec.ClusterRef == targetRef && pluginOnImage(p, imageTag) {
 			sorted = append(sorted, p)
 		}
 	}

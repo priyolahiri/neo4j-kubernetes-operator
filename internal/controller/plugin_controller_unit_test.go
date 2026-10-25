@@ -54,6 +54,11 @@ func TestMapPluginName(t *testing.T) {
 			input:    "my-custom-plugin",
 			expected: "my-custom-plugin",
 		},
+		{name: "gds alias", input: "gds", expected: "graph-data-science"},
+		{name: "neosemantics alias", input: "neosemantics", expected: "n10s"},
+		// No longer mapped by a case of its own (operations.md id 170): no
+		// supported image installs it, so a Managed graphql plugin is refused.
+		{name: "graphql as it is", input: "graphql", expected: "graphql"},
 	}
 
 	for _, tt := range tests {

@@ -243,6 +243,31 @@
     ]
   },
   {
+    "id": "rx-plugin-refused-leaves-target",
+    "name": "Refused Plugin Stays Off Its Target",
+    "description": "When a Managed Neo4jPlugin's name, or a dependency's, is not one the image of its target installs — the plugin is created or edited that way, or the target's spec.image.tag moves to an image that dropped the name (5.26 to CalVer with n10s) — the plugin controller refuses it: Failed with one PluginUnknownToImage Warning, nothing written. What an earlier operator wrote of it comes off in the disabled plugin's single write, at once when every down server keeps failing on the name, otherwise once the target is Ready with every server available; the servers that crash-looped on it start again (operations.md id 170).",
+    "moduleId": "mod-plugins",
+    "trigger": {
+      "entityId": "ent-neo4jplugin",
+      "fieldName": "spec.name",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jplugin",
+        "fieldName": "status.phase",
+        "description": "Failed with the refusal (spec.name or spec.dependencies[i].name: not a plugin the neo4j:<tag> image can install; install its JAR with installMode: VerifiedDownload instead), announced once."
+      },
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet.spec.template (neo4j container env NEO4J_PLUGINS and the plugin's variables); StatefulSet annotations neo4j.com/plugin-env-vars.<plugin>, neo4j.com/plugin-entries.<plugin>",
+        "description": "Only when an earlier write left the plugin there: one update removing its NEO4J_PLUGINS names (recorded, or mapped when there is no record), variables, list tokens and records."
+      }
+    ]
+  },
+  {
     "id": "rx-plugin-hidden-by-allowlist",
     "name": "Plugin Hidden By The Shared Allowlist",
     "description": "When another plugin's write (or the target's own configuration) sets the server-wide dbms.security.procedures.allowlist so that it loads none of a plugin's procedures, the hidden plugin — woken by that write to the StatefulSet if it is Ready — carries the ProceduresHidden condition and emits one PluginProceduresHidden Warning; it stays Ready and the list is not widened. The condition goes when the list loads the plugin again.",

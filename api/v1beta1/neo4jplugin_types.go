@@ -56,10 +56,14 @@ type Neo4jPluginSpec struct {
 	//
 	// "Managed" (default) — operator adds the plugin to NEO4J_PLUGINS so the
 	// upstream Neo4j Docker entrypoint resolves and installs the JAR at pod
-	// startup. For non-bundled plugins (everything except APOC core) this
-	// fetches from the internet on every pod start, which is a poor fit for
-	// air-gapped or regulated environments. source.checksum is recorded for
-	// attestation but the upstream entrypoint does not verify it.
+	// startup. The entrypoint installs only the names its image lists
+	// (apoc, apoc-extended, bloom, genai, graph-data-science and, from 5.26.11
+	// and 2025.08, fleet-management; n10s on 5.26 only) and exits on any other,
+	// so the operator refuses any other name against the target's image (phase
+	// Failed) — install such a JAR with VerifiedDownload. Plugins the image
+	// does not ship (apoc-extended, n10s) are fetched from the internet on every
+	// pod start, a poor fit for air-gapped or regulated environments.
+	// source.url and source.checksum are not used in this mode.
 	//
 	// "PreBaked" — operator does NOT touch NEO4J_PLUGINS. The user is
 	// responsible for delivering the JAR via a custom Neo4j image referenced
@@ -299,13 +303,13 @@ type PluginUsage struct {
 // +kubebuilder:printcolumn:name="Age",type=date,JSONPath=`.metadata.creationTimestamp`
 
 // Neo4jPlugin declaratively installs and manages a Neo4j plugin
-// (APOC, Graph Data Science, Bloom, GenAI, n10s, GraphQL, or a custom
-// plugin) on a referenced cluster or standalone. The controller
-// merges the plugin name into the StatefulSet's NEO4J_PLUGINS env
-// var (without overwriting plugins added by other controllers),
-// applies plugin-specific configuration, and triggers a controlled
-// rolling restart. Multiple Neo4jPlugin resources targeting the same
-// deployment coexist and stack additively.
+// (APOC, Graph Data Science, Bloom, GenAI, n10s on 5.26, or a custom
+// JAR through installMode VerifiedDownload) on a referenced cluster or
+// standalone. The controller merges the plugin name into the
+// StatefulSet's NEO4J_PLUGINS env var (without overwriting plugins
+// added by other controllers), applies plugin-specific configuration,
+// and triggers a controlled rolling restart. Multiple Neo4jPlugin
+// resources targeting the same deployment coexist and stack additively.
 type Neo4jPlugin struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

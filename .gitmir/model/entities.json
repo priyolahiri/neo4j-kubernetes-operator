@@ -480,7 +480,7 @@
     "id": "ent-neo4jplugin",
     "name": "Neo4jPlugin",
     "tableName": "Neo4jPlugin",
-    "description": "Declaratively installs and manages a Neo4j plugin (APOC, Graph Data Science, Bloom, GenAI, n10s, GraphQL, or a custom plugin) on a referenced cluster or standalone by merging it into the target StatefulSet's NEO4J_PLUGINS env var (or, for installMode VerifiedDownload, a checksum-verified init container) and triggering a controlled rolling restart.",
+    "description": "Declaratively installs and manages a Neo4j plugin (APOC, Graph Data Science, Bloom, GenAI, n10s on 5.26, or a custom JAR through installMode VerifiedDownload) on a referenced cluster or standalone by merging it into the target StatefulSet's NEO4J_PLUGINS env var (or, for installMode VerifiedDownload, a checksum-verified init container) and triggering a controlled rolling restart. In Managed mode the name must be one the Neo4j entrypoint of the target's image installs; any other is refused (operations.md id 170).",
     "storage": "table",
     "serverUnitId": "su-neo4jplugin",
     "moduleId": "mod-plugins",
@@ -509,7 +509,7 @@
         "name": "name",
         "type": "string",
         "isNullable": false,
-        "note": "spec.name — the plugin identifier (e.g. \"apoc\", \"graph-data-science\"), distinct from the CR's own metadata.name"
+        "note": "spec.name — the plugin identifier (e.g. \"apoc\", \"graph-data-science\"), distinct from the CR's own metadata.name. In installMode Managed it goes into NEO4J_PLUGINS (aliases gds and neosemantics mapped), and must be a name the target's image installs: apoc, apoc-extended, bloom, genai, graph-data-science, fleet-management from 5.26.11 and 2025.08, n10s on 5.26 only; any other is refused (operations.md id 170)"
       },
       {
         "id": "f-neo4jplugin-version",
@@ -597,7 +597,7 @@
         "name": "status.phase",
         "type": "string",
         "isNullable": true,
-        "note": "Pending|Waiting|Installing|Ready|Failed|Invalid|Disabled. Disabled: spec.enabled false and nothing of the plugin on its target (Ready condition False, reason Disabled). A plugin whose procedures the target's effective dbms.security.procedures.allowlist loads none of stays Ready and carries the condition ProceduresHidden (True, reason NotInAllowlist) (operations.md ids 160, 161)."
+        "note": "Pending|Waiting|Installing|Ready|Failed|Invalid|Disabled. Disabled: spec.enabled false and nothing of the plugin on its target (Ready condition False, reason Disabled). A plugin whose procedures the target's effective dbms.security.procedures.allowlist loads none of stays Ready and carries the condition ProceduresHidden (True, reason NotInAllowlist) (operations.md ids 160, 161). Failed also for a Managed plugin whose NEO4J_PLUGINS name the target's image does not install, with one PluginUnknownToImage Warning (operations.md id 170)."
       },
       {
         "id": "f-neo4jplugin-status-installed-version",
