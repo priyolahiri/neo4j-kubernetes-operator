@@ -54,7 +54,7 @@ Specifies the Neo4j Docker image to use.
 | Field | Type | Description |
 |---|---|---|
 | `repo` | `string` | **Required**. Docker repository (no schema default; typically `"neo4j"`) |
-| `tag` | `string` | **Required**. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward). A change is checked against `status.version` on every reconcile: a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)) |
+| `tag` | `string` | **Required**. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward). A change is checked against `status.version` on every reconcile: a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)), and so is a change a `Managed` plugin of it cannot follow (see [Plugins that cannot follow](../user_guide/guides/upgrades.md#plugins-that-cannot-follow)) |
 | `pullPolicy` | `string` | Image pull policy: `"Always"`, `"IfNotPresent"` (default), `"Never"` |
 | `pullSecrets` | `[]string` | Image pull secrets for private registries |
 

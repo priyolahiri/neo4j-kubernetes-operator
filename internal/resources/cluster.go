@@ -20,6 +20,7 @@ package resources
 import (
 	"fmt"
 	"net"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -1909,11 +1910,18 @@ server.metrics.csv.enabled=false
 		}
 	}
 
-	// Aura Fleet Management configuration
+	// Aura Fleet Management configuration. Its procedures always go in the
+	// unrestricted list, and in the allowlist only when the cluster's own
+	// spec.config sets one: an allowlist of fleetManagement.* alone would load
+	// nothing else (FleetAllowlistNeeded, operations.md id 192). When a plugin
+	// sets the allowlist instead, the startup script adds the entry
+	// (buildPluginListMergeBlock).
 	if cluster.Spec.AuraFleetManagement != nil && cluster.Spec.AuraFleetManagement.Enabled {
 		config += "\n# Aura Fleet Management\n"
-		config += "dbms.security.procedures.unrestricted=fleetManagement.*\n"
-		config += "dbms.security.procedures.allowlist=fleetManagement.*\n"
+		config += "dbms.security.procedures.unrestricted=" + FleetManagementProcedures + "\n"
+		if _, own := cluster.Spec.Config[AllowlistSetting]; own {
+			config += AllowlistSetting + "=" + FleetManagementProcedures + "\n"
+		}
 	}
 
 	// Property sharding configuration - placed at the very end to avoid startup script overwrites
@@ -2524,6 +2532,7 @@ fi
 ` + buildSystemDatabaseModeBlock(cluster) + buildAsyncRaftChannelsBlock(cluster) + buildTLSReloadBlock(cluster) + `
 # Add server mode constraint if specified
 ` + buildServerModeConstraintConfig(cluster) + `
+` + buildPluginListMergeBlock() + `
 
 # NEO4J_CONF is deliberately NOT exported. The entrypoint writes the settings
 # it derives from environment variables into ${NEO4J_HOME}/conf, never into
@@ -2692,6 +2701,165 @@ if ! grep -q '^` + TLSReloadSetting + `=' /conf/neo4j.conf; then
 fi
 ` + RestartNeutralEnd + `
 `
+}
+
+// AllowlistSetting is Neo4j's list of the procedures and functions it loads
+// (default *, every one).
+const AllowlistSetting = "dbms.security.procedures.allowlist"
+
+// FleetManagementProcedures is the entry Aura Fleet Management's procedures
+// need in the procedure lists, and FleetManagementPlugin the name the Neo4j
+// entrypoint installs it by.
+const (
+	FleetManagementProcedures = "fleetManagement.*"
+	FleetManagementPlugin     = "fleet-management"
+)
+
+// The allowlist gets Aura Fleet Management's entry only when something else
+// sets the list: Neo4j loads every procedure while
+// dbms.security.procedures.allowlist is not set, and the Operations Manual says
+// to add a plugin to it only "if dbms.security.procedures.allowlist is set in
+// your configuration … otherwise no change is needed", while the plugin
+// always goes in the unrestricted list (configuration/plugins.adoc, 5.x and
+// dev, read 2026-10-25). The operator used to set the allowlist to
+// fleetManagement.* on its own, which loads nothing else: enabling fleet
+// management hid APOC and every plugin without allowedProcedures
+// (operations.md id 192).
+
+// PluginListMergeMarker opens the startup-script block that gives a cluster's
+// servers its own procedure and extension lists together with its plugins'
+// (buildPluginListMergeBlock). Tests find the block by it.
+const PluginListMergeMarker = "# Procedure and extension lists: this cluster's own and its plugins', together."
+
+// buildPluginListMergeBlock renders the restart-neutral startup-script block
+// that adds a cluster's own procedure and extension lists (resources
+// IsAdditiveConfKey: what its neo4j.conf sets from spec.config and Aura Fleet
+// Management) to the NEO4J_<setting> variables its Neo4jPlugins set, so a
+// plugin's list adds to the cluster's and never takes its place (operations.md
+// id 179).
+//
+// The Neo4j entrypoint writes each NEO4J_<setting> variable into neo4j.conf in
+// place of the line it finds there (add_env_setting_to_conf: sed deletes the
+// line, then the variable's is appended). So the moment one plugin set an
+// allowlist, the cluster's own — its spec.config list, and the
+// fleetManagement.* entry spec.auraFleetManagement adds — was gone from the
+// servers, and fleet management stopped working without a word. The block
+// reads each list's line from the neo4j.conf it assembled in /conf and, when
+// the variable is set too, exports the variable as the union of both (the
+// cluster's tokens first, each token once), which is then what the entrypoint
+// writes. Nothing else changes: the cluster renders its lists into neo4j.conf
+// as before, each plugin writes only its own tokens (id 173), and each side's
+// change restarts the servers as it did, once.
+//
+// It is restart-neutral: it changes nothing for a server that is already
+// running, so adding it in an operator upgrade restarts no server. A server
+// whose list it changes — a cluster with a list of its own and a plugin that
+// sets the same list — gets the union at its next start.
+func buildPluginListMergeBlock() string {
+	settings := make([]string, 0, len(additiveConfKeys))
+	for key := range additiveConfKeys {
+		settings = append(settings, key)
+	}
+	sort.Strings(settings)
+	var calls strings.Builder
+	for _, key := range settings {
+		call := "operator_merge_list " + key + " " + Neo4jSettingEnvVarName(key)
+		if key == AllowlistSetting {
+			call += " " + FleetManagementPlugin + " '" + FleetManagementProcedures + "'"
+		}
+		calls.WriteString(call + "\n")
+	}
+	return RestartNeutralBegin + `
+` + PluginListMergeMarker + `
+# A Neo4jPlugin sets these lists as NEO4J_<setting> variables, and the
+# entrypoint REPLACES a neo4j.conf line with such a variable: each variable is
+# given the cluster's own entries (spec.config, Aura Fleet Management) too. An
+# allowlist set anywhere also gets Aura Fleet Management's entry while
+# NEO4J_PLUGINS installs it; an allowlist set nowhere stays unset (every
+# procedure loads).
+operator_merge_list() {
+    local setting="$1" var="$2" plugin="${3:-}" extra="${4:-}" env_value conf_value conf_set line union token
+    local -a tokens
+    env_value="${!var:-}"
+    conf_value=""
+    conf_set=""
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+            "${setting}="*) conf_value="${line#*=}"; conf_set=1 ;;
+        esac
+    done < /conf/neo4j.conf
+    case "${NEO4J_PLUGINS:-}" in
+        *"\"${plugin}\""*) ;;
+        *) extra="" ;;
+    esac
+    if [ -z "$env_value" ] && [ -z "$conf_set" ] && [ -n "$extra" ]; then
+        # Set nowhere, and the entrypoint would set it: for fleet-management it
+        # adds an allowlist of fleetManagement.* alone to a neo4j.conf without
+        # one (apply_plugin_default_configuration), which loads no other plugin.
+        # Neo4j's default, as the variable, replaces that line in its
+        # environment pass, which runs after.
+        export "${var}=*"
+        echo "${setting}: Neo4j's default (*), in place of the entrypoint's ${plugin} default"
+        return 0
+    fi
+    if [ -z "$env_value" ] && { [ -z "$conf_value" ] || [ -z "$extra" ]; }; then
+        return 0
+    fi
+    if [ -z "$conf_value" ] && [ -z "$extra" ]; then
+        return 0
+    fi
+    union=""
+    IFS=',' read -r -a tokens <<< "${conf_value},${extra},${env_value}"
+    for token in "${tokens[@]}"; do
+        token="${token#"${token%%[![:space:]]*}"}"
+        token="${token%"${token##*[![:space:]]}"}"
+        [ -n "$token" ] || continue
+        case ",${union}," in
+            *",${token},"*) ;;
+            *) union="${union:+${union},}${token}" ;;
+        esac
+    done
+    if [ -z "$env_value" ] && [ "$union" = "$conf_value" ]; then
+        return 0
+    fi
+    export "${var}=${union}"
+    echo "${setting}: this cluster's list and ${var}, together"
+}
+` + calls.String() + RestartNeutralEnd + `
+`
+}
+
+// ServerProcedureList is the value a cluster's server starts with for the
+// procedure or extension list setting, as its startup script's list block
+// (buildPluginListMergeBlock) and then the Neo4j entrypoint build it from the
+// rendered neo4j.conf (confValue, confSet), the neo4j container's
+// NEO4J_<setting> variable (envValue, envSet) and the names NEO4J_PLUGINS
+// installs: the union of the conf's, Aura Fleet Management's entry for an
+// allowlist set anywhere while fleet-management is installed, and the
+// variable's. set is false when the server starts without the setting.
+func ServerProcedureList(setting, confValue string, confSet bool, envValue string, envSet bool, plugins []string) (value string, set bool) {
+	extra := ""
+	if setting == AllowlistSetting && slices.Contains(plugins, FleetManagementPlugin) {
+		extra = FleetManagementProcedures
+	}
+	envSet = envSet && strings.TrimSpace(envValue) != ""
+	confHas := confSet && strings.TrimSpace(confValue) != ""
+	if extra != "" && !envSet && !confSet {
+		// The entrypoint's fleet-management default, countered with Neo4j's
+		// own (id 192).
+		return "*", true
+	}
+	switch {
+	case !envSet && (!confHas || extra == ""):
+		return confValue, confSet
+	case !confHas && extra == "":
+		return envValue, true
+	}
+	union := MergeConfListValues(MergeConfListValues(confValue, extra), envValue)
+	if !envSet && union == strings.TrimSpace(confValue) {
+		return confValue, confSet
+	}
+	return union, true
 }
 
 // buildServerModeConstraintConfig generates server mode constraint configuration

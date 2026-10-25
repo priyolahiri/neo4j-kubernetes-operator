@@ -114,7 +114,7 @@ cluster reaches `Ready` — see [`Neo4jRestore`](neo4jrestore.md).
 | Field | Type | Description |
 |---|---|---|
 | `repo` | `string` | **Required.** Image repository (e.g. `"neo4j"`) |
-| `tag` | `string` | **Required.** Image tag. For the cluster's `spec.image`, a change is checked against `status.version` on every reconcile: a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)) |
+| `tag` | `string` | **Required.** Image tag. For the cluster's `spec.image`, a change is checked against `status.version` on every reconcile: a downgrade is refused (see [Version checks](../user_guide/guides/upgrades.md#version-checks)), and so is a change a `Managed` plugin of it cannot follow (see [Plugins that cannot follow](../user_guide/guides/upgrades.md#plugins-that-cannot-follow)) |
 | `pullPolicy` | `string` | Pull policy: `"Always"`, `"IfNotPresent"`, `"Never"` (default: `"IfNotPresent"`) |
 | `pullSecrets` | `[]string` | Image pull secrets |
 

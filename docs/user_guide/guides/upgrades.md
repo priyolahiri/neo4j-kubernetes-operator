@@ -275,6 +275,16 @@ Update validation failed: validation failed: spec.image.tag: Invalid value: "202
 
 Before a server has started on the target (the upgrade stopped while staging, before its first server restarted, or with the restarted servers unable to pull the image), any tag from `status.version` up is allowed: an earlier fixed tag, or `status.version` itself. An upgrade a previous operator release paused or failed has no `startedTargetVersion`; until a server starts on its target, it keeps that release's rule — once the upgrade has restarted a server, the tag is held to the target.
 
+#### Plugins that cannot follow
+
+A change of `spec.image.tag` is also refused while a `Managed` `Neo4jPlugin` of the cluster (or standalone) runs on the image the servers run and cannot run on the new one: the new image's entrypoint does not list its name (`n10s` on CalVer from 2025.05), or the JAR it downloads for it does not run there (`n10s` from 5.26.22). Every server the upgrade restarted would not start. Nothing rolls; the refusal names the plugin:
+
+```
+Update validation failed: spec.image.tag: Invalid value: "2026.08.1-enterprise": Neo4jPlugin semantics cannot follow this image change from 5.26.21-enterprise, which it runs on: its spec.name "n10s" is not a plugin the neo4j:2026.08.1-enterprise image can install: … The servers would not start on the new image. Change the plugin first — delete it, set spec.enabled: false, or move it to installMode: VerifiedDownload with a JAR built for 2026.08.1-enterprise — and the image change goes ahead; a server the change restarts before the plugin's own write is replaced by that write
+```
+
+Leave the tag as it is. A deleted plugin is taken off at once, before the upgrade restarts a server. A disabled or `VerifiedDownload` plugin writes its change only once the cluster is `Ready`, so the upgrade starts first: its first server comes up on the new image with the old name and fails, and the plugin's change — which a server failing on it does not wait for — replaces that server within about a minute (one `PluginSettingsFailing` Warning on the plugin), after which the upgrade goes on; each server restarts once. Setting the tag back to change the plugin on the old image is not advised: a JAR built for the new release need not run there. A `VerifiedDownload`, `PreBaked` or disabled plugin is not judged, and neither is a plugin the running image already cannot run (it is refused and taken off by itself; see the [plugins guide](plugins.md#which-plugins-managed-installs)).
+
 #### Tags without a patch
 
 `status.version` and `status.upgradeStatus.targetVersion` are image tags. A tag without a patch, such as `5.26-enterprise` or `2026.08-enterprise`, floats to the newest patch of its line, so it does not say which patch the servers run, and a patch of the same line cannot be ordered against it. For such a tag the operator records the version the servers report (`SHOW SERVERS`, `version`), and the tag is held to it too:

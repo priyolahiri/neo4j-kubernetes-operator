@@ -322,26 +322,20 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 	// Get target deployment (cluster or standalone)
 	deployment, err := r.getTargetDeployment(ctx, plugin)
-	if err != nil && !plugin.Spec.Enabled {
+	if stderrors.Is(err, errTargetNotFound) && !plugin.Spec.Enabled {
 		// Nothing of a disabled plugin can be on a target that does not exist.
 		r.reportDisabled(ctx, plugin, fmt.Sprintf("Plugin disabled (spec.enabled: false): its target %q does not exist", plugin.Spec.ClusterRef))
 		return ctrl.Result{}, nil
 	}
+	if stderrors.Is(err, errTargetNotFound) {
+		// A target applied after its plugin (one kubectl apply of a directory,
+		// a GitOps sync) is waited for (awaitTarget, operations.md id 177).
+		return r.awaitTarget(ctx, plugin)
+	}
 	if err != nil {
-		logger.Error(err, "Failed to get target deployment",
+		logger.Error(err, "Failed to read the target deployment",
 			"clusterRef", plugin.Spec.ClusterRef, "namespace", plugin.Namespace)
-		r.updatePluginStatus(
-			ctx,
-			plugin,
-			"Failed",
-			fmt.Sprintf(
-				"Target deployment not found (clusterRef=%q, namespace=%q): %v",
-				plugin.Spec.ClusterRef,
-				plugin.Namespace,
-				err,
-			),
-		)
-		return ctrl.Result{}, nil // Don't return error - status is set correctly
+		return ctrl.Result{}, err
 	}
 
 	// Whether the target's allowlist hides the plugin's procedures (operations.md
@@ -362,6 +356,12 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// writing it crash-loops every server it reaches.
 	if refusal := pluginRefusal(plugin, targetImageTag(deployment)); refusal != "" {
 		return r.reconcileRefused(ctx, plugin, deployment, refusal)
+	}
+
+	// Fleet Manager is built into the target's image (2026.03 and later): a
+	// Managed fleet-management plugin installs nothing there (id 192).
+	if fleetManagementBuiltInFor(plugin, deployment) {
+		return r.reconcileBuiltIn(ctx, plugin, deployment)
 	}
 
 	// A target whose StatefulSet does not exist — not created yet, or deleted
@@ -760,13 +760,23 @@ type DeploymentInfo struct {
 	IsReady   bool
 }
 
+// errTargetNotFound is getTargetDeployment's error when neither a cluster nor
+// a standalone named spec.clusterRef exists in the plugin's namespace.
+var errTargetNotFound = stderrors.New("target deployment not found")
+
+// getTargetDeployment resolves spec.clusterRef: the Neo4jEnterpriseCluster of
+// that name in the plugin's namespace, else the Neo4jEnterpriseStandalone. It
+// returns errTargetNotFound (wrapped) when neither exists, and any other read
+// error as it is.
 func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) (*DeploymentInfo, error) {
 	// Try Neo4jEnterpriseCluster first
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      plugin.Spec.ClusterRef,
 		Namespace: plugin.Namespace,
-	}, cluster); err == nil {
+	}, cluster); err != nil && !errors.IsNotFound(err) {
+		return nil, err
+	} else if err == nil {
 		info := &DeploymentInfo{
 			Object:    cluster,
 			Type:      "cluster",
@@ -788,7 +798,9 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 	if err := r.Get(ctx, types.NamespacedName{
 		Name:      plugin.Spec.ClusterRef,
 		Namespace: plugin.Namespace,
-	}, standalone); err == nil {
+	}, standalone); err != nil && !errors.IsNotFound(err) {
+		return nil, err
+	} else if err == nil {
 		info := &DeploymentInfo{
 			Object:    standalone,
 			Type:      "standalone",
@@ -802,7 +814,7 @@ func (r *Neo4jPluginReconciler) getTargetDeployment(ctx context.Context, plugin 
 		return info, nil
 	}
 
-	return nil, fmt.Errorf("target deployment %s not found (tried both Neo4jEnterpriseCluster and Neo4jEnterpriseStandalone)", plugin.Spec.ClusterRef)
+	return nil, fmt.Errorf("%w: %s (tried both Neo4jEnterpriseCluster and Neo4jEnterpriseStandalone)", errTargetNotFound, plugin.Spec.ClusterRef)
 }
 
 // arePodsReady checks if all pods are ready without blocking
@@ -861,11 +873,14 @@ func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo
 	logger := log.FromContext(ctx)
 
 	deployment, err := r.getTargetDeployment(ctx, plugin)
-	if err != nil {
+	if stderrors.Is(err, errTargetNotFound) {
 		// Deployment gone → nothing to uninstall from. Succeed so the finalizer
 		// releases instead of wedging on a target that no longer exists.
 		logger.Info("Target deployment not found, considering plugin uninstalled")
-		return nil //nolint:nilerr // intentional: missing target means already uninstalled
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to read the plugin's target: %w", err)
 	}
 	if err := r.removePluginFromTarget(ctx, plugin, deployment); err != nil {
 		return fmt.Errorf("failed to remove the plugin from %s: %w", targetName(deployment), err)
@@ -1181,8 +1196,15 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 		// allowlists across plugins (see mergePluginSecurityEnv), with the
 		// lists the plugin's spec.config sets. applyPlugin then takes out of
 		// each list what no plugin of the target asks for any more
-		// (setClusterPluginLists); it never adds another plugin's tokens.
+		// (setClusterPluginLists); it never adds another plugin's tokens. The
+		// lists are pluginListSettings' alone, which leave out the
+		// fleet-management plugin's automatic allowlist entry (id 192).
 		settings := r.pluginSecuritySettings(plugin)
+		for k := range settings {
+			if resources.IsAdditiveConfKey(k) {
+				delete(settings, k)
+			}
+		}
 		for k, v := range pluginListSettings(plugin) {
 			settings[k] = v
 		}

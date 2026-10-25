@@ -104,13 +104,21 @@ func allowlistLoadsAny(allowlist string, namespaces []string) bool {
 }
 
 // effectiveAllowlist returns the allowlist the target's servers start with,
-// as the Neo4j entrypoint builds it: the neo4j container's
-// NEO4J_dbms_security_procedures_allowlist when there is one (it replaces the
-// setting in neo4j.conf), else the setting in the target's rendered neo4j.conf
-// ({target}-config) — on a standalone the union of its own spec.config and its
-// plugins' settings. set is false when the list is not set (Neo4j loads every
-// procedure) or cannot be read (a variable from a Secret or ConfigMap); where
-// says where it was read.
+// as they build it from the target's rendered neo4j.conf ({target}-config)
+// and the neo4j container's NEO4J_dbms_security_procedures_allowlist:
+//   - on a cluster, the union of the two, with Aura Fleet Management's entry
+//     when NEO4J_PLUGINS installs fleet-management and either sets the list:
+//     the cluster's startup script gives the variable those before the
+//     entrypoint writes it in place of the conf's line
+//     (resources.ServerProcedureList, operations.md ids 179, 192);
+//   - on a standalone, the variable when there is one (the entrypoint writes it
+//     in place of the conf's line; its plugins put their lists in the conf, so
+//     only a variable someone else set is there), else the conf's, which is the
+//     union of its own spec.config and its plugins' settings.
+//
+// set is false when the list is not set (Neo4j loads every procedure) or
+// cannot be read (a variable from a Secret or ConfigMap); where says where it
+// was read.
 func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployment *DeploymentInfo) (value, where string, set bool, err error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
@@ -118,6 +126,7 @@ func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployme
 		return "", "", false, err
 	}
 	envName := resources.Neo4jSettingEnvVarName(allowlistSetting)
+	envValue, envSet := "", false
 	for _, e := range neo4jContainerEnv(sts.Spec.Template.Spec) {
 		if e.Name != envName {
 			continue
@@ -125,24 +134,63 @@ func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployme
 		if e.ValueFrom != nil {
 			return "", "", false, nil
 		}
-		return e.Value, fmt.Sprintf("%s on StatefulSet %s", envName, sts.Name), true, nil
+		envValue, envSet = e.Value, true
+		break
+	}
+	envWhere := fmt.Sprintf("%s on StatefulSet %s", envName, sts.Name)
+	if envSet && deployment.Type == "standalone" {
+		return envValue, envWhere, true, nil
 	}
 	cm := &corev1.ConfigMap{}
+	confValue, confSet := "", false
 	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name + "-config", Namespace: deployment.Namespace}, cm); err != nil {
-		if errors.IsNotFound(err) {
-			return "", "", false, nil
+		if !errors.IsNotFound(err) {
+			return "", "", false, err
 		}
-		return "", "", false, err
+	} else {
+		confValue, confSet = resources.Neo4jConfSettings(cm.Data["neo4j.conf"])[allowlistSetting]
 	}
-	value, set = resources.Neo4jConfSettings(cm.Data["neo4j.conf"])[allowlistSetting]
-	return value, fmt.Sprintf("neo4j.conf of ConfigMap %s", cm.Name), set, nil
+	confWhere := fmt.Sprintf("neo4j.conf of ConfigMap %s", cm.Name)
+	if deployment.Type != "standalone" {
+		value, set = resources.ServerProcedureList(allowlistSetting, confValue, confSet, envValue, envSet,
+			neo4jPluginsList(neo4jContainerEnv(sts.Spec.Template.Spec)))
+		where = confWhere
+		switch {
+		case envSet && confSet:
+			where = confWhere + " and " + envWhere
+		case envSet:
+			where = envWhere
+		}
+		return value, where, set, nil
+	}
+	if confSet {
+		return confValue, confWhere, true, nil
+	}
+	return "", "", false, nil
+}
+
+// targetSetsAllowlist reports whether the target's own spec sets its
+// allowlist: the key in its spec.config. Aura Fleet Management only adds its
+// entry to a list something else sets (operations.md id 192).
+func targetSetsAllowlist(deployment *DeploymentInfo) bool {
+	switch target := deployment.Object.(type) {
+	case *neo4jv1beta1.Neo4jEnterpriseCluster:
+		_, own := target.Spec.Config[allowlistSetting]
+		return own
+	case *neo4jv1beta1.Neo4jEnterpriseStandalone:
+		_, own := target.Spec.Config[allowlistSetting]
+		return own
+	}
+	return false
 }
 
 // hiddenProceduresMessage says how the target's effective allowlist hides the
 // plugin's procedures; "" when it does not, or when that cannot be told.
 func (r *Neo4jPluginReconciler) hiddenProceduresMessage(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (string, error) {
 	namespaces := pluginProcedureNamespaces(plugin.Spec.Name)
-	if len(namespaces) == 0 {
+	if len(namespaces) == 0 || fleetManagementBuiltInFor(plugin, deployment) {
+		// A built-in Fleet Manager's procedures are the server's own: the
+		// allowlist names extensions in the plugins directory (id 192).
 		return "", nil
 	}
 	value, where, set, err := r.effectiveAllowlist(ctx, deployment)
@@ -167,10 +215,10 @@ func (r *Neo4jPluginReconciler) hiddenProceduresMessage(ctx context.Context, plu
 		}
 	}
 	sort.Strings(setters)
-	by := targetName(deployment) + "'s own configuration"
-	if len(setters) > 0 {
-		by = strings.Join(setters, ", ")
+	if targetSetsAllowlist(deployment) || len(setters) == 0 {
+		setters = append(setters, targetName(deployment)+"'s own configuration")
 	}
+	by := strings.Join(setters, ", ")
 	return fmt.Sprintf("dbms.security.procedures.allowlist is %q (%s, set by %s): it loads none of this plugin's procedures "+
 		"(%s), so Neo4j does not load them and calls to them fail as unknown. The list is shared by every plugin of the target: "+
 		"add %s to spec.security.allowedProcedures of this plugin or of the one that sets the list",

@@ -205,9 +205,13 @@ func TestManagedPluginNameWarnings(t *testing.T) {
 	assert.Len(t, ManagedPluginNameWarnings(managed("apoc", "graphql")), 1)
 	assert.Contains(t, ManagedPluginNameWarnings(managed("graphql"))[0],
 		`spec.name "graphql" is not a plugin any supported Neo4j image can install`)
-	for _, ok := range []*neo4jv1beta1.Neo4jPlugin{managed("apoc"), managed("gds"), managed("fleet-management")} {
+	for _, ok := range []*neo4jv1beta1.Neo4jPlugin{managed("apoc"), managed("gds")} {
 		assert.Empty(t, ManagedPluginNameWarnings(ok), ok.Spec.Name)
 	}
+	// fleet-management is built in from 2026.03: offline, said (operations.md id 192).
+	fleet := ManagedPluginNameWarnings(managed("fleet-management"))
+	require.Len(t, fleet, 1)
+	assert.Contains(t, fleet[0], "on Neo4j 2026.03 and later Fleet Manager is built in")
 	// n10s runs on 5.26.0 to 5.26.21 only: offline, the image unknown, said.
 	for _, n10s := range []*neo4jv1beta1.Neo4jPlugin{managed("n10s"), managed("neosemantics")} {
 		warnings := ManagedPluginNameWarnings(n10s)
@@ -248,4 +252,33 @@ func TestPluginTargetImageTag(t *testing.T) {
 	_, _, found, err = PluginTargetImageTag(context.Background(), c, plugin)
 	require.NoError(t, err)
 	assert.False(t, found)
+}
+
+// Fleet Manager is built in from CalVer 2026.03 (operations.md id 192): the
+// operator adds fleet-management to NEO4J_PLUGINS nowhere there. A tag
+// without a patch is its line's newest patch.
+func TestFleetManagementBuiltIn(t *testing.T) {
+	for tag, want := range map[string]bool{
+		"5.26.32-enterprise":   false,
+		"5.26-enterprise":      false,
+		"2025.08.0-enterprise": false,
+		"2026.02.2-enterprise": false,
+		"2026.02-enterprise":   false,
+		"2026.03.0-enterprise": true,
+		"2026.03-enterprise":   true,
+		"2026.08.1-enterprise": true,
+		"2026.09.0-enterprise": true,
+		"2027.01.0-enterprise": true,
+		"2026.08.1-enterprise@sha256:0000000000000000000000000000000000000000000000000000000000000000": true,
+		"latest": false,
+	} {
+		assert.Equal(t, want, FleetManagementBuiltIn(tag), tag)
+	}
+	assert.Empty(t, ManagedPluginImageErrors(managed("fleet-management"), "2026.08.1-enterprise"),
+		"not refused: the entrypoint does not exit on the name")
+	warnings := ManagedPluginBuiltInWarnings(managed("fleet-management"), "2026.08.1-enterprise")
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "Fleet Manager is built into neo4j:2026.08.1-enterprise")
+	assert.Empty(t, ManagedPluginBuiltInWarnings(managed("fleet-management"), "2026.02.2-enterprise"))
+	assert.Empty(t, ManagedPluginBuiltInWarnings(managed("apoc"), "2026.08.1-enterprise"))
 }

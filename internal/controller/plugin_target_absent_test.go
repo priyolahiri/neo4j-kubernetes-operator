@@ -208,6 +208,8 @@ func TestUninstall_ReplacesTheStandalonePodThatKeepsFailingOnThePlugin(t *testin
 	replaced := eventsWithReason(drainEvents(rec), EventReasonPluginSettingsFailing)
 	require.Len(t, replaced, 1)
 	assert.Contains(t, replaced[0], "Deleted pod sa-0")
+	assert.Contains(t, replaced[0], "from its current template")
+	assert.NotContains(t, replaced[0], "revision", "the pod comes back from the update revision at that moment, which may have moved on")
 	assert.Equal(t, 1, *writes)
 }
 
@@ -243,4 +245,38 @@ func TestReconcile_DisablingReplacesTheStandalonePodThatKeepsFailingOnThePlugin(
 
 	err := r.Get(context.Background(), client.ObjectKeyFromObject(pod), &corev1.Pod{})
 	assert.True(t, client.IgnoreNotFound(err) == nil && err != nil, "the stuck pod is deleted: %v", err)
+}
+
+// The defect (#573, from the code; it predates the v1.22.0 work): a plugin
+// reconciled before its target existed — one kubectl apply of a directory, a
+// GitOps sync — went Failed ("Target deployment not found") with no requeue,
+// and stayed Failed after the target came, until its CR was edited. It waits:
+// Pending, one ClusterNotFound Warning, a requeue; then it installs.
+func TestReconcile_APluginWaitsForATargetNotCreatedYet(t *testing.T) {
+	plugin := selfHealPlugin("apoc", "c", "", "")
+	r, rec, writes, _ := gateReconciler(t, nil, plugin)
+
+	res, logs := reconcileLogged(t, r, "apoc")
+
+	assert.Positive(t, res.RequeueAfter, "looked at again: nothing watches for the target")
+	got := getPlugin(t, r, "apoc")
+	assert.Equal(t, neo4jv1beta1.PhasePending, got.Status.Phase)
+	assert.Contains(t, got.Status.Message, `clusterRef "c" not found`)
+	warnings := eventsWithReason(drainEvents(rec), EventReasonClusterNotFound)
+	require.Len(t, warnings, 1)
+	assert.Contains(t, warnings[0], "Warning")
+	assert.Empty(t, errorEntries(logs), "a target to come is not an error")
+
+	// The wait goes on quietly.
+	rv := got.ResourceVersion
+	reconcilePlugin(t, r, "apoc")
+	assert.Equal(t, rv, getPlugin(t, r, "apoc").ResourceVersion)
+	assert.Empty(t, drainEvents(rec))
+
+	// The target arrives: the plugin installs.
+	for _, obj := range append([]client.Object{readyCluster(), selfHealSTS()}, readyClusterPods()...) {
+		require.NoError(t, r.Create(context.Background(), obj))
+	}
+	installAndRoll(t, r, "apoc", "c-server")
+	assert.Equal(t, 1, *writes)
 }

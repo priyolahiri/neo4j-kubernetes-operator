@@ -23,6 +23,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
 // fleetManagementPluginEntry is the NEO4J_PLUGINS name of the Aura Fleet
@@ -55,6 +56,14 @@ func standaloneInstallsFleetManagement(standalone *neo4jv1beta1.Neo4jEnterpriseS
 // written — by the fleet merge of every pass, and by the write that creates
 // the StatefulSet (operations.md id 175) — never to what the cluster or the
 // standalone records as its own env.
+//
+// Not on an image with Fleet Manager built in (2026.03 and later,
+// validation.FleetManagementBuiltIn on the template's own image, so a held
+// upgrade's template is judged by the image it rolls out): its entrypoint
+// cannot install the plugin — it wgets "null" and starts without it — and the
+// procedures are the server's own (operations.md id 192). A name an earlier
+// write put there stays: removing it would restart every server for an entry
+// the entrypoint skips.
 func addFleetManagementPlugin(template *corev1.PodTemplateSpec) (bool, error) {
 	idx := -1
 	for i := range template.Spec.Containers {
@@ -65,6 +74,9 @@ func addFleetManagementPlugin(template *corev1.PodTemplateSpec) (bool, error) {
 	}
 	if idx < 0 {
 		return false, errNoNeo4jContainer
+	}
+	if validation.FleetManagementBuiltIn(imageTag(template.Spec.Containers[idx].Image)) {
+		return false, nil
 	}
 	env := template.Spec.Containers[idx].Env
 	at := -1

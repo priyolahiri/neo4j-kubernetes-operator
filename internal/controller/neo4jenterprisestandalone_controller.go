@@ -499,10 +499,6 @@ const ownedStandaloneConfKeysAnnotation = "neo4j.com/standalone-controller-conf-
 func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	logger := log.FromContext(ctx)
 
-	// Fully re-render the operator-owned config from spec each reconcile.
-	desired := r.createConfigMap(standalone)
-	desiredConf := desired.Data["neo4j.conf"]
-
 	// Fold in plugin-derived conf — the UNION across every Neo4jPlugin CR
 	// targeting this standalone — so the standalone controller is the single
 	// owner of neo4j.conf (issue #146). These keys become operator-owned (tracked
@@ -514,12 +510,30 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 	// prune the plugin-owned security keys from neo4j.conf and roll the pod with
 	// those settings stripped. Returning the error requeues without rewriting the
 	// ConfigMap, so the existing (correct) conf is preserved.
-	pluginConf, err := r.collectPluginConfSettings(ctx, standalone)
+	pluginConf, fleetPlugin, err := r.collectPluginConfSettings(ctx, standalone)
 	if err != nil {
 		return fmt.Errorf("failed to collect plugin-derived config: %w", err)
 	}
+	// Fully re-render the operator-owned config from spec each reconcile. Aura
+	// Fleet Management's allowlist entry is rendered only beside an allowlist
+	// something else sets (operations.md id 192).
+	_, pluginAllowlist := pluginConf[resources.AllowlistSetting]
+	desired := r.renderConfigMap(standalone, pluginAllowlist)
+	desiredConf := desired.Data["neo4j.conf"]
 	if len(pluginConf) > 0 {
 		desiredConf = resources.DedupeNeo4jConf(resources.UpsertNeo4jConfSettings(desiredConf, pluginConf))
+	}
+	// The image's entrypoint narrows an allowlist set nowhere: for
+	// fleet-management in NEO4J_PLUGINS it adds
+	// dbms.security.procedures.allowlist=fleetManagement.* to a neo4j.conf
+	// without the setting, and nothing else loads. Neo4j's default, *, in the
+	// conf keeps it from doing so (operations.md id 192). Only where the
+	// entrypoint installs the plugin: from 2026.03 it cannot, and adds nothing.
+	if (standaloneInstallsFleetManagement(standalone) || fleetPlugin) && !validation.FleetManagementBuiltIn(standalone.Spec.Image.Tag) {
+		if _, set := resources.Neo4jConfSettings(desiredConf)[resources.AllowlistSetting]; !set {
+			desiredConf = resources.DedupeNeo4jConf(resources.UpsertNeo4jConfSettings(desiredConf,
+				map[string]string{resources.AllowlistSetting: "*"}))
+		}
 	}
 	desiredKeys := resources.Neo4jConfSettings(desiredConf) // operator-owned keys this reconcile
 
@@ -609,10 +623,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 
 // collectPluginConfSettings returns the union of neo4j.conf settings derived from
 // every Neo4jPlugin on this standalone (#146): enabled, and not refused by its
-// image (operations.md id 170). A list error is
+// image (operations.md id 170) — and whether one of them is a Managed
+// fleet-management plugin, which puts fleet-management in NEO4J_PLUGINS
+// (operations.md id 192). A list error is
 // returned (not swallowed) so the caller can requeue without pruning plugin-owned
 // keys from neo4j.conf.
-func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (map[string]string, error) {
+func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (map[string]string, bool, error) {
 	// Cluster-first target resolution, mirroring the plugin controller's
 	// getTargetDeployment: a Neo4jPlugin's clusterRef resolves to a same-named
 	// Neo4jEnterpriseCluster when one exists, otherwise to the standalone. So if a
@@ -621,16 +637,34 @@ func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx cont
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	switch err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, cluster); {
 	case err == nil:
-		return nil, nil // a same-named cluster owns these plugins
+		return nil, false, nil // a same-named cluster owns these plugins
 	case !errors.IsNotFound(err):
-		return nil, fmt.Errorf("checking for a same-named cluster: %w", err)
+		return nil, false, fmt.Errorf("checking for a same-named cluster: %w", err)
 	}
 
 	plugins := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, plugins, client.InNamespace(standalone.Namespace)); err != nil {
-		return nil, fmt.Errorf("listing Neo4jPlugins in %s: %w", standalone.Namespace, err)
+		return nil, false, fmt.Errorf("listing Neo4jPlugins in %s: %w", standalone.Namespace, err)
 	}
-	return unionPluginConfSettings(plugins.Items, standalone.Name, standalone.Spec.Image.Tag), nil
+	fleetPlugin := false
+	for i := range plugins.Items {
+		p := &plugins.Items[i]
+		if p.Spec.ClusterRef == standalone.Name && p.DeletionTimestamp == nil && pluginOnImage(p, standalone.Spec.Image.Tag) &&
+			!shouldSkipNeo4jPluginsEnv(p) && validation.EntrypointPluginName(p.Spec.Name) == resources.FleetManagementPlugin {
+			fleetPlugin = true
+		}
+	}
+	// A fleet-management plugin's automatic allowlist entry joins only an
+	// allowlist the standalone's own spec.config or another plugin sets: alone
+	// it loaded nothing else (operations.md id 192). Computed both ways so an
+	// allowlist that has it keeps its order, and the standalone's neo4j.conf
+	// does not change where nothing else does.
+	without := unionPluginConf(plugins.Items, standalone.Name, standalone.Spec.Image.Tag, false)
+	_, own := standalone.Spec.Config[resources.AllowlistSetting]
+	if _, others := without[resources.AllowlistSetting]; !own && !others {
+		return without, fleetPlugin, nil
+	}
+	return unionPluginConfSettings(plugins.Items, standalone.Name, standalone.Spec.Image.Tag), fleetPlugin, nil
 }
 
 // standaloneConfigHashAnnotation carries a hash of the rendered neo4j.conf on the
@@ -1523,8 +1557,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) warnIfMCPMissingAPOC(ctx context.C
 	r.advisoryWarnings.record(r.Recorder, standalone, EventReasonMCPApocMissing, mcpMissingAPOCWarnings(plugins.Items, standalone.Name))
 }
 
-// createConfigMap creates a ConfigMap for the standalone deployment
+// createConfigMap creates a ConfigMap for the standalone deployment, as for a
+// standalone none of whose plugins sets an allowlist.
 func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) *corev1.ConfigMap {
+	return r.renderConfigMap(standalone, false)
+}
+
+// renderConfigMap is createConfigMap; pluginAllowlist says whether the
+// standalone's plugins set an allowlist, beside which Aura Fleet
+// Management's entry is rendered (operations.md id 192).
+func (r *Neo4jEnterpriseStandaloneReconciler) renderConfigMap(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, pluginAllowlist bool) *corev1.ConfigMap {
 	// Build neo4j.conf content
 	var configLines []string
 
@@ -1629,11 +1671,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 		configLines = append(configLines, "")
 	}
 
-	// Aura Fleet Management configuration
+	// Aura Fleet Management configuration. Its procedures always go in the
+	// unrestricted list, and in the allowlist only when the standalone's own
+	// spec.config or one of its plugins sets one: an allowlist of
+	// fleetManagement.* alone would load nothing else (operations.md id 192).
 	if standalone.Spec.AuraFleetManagement != nil && standalone.Spec.AuraFleetManagement.Enabled {
 		configLines = append(configLines, "# Aura Fleet Management")
-		configLines = append(configLines, "dbms.security.procedures.unrestricted=fleetManagement.*")
-		configLines = append(configLines, "dbms.security.procedures.allowlist=fleetManagement.*")
+		configLines = append(configLines, "dbms.security.procedures.unrestricted="+resources.FleetManagementProcedures)
+		if _, own := standalone.Spec.Config[resources.AllowlistSetting]; own || pluginAllowlist {
+			configLines = append(configLines, resources.AllowlistSetting+"="+resources.FleetManagementProcedures)
+		}
 		configLines = append(configLines, "")
 	}
 

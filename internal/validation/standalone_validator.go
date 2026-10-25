@@ -67,7 +67,11 @@ func (v *StandaloneValidator) Validate(ctx context.Context, c client.Client, sta
 	allErrs = append(allErrs, ValidateAdminSecretPassword(
 		ctx, c, standalone.Namespace, resolveAdminSecretName(standalone.Spec.Auth),
 		field.NewPath("spec", "auth", "adminSecret"))...)
-	return append(allErrs, v.validateAgainstRunning(standalone)...)
+	allErrs = append(allErrs, v.validateAgainstRunning(standalone)...)
+	// An image change a Managed plugin of the standalone cannot follow is
+	// refused before its pod restarts on it (operations.md id 187).
+	return append(allErrs, ManagedPluginsImageChangeErrors(ctx, c,
+		standalone.Namespace, standalone.Name, true, standalone.Status.Version, standalone.Spec.Image.Tag)...)
 }
 
 // validateAgainstRunning checks spec.image.tag against status.version, the

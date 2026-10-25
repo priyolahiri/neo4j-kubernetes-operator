@@ -22,6 +22,9 @@ package controller
 // storage expansion deleted it and creates it again, as it was, seconds later
 // (id 171). Nothing of a plugin was taken off it and nothing can be put back
 // yet, so this is neither drift nor a failure.
+//
+// A target that does not exist at all — its cluster or standalone CR not
+// applied yet — is waited for too (awaitTarget, operations.md id 177).
 
 import (
 	"context"
@@ -29,6 +32,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -74,6 +78,25 @@ func (r *Neo4jPluginReconciler) uninstallWaitsForStuckPod(ctx context.Context, p
 		return false
 	}
 	return true
+}
+
+// awaitTarget waits for a plugin whose target does not exist: no
+// Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone named spec.clusterRef in
+// its namespace. A plugin applied with its target in one kubectl apply, or by a
+// GitOps sync, is often reconciled first; it used to go Failed ("Target
+// deployment not found") with no requeue, and stayed so after its target came,
+// until its CR was edited. It is Pending, says so once — a ClusterNotFound
+// Warning from the status write that starts the wait (operations.md ids 136,
+// 145) — and looks again every RequeueAfter, as every kind with a clusterRef
+// does. A disabled plugin whose target does not exist is Disabled instead.
+func (r *Neo4jPluginReconciler) awaitTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin) (ctrl.Result, error) {
+	msg := fmt.Sprintf("Waiting for its target: %s not found (no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone of that name in namespace %s)",
+		targetRefDisplay(plugin.Spec.ClusterRef), plugin.Namespace)
+	log.FromContext(ctx).V(1).Info("The plugin's target does not exist; waiting for it", "clusterRef", plugin.Spec.ClusterRef)
+	if r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhasePending, msg) {
+		r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+	}
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
 // statefulSetAbsent reports whether the target's StatefulSet does not exist.
