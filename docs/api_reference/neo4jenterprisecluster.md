@@ -71,6 +71,30 @@ The `Neo4jEnterpriseClusterSpec` defines the desired state of a Neo4j Enterprise
 |---|---|---|
 | `config` | `map[string]string` | Custom Neo4j configuration |
 
+#### JVM arguments
+
+The operator gives every server a default list of extra JVM arguments, as the
+variable `NEO4J_server_jvm_additional`: `-XX:+UseG1GC`,
+`-XX:MaxGCPauseMillis=200`, `-XX:+ParallelRefProcEnabled`, G1 sizing
+(`-XX:+UnlockExperimentalVMOptions`, `-XX:+UnlockDiagnosticVMOptions`,
+`-XX:G1NewSizePercent=2`, `-XX:G1MaxNewSizePercent=10`,
+`-XX:+G1UseAdaptiveIHOP`, `-XX:InitiatingHeapOccupancyPercent=45`),
+`-XX:+UseCompressedOops`,
+`-XX:+UseCompressedClassPointers`, `-XX:+UseStringDeduplication` and
+`-XX:+ExitOnOutOfMemoryError`, plus the truststore flags when
+`spec.trustedCASecrets` or `spec.auth.trustStore` is set. Setting
+`server.jvm.additional` replaces that list: `spec.env`
+`NEO4J_server_jvm_additional` is used as it is, and
+`spec.config["server.jvm.additional"]` (one line, flags separated by spaces)
+takes its place. Repeat the defaults you want to keep.
+
+The Neo4j image's own `server.jvm.additional` lines (20 on 5.26, 24 on CalVer,
+among them the `--add-opens` flags and on CalVer
+`--add-modules=jdk.incubator.vector`) do not apply: the image's entrypoint
+replaces its `neo4j.conf` with the one the operator renders. A
+`Neo4jEnterpriseStandalone` has no default list at all (see
+[its JVM arguments](neo4jenterprisestandalone.md#config-mapstringstring)).
+
 ### Operations
 
 | Field | Type | Description |

@@ -118,10 +118,11 @@ Environment variables for the Neo4j container.
 
 ```yaml
 env:
-  # server.jvm.additional: the image appends it to the JVM arguments
-  # neo4j.conf already sets.
+  # server.jvm.additional. On a standalone these are ALL the extra JVM
+  # arguments the server gets: none of the image's own defaults apply (see
+  # "JVM arguments" below), so list every flag you want.
   - name: NEO4J_server_jvm_additional
-    value: "-XX:+ExitOnOutOfMemoryError"
+    value: "-XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
   # Note: NEO4J_ACCEPT_LICENSE_AGREEMENT and NEO4J_AUTH are operator-managed and
   # ignored here — set spec.acceptLicenseAgreement and spec.auth instead.
   # Use the Neo4jPlugin CRD for plugin management instead of NEO4J_PLUGINS.
@@ -152,6 +153,30 @@ config:
 - `NEO4J_AUTH` - Authentication setup (when using adminSecret)
 
 **Critical for Standalone**: The operator automatically configures clustering infrastructure but ensures single-node operation.
+
+**JVM arguments (`server.jvm.additional`).** A standalone gets no extra JVM
+arguments unless you set them. The Neo4j image's own `neo4j.conf` sets 20
+`server.jvm.additional` lines on 5.26 and 24 on CalVer (`-XX:+UseG1GC`,
+`-XX:-OmitStackTraceInFastThrow`, `-XX:+AlwaysPreTouch`, the `--add-opens`
+flags, and on CalVer `--add-modules=jdk.incubator.vector`, among others). They
+do not apply: the image's entrypoint replaces its `neo4j.conf` with the one the
+operator renders (the ConfigMap mounted at `/conf`), and that file carries no
+JVM arguments, only the truststore flags when `spec.trustedCASecrets` or
+`spec.auth.trustStore` is set. The JVM therefore starts with its own defaults
+plus what you set, in either of two ways:
+
+- `spec.config["server.jvm.additional"]`: one line, flags separated by spaces
+  (a multi-line value is rejected).
+- `spec.env` `NEO4J_server_jvm_additional`: the entrypoint adds it to the
+  rendered `neo4j.conf` as one more line.
+
+Either way, list every flag you want. To start from the image's own list, read
+it from the image you run:
+`docker run --rm --entrypoint grep neo4j:<tag> '^server.jvm.additional' /var/lib/neo4j/conf/neo4j.conf`.
+
+A `Neo4jEnterpriseCluster` differs: the operator gives its servers a default
+list of its own (see [JVM arguments](neo4jenterprisecluster.md#jvm-arguments)),
+which `server.jvm.additional` then replaces. Neither kind runs the image's list.
 
 #### `tls` (TLSSpec)
 TLS/SSL configuration for secure connections. Same shape as

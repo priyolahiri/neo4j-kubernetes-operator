@@ -263,7 +263,8 @@ spec:
 
     # JVM tuning (Neo4j 5.26+ and 2025.x). One line, space-separated: a
     # multi-line value is rejected. On a cluster this REPLACES the operator's
-    # default JVM flags, so it repeats the ones worth keeping.
+    # default JVM flags, so it repeats the ones worth keeping. (A standalone
+    # has no default flags: there it is the whole list.)
     server.jvm.additional: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+UnlockDiagnosticVMOptions -XX:G1NewSizePercent=2 -XX:G1MaxNewSizePercent=10 -XX:+G1UseAdaptiveIHOP -XX:InitiatingHeapOccupancyPercent=45 -XX:+UseCompressedOops -XX:+UseCompressedClassPointers -XX:+ExitOnOutOfMemoryError"
 
     # Bolt thread pool tuning (Neo4j 5.26+ format)
