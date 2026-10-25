@@ -95,13 +95,17 @@ func drainServerIDsFromAnnotation(owner client.Object) []string {
 	return ids
 }
 
-// scaleDownConditionIs reports whether the ServersPendingDrain condition is
-// already True with the given reason — used to emit the Blocked Warning event
-// only on transition, not every reconcile (the condition was fetched fresh at
-// the start of this reconcile, so it reflects the persisted state).
-func scaleDownConditionIs(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, reason string) bool {
-	c := findCondition(cluster.Status.Conditions, ConditionTypeServersPendingDrain)
-	return c != nil && c.Status == metav1.ConditionTrue && c.Reason == reason
+// blockScaleDown records why the scale-down is blocked in the
+// ServersPendingDrain condition (replicas stay held) and announces
+// ScaleDownBlocked when that write changed the condition: a new block, or a
+// block for another cause, whose message says what. It is never decided from
+// this pass's copy of the condition, which the informer cache can hand over
+// from before the last pass's write: two passes on such a copy announced the
+// same block twice (#565; operations.md id 145).
+func (r *Neo4jEnterpriseClusterReconciler) blockScaleDown(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, msg string) {
+	if r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonScaleDownBlocked, msg) {
+		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
+	}
 }
 
 func serverIdentifier(s neo4jclient.ServerInfo) string {
@@ -346,10 +350,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	if minPrimaries := nc.MinimumSystemPrimaries(ctx); desired < minPrimaries {
 		msg := fmt.Sprintf("Refusing to scale this cluster to %d server(s): a Neo4j cluster cannot drop below %d servers — the system database requires at least %d voting members (dbms.cluster.minimum_initial_system_primaries_count). Scaling lower would strand servers (a deallocated server can't rejoin). Keep at least %d servers, or use Neo4jEnterpriseStandalone for a single node. Replicas held at %d.",
 			desired, minPrimaries, minPrimaries, minPrimaries, current)
-		if !scaleDownConditionIs(cluster, ConditionReasonScaleDownBlocked) {
-			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
-		}
-		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonScaleDownBlocked, msg)
+		r.blockScaleDown(ctx, cluster, msg)
 		return nil
 	}
 
@@ -377,10 +378,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 				return nil
 			}
 			msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. Give single-primary databases an additional primary (ALTER DATABASE ... SET TOPOLOGY) or keep the servers — the operator will not auto-reduce topology. No server has been cordoned; replicas are held until this is resolvable.", desired, derr)
-			if !scaleDownConditionIs(cluster, ConditionReasonScaleDownBlocked) {
-				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
-			}
-			r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonScaleDownBlocked, msg)
+			r.blockScaleDown(ctx, cluster, msg)
 			return nil
 		}
 	}
@@ -403,10 +401,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 				return nil
 			}
 			msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. Reduce database topology (ALTER DATABASE ... SET TOPOLOGY) or keep the servers — the operator will not auto-reduce topology. Replicas are held until this is resolvable.", desired, derr)
-			if !scaleDownConditionIs(cluster, ConditionReasonScaleDownBlocked) {
-				r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
-			}
-			r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonScaleDownBlocked, msg)
+			r.blockScaleDown(ctx, cluster, msg)
 			return nil
 		}
 		if derr := nc.DeallocateServers(ctx, step.serverIDs, false); derr != nil {
@@ -429,10 +424,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 				// members floor (defensive — the pre-flight above normally
 				// catches it). Surface it as blocked rather than looping.
 				msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DROP SERVER %s failed: %v. This usually means the drop would take the system database below its minimum voting members. Keep at least the system minimum number of servers. Replicas are held.", desired, id, derr)
-				if !scaleDownConditionIs(cluster, ConditionReasonScaleDownBlocked) {
-					r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonScaleDownBlocked, msg)
-				}
-				r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonScaleDownBlocked, msg)
+				r.blockScaleDown(ctx, cluster, msg)
 				return nil
 			}
 		}
@@ -539,18 +531,25 @@ func (r *Neo4jEnterpriseClusterReconciler) setDrainServers(ctx context.Context, 
 }
 
 // setScaleDownConditionPersisted writes the ServersPendingDrain condition
-// (refetch + RetryOnConflict — never a stale write).
-func (r *Neo4jEnterpriseClusterReconciler) setScaleDownConditionPersisted(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, status metav1.ConditionStatus, reason, message string) {
+// (refetch + RetryOnConflict — never a stale write) and reports whether the
+// write changed its status, reason or message, read in the attempt that
+// succeeded: what a caller announces from (operations.md id 145).
+func (r *Neo4jEnterpriseClusterReconciler) setScaleDownConditionPersisted(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, status metav1.ConditionStatus, reason, message string) bool {
+	changed := false
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		if getErr := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); getErr != nil {
 			return getErr
 		}
+		before := findCondition(latest.Status.Conditions, ConditionTypeServersPendingDrain)
+		changed = before == nil || before.Status != status || before.Reason != reason || before.Message != message
 		SetNamedCondition(&latest.Status.Conditions, ConditionTypeServersPendingDrain,
 			latest.Generation, status, reason, message)
 		return r.Status().Update(ctx, latest)
 	})
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to set scale-down condition (non-fatal)")
+		return false
 	}
+	return changed
 }

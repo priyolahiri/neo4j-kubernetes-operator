@@ -148,8 +148,9 @@ func planUpgradeRollStep(o upgradeRollObservation) upgradeRollDecision {
 	if o.ReadyReplicas < o.Replicas {
 		return rollWait
 	}
-	// Kubernetes readiness only checks HTTP 7474; the restarted server must
-	// also be Enabled+Available in SHOW SERVERS before the next pod rolls.
+	// Kubernetes readiness reads the server's own view, and stops waiting for
+	// it after ReadyWindowSeconds (operations.md id 181); the restarted server
+	// must also be Enabled+Available in SHOW SERVERS before the next pod rolls.
 	if o.Partition < o.Replicas && !o.LastRolledAvailable {
 		return rollWait
 	}

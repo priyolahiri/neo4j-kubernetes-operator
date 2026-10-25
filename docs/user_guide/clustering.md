@@ -149,7 +149,7 @@ A server created before this behaviour existed keeps the role it had: every serv
 
 - **Minimum Membership**: At least `min(3, servers)` servers (or `spec.topology.minSystemPrimaries`) must be available for initial cluster formation
 - **Startup Time**: Cluster formation typically completes within 2-3 minutes
-- **Pod Readiness**: The readiness probe is lenient while the cluster forms (it passes once the HTTP port answers or the log shows cluster-formation activity), so a pod can be `Ready` before formation finishes; check the cluster's `status.phase` for the real state
+- **Pod Readiness**: A server pod is `Ready` once its server is available in the cluster, as it sees itself: its `system` database is available on it, none of its databases reports a failure, and it takes part in the Raft group of every database it hosts as a primary. A roll the StatefulSet performs — a plugin install, a configuration or TLS change — therefore restarts the next server only after the previous one has rejoined, and the cluster keeps its majority. The wait is bounded: five minutes after a container starts the probe checks only the Neo4j process and the HTTP port, as it did before, so a cluster that cannot form does not hold its servers unready forever, and the liveness probe never restarts a server for being out of the cluster. After an operator upgrade each server gets the new check at its next restart; nothing is restarted for it. Pod readiness is still one server's view: check the cluster's `status.phase` for the cluster's state
 - **Scaling**: After initial formation, clusters can be scaled following Neo4j's online scaling procedures
 
 ## Basic Cluster Configuration

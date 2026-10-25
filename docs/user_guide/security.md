@@ -783,9 +783,12 @@ running, and drops it when the proxy is disabled — so it is safe to alert on a
 
 ### Kubelet probes and the policy
 
-The Neo4j Pod's readiness/liveness probes are HTTP on port 7474.
-Kubelet — the source of probe traffic — is **not** a Pod and is
-**not** subject to NetworkPolicy in conformant CNIs:
+The Neo4j Pod's readiness/liveness probes run `/conf/health.sh` inside the
+container, which reaches Neo4j on port 7474 over loopback (a cluster server
+also reads its own HTTP cluster status endpoints there, with the admin
+credentials the container already has). Loopback traffic never leaves the pod,
+and Kubelet — which starts the probes — is **not** a Pod and is **not**
+subject to NetworkPolicy in conformant CNIs:
 
 | CNI | Kubelet probe handling |
 |---|---|
