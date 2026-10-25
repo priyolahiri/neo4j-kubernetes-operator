@@ -6289,9 +6289,12 @@ running, and drops it when the proxy is disabled — so it is safe to alert on a
 <code>False</code>. Full guidance, including backup-mode credential handling, is in
 <a href="../guides/cross_cluster_replication/#security">Cross-cluster replication § Security</a>.</p>
 <h3 id="kubelet-probes-and-the-policy">Kubelet probes and the policy<a class="headerlink" href="#kubelet-probes-and-the-policy" title="Anchor link to this section">&para;</a></h3>
-<p>The Neo4j Pod's readiness/liveness probes are HTTP on port 7474.
-Kubelet — the source of probe traffic — is <strong>not</strong> a Pod and is
-<strong>not</strong> subject to NetworkPolicy in conformant CNIs:</p>
+<p>The Neo4j Pod's readiness/liveness probes run <code>/conf/health.sh</code> inside the
+container, which reaches Neo4j on port 7474 over loopback (a cluster server
+also reads its own HTTP cluster status endpoints there, with the admin
+credentials the container already has). Loopback traffic never leaves the pod,
+and Kubelet — which starts the probes — is <strong>not</strong> a Pod and is <strong>not</strong>
+subject to NetworkPolicy in conformant CNIs:</p>
 <table>
 <thead>
 <tr>

@@ -4422,7 +4422,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>ScaleDownBlocked</code></td>
 <td>Warning</td>
-<td>Scale-down refused or stuck — the target is below the <code>system</code> database's minimum voting members, or the <code>DEALLOCATE</code> dry-run / <code>DROP SERVER</code> failed; replicas are held</td>
+<td>Scale-down refused or stuck — the target is below the <code>system</code> database's minimum voting members, or the <code>DEALLOCATE</code> dry-run / <code>DROP SERVER</code> failed; replicas are held. Once per cause, announced from the <code>ServersPendingDrain</code> condition the operator writes, not on every retry</td>
 </tr>
 </tbody>
 </table>
