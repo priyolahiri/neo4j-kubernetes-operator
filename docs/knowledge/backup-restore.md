@@ -157,11 +157,11 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 
 ## Sharded backup & restore
 
-### Rule 48 — Sharded backup uses `{name}*` glob + always-quoted db arg
-- **Scope:** `internal/controller/neo4jbackup_controller.go` (`buildBackupCommand`), `internal/neo4j/version.go` (`GetBackupCommand`), `internal/controller/neo4jbackup_sharded.go` (`shardedPreflightGlobSafety`, `shardedPreflightStatic`)
-- **Rule:** One `neo4j-admin database backup "{name}*"` captures every shard consistently. `GetBackupCommand` ALWAYS double-quotes the database arg so the shell can't pre-expand the glob (`--to-path` is single-quoted via `shellQuoteArg`). `shardedPreflightGlobSafety` rejects any DB matching `{name}*` outside `^{name}-(g|p)\d{3}$` (terminal Failed). `shardedPreflightStatic` routes a not-yet-Ready sharded DB to Pending.
-- **Why:** Without quoting, the shell expands `*` before neo4j-admin sees it. Without the glob-safety check, a backup for `products` could silently sweep in an unrelated `productsales` database.
-- **Pinned-by:** `internal/neo4j/version_test.go:TestGetBackupCommandQuotesShardedGlob` + `:TestGetBackupCommandQuotesPlainName`
+### Rule 48 — Sharded backup names its shards with `{name}-g*` and `{name}-p*` (lower-cased) + always-quoted db args
+- **Scope:** `internal/controller/neo4jbackup_controller.go` (`buildBackupCommand`), `internal/neo4j/version.go` (`GetBackupCommand`, `GetBackupCommandForDatabases`), `internal/controller/neo4jbackup_sharded.go` (`shardedBackupPatterns`, `matchesShardedBackupPattern`, `shardedGlobPoisoning`, `shardedPreflightGlobSafety`, `shardedPreflightStatic`, `shardedLogicalNameForBackup`)
+- **Rule:** One `neo4j-admin database backup "{name}-g*" "{name}-p*"` captures every shard consistently in one run (`[<database>...]` takes several patterns; `*` is one or more characters, `ConfigPatternBuilder`). `{name}` is the logical name from the `Neo4jShardedDatabase`, lower-cased as Neo4j names the shards (`shardedLogicalNameForBackup`). `GetBackupCommandForDatabases` ALWAYS double-quotes each database arg so the shell can't pre-expand a pattern (`--to-path` is single-quoted via `shellQuoteArg`). `shardedPreflightGlobSafety` rejects any DB the patterns match outside `^{name}-(g|p)\d{3}$` (terminal Failed). `shardedPreflightStatic` routes a not-yet-Ready sharded DB to Pending. The optional validate step takes the parent name, `--database="{name}"`.
+- **Why:** Without quoting, the shell expands `*` before neo4j-admin sees it. Without the glob-safety check, a backup for `products` could silently sweep in an unrelated `products-gold` database. The single pattern `{name}*` (the Operations Manual's sharded example, `"foo*"`) also took every database whose name merely begins with the family's: the v1.22.x walk restored `Products` beside itself as `ProductsCopy`, and `Products*` matched `productscopy-g000`, so the glob-safety check refused every later backup of `Products` (and, from a stale pass, wrote `Failed` over a `Completed` backup, Rule 113).
+- **Pinned-by:** `internal/neo4j/version_test.go:TestGetBackupCommandQuotesShardedGlob` + `:TestGetBackupCommandQuotesPlainName`; `internal/controller/backup_walk_test.go:TestShardedBackup_NamesOnlyItsOwnShards` (the command for `spec.name: Products`, and a copy beside it not refused) + `internal/controller/database_name_case_test.go:TestShardedGlobPoisoning_IgnoresCase`; `internal/controller/neo4jbackup_sharded_test.go:TestBuildBackupCommand_ShardedDatabase_EmitsFlagsWithNilOptions`
 - **Status:** Enforced
 
 ### Rule 49 — `--remote-address-resolution` is `*bool` with sharded-aware defaulting
@@ -192,12 +192,12 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **Pinned-by:** (none dedicated)
 - **Status:** Documented
 
-### Rule 53 — `BackupRun.ShardArtifacts.ShardName` derived from spec
+### Rule 53 — `BackupRun.ShardArtifacts.ShardName` derived from spec, lower-cased
 - **Scope:** `internal/controller/neo4jbackup_sharded.go` (`expectedShardArtifactsForBackup`)
-- **Rule:** `expectedShardArtifactsForBackup` reads `propertySharding.propertyShards` from the `Neo4jShardedDatabase` spec and emits `{name}-g000` + `{name}-p000…p{N-1}`. `ShardName` is the audit-load-bearing field; `Filename`/`Size` are populated opportunistically by Pod-log parsing (rule 67) and stay informational.
-- **Why:** The audit question "did all shards back up?" is answered by `ShardName` alone, which is derivable from the spec without log parsing.
-- **Pinned-by:** (none dedicated)
-- **Status:** Documented
+- **Rule:** `expectedShardArtifactsForBackup` reads `propertySharding.propertyShards` from the `Neo4jShardedDatabase` spec and emits `{name}-g000` + `{name}-p000…p{N-1}`, `{name}` being `spec.name` lower-cased: the shard as Neo4j names it and as neo4j-admin writes it into its artifact and its log (operations.md id 146). `ShardName` is the audit-load-bearing field; `Filename`/`Size` are populated opportunistically by Pod-log parsing (rule 67) and stay informational.
+- **Why:** The audit question "did all shards back up?" is answered by `ShardName` alone, which is derivable from the spec without log parsing. With the spec's capitals (`Products-g000`) no shard matched its log line: the run never had its file names, waited for them until the Job's TTL (Rule 174), and a seed from it failed with "shards … have empty Filename" (v1.22.x walk).
+- **Pinned-by:** `internal/controller/backup_walk_test.go:TestShardedBackup_ACapitalisedNameRecordsItsShards`
+- **Status:** Enforced by unit test
 
 ### Rule 63 — `replaceExisting` + `force` = destructive sharded restore
 - **Scope:** `api/v1beta1/neo4jshardeddatabase_types.go`, `internal/controller/neo4jshardeddatabase_controller.go`
@@ -315,7 +315,7 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 
 ### Rule 67 — Backup-Pod log parsing is opportunistic, not load-bearing
 - **Scope:** `internal/controller/neo4jbackup_controller.go` (`Neo4jBackupReconciler.Clientset`), `internal/controller/neo4jbackup_log_parser.go` (`fetchBackupPodLog`, `parseShardArtifactsFromLog`, `parseStandardArtifactFromLog`, `parseValidationFromLog`, `mergeShardArtifactsFromLog`)
-- **Rule:** `Reconciler.Clientset` (typed Kubernetes client) enables Pod-log fetches that populate `BackupRun.ShardArtifacts.Filename/Size`, `BackupRun.ArtifactFilename`, and `BackupRun.Validation`. All best-effort: log-fetch failures, format drift, or `Clientset == nil` (unit tests with a fake client) leave the fields empty without failing the reconcile. `ShardName` / `RunID` / `Status` are load-bearing — never gate reconcile state on parsed filename/size.
+- **Rule:** `Reconciler.Clientset` (typed Kubernetes client) enables Pod-log fetches that populate `BackupRun.ShardArtifacts.Filename/Size`, `BackupRun.ArtifactFilename`, and `BackupRun.Validation`. All best-effort: log-fetch failures, format drift, or `Clientset == nil` (unit tests with a fake client) leave the fields empty without failing the reconcile. `ShardName` / `RunID` / `Status` are load-bearing — never gate reconcile state on parsed filename/size. Names read from the log are matched ignoring case (`mergeShardArtifactsFromLog`, `parseStandardArtifactFromLog`): neo4j-admin writes them lower-cased. How long a run waits for them: Rule 174.
 - **Why:** Pod logs are a soft signal (TTL'd, format may drift). Gating reconcile correctness on them would make backups fail for cosmetic reasons.
 - **Pinned-by:** (none dedicated; covered by parser unit paths in `internal/controller/neo4jbackup_log_parser.go`)
 - **Status:** Documented
@@ -409,11 +409,18 @@ survive (verified in `api/v1beta1/neo4jenterprisecluster_types.go`) because
 - **Pinned-by:** `TestRestoreRunIndex`, `TestPointInTimeOnlineBlocker`, `TestDecidePointInTimePath`, `TestStandaloneOfflineReason_PointInTimeUndecided`, `TestEnsureResolvedBackupSource_PointInTimePinsTheCoveringRun` (`internal/controller/restore_point_in_time_test.go`); `TestValidateRestore_PointInTimeOnClusterNamesInstanceRef` (`neo4jrestore_resolvedsource_test.go`).
 - **Status:** Enforced by unit test.
 
-### Rule 113 — A one-time backup's terminal phase is decided before its target is looked at
-- **Scope:** the one-time terminal guard near the top of `Neo4jBackupReconciler.Reconcile`, before `getTargetCluster` / `isClusterReady` (`internal/controller/neo4jbackup_controller.go`); the original guard in the one-time path stays.
-- **Rule:** A `Neo4jBackup` without `spec.schedule` whose phase is `Completed` or `Failed` returns before the target lookup and readiness check (after removing a leftover CronJob). Nothing on the target's side may overwrite that phase: the lookup's `Waiting` was the only thing between a terminal one-time backup and the "no Job yet, create one" branch once the finished Job's TTL had expired (#116's original failure, reached by a different door).
-- **Why:** the v1.19.0 journey (2026-10-06) saw a `Completed` one-time backup read `Waiting` whenever its standalone restarted (`BackupCompleted ×7`), and after the Job was garbage-collected, recreating the standalone started a new backup Job that wrote a new artifact while `status.history` kept the old one.
-- **Pinned-by:** `TestReconcile_TerminalOneTimeBackupIgnoresItsTarget` (`internal/controller/neo4jbackup_terminal_test.go`).
+### Rule 113 — A one-time backup's terminal phase is decided before its target is looked at, from the API server when the cached copy is not terminal
+- **Scope:** the one-time terminal guard near the top of `Neo4jBackupReconciler.Reconcile`, before `getTargetCluster` / `isClusterReady`, and `oneTimeBackupDone` (`internal/controller/neo4jbackup_controller.go`); `Neo4jBackupReconciler.APIReader`, wired in both controller registries of `cmd/main.go`; the original guard in the one-time path stays; the `BackupCompleted` / `BackupFailed` of `handleExistingBackupJob`.
+- **Rule:** A `Neo4jBackup` without `spec.schedule` whose phase is `Completed` or `Failed` returns before the target lookup and readiness check (after removing a leftover CronJob). Nothing on the target's side may overwrite that phase: the lookup's `Waiting` was the only thing between a terminal one-time backup and the "no Job yet, create one" branch once the finished Job's TTL had expired (#116's original failure, reached by a different door). The pass's copy comes from the informer cache: when it is not terminal, `oneTimeBackupDone` reads the backup through the uncached `APIReader` (operations.md id 94), one read per pass of an unfinished one-time backup. `BackupCompleted` and the Job-failed `BackupFailed` are announced from the status write that enters the phase (operations.md id 136).
+- **Why:** the v1.19.0 journey (2026-10-06) saw a `Completed` one-time backup read `Waiting` whenever its standalone restarted (`BackupCompleted ×7`), and after the Job was garbage-collected, recreating the standalone started a new backup Job that wrote a new artifact while `status.history` kept the old one. The v1.22.x walk saw the cache door: a sharded backup announced `BackupCompleted` as its Job went (TTL), and the next pass, on a cached copy from before that write, found the Job gone, started a new one — refused by the glob-safety check (Rule 48) — and wrote `Failed` over `Completed`.
+- **Pinned-by:** `TestReconcile_TerminalOneTimeBackupIgnoresItsTarget` (`internal/controller/neo4jbackup_terminal_test.go`); `TestReconcile_AStalePassDoesNotReopenACompletedBackup` (a pass whose cache serves the copy from before the Completed write: no Job, still Completed) and `TestHandleExistingBackupJob_AnnouncesCompletedOnce` (`internal/controller/backup_walk_test.go`).
+- **Status:** Enforced by unit test.
+
+### Rule 174 — A succeeded one-time run waits for its artifact names a bounded time after its Job ends, never until the Job's TTL
+- **Scope:** the deferral in `recordOneShotBackupRun`, `artifactCaptureGrace`, `jobFinishedAt`, `backupPodExists`, and the "capturing artifact metadata" pass of `handleExistingBackupJob` (`internal/controller/neo4jbackup_controller.go`).
+- **Rule:** A Succeeded one-time run whose restore-critical artifact names (a database's `artifactFilename`, an all-databases `databaseArtifacts`, every shard's `filename`) were not read from its Pod's log stays `Running` ("Backup completed; capturing artifact metadata from the backup Pod") and is read again on the next pass — while its Pod exists AND for at most `artifactCaptureGrace` (5 minutes) after the Job finished (`completionTime`). After that the run is recorded with what was read, and the backup is `Completed`. A log that did not name the artifacts when the Pod finished never will; the wait is for a log read that failed on the way.
+- **Why:** the wait used to last as long as the Pod, which the Job's 30-minute TTL removes with the Job. The v1.22.x walk's sharded backup of `spec.name: Products` (Rule 53) waited the whole 30 minutes, writing `status.lastRunTime` every pass (operations.md id 122), and its Job went from under it: the next pass found no Job, and only the terminal-phase read (Rule 113) keeps such a pass from starting the backup again.
+- **Pinned-by:** `TestRecordOneShotBackupRun_StopsWaitingAfterTheGrace` (`internal/controller/neo4jbackup_history_test.go`: the Pod still there, the Job finished six minutes ago, the run recorded); `TestRecordOneShotBackupRun_DefersWhenMetadataMissingAndPodAlive` (same file) keeps the wait within the grace.
 - **Status:** Enforced by unit test.
 
 ## Cross-references

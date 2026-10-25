@@ -410,7 +410,7 @@
   {
     "id": "ev-backup-completed",
     "name": "BackupCompleted",
-    "description": "The backup Job reached JobComplete and its run (including artifact filenames) was recorded in status.history.",
+    "description": "The backup Job reached JobComplete and its run (including artifact filenames, or what was read of them within artifactCaptureGrace) was recorded in status.history. Emitted once, from the status write that makes the one-time backup Completed; a Completed backup is never reopened (backup-restore.md Rules 113, 174).",
     "moduleId": "mod-backup-restore"
   },
   {

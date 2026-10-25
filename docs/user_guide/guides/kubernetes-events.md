@@ -85,8 +85,8 @@ is met on many passes. It is announced once:
 |---|---|---|
 | `BackupScheduled` | Normal | The backup's CronJob is armed: first created, back from another phase (`Suspended`, `Waiting`, …), or its schedule changed. The message names the CronJob and the schedule. Not repeated while the schedule stays as it is |
 | `BackupStarted` | Normal | Backup job has started |
-| `BackupCompleted` | Normal | Backup job completed successfully |
-| `BackupFailed` | Warning | Backup job failed, or the spec is invalid (phase `Invalid`, once per refusal) |
+| `BackupCompleted` | Normal | Backup job completed successfully. Once, from the write that makes the backup `Completed`; a one-time backup that is `Completed` is never reopened |
+| `BackupFailed` | Warning | Backup job failed (once, from the write that makes the backup `Failed`), or the spec is invalid (phase `Invalid`, once per refusal) |
 | `RestoreStarted` | Normal | Restore operation has started. A standalone restore that runs offline with `neo4j-admin` (a point in time, a `source.type: storage` path) first says why, once its checks have passed — never for a restore that is then refused: with `stopCluster: true` when it stops the instance, with `stopCluster: false` (saying the standalone is already stopped) when the restore Job starts, so a restore that waits in `Pending` first does not say it twice. "Restore job … started" is emitted when the restore turns `Running`, once. Each database of an all-databases restore has its own, from the source `neo4j-restore-progress` |
 | `RestoreCompleted` | Normal | Restore operation completed. Also once at the end of an all-databases restore ("All-databases restore completed: Restored N databases") |
 | `RestoreFailed` | Warning | Restore operation failed. Also once at the end of an all-databases restore in which a database failed |

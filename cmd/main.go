@@ -503,6 +503,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — a one-time backup's terminal phase
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				// Typed Kubernetes client for fetching backup-Pod logs (used by
 				// shard-artifact filename/size parsing + neo4j-admin backup
@@ -804,6 +805,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				Client:       mgr.GetClient(),
 				Scheme:       mgr.GetScheme(),
 				Recorder:     mgr.GetEventRecorderFor("neo4j-backup-controller"),
+				APIReader:    mgr.GetAPIReader(), // uncached — a one-time backup's terminal phase
 				RequeueAfter: controller.GetTestRequeueAfter(),
 				Clientset:    mustBuildClientset(mgr),
 			}, "Neo4jBackup"

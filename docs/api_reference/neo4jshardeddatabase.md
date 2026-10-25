@@ -230,7 +230,7 @@ propertyShardTopology:
 
 ### Backups and Restore
 
-Sharded databases are a first-class backup/restore target. Set `Neo4jBackup.spec.shardedDatabase` to the `Neo4jShardedDatabase` CR name (with `spec.instanceRef` pointing at the owning cluster); a single backup run captures every shard consistently using a `{name}*` glob, with per-shard artifacts tracked in `status.history[].shardArtifacts`.
+Sharded databases are a first-class backup/restore target. Set `Neo4jBackup.spec.shardedDatabase` to the `Neo4jShardedDatabase` CR name (with `spec.instanceRef` pointing at the owning cluster); a single backup run captures every shard consistently using the patterns `{name}-g*` and `{name}-p*` (the name lower-cased), with per-shard artifacts tracked in `status.history[].shardArtifacts` under the shard names as `neo4j-admin` writes them.
 
 Restore is performed by re-creating the sharded database from a backup rather than via a restore Job:
 
