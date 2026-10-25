@@ -4852,7 +4852,7 @@
 <td><code>allDatabases</code></td>
 <td><code>bool</code></td>
 <td>❌</td>
-<td>Restore <strong>every</strong> user database recorded in the source backup (the <code>system</code> database is excluded) — the restore counterpart of an all-databases backup. Requires <code>source.type=backup</code>; mutually exclusive with <code>database</code>; per-database progress in <code>status.databaseResults</code>. Restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike (<code>options.replaceExisting: true</code> to overwrite existing databases). In the <a href="#stopcluster-and-offline-restore-standalone-targets">offline cases</a> a standalone instead runs a single multi-database <code>neo4j-admin database restore</code> Job (needs <code>stopCluster: true</code>), after which each database is brought online.</td>
+<td>Restore <strong>every</strong> user database recorded in the source backup (the <code>system</code> database is excluded) — the restore counterpart of an all-databases backup. Requires <code>source.type=backup</code>; mutually exclusive with <code>database</code>; per-database progress in <code>status.databaseResults</code>, and as events from the source <code>neo4j-restore-progress</code> (each database's <code>RestoreStarted</code>, and <code>RestoreSeedProgress</code> when its progress changes and every 10 minutes while it does not); the outcome is one <code>RestoreCompleted</code> or <code>RestoreFailed</code> from <code>neo4j-restore-controller</code>. Restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike (<code>options.replaceExisting: true</code> to overwrite existing databases). In the <a href="#stopcluster-and-offline-restore-standalone-targets">offline cases</a> a standalone instead runs a single multi-database <code>neo4j-admin database restore</code> Job (needs <code>stopCluster: true</code>), after which each database is brought online.</td>
 </tr>
 <tr>
 <td><code>options</code></td>
@@ -5667,7 +5667,8 @@
 </tr>
 </tbody>
 </table>
-<p>The operator emits a <code>RestoreStarted</code> event naming the case.</p>
+<p>The operator emits a <code>RestoreStarted</code> event naming the case, once: with <code>stopCluster: true</code> when it stops the instance, with <code>stopCluster: false</code> when it starts the restore Job (a restore that waits first — for example for the previous attempt's Job to finish terminating — says nothing until then).</p>
+<p>From a PVC directory with no recorded artifact, the restore Job takes the newest <code>&lt;database&gt;-&lt;timestamp&gt;.backup</code> of the source database, with the name lower-cased as <code>neo4j-admin</code> writes it (<code>spec.database: Orders</code> finds <code>orders-2026-10-24T02-00-00.backup</code>), and never another database whose name begins with it (<code>orders-eu-…</code> is not <code>orders</code>).</p>
 <p>When <code>spec.stopCluster: true</code>:</p>
 <ol>
 <li>The operator scales the target StatefulSet down to 0 replicas (recording the original replica count).</li>

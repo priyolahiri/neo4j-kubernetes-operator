@@ -3845,7 +3845,7 @@ to interpret Neo4j operator resource states.</p>
 </tr>
 <tr>
 <td>Degraded</td>
-<td>Failed, Degraded; <code>Neo4jBackup</code> and <code>Neo4jPlugin</code> also <code>Invalid</code></td>
+<td>Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — every phase <code>kubectl neo4j status --problems</code> reports, on every self-managed kind</td>
 </tr>
 <tr>
 <td>Progressing</td>
@@ -3853,6 +3853,11 @@ to interpret Neo4j operator resource states.</p>
 </tr>
 </tbody>
 </table>
+<p>A <code>Neo4jDatabase</code> the operator refused (<code>ValidationFailed</code>) is Degraded: nothing
+was created, and nothing changes until the spec is edited. As Progressing (the
+health checks of v1.22.0 and earlier), Argo CD showed the Application still syncing
+and a later sync wave waited for ever. So is one whose deletion keeps retrying a
+refused <code>DROP DATABASE</code> (<code>Error</code>).</p>
 <p>A <code>Neo4jBackup</code> with <code>spec.schedule</code> stays in <code>Scheduled</code> for its whole life (it
 never reaches <code>Completed</code>), and <code>spec.suspend: true</code> is declared state rather
 than a fault, so both map to Healthy — otherwise an Application containing a
@@ -3873,7 +3878,9 @@ ArgoCD shows as Progressing. See
 <p>Health checks are configured for <strong>all 27 CRDs</strong> in the <code>neo4j.neo4j.com</code>
 group — the 15 self-managed CRDs (7 workload, 4 identity, 4 composite / alias /
 replication) and all 12 Aura CRDs.</p>
-<p><strong>Self-managed CRDs</strong> key off <code>status.phase</code>, per the table above.</p>
+<p><strong>Self-managed CRDs</strong> key off <code>status.phase</code>, per the table above. A test pins
+the Degraded list to the CLI's (<code>TestArgoCDHealthChecks_EveryProblemPhaseIsDegraded</code>),
+so a refusal phase cannot be added to one and not the other.</p>
 <p><strong>Aura CRDs</strong> key off the <code>Ready</code> <strong>condition</strong> instead. Their <code>status.phase</code>
 largely mirrors Aura's <em>own</em> API status (<code>AuraInstance</code> copies the live instance
 status verbatim), which is an open vocabulary Neo4j can extend without a version

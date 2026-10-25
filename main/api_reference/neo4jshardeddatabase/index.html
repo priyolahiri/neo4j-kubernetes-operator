@@ -5022,7 +5022,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <td><code>map[string]string</code></td>
 <td>No</td>
 <td>-</td>
-<td>Seed URIs keyed by shard name</td>
+<td>Seed URIs keyed by shard name: <code>&lt;spec.name&gt;-g000</code> and <code>&lt;spec.name&gt;-p000</code> … <code>-p&lt;N-1&gt;</code>. Neo4j names the shards after the database name lower-cased and matches the keys exactly, so the operator sends every key lower-cased (<code>Products-g000</code> goes as <code>products-g000</code>), as it does for the keys it builds from <code>seedBackupRef</code></td>
 </tr>
 <tr>
 <td><code>seedBackupRef</code></td>
@@ -5064,7 +5064,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <p><strong>Seed URI Notes</strong>:</p>
 <ul>
 <li><code>seedURI</code> is for a single backup location (expects shard-suffixed artifacts).</li>
-<li><code>seedURIs</code> is for per-shard URIs (e.g., dump files or multi-location backups).</li>
+<li><code>seedURIs</code> is for per-shard URIs (e.g., dump files or multi-location backups). Its keys are shard names, sent lower-cased.</li>
 <li><code>seedBackupRef</code> is mutually exclusive with both <code>seedURI</code> and <code>seedURIs</code>; the operator materialises it into a seed URI at reconcile time.</li>
 <li><code>seedConfig.restoreUntil</code> maps to the <code>seedRestoreUntil</code> CREATE DATABASE option for sharded databases.</li>
 </ul>

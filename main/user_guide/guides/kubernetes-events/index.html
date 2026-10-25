@@ -4501,17 +4501,17 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RestoreStarted</code></td>
 <td>Normal</td>
-<td>Restore operation has started. A standalone restore that runs offline with <code>neo4j-admin</code> (a point in time, a <code>source.type: storage</code> path) first says why, once its checks have passed — never for a restore that is then refused; with <code>stopCluster: false</code> it says the standalone is already stopped</td>
+<td>Restore operation has started. A standalone restore that runs offline with <code>neo4j-admin</code> (a point in time, a <code>source.type: storage</code> path) first says why, once its checks have passed — never for a restore that is then refused: with <code>stopCluster: true</code> when it stops the instance, with <code>stopCluster: false</code> (saying the standalone is already stopped) when the restore Job starts, so a restore that waits in <code>Pending</code> first does not say it twice. "Restore job … started" is emitted when the restore turns <code>Running</code>, once. Each database of an all-databases restore has its own, from the source <code>neo4j-restore-progress</code></td>
 </tr>
 <tr>
 <td><code>RestoreCompleted</code></td>
 <td>Normal</td>
-<td>Restore operation completed</td>
+<td>Restore operation completed. Also once at the end of an all-databases restore ("All-databases restore completed: Restored N databases")</td>
 </tr>
 <tr>
 <td><code>RestoreFailed</code></td>
 <td>Warning</td>
-<td>Restore operation failed</td>
+<td>Restore operation failed. Also once at the end of an all-databases restore in which a database failed</td>
 </tr>
 <tr>
 <td><code>RestoreFromChainParent</code></td>
@@ -4556,7 +4556,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RestoreSeedProgress</code></td>
 <td>Normal</td>
-<td>One poll of an all-databases restore's per-database seed (emitted on every non-terminal poll; the apiserver aggregates repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck)</td>
+<td>The progress of one database's seed in an all-databases restore (allocations online, or the last poll's error). Emitted when it changes and every 10 minutes while it does not; the API server aggregates the repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck. From the source <code>neo4j-restore-progress</code>, which has an event budget of its own (client-go: a burst of 25 per source, object and type, then one every five minutes), so a long seed cannot crowd out the restore's <code>RestoreCompleted</code> or <code>RestoreFailed</code>. The per-database record is <code>status.databaseResults</code></td>
 </tr>
 <tr>
 <td><code>RestoreShardedDatabasesNotCovered</code></td>

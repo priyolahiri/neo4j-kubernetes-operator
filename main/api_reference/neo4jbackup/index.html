@@ -5516,7 +5516,7 @@
 <ul>
 <li>Must reference a CR in the <strong>same namespace</strong>.</li>
 <li>Cannot self-reference (<code>chainFromBackup: &lt;this-cr-name&gt;</code> is rejected).</li>
-<li>Scope (<code>instanceRef</code> + database/sharded/all-databases scope) must match the referenced CR.</li>
+<li>Scope (<code>instanceRef</code> + database/sharded/all-databases scope) must match the referenced CR. A database name matches in any case (<code>Orders</code> and <code>orders</code> are one database, and <code>neo4j-admin</code> writes both as <code>orders-&lt;timestamp&gt;.backup</code>).</li>
 <li>Storage backend (type + bucket/path) must match.</li>
 </ul>
 <p><strong>Runtime safety</strong>: the operator labels every backup Job with <code>app.kubernetes.io/part-of: &lt;chain-root-name&gt;</code> and refuses to submit a new Job while another Job sharing the same <code>part-of</code> label is still active — preventing the daily FULL and hourly DIFF from racing against the same artifact directory.</p>
