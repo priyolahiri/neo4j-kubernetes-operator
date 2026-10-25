@@ -20,9 +20,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
+
+	corev1 "k8s.io/api/core/v1"
 
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/entrypointsim"
 )
@@ -42,7 +43,7 @@ func runPluginListMerge(t *testing.T, conf string, env map[string]string) map[st
 			t.Fatal(err)
 		}
 	}
-	script := "set -e\n" + strings.ReplaceAll(buildPluginListMergeBlock(), "/conf/neo4j.conf", confPath) + "\nenv\n"
+	script := "set -e\n" + strings.ReplaceAll(buildPluginListMergeBlock(nil, nil), "/conf/neo4j.conf", confPath) + "\nenv\n"
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
 	cmd.Dir = root
 	cmd.Env = []string{"PATH=" + os.Getenv("PATH")}
@@ -146,25 +147,52 @@ func TestPluginListMergeBlock(t *testing.T) {
 }
 
 // The block covers every additive list (IsAdditiveConfKey), sits between the
-// restart-neutral markers, and the startup script still parses.
+// restart-neutral markers, and the startup script still parses. The
+// unrestricted list gets the image's plugin entries unless the cluster sets
+// it itself, in its spec.config or its spec.env (operations.md id 193).
 func TestPluginListMergeBlock_InTheStartupScript(t *testing.T) {
-	block := buildPluginListMergeBlock()
-	keys := make([]string, 0, len(additiveConfKeys))
-	for key := range additiveConfKeys {
-		keys = append(keys, key)
-		call := "operator_merge_list " + key + " " + Neo4jSettingEnvVarName(key)
-		if key == AllowlistSetting {
-			call += " fleet-management 'fleetManagement.*'"
+	fromSecret := &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{
+		LocalObjectReference: corev1.LocalObjectReference{Name: "s"}, Key: "k"}}
+	for _, tc := range []struct {
+		config   map[string]string
+		env      []corev1.EnvVar
+		defaults bool
+	}{
+		{nil, nil, true},
+		{map[string]string{AllowlistSetting: "apoc.*"}, nil, true},
+		{map[string]string{UnrestrictedSetting: "custom.*"}, nil, false},
+		{map[string]string{UnrestrictedSetting: ""}, nil, false},
+		{nil, []corev1.EnvVar{{Name: unrestrictedEnv, Value: "custom.*"}}, false},
+		{nil, []corev1.EnvVar{{Name: unrestrictedEnv, ValueFrom: fromSecret}}, false},
+		{nil, []corev1.EnvVar{{Name: unrestrictedEnv, Value: " "}}, true},
+		{nil, []corev1.EnvVar{{Name: allowlistEnv, Value: "apoc.*"}}, true},
+	} {
+		block := buildPluginListMergeBlock(tc.config, tc.env)
+		for key := range additiveConfKeys {
+			call := "operator_merge_list " + key + " " + Neo4jSettingEnvVarName(key)
+			switch {
+			case key == AllowlistSetting:
+				call += " fleet-management 'fleetManagement.*'"
+			case key == UnrestrictedSetting && tc.defaults:
+				call += " '' '' plugin-defaults"
+			}
+			if !strings.Contains(block, call+"\n") {
+				t.Errorf("config %v, env %v: %s is not merged as %q", tc.config, tc.env, key, call)
+			}
 		}
-		if !strings.Contains(block, call+"\n") {
-			t.Errorf("%s is not merged", key)
+		if !strings.HasPrefix(block, RestartNeutralBegin+"\n") || !strings.HasSuffix(strings.TrimSpace(block), RestartNeutralEnd) {
+			t.Error("the block must sit between the restart-neutral markers")
 		}
 	}
-	sort.Strings(keys)
-	if !strings.HasPrefix(block, RestartNeutralBegin+"\n") || !strings.HasSuffix(strings.TrimSpace(block), RestartNeutralEnd) {
-		t.Error("the block must sit between the restart-neutral markers")
+	cluster := systemModeCluster("2026.08.1-enterprise", 3)
+	cluster.Spec.Env = []corev1.EnvVar{{Name: unrestrictedEnv, Value: "custom.*"}}
+	if own := BuildConfigMapForEnterprise(cluster).Data["startup.sh"]; strings.Contains(own, " '' '' "+pluginDefaultsArg+"\n") {
+		t.Error("a cluster whose spec.env sets the unrestricted list gets no image entries")
 	}
 	script := BuildConfigMapForEnterprise(systemModeCluster("2026.08.1-enterprise", 3)).Data["startup.sh"]
+	if !strings.Contains(script, " '' '' "+pluginDefaultsArg+"\n") {
+		t.Error("the rendered script gives the unrestricted list the image's entries")
+	}
 	merge := strings.Index(script, PluginListMergeMarker)
 	if merge < 0 || merge > strings.Index(script, "exec /startup/docker-entrypoint.sh") {
 		t.Fatal("the block must run before the entrypoint")
@@ -179,43 +207,81 @@ func TestPluginListMergeBlock_InTheStartupScript(t *testing.T) {
 }
 
 // ServerProcedureList, what the operator reads back (the ProceduresHidden
-// check), says what the block and the entrypoint make of the same inputs.
+// check), says what the block and the entrypoint make of the same inputs: the
+// allowlist with Aura Fleet Management's entry (id 192), the unrestricted list
+// with the image's entries for the plugins installed (id 193), on each
+// vendored release.
 func TestServerProcedureList_AgreesWithTheBlock(t *testing.T) {
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not available")
 	}
-	const allow = "NEO4J_dbms_security_procedures_allowlist"
+	r0 := entrypointsim.Image{Release: entrypointsim.Release5260}
+	r5 := entrypointsim.Image{Release: entrypointsim.Release52632, FleetJAR: true}
+	r9 := entrypointsim.Image{Release: entrypointsim.Release2026090}
+	r10 := entrypointsim.Image{Release: entrypointsim.Release2026100}
 	for _, tc := range []struct {
-		conf    string // the allowlist line's value; "-" for none
-		env     string // the variable; "-" for none
-		plugins string
+		setting  string
+		image    entrypointsim.Image
+		own      bool   // the line is the cluster's spec.config, or (ownEnv) the variable its spec.env
+		conf     string // the line's value; "-" for none
+		env      string // the variable; "-" for none
+		plugins  string
+		defaults []string // the image's entries for the plugins, in order
 	}{
-		{"-", "-", `["apoc"]`},
-		{"-", "-", `["fleet-management"]`},
-		{"apoc.*", "-", `["apoc"]`},
-		{"apoc.*", "-", `["fleet-management"]`},
-		{"apoc.*,fleetManagement.*", "-", `["fleet-management"]`},
-		{"-", "genai.*", `["genai"]`},
-		{"-", "genai.*", `["fleet-management","genai"]`},
-		{"apoc.coll.*", "genai.*,ai.*", `["apoc","genai"]`},
-		{"apoc.coll.*", "genai.*", `["fleet-management","genai"]`},
-		{"", "-", `["fleet-management"]`},
+		{AllowlistSetting, r5, false, "-", "-", `["apoc"]`, nil},
+		{AllowlistSetting, r5, false, "-", "-", `["fleet-management"]`, nil},
+		{AllowlistSetting, r5, false, "apoc.*", "-", `["apoc"]`, nil},
+		{AllowlistSetting, r5, false, "apoc.*", "-", `["fleet-management"]`, nil},
+		{AllowlistSetting, r5, false, "apoc.*,fleetManagement.*", "-", `["fleet-management"]`, nil},
+		{AllowlistSetting, r5, false, "-", "genai.*", `["genai"]`, nil},
+		{AllowlistSetting, r5, false, "-", "genai.*", `["fleet-management","genai"]`, nil},
+		{AllowlistSetting, r5, false, "apoc.coll.*", "genai.*,ai.*", `["apoc","genai"]`, nil},
+		{AllowlistSetting, r5, false, "apoc.coll.*", "genai.*", `["fleet-management","genai"]`, nil},
+		{AllowlistSetting, r5, false, "", "-", `["fleet-management"]`, nil},
+		{UnrestrictedSetting, r5, false, "-", "-", `["apoc","graph-data-science"]`, []string{"apoc.*", "gds.*"}},
+		// apoc-extended is downloaded (a versions URL), which the harness never
+		// does: the block counts it all the same, as a server that downloads it.
+		{UnrestrictedSetting, r5, false, "-", "gds.*", `["apoc-extended","graph-data-science"]`, []string{"apoc.*", "gds.*"}},
+		{UnrestrictedSetting, r5, false, "fleetManagement.*", "-", `["fleet-management","apoc"]`, []string{"fleetManagement.*", "apoc.*"}},
+		{UnrestrictedSetting, r5, false, "fleetManagement.*", "-", `["fleet-management"]`, []string{"fleetManagement.*"}},
+		{UnrestrictedSetting, r5, false, "-", "gds.*,apoc.load.*", `["apoc","graph-data-science"]`, []string{"apoc.*", "gds.*"}},
+		{UnrestrictedSetting, r5, false, "fleetManagement.*", "genai.vector.*", `["fleet-management","genai"]`, []string{"fleetManagement.*", "genai.*"}},
+		{UnrestrictedSetting, r5, false, "-", "bloom.*", `["bloom","apoc"]`, []string{"bloom.*", "apoc.*"}},
+		{UnrestrictedSetting, r5, true, "custom.*,fleetManagement.*", "-", `["fleet-management","apoc"]`, nil},
+		{UnrestrictedSetting, r5, true, "custom.*", "gds.*", `["graph-data-science"]`, nil},
+		// ownEnv: the variable is the cluster's spec.env (the plugins' tokens joined).
+		{UnrestrictedSetting, r5, true, "fleetManagement.*", "custom.*", `["fleet-management","apoc"]`, []string{"ownEnv"}},
+		{UnrestrictedSetting, r10, true, "-", "custom.*,gds.*", `["apoc","graph-data-science","genai"]`, []string{"ownEnv"}},
+		{UnrestrictedSetting, r0, false, "-", "gds.*", `["apoc","graph-data-science"]`, []string{"apoc.*", "gds.*"}},
+		{UnrestrictedSetting, r9, false, "fleetManagement.*", "-", `["fleet-management","apoc"]`, []string{"apoc.*"}},
+		{UnrestrictedSetting, r9, false, "-", "genai.vector.*", `["genai"]`, []string{"genai.*"}},
+		{UnrestrictedSetting, r10, false, "-", "genai.vector.*", `["genai"]`, []string{"genai.*,ai.*"}},
+		{UnrestrictedSetting, r10, false, "-", "-", `["apoc","genai"]`, []string{"apoc.*", "genai.*,ai.*"}},
 	} {
 		conf := "server.memory.heap.max_size=1G\n"
 		if tc.conf != "-" {
-			conf += AllowlistSetting + "=" + tc.conf + "\n"
+			conf += tc.setting + "=" + tc.conf + "\n"
 		}
 		env := map[string]string{"NEO4J_PLUGINS": tc.plugins}
 		if tc.env != "-" {
-			env[allow] = tc.env
+			env[Neo4jSettingEnvVarName(tc.setting)] = tc.env
+		}
+		var config map[string]string
+		var specEnv []corev1.EnvVar
+		ownEnv := len(tc.defaults) == 1 && tc.defaults[0] == "ownEnv"
+		switch {
+		case ownEnv:
+			specEnv = []corev1.EnvVar{{Name: Neo4jSettingEnvVarName(tc.setting), Value: tc.env}}
+		case tc.own:
+			config = map[string]string{tc.setting: tc.conf}
 		}
 		// The server: the block, then the entrypoint's plugin defaults and its
-		// environment pass, on an image with the fleet JAR (5.26.32).
-		started := entrypointsim.Start(t, image526, conf, buildPluginListMergeBlock(), env)
-		wantValue, lines := entrypointsim.Setting(started, AllowlistSetting)
+		// environment pass.
+		started := entrypointsim.Start(t, tc.image, conf, buildPluginListMergeBlock(config, specEnv), env)
+		wantValue, lines := entrypointsim.Setting(started, tc.setting)
 		wantSet := lines > 0
 		var plugins []string
-		for _, name := range []string{"apoc", "genai", FleetManagementPlugin} {
+		for _, name := range []string{"apoc", "apoc-extended", "bloom", "genai", "graph-data-science", FleetManagementPlugin} {
 			if strings.Contains(tc.plugins, `"`+name+`"`) {
 				plugins = append(plugins, name)
 			}
@@ -228,10 +294,14 @@ func TestServerProcedureList_AgreesWithTheBlock(t *testing.T) {
 		if tc.env == "-" {
 			envValue = ""
 		}
-		got, set := ServerProcedureList(AllowlistSetting, confValue, tc.conf != "-", envValue, tc.env != "-", plugins)
+		defaults := tc.defaults
+		if tc.own {
+			defaults = nil // the caller passes none for a list the cluster sets itself (OwnsUnrestrictedList)
+		}
+		got, set := ServerProcedureList(tc.setting, confValue, tc.conf != "-", envValue, tc.env != "-", plugins, defaults)
 		if set != wantSet || (set && got != wantValue) {
-			t.Errorf("conf %q, env %q, %s: ServerProcedureList = %q (set %v), the server starts with %q (set %v)",
-				tc.conf, tc.env, tc.plugins, got, set, wantValue, wantSet)
+			t.Errorf("%s %s, conf %q (own %v), env %q, %s: ServerProcedureList = %q (set %v), the server starts with %q (set %v)",
+				tc.image.Release, tc.setting, tc.conf, tc.own, tc.env, tc.plugins, got, set, wantValue, wantSet)
 		}
 	}
 }

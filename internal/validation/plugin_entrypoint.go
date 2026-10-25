@@ -86,6 +86,95 @@ var entrypointPluginLists = []entrypointPluginList{
 	{from: "2025.08.0", names: []string{"apoc", "apoc-extended", "bloom", "fleet-management", "genai", "graph-data-science"}},
 }
 
+// imageUnrestrictedDefaultList is, for one range of releases, the entry the
+// entrypoint adds to dbms.security.procedures.unrestricted for each plugin it
+// installs: from release from until the next entry of the same line.
+type imageUnrestrictedDefaultList struct {
+	from    string
+	entries map[string]string
+}
+
+// imageUnrestrictedDefaultLists is, release by release, what each image's
+// /startup/neo4j-plugins.json gives a plugin it installs as the
+// "properties"."dbms.security.procedures.unrestricted" the entrypoint applies
+// (apply_plugin_default_configuration; operations.md id 193). Read on
+// 2026-10-25 from the images neo4j:5.26.0, 5.26.32 and 2026.09.0-enterprise
+// and from github.com/neo4j/docker-neo4j at every release tag; the vendored
+// tables in internal/entrypointsim/testdata pin it
+// (TestImageUnrestrictedDefaults_MatchTheImages).
+//   - n10s's entry is semantics.* (its procedures are n10s.*): the image's,
+//     faithfully. On CalVer the name is listed until 2025.04 but the entrypoint
+//     finds no JAR for it and applies nothing (entrypointBrokenPlugins).
+//   - fleet-management's from 5.26.11 and 2025.08.0, as the list of names;
+//     from 2026.03 the table still has it, but the entrypoint cannot install
+//     the plugin (no JAR, no versions URL) and applies nothing.
+//   - genai's is genai.*,ai.* from 2026.10.0 (docker-neo4j #571).
+//
+// A release newer than the last one read (2026.10.1) is taken as the newest
+// entry of its line. The cluster's startup script reads the image's own table
+// instead; this one serves the standalone, whose neo4j.conf the operator
+// writes, and ServerProcedureList.
+var imageUnrestrictedDefaultLists = []imageUnrestrictedDefaultList{
+	{from: "5.26.0", entries: map[string]string{
+		"apoc": "apoc.*", "apoc-extended": "apoc.*", "bloom": "bloom.*", "genai": "genai.*",
+		"graph-data-science": "gds.*", "n10s": "semantics.*",
+	}},
+	{from: "5.26.11", entries: map[string]string{
+		"apoc": "apoc.*", "apoc-extended": "apoc.*", "bloom": "bloom.*", "fleet-management": "fleetManagement.*",
+		"genai": "genai.*", "graph-data-science": "gds.*", "n10s": "semantics.*",
+	}},
+	{from: "2025.01.0", entries: map[string]string{
+		"apoc": "apoc.*", "apoc-extended": "apoc.*", "bloom": "bloom.*", "genai": "genai.*", "graph-data-science": "gds.*",
+	}},
+	{from: "2025.08.0", entries: map[string]string{
+		"apoc": "apoc.*", "apoc-extended": "apoc.*", "bloom": "bloom.*", "fleet-management": "fleetManagement.*",
+		"genai": "genai.*", "graph-data-science": "gds.*",
+	}},
+	{from: fleetManagementBuiltInFrom, entries: map[string]string{
+		"apoc": "apoc.*", "apoc-extended": "apoc.*", "bloom": "bloom.*", "genai": "genai.*", "graph-data-science": "gds.*",
+	}},
+	{from: "2026.10.0", entries: map[string]string{
+		"apoc": "apoc.*", "apoc-extended": "apoc.*", "bloom": "bloom.*", "genai": "genai.*,ai.*", "graph-data-science": "gds.*",
+	}},
+}
+
+// ImageUnrestrictedDefaults returns, in the order of plugins (NEO4J_PLUGINS
+// names), the entries the entrypoint of the Neo4j image tagged tag adds to
+// dbms.security.procedures.unrestricted for those it installs, one per plugin
+// as the image's table gives it ("genai.*,ai.*" is one); nil for a tag that
+// names no supported version. The entrypoint applies them only to a neo4j.conf
+// that does not set the list, and a NEO4J_dbms_security_procedures_unrestricted
+// variable replaces them: the operator adds them back, except to a list the
+// deployment sets itself (resources.OwnsUnrestrictedList; operations.md id
+// 193).
+func ImageUnrestrictedDefaults(tag string, plugins []string) []string {
+	v := parseTagVersion(tag)
+	if v == nil {
+		return nil
+	}
+	if lts := v.Major == 5 && v.Minor == 26; !lts && v.Major < 2025 {
+		return nil
+	}
+	var entries map[string]string
+	for _, list := range imageUnrestrictedDefaultLists {
+		from := parseTagVersion(list.from)
+		if (from.Major >= 2025) != (v.Major >= 2025) {
+			continue // the other line
+		}
+		key, fromKey := versionKey(v), versionKey(from)
+		if slices.Compare(fromKey[:], key[:]) <= 0 {
+			entries = list.entries
+		}
+	}
+	var out []string
+	for _, name := range plugins {
+		if entry, ok := entries[name]; ok {
+			out = append(out, entry)
+		}
+	}
+	return out
+}
+
 // entrypointBrokenPlugin is a name the entrypoint of a range of releases
 // lists, and installs, but whose JAR that release does not run: from release
 // from to the end of its line (or until the line's list drops the name). why

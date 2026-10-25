@@ -1,14 +1,23 @@
 # Excerpt of the Neo4j Docker image's entrypoint, run by the operator's tests
-# of its startup-script list block (docs/knowledge/operations.md ids 179, 192).
+# of its startup-script list block (docs/knowledge/operations.md ids 179, 192,
+# 193).
 #
-# Copied verbatim from github.com/neo4j/docker-neo4j, branch master, read
-# 2026-10-25: from docker-image-src/common/utilities.sh, debugging_enabled,
-# debug_msg and containsElement; from docker-image-src/5/coredb/
-# docker-entrypoint.sh, load_plugin_from_location,
-# apply_plugin_default_configuration, install_neo4j_plugins,
-# add_env_setting_to_conf and the "ENVIRONMENT VARIABLE CONFIGURATIONS" pass
-# (docker-image-src/calver/coredb/docker-entrypoint.sh has the same). Licensed
-# under the Apache License, Version 2.0, as that repository is.
+# Copied verbatim from the images neo4j:5.26.32-enterprise and
+# neo4j:2026.09.0-enterprise (/startup/utilities.sh and
+# /startup/docker-entrypoint.sh, identical in both; read 2026-10-25), which is
+# github.com/neo4j/docker-neo4j at those release tags: from utilities.sh,
+# debugging_enabled, debug_msg and containsElement; from docker-entrypoint.sh,
+# load_plugin_from_location, apply_plugin_default_configuration,
+# install_neo4j_plugins, add_docker_default_to_conf, add_env_setting_to_conf,
+# and the "DOCKER SPECIFIC DEFAULT CONFIGURATIONS" and "ENVIRONMENT VARIABLE
+# CONFIGURATIONS" passes. 5.26.0 has the same functions. The docker defaults
+# are 5.26.32's: from 2025.01 the image no longer adds
+# server.discovery.advertised_address, the one difference between the two
+# images here. The repository's master
+# has since anchored the setting match ("^[[:space:]]*<setting>[[:space:]]*=")
+# where these releases match "<setting>=" as a fixed string; for a conf whose
+# lines start with their key, as the operator renders it, the two agree.
+# Licensed under the Apache License, Version 2.0, as that repository is.
 #
 # Two stand-ins, marked below, for what needs the image: is_readable (the
 # image's reads ownership with GNU stat), and load_plugin_from_url, which
@@ -17,11 +26,14 @@
 # and later: the image wgets "null", says "ERROR: could not query null …" and
 # starts without it), and as it would offline for any other.
 #
-# The caller runs install_neo4j_plugins (when NEO4J_PLUGINS is set) and then
-# the environment pass, in that order, as the entrypoint does; it replaces
-# /startup/neo4j-plugins.json with its own path.
+# The caller runs install_neo4j_plugins (when NEO4J_PLUGINS is set), the docker
+# defaults and then the environment pass, in that order, as the entrypoint
+# does; it replaces /startup/neo4j-plugins.json with its own path. The docker
+# defaults matter here for one thing: each is appended after a newline, so a
+# neo4j.conf without a final newline does not run into the environment pass's
+# first line.
 
-# --- docker-image-src/common/utilities.sh ---
+# --- /startup/utilities.sh ---
 function debugging_enabled
 {
     test "${NEO4J_DEBUG+yes}" = "yes"
@@ -56,7 +68,7 @@ function load_plugin_from_url
     return 1
 }
 
-# --- docker-image-src/5/coredb/docker-entrypoint.sh ---
+# --- /startup/docker-entrypoint.sh ---
 function load_plugin_from_location
 {
   # Install a plugin from location at runtime.
@@ -99,7 +111,7 @@ function apply_plugin_default_configuration
         debug_msg "${_plugin_name} requires setting ${_property}=${_value}"
 
         # the first grep strips out comments
-        if grep -o "^[^#]*" "${_reference_conf}" | grep -q "^[[:space:]]*${_property}[[:space:]]*=" ; then
+        if grep -o "^[^#]*" "${_reference_conf}" | grep -q --fixed-strings "${_property}=" ; then
             # property is already set in the user provided config. In this case we don't override what has been set explicitly by the user.
             echo "Skipping ${_property} for plugin ${_plugin_name} because it is already set."
             echo "You may need to add ${_value} to the ${_property} setting in your configuration file."
@@ -155,6 +167,19 @@ function install_neo4j_plugins
     rm "${_old_config}"
 }
 
+function add_docker_default_to_conf
+{
+    # docker defaults should NOT overwrite values already in the conf file
+    local _setting="${1}"
+    local _value="${2}"
+
+    if [ ! -e "${NEO4J_HOME}"/conf/neo4j.conf ] || ! grep -q "^${_setting}=" "${NEO4J_HOME}"/conf/neo4j.conf
+    then
+        debug_msg "Appended ${_setting}=${_value} to ${NEO4J_HOME}/conf/neo4j.conf"
+        echo -e "\n"${_setting}=${_value} >> "${NEO4J_HOME}"/conf/neo4j.conf
+    fi
+}
+
 function add_env_setting_to_conf
 {
     # settings from environment variables should overwrite values already in the conf
@@ -173,18 +198,39 @@ function add_env_setting_to_conf
         ;;
     esac
 
-    if [ -e "${_conf_file}" ] && grep -q "^[[:space:]]*${_setting}[[:space:]]*=" "${_conf_file}"; then
+    if [ -e "${_conf_file}" ] && grep -q -F "${_setting}=" "${_conf_file}"; then
         if containsElement "${_setting}" "${_append_not_replace_configs[@]}"; then
             debug_msg "${_setting} will be appended to ${_conf_file} without replacing existing settings."
         else
             # Remove any lines containing the setting already
             debug_msg "Removing existing setting for ${_setting} in ${_conf_file}"
-            sed --in-place "/^[[:space:]]*${_setting}[[:space:]]*=.*/d" "${_conf_file}"
+            sed --in-place "/^${_setting}=.*/d" "${_conf_file}"
         fi
     fi
     # Then always append setting to file
     debug_msg "Appended ${_setting}=${_value} to ${_conf_file}"
     echo "${_setting}=${_value}" >> "${_conf_file}"
+}
+
+# The docker defaults, wrapped in a function to run after install_neo4j_plugins.
+function apply_docker_defaults
+{
+## == DOCKER SPECIFIC DEFAULT CONFIGURATIONS ===
+## these should not override *any* configurations set by the user
+
+debug_msg "Setting docker specific configuration overrides"
+add_docker_default_to_conf "server.memory.pagecache.size" "512M"
+add_docker_default_to_conf "server.default_listen_address" "0.0.0.0"
+
+# set enterprise only docker defaults
+if [ "${NEO4J_EDITION}" == "enterprise" ];
+then
+    debug_msg "Setting docker specific Enterprise Edition overrides"
+    add_docker_default_to_conf "server.discovery.advertised_address" "$(hostname):5000"
+    add_docker_default_to_conf "server.cluster.advertised_address" "$(hostname):6000"
+    add_docker_default_to_conf "server.cluster.raft.advertised_address" "$(hostname):7000"
+    add_docker_default_to_conf "server.routing.advertised_address" "$(hostname):7688"
+fi
 }
 
 # The environment pass, wrapped in a function to run after install_neo4j_plugins.

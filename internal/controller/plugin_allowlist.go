@@ -103,22 +103,29 @@ func allowlistLoadsAny(allowlist string, namespaces []string) bool {
 	return false
 }
 
-// effectiveAllowlist returns the allowlist the target's servers start with,
-// as they build it from the target's rendered neo4j.conf ({target}-config)
-// and the neo4j container's NEO4J_dbms_security_procedures_allowlist:
+// effectiveAllowlist returns the allowlist the target's servers will start
+// with, as they build it from the neo4j.conf their controller writes
+// ({target}-config) and the neo4j container's
+// NEO4J_dbms_security_procedures_allowlist:
 //   - on a cluster, the union of the two, with Aura Fleet Management's entry
 //     when NEO4J_PLUGINS installs fleet-management and either sets the list:
 //     the cluster's startup script gives the variable those before the
 //     entrypoint writes it in place of the conf's line
 //     (resources.ServerProcedureList, operations.md ids 179, 192);
-//   - on a standalone, the variable when there is one (the entrypoint writes it
-//     in place of the conf's line; its plugins put their lists in the conf, so
-//     only a variable someone else set is there), else the conf's, which is the
-//     union of its own spec.config and its plugins' settings.
+//   - on a standalone, the variable when there is one someone else set (the
+//     entrypoint writes it in place of the conf's line; its plugins and its
+//     spec.env put their lists in the conf, id 193), else the conf's, which is
+//     the union of its own spec.config, its spec.env and its plugins'.
+//
+// The conf is the one the target's controller renders from its spec now
+// (resources.BuildConfigMapForEnterprise, desiredStandaloneConfigMap), not
+// the ConfigMap as it is: between a spec change, or an operator upgrade, and
+// the controller's write, the ConfigMap holds a list the servers will not run
+// with, and judging it announced a hidden plugin that was not (id 194).
 //
 // set is false when the list is not set (Neo4j loads every procedure) or
 // cannot be read (a variable from a Secret or ConfigMap); where says where it
-// was read.
+// is set.
 func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployment *DeploymentInfo) (value, where string, set bool, err error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
@@ -131,6 +138,12 @@ func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployme
 		if e.Name != envName {
 			continue
 		}
+		if folded(deployment, e.Name) {
+			// The standalone's own spec.env sets it: the conf holds it (id 193),
+			// and the variable leaves the StatefulSet with the controller's next
+			// write.
+			break
+		}
 		if e.ValueFrom != nil {
 			return "", "", false, nil
 		}
@@ -141,19 +154,15 @@ func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployme
 	if envSet && deployment.Type == "standalone" {
 		return envValue, envWhere, true, nil
 	}
-	cm := &corev1.ConfigMap{}
-	confValue, confSet := "", false
-	if err := r.Get(ctx, types.NamespacedName{Name: deployment.Name + "-config", Namespace: deployment.Namespace}, cm); err != nil {
-		if !errors.IsNotFound(err) {
-			return "", "", false, err
-		}
-	} else {
-		confValue, confSet = resources.Neo4jConfSettings(cm.Data["neo4j.conf"])[allowlistSetting]
+	conf, cmName, err := r.desiredConf(ctx, deployment)
+	if err != nil {
+		return "", "", false, err
 	}
-	confWhere := fmt.Sprintf("neo4j.conf of ConfigMap %s", cm.Name)
+	confValue, confSet := resources.Neo4jConfSettings(conf)[allowlistSetting]
+	confWhere := fmt.Sprintf("neo4j.conf of ConfigMap %s", cmName)
 	if deployment.Type != "standalone" {
 		value, set = resources.ServerProcedureList(allowlistSetting, confValue, confSet, envValue, envSet,
-			neo4jPluginsList(neo4jContainerEnv(sts.Spec.Template.Spec)))
+			neo4jPluginsList(neo4jContainerEnv(sts.Spec.Template.Spec)), nil)
 		where = confWhere
 		switch {
 		case envSet && confSet:
@@ -167,6 +176,49 @@ func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployme
 		return confValue, confWhere, true, nil
 	}
 	return "", "", false, nil
+}
+
+// folded reports whether the variable name, on a standalone's StatefulSet, is
+// a list of its own spec.env that its neo4j.conf holds instead
+// (foldedStandaloneEnv, operations.md id 193).
+func folded(deployment *DeploymentInfo, name string) bool {
+	standalone, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
+	if !ok {
+		return false
+	}
+	for _, e := range standalone.Spec.Env {
+		if e.Name == name && foldedStandaloneEnv(e) {
+			return true
+		}
+	}
+	return false
+}
+
+// desiredConf returns the neo4j.conf the target's controller writes for its
+// spec now, and the name of the ConfigMap that holds it: a cluster's is
+// rendered from its spec alone; a standalone's adds its plugins' settings and
+// keeps the keys someone else put in the ConfigMap (desiredStandaloneConfigMap,
+// mergeStandaloneConf).
+func (r *Neo4jPluginReconciler) desiredConf(ctx context.Context, deployment *DeploymentInfo) (conf, name string, err error) {
+	switch target := deployment.Object.(type) {
+	case *neo4jv1beta1.Neo4jEnterpriseCluster:
+		cm := resources.BuildConfigMapForEnterprise(target)
+		return cm.Data["neo4j.conf"], cm.Name, nil
+	case *neo4jv1beta1.Neo4jEnterpriseStandalone:
+		desired, err := desiredStandaloneConfigMap(ctx, r.Client, target)
+		if err != nil {
+			return "", "", err
+		}
+		live := &corev1.ConfigMap{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(desired), live); err != nil {
+			if !errors.IsNotFound(err) {
+				return "", "", err
+			}
+			live = nil
+		}
+		return mergeStandaloneConf(desired.Data["neo4j.conf"], live), desired.Name, nil
+	}
+	return "", deployment.Name + "-config", nil
 }
 
 // targetSetsAllowlist reports whether the target's own spec sets its
