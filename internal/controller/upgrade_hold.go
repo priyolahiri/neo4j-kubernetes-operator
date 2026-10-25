@@ -190,9 +190,21 @@ func newUpgradeRecord(held *neo4jv1beta1.UpgradeStatus, previousVersion, targetV
 		PreviousVersion: previousVersion,
 		TargetVersion:   targetVersion,
 		Progress:        &neo4jv1beta1.UpgradeProgress{Total: servers, Pending: servers},
+		// No server has started on anything newer yet (recordStartedTarget).
+		StartedTargetVersion: previousVersion,
 	}
 	if !sameHeldUpgrade(held, previousVersion) {
 		return record
+	}
+	// The servers the held upgrade started still run what they started on: a
+	// tag below it stays refused. A record an earlier operator wrote says only
+	// that the walk released a server, which is taken as having run the
+	// target, as that operator's rule did.
+	switch {
+	case held.StartedTargetVersion != "":
+		record.StartedTargetVersion = held.StartedTargetVersion
+	case progressReleasedAServer(held):
+		record.StartedTargetVersion = held.TargetVersion
 	}
 	if held.StartTime != nil {
 		start := *held.StartTime
@@ -256,12 +268,17 @@ func (r *Neo4jEnterpriseClusterReconciler) serverImageInPlace(ctx context.Contex
 	stsName := fmt.Sprintf("%s-server", cluster.Name)
 	sts := &appsv1.StatefulSet{}
 	err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}, sts)
+	_, restoring := restorePending(sts)
 	switch {
-	case err == nil:
+	case err == nil && !restoring:
 		if len(sts.Spec.Template.Spec.Containers) == 0 {
 			return imageInPlace{}, false
 		}
 		return imageInPlace{image: sts.Spec.Template.Spec.Containers[0].Image, ready: sts.Status.ReadyReplicas}, true
+	case err == nil:
+		// Created again on the template the servers below a held partition
+		// run, until the held template is written back (operations.md id
+		// 171): the image in place is the servers', as while it was deleted.
 	case !apierrors.IsNotFound(err):
 		return imageInPlace{}, false
 	}

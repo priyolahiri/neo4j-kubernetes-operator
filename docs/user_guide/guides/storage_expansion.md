@@ -13,8 +13,10 @@ As datasets grow, you may need to increase the storage allocated to your Neo4j d
 3. It validates that the StorageClass supports volume expansion.
 4. It patches each PVC with the new size.
 5. It orphan-deletes the StatefulSet (pods keep running — zero downtime).
-6. On the next reconcile, the StatefulSet is recreated with updated VolumeClaimTemplates.
+6. As soon as the delete has gone through — in the same reconcile — the StatefulSet is recreated with updated VolumeClaimTemplates and otherwise as it was: the same pod template (with the settings, init containers and volumes `Neo4jPlugin`s added), replica count and update strategy (a held upgrade's partition, see [Upgrades](upgrades.md#when-an-upgrade-stops-paused-and-failed)). The pod template is unchanged, so no server restarts. If the operator restarts between the delete and the create, it reads the template from the revision the orphaned pods run. While an upgrade is held, it is created in two steps, a few seconds apart, so that every server keeps the version it runs if it restarts (see [Upgrades](upgrades.md#upgrade-phases-and-resumability)).
 7. The cluster transitions through `Expanding` → `Ready`.
+
+Anything else changed in the same edit (an image, a plugin) is applied by the reconcile after the StatefulSet is back, with its usual checks.
 
 ## Prerequisites
 

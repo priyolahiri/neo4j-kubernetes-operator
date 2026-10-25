@@ -271,7 +271,7 @@ func TestReconcileStandaloneStorageExpansion(t *testing.T) {
 
 		requeue, err := r.reconcileStandaloneStorageExpansion(context.Background(), standalone)
 		require.NoError(t, err)
-		assert.True(t, requeue)
+		assert.False(t, requeue, "the delete has gone through: the pass creates the StatefulSet again (operations.md id 171)")
 
 		// Verify PVC was patched
 		got := &corev1.PersistentVolumeClaim{}

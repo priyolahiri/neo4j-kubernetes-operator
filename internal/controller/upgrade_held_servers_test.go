@@ -117,13 +117,13 @@ var _ = Describe("Neo4jEnterpriseCluster whose upgrade holds its servers", func(
 		Expect(k8sClient.Status().Update(ctx, pod)).To(Succeed())
 	}
 
-	// heldStatefulSet writes the server StatefulSet a stopped upgrade leaves:
-	// the target template, partition 2, ready replicas as given.
-	heldStatefulSet := func(ready int32) {
+	// heldStatefulSet writes the server StatefulSet a stopped upgrade to
+	// stoppedOn leaves: its template, partition 2, ready replicas as given.
+	heldStatefulSet := func(stoppedOn string, ready int32) {
 		ctx := context.Background()
 		cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		Expect(k8sClient.Get(ctx, key, cluster)).To(Succeed())
-		cluster.Spec.Image.Tag = target
+		cluster.Spec.Image.Tag = stoppedOn
 		sts := resources.BuildServerStatefulSetForEnterprise(cluster)
 		partition := int32(2)
 		sts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{Partition: &partition}
@@ -142,18 +142,23 @@ var _ = Describe("Neo4jEnterpriseCluster whose upgrade holds its servers", func(
 		})).To(Succeed())
 	}
 
-	held := func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
-		now := metav1.Now()
-		partition := int32(2)
-		c.Status.Phase = "Ready"
-		c.Status.Version = running
-		c.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{
-			Phase: "Paused", PreviousVersion: running, TargetVersion: target,
-			StartTime: &now, StepStartTime: &now, CurrentPartition: &partition,
-			LastError: "timed out waiting for server ordinal 2 to roll and rejoin the cluster",
-			Progress:  &neo4jv1beta1.UpgradeProgress{Total: 3, InProgress: 1, Pending: 2},
+	// heldOn is the record of an upgrade to stoppedOn this operator paused
+	// after releasing server-2, which never started on it.
+	heldOn := func(stoppedOn string) func(*neo4jv1beta1.Neo4jEnterpriseCluster) {
+		return func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
+			now := metav1.Now()
+			partition := int32(2)
+			c.Status.Phase = "Ready"
+			c.Status.Version = running
+			c.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{
+				Phase: "Paused", PreviousVersion: running, TargetVersion: stoppedOn, StartedTargetVersion: running,
+				StartTime: &now, StepStartTime: &now, CurrentPartition: &partition,
+				LastError: "timed out waiting for server ordinal 2 to roll and rejoin the cluster",
+				Progress:  &neo4jv1beta1.UpgradeProgress{Total: 3, InProgress: 1, Pending: 2},
+			}
 		}
 	}
+	held := heldOn(target)
 
 	reconciler := func() *controller.Neo4jEnterpriseClusterReconciler {
 		c := mgr.GetClient()
@@ -199,7 +204,7 @@ var _ = Describe("Neo4jEnterpriseCluster whose upgrade holds its servers", func(
 		func(servers int) {
 			ctx := context.Background()
 			newCluster(target, held)
-			heldStatefulSet(3)
+			heldStatefulSet(target, 3)
 			for i := 0; i < 3; i++ {
 				serverPod(i, "neo4j:"+map[bool]string{true: target, false: running}[i == 2], true)
 			}
@@ -237,46 +242,55 @@ var _ = Describe("Neo4jEnterpriseCluster whose upgrade holds its servers", func(
 
 	// operations.md id 162: changing the tag is the way to go on from a Paused
 	// upgrade, and did nothing while the server it restarted could not start.
-	It("replaces the servers that cannot start on the target when the tag moves on", func() {
-		ctx := context.Background()
-		newCluster(target, func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
-			held(c)
-			c.Status.Conditions = []metav1.Condition{
-				{Type: controller.ConditionTypeClusterFormed, Status: metav1.ConditionTrue, Reason: controller.ConditionReasonFormationComplete,
-					LastTransitionTime: metav1.Now()},
-				{Type: controller.ConditionTypeDegraded, Status: metav1.ConditionTrue, Reason: controller.ConditionReasonServersUnavailable,
-					Message: "2 of 3 servers available", LastTransitionTime: metav1.Now()},
-			}
-		})
-		heldStatefulSet(2)
-		serverPod(0, "neo4j:"+running, true)
-		serverPod(1, "neo4j:"+running, true)
-		serverPod(2, "neo4j:"+target, false)
-		// A patch: an Update would send monitoring.enabled: false as nothing,
-		// and the CRD default turns it back on (operations.md id 150).
-		Expect(k8sClient.Patch(ctx, &neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}},
-			client.RawPatch(types.MergePatchType, []byte(`{"spec":{"image":{"tag":"`+fixed+`"}}}`)))).To(Succeed())
-		waitForCache(func(c *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-			return c.Spec.Image.Tag == fixed && len(c.Status.Conditions) == 2 &&
-				c.Spec.Monitoring != nil && !c.Spec.Monitoring.Enabled
-		}, 3)
-		r := reconciler()
+	// And server-2 never ran the target it could not pull, so an earlier fixed
+	// tag is no downgrade: the #562 walk had 2026.09.0-enterprise refused after
+	// a pause on 2026.09.9-enterprise (operations.md id 149).
+	DescribeTable("replaces the servers that cannot start on the target when the tag moves on",
+		func(stoppedOn, moveTo string) {
+			ctx := context.Background()
+			newCluster(stoppedOn, func(c *neo4jv1beta1.Neo4jEnterpriseCluster) {
+				heldOn(stoppedOn)(c)
+				c.Status.Conditions = []metav1.Condition{
+					{Type: controller.ConditionTypeClusterFormed, Status: metav1.ConditionTrue, Reason: controller.ConditionReasonFormationComplete,
+						LastTransitionTime: metav1.Now()},
+					{Type: controller.ConditionTypeDegraded, Status: metav1.ConditionTrue, Reason: controller.ConditionReasonServersUnavailable,
+						Message: "2 of 3 servers available", LastTransitionTime: metav1.Now()},
+				}
+			})
+			heldStatefulSet(stoppedOn, 2)
+			serverPod(0, "neo4j:"+running, true)
+			serverPod(1, "neo4j:"+running, true)
+			serverPod(2, "neo4j:"+stoppedOn, false)
+			// A patch: an Update would send monitoring.enabled: false as nothing,
+			// and the CRD default turns it back on (operations.md id 150).
+			Expect(k8sClient.Patch(ctx, &neo4jv1beta1.Neo4jEnterpriseCluster{ObjectMeta: metav1.ObjectMeta{Name: key.Name, Namespace: key.Namespace}},
+				client.RawPatch(types.MergePatchType, []byte(`{"spec":{"image":{"tag":"`+moveTo+`"}}}`)))).To(Succeed())
+			waitForCache(func(c *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+				return c.Spec.Image.Tag == moveTo && len(c.Status.Conditions) == 2 &&
+					c.Spec.Monitoring != nil && !c.Spec.Monitoring.Enabled
+			}, 3)
+			r := reconciler()
 
-		// Taken up, staged above server-2, then rolling from there.
-		Eventually(func() string {
-			_, _ = r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			// Taken up, staged above server-2, then rolling from there.
+			Eventually(func() string {
+				_, _ = r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+				got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+				Expect(k8sClient.Get(ctx, key, got)).To(Succeed())
+				Expect(got.Status.Phase).NotTo(Equal("Failed"), "the tag is not refused: %s", got.Status.Message)
+				return got.Status.UpgradeStatus.Phase
+			}, 15*time.Second, 200*time.Millisecond).Should(Equal("Rolling"))
+
+			Expect(serverImage(ctx, stsKey())).To(Equal("neo4j:"+moveTo), "the new template reaches server-2")
+			Expect(livePartition()).To(Equal(int32(2)), "server-2 is replaced first; server-0 and server-1 wait for the walk")
 			got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			Expect(k8sClient.Get(ctx, key, got)).To(Succeed())
-			return got.Status.UpgradeStatus.Phase
-		}, 15*time.Second, 200*time.Millisecond).Should(Equal("Rolling"))
-
-		Expect(serverImage(ctx, stsKey())).To(Equal("neo4j:"+fixed), "the new template reaches server-2")
-		Expect(livePartition()).To(Equal(int32(2)), "server-2 is replaced first; server-0 and server-1 wait for the walk")
-		got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-		Expect(k8sClient.Get(ctx, key, got)).To(Succeed())
-		Expect(got.Status.UpgradeStatus.TargetVersion).To(Equal(fixed))
-		Expect(*got.Status.UpgradeStatus.CurrentPartition).To(Equal(int32(2)))
-	})
+			Expect(got.Status.UpgradeStatus.TargetVersion).To(Equal(moveTo))
+			Expect(*got.Status.UpgradeStatus.CurrentPartition).To(Equal(int32(2)))
+			Expect(got.Status.UpgradeStatus.StartedTargetVersion).To(Equal(running), "server-2 has run nothing newer")
+		},
+		Entry("a later fixed tag", target, fixed),
+		Entry("an earlier fixed tag, after a pause on one that was never published", "2026.09.9-enterprise", target),
+	)
 
 	// A storage expansion orphan-deletes the StatefulSet; the next pass creates
 	// it again. While an image change is held (the cluster is not Ready), the

@@ -99,6 +99,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandaloneStorageExpansio
 				"Storage expansion completed successfully")
 		}
 
+		// Created again in this pass once the delete has gone through, as for
+		// a cluster (waitStatefulSetGone, operations.md id 171).
+		if r.deletedStatefulSets.remembered(standalone.Namespace, stsName, "") != nil &&
+			waitStatefulSetGone(ctx, r.Client, r.apiReader(), types.NamespacedName{Name: stsName, Namespace: standalone.Namespace}) {
+			return false, nil
+		}
 		return true, nil
 	}
 
@@ -292,6 +298,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) orphanDeleteStandaloneStatefulSet(
 	logger.Info("Orphan-deleting StatefulSet for storage expansion",
 		"statefulSet", name, "namespace", namespace)
 
+	// Kept for the pass that creates it again, which starts from it
+	// (operations.md id 171).
+	r.deletedStatefulSets.remember(sts)
 	propagation := metav1.DeletePropagationOrphan
 	return r.Delete(ctx, sts, &client.DeleteOptions{
 		PropagationPolicy: &propagation,
