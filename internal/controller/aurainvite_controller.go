@@ -318,16 +318,24 @@ func (r *AuraInviteReconciler) handleDeletion(ctx context.Context, req ctrl.Requ
 				fmt.Sprintf("it stays pending in Aura and %s can still accept it", inv.Spec.Email), targetErr))
 		return r.releaseFinalizer(ctx, req)
 	}
-	if err := apiClient.DeleteInvite(ctx, orgID, externalID); err != nil {
-		if aura.IsConflict(err) || aura.IsTransient(err) {
-			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-		}
-		if !aura.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
+	// A DELETE Aura refused is waited on, bounded, then the invite is left
+	// and named — it was returned as an error, with backoff for ever
+	// (knowledge rule 201).
+	err := apiClient.DeleteInvite(ctx, orgID, externalID)
+	switch {
+	case err == nil || aura.IsNotFound(err):
+		r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteDeleted,
+			fmt.Sprintf("Revoked invite %s", externalID))
+	case !auraDeleteRefused(err):
+		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+	case !deletionGracePeriodExceeded(inv):
+		return r.fail(ctx, req, inv, auraReasonDeletionRefused,
+			auraDeletionRefusedWait(inv, "invite", externalID, err))
+	default:
+		r.Recorder.Event(inv, corev1.EventTypeWarning, EventReasonAuraInviteOrphaned,
+			auraOrphanedAfterRefusal("invite", externalID,
+				fmt.Sprintf("it stays pending in Aura and %s can still accept it", inv.Spec.Email), err))
 	}
-	r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteDeleted,
-		fmt.Sprintf("Revoked invite %s", externalID))
 	return r.releaseFinalizer(ctx, req)
 }
 

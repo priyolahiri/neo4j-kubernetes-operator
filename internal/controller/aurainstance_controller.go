@@ -527,14 +527,24 @@ func (r *AuraInstanceReconciler) handleDeletion(ctx context.Context, inst *neo4j
 		r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceOrphaned,
 			auraOrphanedWithoutCredentials("Aura instance", externalID, "the cloud instance keeps running", credsErr))
 	case deleteCloud && externalID != "":
-		if err := resolveClient(r.ClientFactory, creds).DeleteInstance(ctx, externalID); err != nil && !aura.IsNotFound(err) {
-			if aura.IsConflict(err) || aura.IsTransient(err) {
-				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-			}
-			return ctrl.Result{}, err
+		// A DELETE Aura refused used to be returned as an error: error backoff
+		// for ever, a "Reconciler error" line each time, nothing on status. It
+		// is recorded and waited on, bounded, like a deletion without
+		// credentials (knowledge rule 201).
+		err := resolveClient(r.ClientFactory, creds).DeleteInstance(ctx, externalID)
+		switch {
+		case err == nil || aura.IsNotFound(err):
+			r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceDeleted,
+				fmt.Sprintf("Deleted Aura instance %s", externalID))
+		case !auraDeleteRefused(err):
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		case !deletionGracePeriodExceeded(inst):
+			return r.fail(ctx, req, inst, auraReasonDeletionRefused,
+				auraDeletionRefusedWait(inst, "Aura instance", externalID, err))
+		default:
+			r.Recorder.Event(inst, corev1.EventTypeWarning, EventReasonAuraInstanceOrphaned,
+				auraOrphanedAfterRefusal("Aura instance", externalID, "the cloud instance keeps running", err))
 		}
-		r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceDeleted,
-			fmt.Sprintf("Deleted Aura instance %s", externalID))
 	case externalID != "": // Orphan (policy Orphan, or Delete not permitted by managementPolicies)
 		r.Recorder.Event(inst, corev1.EventTypeNormal, EventReasonAuraInstanceOrphaned,
 			fmt.Sprintf("Orphaning Aura instance %s; the cloud instance keeps running", externalID))

@@ -286,26 +286,40 @@ func (r *AuraCustomerManagedKeyReconciler) handleDeletion(
 		r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKOrphaned,
 			auraOrphanedWithoutCredentials("customer-managed key", externalID, "it stays registered in Aura", credsErr))
 	case deleteCloud && externalID != "":
-		if err := resolveCMKClient(r.ClientFactory, creds).DeleteCustomerManagedKey(ctx, externalID); err != nil {
+		// A DELETE Aura refused used to be returned as an error — error backoff
+		// for ever — and a key still in use waited for ever: a namespace with an
+		// orphaned instance that uses the key stayed Terminating. Both are waited
+		// on, bounded, then the key is left registered and named (knowledge rule
+		// 201).
+		err := resolveCMKClient(r.ClientFactory, creds).DeleteCustomerManagedKey(ctx, externalID)
+		switch {
+		case err == nil || aura.IsNotFound(err):
+			r.Recorder.Event(cmk, corev1.EventTypeNormal, EventReasonAuraCMKDeleted,
+				fmt.Sprintf("Deregistered customer-managed key %s", externalID))
+		case aura.IsCMKActive(err) && !deletionGracePeriodExceeded(cmk):
+			// Announced when the deletion starts being blocked, not on every
+			// requeue while the key stays in use (knowledge rule 145).
+			msg := fmt.Sprintf("the customer-managed key is still bound to at least one instance; detach or delete those "+
+				"instances first. Asked again until %s, then the finalizer is released and the key stays registered in Aura",
+				auraDeletionDeadline(cmk).UTC().Format(time.RFC3339))
+			if changed, _ := r.setConditionChanged(ctx, req, "Synced", metav1.ConditionFalse, "KeyInUse", msg); changed {
+				r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKDeleteBlocked,
+					fmt.Sprintf("Cannot delete customer-managed key %s: still in use by one or more instances", externalID))
+			}
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		case !aura.IsCMKActive(err) && !auraDeleteRefused(err):
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		case !deletionGracePeriodExceeded(cmk):
+			return r.fail(ctx, req, cmk, auraReasonDeletionRefused,
+				auraDeletionRefusedWait(cmk, "customer-managed key", externalID, err))
+		default:
+			remains := "it stays registered in Aura"
 			if aura.IsCMKActive(err) {
-				// Announced when the deletion starts being blocked, not on every
-				// requeue while the key stays in use (knowledge rule 145).
-				if changed, _ := r.setConditionChanged(ctx, req, "Synced", metav1.ConditionFalse, "KeyInUse",
-					"the customer-managed key is still bound to at least one instance; detach or delete those instances first"); changed {
-					r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKDeleteBlocked,
-						fmt.Sprintf("Cannot delete customer-managed key %s: still in use by one or more instances", externalID))
-				}
-				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+				remains = "it stays registered in Aura, still bound to an instance"
 			}
-			if aura.IsConflict(err) || aura.IsTransient(err) {
-				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-			}
-			if !aura.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
+			r.Recorder.Event(cmk, corev1.EventTypeWarning, EventReasonAuraCMKOrphaned,
+				auraOrphanedAfterRefusal("customer-managed key", externalID, remains, err))
 		}
-		r.Recorder.Event(cmk, corev1.EventTypeNormal, EventReasonAuraCMKDeleted,
-			fmt.Sprintf("Deregistered customer-managed key %s", externalID))
 	case externalID != "":
 		r.Recorder.Event(cmk, corev1.EventTypeNormal, EventReasonAuraCMKOrphaned,
 			fmt.Sprintf("Orphaning customer-managed key %s; it stays registered in Aura", externalID))

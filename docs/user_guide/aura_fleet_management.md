@@ -304,7 +304,7 @@ The event is raised when a failure first appears or its message changes, not on 
 kubectl get events --field-selector reason=AuraFleetManagementFailed
 ```
 
-A failure to *patch the plugin onto the StatefulSet* is reported separately, as `AuraFleetManagementPluginPatchFailed`.
+A failure to *patch the plugin onto the StatefulSet* is reported separately, as `AuraFleetManagementPluginPatchFailed`. Its message names the step that failed: `Failed to add fleet-management to NEO4J_PLUGINS` is the write, `Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management` the check before it (the StatefulSet could not be read, or has no `neo4j` container). On an image with Fleet Manager built in (2026.03 and later) nothing is added, so only the second can appear there.
 
 **Other plugins disappear after enabling Fleet Management**
 

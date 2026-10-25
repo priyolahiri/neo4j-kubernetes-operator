@@ -542,6 +542,38 @@ func auraOrphanedWithoutCredentials(what, externalID, remains string, cause erro
 		what, externalID, finalizerDeletionGracePeriod, cause, remains)
 }
 
+// auraReasonDeletionRefused is the Ready reason of a deletion whose DELETE Aura
+// refused, while it waits (knowledge rule 201).
+const auraReasonDeletionRefused = "DeletionRefused"
+
+// auraDeletionRefusedWait is the status message of a deletion whose DELETE
+// Aura refused — not a conflict, not transient, not "not found" — while it
+// waits finalizerDeletionGracePeriod for Aura to accept it (knowledge rule
+// 201). cause stays wrapped, so the status leaves Aura's request ID out and the
+// Warning keeps it (rule 184).
+func auraDeletionRefusedWait(obj client.Object, what, externalID string, cause error) error {
+	return fmt.Errorf("deletionPolicy is Delete, but Aura refused to delete %s %s: %w; it is asked again until %s, "+
+		"then the finalizer is released and %s %s is left in Aura",
+		what, externalID, cause, auraDeletionDeadline(obj).UTC().Format(time.RFC3339), what, externalID)
+}
+
+// auraOrphanedAfterRefusal is the Warning of a deletion Aura kept refusing
+// for finalizerDeletionGracePeriod, which released its finalizer without
+// deleting: it names what is left, for the Aura console.
+func auraOrphanedAfterRefusal(what, externalID, remains string, cause error) string {
+	return fmt.Sprintf("Orphaning %s %s although deletionPolicy is Delete: Aura still refused to delete it %s after "+
+		"the deletion was requested (%v); %s, so delete it in the Aura console",
+		what, externalID, finalizerDeletionGracePeriod, cause, remains)
+}
+
+// auraDeleteRefused reports whether err, from an Aura DELETE, is a refusal the
+// deletion waits on, bounded (rule 201): an error that is not "not found" (the
+// resource is gone, which is what the deletion wanted), not a conflict and not
+// transient (both retried as they are, on every pass).
+func auraDeleteRefused(err error) bool {
+	return err != nil && !aura.IsNotFound(err) && !aura.IsConflict(err) && !aura.IsTransient(err)
+}
+
 // auraDeletionDeadline is when a deletion that cannot resolve its credentials
 // stops waiting for them (finalizerDeletionGracePeriod after it was requested).
 func auraDeletionDeadline(obj client.Object) time.Time {
