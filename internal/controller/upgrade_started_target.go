@@ -201,6 +201,7 @@ func (r *Neo4jEnterpriseClusterReconciler) forgetAbandonedUpgrade(ctx context.Co
 			return nil
 		}
 		latest.Status.UpgradeStatus = nil
+		syncStalledCondition(latest) // nothing stopped any more (operations.md id 149)
 		return r.Status().Update(ctx, latest)
 	})
 	if err != nil {

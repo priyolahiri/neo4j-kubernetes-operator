@@ -69,10 +69,35 @@ off — already-rolled pods are not rolled again.
 an upgrade is running, the state machine retargets to the new image: pods not
 yet rolled go straight to the new version, and pods already rolled to the
 intermediate version are rolled again. You don't need to wait for the first
-upgrade to finish. A new target below the version the cluster ran before the
+upgrade to finish. An `UpgradeRetargeted` event says so, once per new target
+("Rolling upgrade retargeted from … to … during Rolling"). A new target below the version the cluster ran before the
 upgrade (`status.version`) is refused instead, and so is one below the current
 target once a server the upgrade restarted has started on it: that server would
 be rolled back (see [Version checks](#version-checks)).
+
+A server that has moved on to the intermediate version never comes back on the
+version before the upgrade, even if its pod is recreated (a node drain, an
+eviction) while the upgrade is being redirected. Kubernetes recreates a server
+the upgrade has not released yet from the version the cluster ran before the
+upgrade, so the new target is staged at the lowest server that runs the
+intermediate version, not with every server frozen:
+
+- The servers already on the intermediate version are moved on to the new
+  target by Kubernetes, highest first, each once the one before is ready. Only
+  Kubernetes readiness is checked between them — a server pod is ready once
+  Neo4j reports it available in the cluster, or after its first 5 minutes
+  (see Pod Readiness in [Clustering](../clustering.md)); the upgrade's own checks (the
+  server back in the cluster, its databases caught up) apply from the lowest of
+  them down, as for every other server. Usually only one server has moved on
+  when you redirect, and it gets the full checks.
+- That write restarts servers at once, so it waits until every other server is
+  ready.
+- If every server already runs the intermediate version (the walk had finished
+  rolling), the operator waits for Kubernetes to record it as the StatefulSet's
+  current revision, then stages the new target with every server frozen, and
+  every server gets the full checks.
+
+The same applies when you redirect a `Paused` or `Failed` upgrade.
 
 **Version verification across SemVer/CalVer.** The `Verifying` phase compares
 each server's `SHOW SERVERS` version against the image tag, normalizing
@@ -130,7 +155,12 @@ new image the operator records it as `status.version`.
 When a check fails or a step runs past its timeout, the upgrade stops: `Paused`
 when `autoPauseOnFailure` is `true`, `Failed` otherwise.
 `status.upgradeStatus.lastError` says why, and an `UpgradePaused` or
-`UpgradeFailed` Warning event is emitted.
+`UpgradeFailed` Warning event is emitted, once per target and cause. The
+cluster's phase does not change: a stopped upgrade is not a failed cluster. It
+carries the `Stalled` condition (`True`, reason `UpgradeFailed` or
+`UpgradePaused`) until the upgrade goes on, so GitOps health checks see that
+the image change did not land: Flux reads it as Failed, and the published Argo
+CD check reads the upgrade's phase (see [GitOps](../../gitops/README.md)).
 
 In both, **the servers stay where the upgrade left them.** The StatefulSet keeps
 the partition the upgrade had reached: the servers it rolled run the target, and
@@ -161,7 +191,18 @@ What happens next:
 - **Failed:** the operator retries the upgrade itself once the cluster is
   `Ready` with every server available. The retry starts from where it stopped:
   the servers already on the target are checked again without a restart, and
-  the rest are rolled one at a time through the same checks.
+  the rest are rolled one at a time through the same checks. A retry that stops
+  again with the same cause is not announced again (`lastError` keeps it), and
+  the cluster stays `Ready` throughout, so there is no `ClusterReady` on each
+  retry. Each retry waits a full step timeout before it stops, and restarts no
+  server it already rolled. While a server is down — one the upgrade restarted
+  that cannot start on the target, say — the upgrade is not retried and the
+  cluster is reported as for any server short: `Ready` with the `Degraded`
+  condition `True` naming the server, then phase `Degraded` once it has been
+  short for longer than the grace period (5 minutes by default). The retry
+  follows once every server is back. A retry that the pre-upgrade check
+  refuses is tried again every minute, with the cluster's reconciliation
+  running in between.
 - **Paused:** the upgrade waits for you. Investigate with `lastError`, then
   either:
   - set `spec.image.tag` to another target (a later version, or the same line

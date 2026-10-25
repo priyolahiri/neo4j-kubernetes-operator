@@ -38,7 +38,7 @@
     "id": "su-rolling-upgrade",
     "name": "Rolling Upgrade State Machine",
     "kind": "worker",
-    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149). A start one of its checks refuses changes nothing on the servers: the cluster stays Ready, the refusal is announced once, and a Failed one is tried again every minute (operations.md id 149). A held upgrade whose restarted servers cannot start on its target goes on towards a new tag, replacing them first (id 162), and a change of spec.topology.servers waits while an upgrade is in flight or keeps a partition (id 163). What the upgrade's servers have started on is read from their containers into status.upgradeStatus.startedTargetVersion, and the tag is held to it, not to the target, so an image that could not be pulled can be replaced by an earlier fixed one; the record of an upgrade nothing started on that the tag no longer names is dropped (id 149). Staging runs once per target and never raises the partition over a template that already carries the target; a stopped upgrade is logged at info (id 162).",
+    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149). A start one of its checks refuses changes nothing on the servers: the cluster stays Ready, the refusal is announced once, and a Failed one is tried again every minute (operations.md id 149). A held upgrade whose restarted servers cannot start on its target goes on towards a new tag, replacing them first (id 162), and a change of spec.topology.servers waits while an upgrade is in flight or keeps a partition (id 163). What the upgrade's servers have started on is read from their containers into status.upgradeStatus.startedTargetVersion, and the tag is held to it, not to the target, so an image that could not be pulled can be replaced by an earlier fixed one; the record of an upgrade nothing started on that the tag no longer names is dropped (id 149). Staging runs once per target and never raises the partition over a template that already carries the target; a stopped upgrade is logged at info (id 162). A retarget never puts a server the upgrade moved on below the partition, so none comes back on the version before the upgrade (id 180).",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],
@@ -55,7 +55,8 @@
       "internal/controller/upgrade_start.go",
       "internal/controller/upgrade_repair.go",
       "internal/controller/upgrade_topology.go",
-      "internal/controller/upgrade_started_target.go"
+      "internal/controller/upgrade_started_target.go",
+      "internal/controller/upgrade_retarget.go"
     ]
   },
   {

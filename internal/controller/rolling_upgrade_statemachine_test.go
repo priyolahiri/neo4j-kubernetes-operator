@@ -234,7 +234,9 @@ func TestHandleRollingUpgrade_TargetChangedMidFlightRestages(t *testing.T) {
 			}
 
 			fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
-			r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: record.NewFakeRecorder(10)}
+			rec := record.NewFakeRecorder(10)
+			r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: rec}
+			stale := cluster.DeepCopy()
 
 			res, err := r.handleRollingUpgrade(context.Background(), cluster)
 			require.NoError(t, err)
@@ -244,6 +246,12 @@ func TestHandleRollingUpgrade_TargetChangedMidFlightRestages(t *testing.T) {
 			require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "retarget", Namespace: "default"}, latest))
 			assert.Equal(t, upgradePhaseStaging, latest.Status.UpgradeStatus.Phase)
 			assert.Equal(t, "5.26.2-enterprise", latest.Status.UpgradeStatus.TargetVersion)
+			// Announced once, from the write that records the new target: a
+			// pass whose cached copy still names the old one says nothing.
+			_, err = r.handleRollingUpgrade(context.Background(), stale)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"Normal " + EventReasonUpgradeRetargeted + " Rolling upgrade retargeted from 5.26.1-enterprise to 5.26.2-enterprise during " +
+				phase + "; the new target is staged"}, drainEvents(rec))
 		})
 	}
 }
@@ -297,7 +305,9 @@ func TestStepUpgradeRolling_PersistedPartitionBeatsStaleLiveRead(t *testing.T) {
 
 // TestFailUpgrade_RoutesPausedAndFailed pins the failure routing: autoPause →
 // Paused (no requeue, never auto-resumed), default → Failed with the error in
-// status and a requeue for the normal path to take over.
+// status and a requeue for the retry. The cluster keeps its phase — Ready, its
+// message naming the stopped upgrade — as for any held upgrade (#565: it was
+// set to Paused or Failed for one pass).
 func TestFailUpgrade_RoutesPausedAndFailed(t *testing.T) {
 	scheme := makeUpgradeScheme()
 
@@ -305,7 +315,8 @@ func TestFailUpgrade_RoutesPausedAndFailed(t *testing.T) {
 		cluster := clusterForUpgrade("pause", "default", "5.26.0-enterprise", "5.26.1-enterprise", 3)
 		cluster.Spec.UpgradeStrategy = &neo4jv1beta1.UpgradeStrategySpec{AutoPauseOnFailure: true}
 		now := metav1.Now()
-		cluster.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{Phase: upgradePhaseRolling, StartTime: &now}
+		cluster.Status.Phase = "Ready"
+		cluster.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{Phase: upgradePhaseRolling, StartTime: &now, TargetVersion: "5.26.1-enterprise"}
 
 		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: record.NewFakeRecorder(10)}
@@ -318,13 +329,15 @@ func TestFailUpgrade_RoutesPausedAndFailed(t *testing.T) {
 		require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "pause", Namespace: "default"}, latest))
 		assert.Equal(t, upgradePhasePaused, latest.Status.UpgradeStatus.Phase)
 		assert.Contains(t, latest.Status.UpgradeStatus.LastError, assert.AnError.Error())
-		assert.Equal(t, "Paused", latest.Status.Phase)
+		assert.Equal(t, "Ready", latest.Status.Phase, "the documented phase, not Paused")
+		assert.Contains(t, latest.Status.Message, "upgrade to 5.26.1-enterprise is paused")
 	})
 
 	t.Run("default fails with requeue", func(t *testing.T) {
 		cluster := clusterForUpgrade("fail", "default", "5.26.0-enterprise", "5.26.1-enterprise", 3)
 		now := metav1.Now()
-		cluster.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{Phase: upgradePhaseRolling, StartTime: &now}
+		cluster.Status.Phase = "Ready"
+		cluster.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{Phase: upgradePhaseRolling, StartTime: &now, TargetVersion: "5.26.1-enterprise"}
 
 		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: record.NewFakeRecorder(10)}
@@ -333,13 +346,14 @@ func TestFailUpgrade_RoutesPausedAndFailed(t *testing.T) {
 		// Recorded in status and announced, not returned: a reconcile error is
 		// an ERROR line (#562 re-walk).
 		require.NoError(t, err)
-		assert.Equal(t, upgradeTransitionRequeue, res.RequeueAfter, "the normal path takes over on the next pass")
+		assert.Equal(t, upgradeTransitionRequeue, res.RequeueAfter, "the retry follows on the next pass")
 
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "fail", Namespace: "default"}, latest))
 		assert.Equal(t, upgradePhaseFailed, latest.Status.UpgradeStatus.Phase)
 		assert.Contains(t, latest.Status.UpgradeStatus.LastError, assert.AnError.Error())
-		assert.Equal(t, "Failed", latest.Status.Phase)
+		assert.Equal(t, "Ready", latest.Status.Phase, "the documented phase, not Failed")
+		assert.Contains(t, latest.Status.Message, "upgrade to 5.26.1-enterprise failed")
 	})
 }
 
@@ -390,8 +404,11 @@ func TestIsUpgradeRequired_FailedRetry(t *testing.T) {
 		}
 		return c
 	}
-	// Template already staged to the target image — no plain drift.
+	// Template already staged to the target image — no plain drift — and
+	// every server pod Ready: a Failed upgrade is retried once every server
+	// is available (TestFailedUpgrade_AServerShortIsRecordedThenDegraded).
 	sts := serverSTSForUpgrade("retry", "default", "neo4j:2025.01.0-enterprise", 3)
+	sts.Status.ReadyReplicas = 3
 
 	t.Run("failed attempt with unverified version re-enters", func(t *testing.T) {
 		c := mk(upgradePhaseFailed, "")

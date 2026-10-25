@@ -193,6 +193,8 @@ func (r *Neo4jEnterpriseClusterReconciler) patchUpgradeStatus(
 		prevPhase, prevPhaseStart := us.Phase, snapshotPhaseStart(us.PhaseStartTime)
 		mutate(us)
 		ended = stampUpgradePhaseTransition(us, prevPhase, prevPhaseStart, metav1.Now())
+		// Stalled follows the record in this same write (operations.md id 149).
+		syncStalledCondition(latest)
 		cluster.Status.UpgradeStatus = us
 		return r.Status().Update(ctx, latest)
 	})
@@ -447,11 +449,38 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 	// target first, when it is another image: they are down, and freezing them
 	// too left them down for good — the walk waits for every pod to be ready
 	// before it lowers the partition (operations.md id 162).
-	if down := r.serversDownOnTarget(ctx, cluster, live); down != nil && down.partition < partition &&
-		!down.images[serverImage(desired)] {
+	down := r.serversDownOnTarget(ctx, cluster, live)
+	if down != nil && down.images[serverImage(desired)] {
+		down = nil // the same image cannot start there either
+	}
+	if down != nil && down.partition < partition {
 		partition = down.partition
 		logger.Info("Staging the target above the servers that cannot start on the image they run; they are replaced first",
 			"partition", partition, "servers", down.failing)
+	}
+	// A server the upgrade has moved on from the version below the partition
+	// stays at or above it (operations.md id 180).
+	pods, err := r.serverPodsUncached(ctx, cluster)
+	if err != nil {
+		logger.Info("Staging waits: the server pods could not be read", "error", err.Error())
+		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
+	}
+	moved, waitFor := retargetPartition(live, pods, partition, down != nil)
+	if waitFor != "" {
+		logger.Info("Staging waits: "+waitFor, "partition", moved)
+		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
+	}
+	if moved < partition {
+		partition = moved
+		logger.Info("Staging the target at the lowest server that runs a newer revision than the StatefulSet's current one; the StatefulSet controller moves those servers on to the target, highest first",
+			"partition", partition)
+	}
+	if imageChanges(live, desired) && partition < replicas {
+		if notReady := serverNotReadyBelow(live, pods, partition, down); notReady != "" {
+			logger.Info("Staging waits: the target would restart servers at or above the partition while "+notReady+" is not ready",
+				"partition", partition)
+			return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
+		}
 	}
 	desired.Spec.UpdateStrategy.RollingUpdate.Partition = &partition
 
@@ -767,8 +796,8 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeVerifying(
 
 // failUpgrade routes a step failure: Paused when autoPauseOnFailure is set
 // (manual intervention required, never auto-resumed), Failed otherwise (the
-// normal path takes over; isUpgradeRequired re-enters once the cluster is
-// Ready again). Either way the StatefulSet keeps the partition the step left,
+// normal path takes over and records a server short; isUpgradeRequired
+// re-enters once every server is available). Either way the StatefulSet keeps the partition the step left,
 // so no server the upgrade has not rolled restarts onto the target before the
 // upgrade goes on (upgradeHeld, operations.md id 149). prepare runs first in
 // the same status write: startRollingUpgrade passes the record of the attempt
@@ -801,47 +830,53 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 		}
 	}
 
-	if autoPauseOnFailure(cluster) {
-		if err := r.patchUpgradeStatus(ctx, cluster, func(s *neo4jv1beta1.UpgradeStatus) {
-			prepared(s)
-			s.Phase = upgradePhasePaused
-			s.LastError = cause.Error()
-			s.CurrentStep = "Upgrade paused due to failure - manual intervention required"
-			s.Message = s.CurrentStep
-		}); err != nil {
-			// The terminal phase MUST land before any other side effect: if it
-			// doesn't, upgradeStateMachineActive keeps treating the upgrade as
-			// mid-flight and the steps keep driving after we reported a pause.
-			// Requeue and re-route the same failure next reconcile.
-			logger.Error(err, "Failed to persist Paused upgrade phase; retrying")
-			return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
-		}
-		recordFailureMetric()
-		logger.Info("Rolling upgrade paused", "reason", cause.Error())
-		_ = r.updateClusterStatus(ctx, cluster, "Paused", "Upgrade paused due to failure - manual intervention required")
-		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonUpgradePaused,
-			fmt.Sprintf("Upgrade paused: %v", cause))
-		return ctrl.Result{}, nil // no auto-requeue: manual intervention required
+	paused := autoPauseOnFailure(cluster)
+	phase, step := upgradePhaseFailed, "Rolling upgrade failed"
+	if paused {
+		phase, step = upgradePhasePaused, "Upgrade paused due to failure - manual intervention required"
 	}
-
+	announce := false
 	if err := r.patchUpgradeStatus(ctx, cluster, func(s *neo4jv1beta1.UpgradeStatus) {
 		prepared(s)
-		s.Phase = upgradePhaseFailed
+		// A Failed upgrade the operator retried that stops again with the same
+		// cause was announced already: the retry keeps the record's last
+		// error (newUpgradeRecord), and the same target and cause are one
+		// event (#565: UpgradeFailed on every retry cycle).
+		announce = s.LastError != cause.Error()
+		s.Phase = phase
 		s.LastError = cause.Error()
-		s.CurrentStep = "Rolling upgrade failed"
+		s.CurrentStep = step
 		s.Message = s.CurrentStep
 	}); err != nil {
-		// Same gating as the Paused branch: without the persisted Failed phase
-		// the machine stays active; retry the failure routing next reconcile.
-		logger.Error(err, "Failed to persist Failed upgrade phase; retrying")
+		// The terminal phase MUST land before any other side effect: if it
+		// doesn't, upgradeStateMachineActive keeps treating the upgrade as
+		// mid-flight and the steps keep driving after we reported a stop.
+		// Requeue and re-route the same failure next reconcile.
+		logger.Error(err, "Failed to persist the stopped upgrade's phase; retrying", "phase", phase)
 		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
 	}
 	recordFailureMetric()
-	logger.Info("Rolling upgrade failed; it is retried once every server is available", "reason", cause.Error())
-	r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonUpgradeFailed,
-		"Rolling upgrade failed: %v", cause)
-	_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Rolling upgrade failed: %v", cause))
-	// The normal path takes over on the next pass.
+	// The cluster keeps its phase, as for any held upgrade (id 149): Ready with
+	// every server available, its message naming the stopped upgrade, or what
+	// the next normal pass reports for a cluster short of a server. It was set
+	// to Paused or Failed — phases the cluster documents for neither — and the
+	// next pass wrote Ready again with a ClusterReady, on every retry of a
+	// Failed upgrade (#565).
+	r.noteUpgradeInClusterMessage(ctx, cluster)
+	switch {
+	case !announce:
+		logger.V(1).Info("Rolling upgrade stopped again with the same cause", "phase", phase, "reason", cause.Error())
+	case paused:
+		logger.Info("Rolling upgrade paused", "reason", cause.Error())
+		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonUpgradePaused, fmt.Sprintf("Upgrade paused: %v", cause))
+	default:
+		logger.Info("Rolling upgrade failed; it is retried once every server is available", "reason", cause.Error())
+		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonUpgradeFailed, "Rolling upgrade failed: %v", cause)
+	}
+	if paused {
+		return ctrl.Result{}, nil // no auto-requeue: manual intervention required
+	}
+	// The retry follows on the next pass.
 	return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 }
 

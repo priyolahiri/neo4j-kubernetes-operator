@@ -216,6 +216,11 @@ func newUpgradeRecord(held *neo4jv1beta1.UpgradeStatus, previousVersion, targetV
 		record.Progress = progress
 	}
 	record.ResolvedTargetVersion = held.ResolvedTargetVersion
+	// The retry of the same target keeps why it stopped: a stop with the same
+	// cause again is not announced again (failUpgrade, #565).
+	if held.TargetVersion == targetVersion {
+		record.LastError = held.LastError
+	}
 	return record
 }
 

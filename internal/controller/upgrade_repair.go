@@ -63,6 +63,8 @@ type serversDown struct {
 	partition int32
 	failing   []string
 	images    map[string]bool
+	// pods names the down pods.
+	pods map[string]bool
 }
 
 // heldUpgradeRepair reports whether a Paused or Failed upgrade goes on towards
@@ -166,7 +168,7 @@ func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Conte
 			lowest = int32(ordinal)
 		}
 	}
-	return &serversDown{partition: lowest, failing: failing, images: images}
+	return &serversDown{partition: lowest, failing: failing, images: images, pods: down}
 }
 
 // podServerImage returns the image of the pod's neo4j container, or "".

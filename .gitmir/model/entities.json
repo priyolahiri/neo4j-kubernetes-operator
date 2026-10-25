@@ -278,6 +278,13 @@
         "type": "string",
         "isNullable": true,
         "note": "The resolved server default Cypher language, recorded once (new CalVer deployment -> CYPHER_25, LTS -> CYPHER_5, existing -> what its ConfigMap already runs) so an operator upgrade never changes it."
+      },
+      {
+        "id": "f-neo4jenterprisecluster-status-condition-stalled",
+        "name": "status.conditions[Stalled]",
+        "type": "condition",
+        "isNullable": true,
+        "note": "True while status.upgradeStatus.phase is Failed (reason UpgradeFailed) or Paused (reason UpgradePaused), the message naming the target and the last error; False (UpgradeNotStopped) once the upgrade goes on, completes or its record is dropped; absent on a cluster whose upgrade never stopped. Ready stays as it is. kstatus (Flux) reads Stalled=True as Failed. Written in the status write that records the upgrade's state (operations.md id 149)."
       }
     ]
   },

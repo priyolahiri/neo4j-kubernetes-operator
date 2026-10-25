@@ -101,6 +101,17 @@ var conditionGuidance = map[string]guidance{
 			"see status.upgradeStatus.lastError and change spec.image.tag or set " +
 			"spec.upgradeStrategy.autoPauseOnFailure to false; or set spec.topology.servers back to the count the cluster runs.",
 	},
+	controller.ConditionTypeStalled: {
+		problemWhenTrue: true,
+		meaning: "the cluster's upgrade stopped — status.upgradeStatus.phase is Failed (reason UpgradeFailed) or " +
+			"Paused (reason UpgradePaused) — so its image change did not land. The cluster keeps serving and stays " +
+			"Ready; this condition is what tells kstatus readers such as Flux (Stalled=True reads as Failed). The " +
+			"message carries the upgrade's last error.",
+		action: "Fix what status.upgradeStatus.lastError names. A Failed upgrade is retried by the operator while " +
+			"every server is available; for a Paused one, set spec.image.tag to another target (a fixed image goes " +
+			"on at once, replacing servers that cannot start first) or set spec.upgradeStrategy.autoPauseOnFailure " +
+			"to false to retry it. The condition turns False once the upgrade goes on.",
+	},
 	controller.ConditionTypeRestartPending: {
 		problemWhenTrue: true,
 		meaning: "one or more servers have not restarted since the operator added or changed a setting that takes " +
