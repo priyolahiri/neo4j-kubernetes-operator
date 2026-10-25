@@ -7735,7 +7735,7 @@ for details.</p>
 <tr>
 <td><code>host</code></td>
 <td><code>string</code></td>
-<td>Hostname for the Route (optional)</td>
+<td>Hostname for the Route (optional). Without it OpenShift generates one, which the operator keeps; removing <code>host</code> later keeps the Route's current host, since OpenShift ignores an update that clears it</td>
 </tr>
 <tr>
 <td><code>path</code></td>
@@ -7782,7 +7782,7 @@ for details.</p>
 <tr>
 <td><code>secretName</code></td>
 <td><code>string</code></td>
-<td>Secret containing certificate (reencrypt/passthrough)</td>
+<td><strong>Reserved — no effect today.</strong> Intended for the Route's certificate, but no Route the operator writes names one: the OpenShift router serves its default certificate (<code>edge</code>, <code>reencrypt</code>) or the server's own (<code>passthrough</code>). A <code>ValidationWarning</code> event is raised when it is set. To serve another certificate at the router, add it to the Route itself (<code>spec.tls.certificate</code> and <code>key</code>, or <code>spec.tls.externalCertificate</code>); the operator keeps what it does not render</td>
 </tr>
 </tbody>
 </table>

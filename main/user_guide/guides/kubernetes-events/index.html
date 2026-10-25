@@ -4300,12 +4300,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>ClusterFormationStarted</code></td>
 <td>Normal</td>
-<td>Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it)</td>
-</tr>
-<tr>
-<td><code>ClusterFormationFailed</code></td>
-<td>Warning</td>
-<td>Cluster formation verification failed</td>
+<td>Cluster formation has begun (first formation only — a formed cluster that rolls or loses servers does not raise it). Once per cluster: it is announced by the status write that enters <code>Forming</code>, so a pass that reads the cluster from before that write does not raise it again. There is no <code>ClusterFormationFailed</code>: formation waits rather than fails, and a cluster that cannot be reached for long raises <code>ConnectivityDegraded</code></td>
 </tr>
 <tr>
 <td><code>ClusterReady</code></td>
@@ -4330,7 +4325,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>TopologyPlacementCalculated</code></td>
 <td>Normal</td>
-<td>Topology placement constraints calculated successfully</td>
+<td>Topology placement of a zoned cluster calculated; names the zones. Announced when first calculated and when the zones change, not on every pass (an operator restart announces it once more)</td>
 </tr>
 <tr>
 <td><code>TopologyPlacementFailed</code></td>
@@ -4464,7 +4459,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UpgradeDeferred</code></td>
 <td>Normal</td>
-<td>An image change was held back — the cluster is not yet <code>Ready</code>, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards</td>
+<td>An image change was held back — the cluster is not yet <code>Ready</code>, or a scale-down drain is in progress — and will be performed by the rolling-upgrade state machine afterwards. Once per held target, not on every check (a drain's deferral names the target, and each drain announces it once)</td>
 </tr>
 </tbody>
 </table>
@@ -4739,7 +4734,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraFleetManagementPluginPatchFailed</code></td>
 <td>Warning</td>
-<td>Failed to patch the fleet-management plugin onto the StatefulSet</td>
+<td>Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the pass that finds it adds the plugin</td>
 </tr>
 <tr>
 <td><code>AuraFleetDeploymentCreated</code></td>

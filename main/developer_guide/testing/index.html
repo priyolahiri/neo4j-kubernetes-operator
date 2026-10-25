@@ -5890,8 +5890,12 @@ example file).</p>
 <td>❌ untested (plugin download needs egress)</td>
 </tr>
 <tr>
-<td>exposure: <code>nodeport</code>/<code>loadbalancer</code>/<code>ingress</code>/<code>route-cluster</code></td>
-<td>❌ example-only (need a real LB / Ingress / OpenShift); the Route and MCP Route reconcile itself is unit-tested against a fake client serving <code>route.openshift.io/v1</code> (<code>internal/controller/unstructured_content_test.go</code>)</td>
+<td>exposure: <code>nodeport</code>/<code>loadbalancer</code>/<code>ingress</code></td>
+<td>❌ example-only (need a real LB / Ingress controller)</td>
+</tr>
+<tr>
+<td>exposure: <code>route-cluster</code></td>
+<td>⚠️ partly. The operator's side of a Route needs no OpenShift: the Route and MCP Route reconcile is unit-tested against a fake client serving <code>route.openshift.io/v1</code> (<code>internal/controller/unstructured_content_test.go</code>, <code>route_apply_test.go</code>, including the fields OpenShift fills in), and the whole cluster and standalone passes run against envtest, an API server without the Route API as on Kind (<code>TestReconcile_RoutesWithoutTheRouteAPI_APIServer</code>). Applying <code>examples/clusters/route-cluster.yaml</code> on Kind walks that path too (one <code>RouteAPINotFound</code> per Route, servers created). Only what OpenShift does with the Route — its router serving traffic, the host it generates — needs OpenShift</td>
 </tr>
 <tr>
 <td><code>databases/database-from-{gcs,azure}-seed</code>, cloud backup to GCS/Azure</td>

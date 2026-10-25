@@ -4563,7 +4563,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>A Route where there is no Route API (rule 148)</td>
-<td>Create the standalone with <code>spec.service.route.enabled: true</code> and a <code>host</code>: Kind serves no <code>route.openshift.io/v1</code>, so the operator logs that the Route API is not available and skips the Route; the standalone gets its StatefulSet and reaches <code>Ready</code>, and a dynamic <code>spec.config</code> change made afterwards still draws <code>ConfigAppliedLive</code>. The operator log has <strong>no</strong> <code>cannot deep copy</code> panic. Before v1.22.0 every pass panicked there, before the StatefulSet was built, so this standalone never got a pod. Remove the Route afterwards</td>
+<td>Create the standalone with <code>spec.service.route.enabled: true</code> and a <code>host</code>: Kind serves no <code>route.openshift.io/v1</code>, so the operator logs that the Route API is not available, raises <strong>one</strong> <code>RouteAPINotFound</code> Warning (not one per pass) and skips the Route; the standalone gets its StatefulSet and reaches <code>Ready</code>, and a dynamic <code>spec.config</code> change made afterwards still draws <code>ConfigAppliedLive</code>. The operator log has <strong>no</strong> <code>cannot deep copy</code> panic. Before v1.22.0 every pass panicked there, before the StatefulSet was built, so this standalone never got a pod. Remove the Route afterwards</td>
 </tr>
 <tr>
 <td>Operator build metadata</td>
