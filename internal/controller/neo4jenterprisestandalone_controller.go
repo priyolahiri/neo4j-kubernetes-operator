@@ -1202,6 +1202,18 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 			if len(statefulSet.Spec.Template.Spec.Containers) > 0 {
 				statefulSet.Spec.Template.Spec.Containers[0].Env = mergedEnv
 			}
+			// With Aura Fleet Management the template carries the plugin from
+			// the write that creates the StatefulSet: the fleet merge later in
+			// the pass reads the StatefulSet from a cache that has not seen it,
+			// and the next pass's merge restarted the new pod. Added to what is
+			// written, never to the record of the env the standalone owns
+			// (operations.md id 175); on an existing StatefulSet the merge of
+			// an earlier pass has put it there already.
+			if standaloneInstallsFleetManagement(standalone) {
+				if _, err := addFleetManagementPlugin(&statefulSet.Spec.Template); err != nil {
+					return fmt.Errorf("%w in StatefulSet %s", err, statefulSet.Name)
+				}
+			}
 			statefulSet.Spec.Template.Spec.InitContainers = mergeOwnedByName(
 				currentInit, desiredTemplate.Spec.InitContainers, prevOwnedInit,
 				func(c corev1.Container) string { return c.Name })
@@ -3070,50 +3082,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: namespace}, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
 		}
-
-		containerIdx := -1
-		for i, c := range sts.Spec.Template.Spec.Containers {
-			if c.Name == "neo4j" {
-				containerIdx = i
-				break
-			}
-		}
-		if containerIdx < 0 {
-			return fmt.Errorf("neo4j container not found in StatefulSet %s", stsName)
-		}
-
-		envs := sts.Spec.Template.Spec.Containers[containerIdx].Env
-		pluginsIdx := -1
-		for i, e := range envs {
-			if e.Name == "NEO4J_PLUGINS" {
-				pluginsIdx = i
-				break
-			}
-		}
-
-		var updated string
-		var err error
-		if pluginsIdx < 0 {
-			updated = `["fleet-management"]`
-		} else {
-			current := envs[pluginsIdx].Value
-			updated, err = MergeNeo4jPluginList(current, "fleet-management")
-			if err != nil {
-				return fmt.Errorf("merge plugin list: %w", err)
-			}
-			if updated == current {
-				return nil // already present — nothing to patch
-			}
-		}
-
 		stsCopy := sts.DeepCopy()
-		if pluginsIdx < 0 {
-			stsCopy.Spec.Template.Spec.Containers[containerIdx].Env = append(
-				stsCopy.Spec.Template.Spec.Containers[containerIdx].Env,
-				corev1.EnvVar{Name: "NEO4J_PLUGINS", Value: updated},
-			)
-		} else {
-			stsCopy.Spec.Template.Spec.Containers[containerIdx].Env[pluginsIdx].Value = updated
+		changed, err := addFleetManagementPlugin(&stsCopy.Spec.Template)
+		if err != nil {
+			return fmt.Errorf("%w in StatefulSet %s", err, stsName)
+		}
+		if !changed {
+			return nil // already present — nothing to patch
 		}
 		return r.Update(ctx, stsCopy)
 	})

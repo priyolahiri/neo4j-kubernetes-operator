@@ -19,7 +19,7 @@ management, and error classification.
 | `composite.go` / `aliases.go` | `Neo4jCompositeDatabase` constituent and `Neo4jDatabaseAlias` DDL, pinned to Cypher 5 (the OIDC remote form to Cypher 25). |
 | `replicas.go` | Cross-cluster replica DDL: `CreateReplicaDatabaseFromBackup/FromNetwork`, `PromoteReplicaDatabase`. |
 | `privilege_rules.go` | `RenderPrivilegeRule` / `PrivilegeRuleProblems` — render `spec.privilegeRules` to GRANT/DENY statements (render, never parse). |
-| `error_classify.go` | `IsTransientError`, `IsHostUnresolvableError`, `IsConnectivityError`, `IsNotFoundError` — drive finalizer/retry decisions in controllers. |
+| `error_classify.go` | `IsTransientError` (a connectivity failure, or a Neo4j error the driver retries: `Neo.TransientError.*`, NotALeader), `IsHostUnresolvableError`, `IsConnectivityError`, `IsNotFoundError` — drive finalizer/retry decisions and log levels in controllers (knowledge `operations.md` id 164). |
 | `*_test.go` | Unit tests (see below). |
 
 ## Key types & functions

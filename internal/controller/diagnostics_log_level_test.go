@@ -19,12 +19,14 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/go-logr/logr"
+	driver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	corev1 "k8s.io/api/core/v1"
@@ -149,6 +151,12 @@ func TestCollectDiagnostics_AServerThatHangsUpIsNotAnError(t *testing.T) {
 	assert.Contains(t, got.Status.Diagnostics.CollectionError, "SHOW SERVERS failed")
 }
 
+// neo4jError is a Neo4j error with code as the driver hands it back, wrapped
+// as the client's query helpers wrap it.
+func neo4jError(code string) error {
+	return fmt.Errorf("failed to run SHOW USERS: %w", &driver.Neo4jError{Code: code, Msg: "test"})
+}
+
 func TestLogDiagnosticsQueryFailure(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -159,6 +167,13 @@ func TestLogDiagnosticsQueryFailure(t *testing.T) {
 		{"connection reset", errors.New("failed to execute SHOW DATABASES: read: connection reset by peer"), false},
 		{"a refusal by Neo4j", errors.New("Neo.ClientError.Security.Forbidden: Permission denied"), true},
 		{"a query error", errors.New("Neo.ClientError.Statement.SyntaxError: Invalid input"), true},
+		// What a lost majority, a restart or a leader switch answers with; the
+		// walk of the v1.22.x fixes logged 25 of these at ERROR in one second.
+		{"a database restarting", neo4jError("Neo.TransientError.General.DatabaseUnavailable"), false},
+		{"a leader switch", neo4jError("Neo.ClientError.Cluster.NotALeader"), false},
+		{"replication under way", neo4jError("Neo.TransientError.Cluster.ReplicationFailure"), false},
+		{"a missing privilege, as Neo4j sends it", neo4jError("Neo.ClientError.Security.Forbidden"), true},
+		{"an unknown database, as Neo4j sends it", neo4jError("Neo.ClientError.Database.DatabaseNotFound"), true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
