@@ -275,7 +275,7 @@ func (v *ClusterValidator) validateCluster(ctx context.Context, cluster *neo4jv1
 	allErrs = append(allErrs, validateMCPConfig(cluster.Spec.MCP, field.NewPath("spec", "mcp"))...)
 
 	// Aura Fleet Management validation
-	allErrs = append(allErrs, validateAuraFleetManagement(cluster.Spec.AuraFleetManagement, field.NewPath("spec", "auraFleetManagement"))...)
+	allErrs = append(allErrs, validateAuraFleetManagement(cluster.Spec.AuraFleetManagement, cluster.Spec.Image.Tag, field.NewPath("spec", "auraFleetManagement"))...)
 
 	// NetworkPolicy validation (allowReplicasFrom entry shape)
 	allErrs = append(allErrs, validateNetworkPolicy(cluster.Spec.NetworkPolicy, field.NewPath("spec", "networkPolicy"))...)

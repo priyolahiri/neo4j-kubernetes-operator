@@ -17,18 +17,25 @@ limitations under the License.
 package validation
 
 import (
+	"fmt"
+	"slices"
+	"strings"
+
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-// validateAuraFleetManagement validates the auraFleetManagement spec for a cluster or standalone.
-func validateAuraFleetManagement(spec *neo4jv1beta1.AuraFleetManagementSpec, path *field.Path) field.ErrorList {
+// validateAuraFleetManagement validates the auraFleetManagement spec for a
+// cluster or standalone whose image is tagged imageTag (spec.image.tag).
+func validateAuraFleetManagement(spec *neo4jv1beta1.AuraFleetManagementSpec, imageTag string, path *field.Path) field.ErrorList {
 	var allErrs field.ErrorList
 
 	if spec == nil || !spec.Enabled {
 		return allErrs
 	}
+
+	allErrs = append(allErrs, fleetManagementImageErrors(imageTag, path.Child("enabled"))...)
 
 	// tokenSecretRef is optional: the plugin is installed even without it, but registration
 	// is skipped until a token is provided. Validate the ref only when present.
@@ -105,4 +112,51 @@ func validateAuraFleetProvision(spec *neo4jv1beta1.AuraFleetManagementSpec, path
 	}
 
 	return allErrs
+}
+
+// fleetManagementPlugin is the name Aura Fleet Management installs its plugin
+// by, in NEO4J_PLUGINS.
+const fleetManagementPlugin = "fleet-management"
+
+// fleetManagementImageErrors refuses Aura Fleet Management on an image whose
+// entrypoint does not install fleet-management: 5.26.0 to 5.26.10 and 2025.01
+// to 2025.07 (entrypointPluginLists). Enabling it puts the name in
+// NEO4J_PLUGINS, the entrypoint exits on a name it does not list, and the
+// servers do not start (operations.md id 191; #563, #573). Nothing is refused
+// for a tag that names no supported version: the image rule speaks for it.
+func fleetManagementImageErrors(imageTag string, path *field.Path) field.ErrorList {
+	known, ok := entrypointPluginNames(imageTag)
+	if !ok || slices.Contains(known, fleetManagementPlugin) {
+		return nil
+	}
+	return field.ErrorList{field.Invalid(path, true, fmt.Sprintf(
+		"Aura Fleet Management needs %s: it adds the fleet-management plugin to NEO4J_PLUGINS, and the entrypoint of the "+
+			"neo4j:%s image does not know that plugin and exits on it, so the servers would not start; set spec.image.tag "+
+			"to a release that installs it, or remove spec.auraFleetManagement",
+		firstReleasesInstalling(fleetManagementPlugin), imageTag))}
+}
+
+// firstReleasesInstalling names, line by line, the first release whose
+// entrypoint installs name: "5.26.11 or a later 5.26, or 2025.08.0 or later".
+func firstReleasesInstalling(name string) string {
+	var lts, calver string
+	for _, list := range entrypointPluginLists {
+		if !slices.Contains(list.names, name) {
+			continue
+		}
+		if parseTagVersion(list.from).Major >= 2025 {
+			if calver == "" {
+				calver = list.from + " or later"
+			}
+		} else if lts == "" {
+			lts = list.from + " or a later 5.26"
+		}
+	}
+	var parts []string
+	for _, p := range []string{lts, calver} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, ", or ")
 }

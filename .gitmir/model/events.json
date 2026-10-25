@@ -170,13 +170,43 @@
   {
     "id": "ev-aura-fleet-management-plugin-patch-failed",
     "name": "AuraFleetManagementPluginPatchFailed",
-    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the write that creates the StatefulSet already lists the plugin (#531; knowledge operations.md ids 164, 175).",
+    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the write that creates the StatefulSet already lists the plugin (#531; knowledge operations.md ids 164, 175). Announced when the failure starts or its error text changes, not on every pass while it lasts: the reconciler remembers the last one per deployment (lastAnnounced), forgets it when the patch goes through or the deployment is deleted, so a failure that comes back is announced again (operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-aura-fleet-management-registered",
     "name": "AuraFleetManagementRegistered",
     "description": "Fires once fleetManagement.registerToken succeeds against a Ready cluster or standalone instance.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-deployment-created",
+    "name": "AuraFleetDeploymentCreated",
+    "description": "Fleet Manager provisioning (spec.auraFleetManagement.provision, Phase 0) registered a new Fleet Manager deployment in Aura with CreateDeployment, after recording its ID in the neo4j.com/external-fleet-deployment-id annotation, the idempotency guard (knowledge operations.md id 86).",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-deployment-adopted",
+    "name": "AuraFleetDeploymentAdopted",
+    "description": "Fleet Manager provisioning found a deployment of the same name in the Aura project and bound the cluster or standalone to it instead of creating another — also how a pass recovers after the annotation write that followed a create failed (that failure is in status.auraFleetManagement.message; operations.md id 88).",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-deployment-deleted",
+    "name": "AuraFleetDeploymentDeleted",
+    "description": "Deleting a cluster or standalone whose provision block says deletionPolicy: Delete revoked the deployment's token and unregistered the Fleet Manager deployment in Aura. Best-effort: a failure is logged, and never holds the finalizer.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-token-provisioned",
+    "name": "AuraFleetTokenProvisioned",
+    "description": "A freshly minted fleet registration token was stored in its Secret (spec.provision.tokenSecretName, default <name>-aura-fleet-token), which Phase 2 then registers over Bolt. Aura returns a token exactly once, so it is stored straight after the mint.",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-aura-fleet-token-rotated",
+    "name": "AuraFleetTokenRotated",
+    "description": "Warning: under tokenPolicy: Rotate the token Secret was missing, so the deployment's token was rotated and the new one stored; any previous registration is now invalid, and status.auraFleetManagement.registered was cleared first so Phase 2 registers the new one. Emitted once the new token is stored: while the Secret cannot be written each attempt rotates again, with no event, and the status message says why (knowledge operations.md ids 88, 136).",
     "moduleId": "mod-cluster"
   },
   {
@@ -734,13 +764,19 @@
   {
     "id": "ev-aura-instance-failed",
     "name": "AuraInstanceFailed",
-    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
+    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-snapshot-created",
     "name": "AuraSnapshotCreated",
     "description": "Emitted once CreateSnapshot is accepted and status.snapshotId is recorded.",
+    "moduleId": "mod-aura-core"
+  },
+  {
+    "id": "ev-aura-snapshot-failed",
+    "name": "AuraSnapshotFailed",
+    "description": "Warning: requesting or reading an AuraSnapshot failed with an error a retry does not clear (reason CreateFailed or ObserveFailed); fail() set phase Error with the Ready condition. Emitted after the status write that records it, and only when that write changed the phase or the condition: once per failure, not on every 30s retry, nor after an operator restart. A 409 (snapshot-not-allowed while Aura's own snapshot runs) and a 429, 5xx or transport failure are retried without it (knowledge operations.md ids 145, 156).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -794,7 +830,7 @@
   {
     "id": "ev-aura-database-failed",
     "name": "AuraDatabaseFailed",
-    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The InstanceNotMultiDatabase refusal, once on status for the current generation and the same Aura instance, is not asked again (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
+    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The InstanceNotMultiDatabase refusal, once on status for the current generation and the same Aura instance, is not asked again (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -806,7 +842,7 @@
   {
     "id": "ev-aura-database-backup-failed",
     "name": "AuraDatabaseBackupFailed",
-    "description": "Emitted by fail() when resolving the database/target or taking the backup fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx, a transport failure or a 409 (another operation in flight) of the backup create is retried without it, as the snapshot create does (id 88).",
+    "description": "Emitted by fail() when resolving the database/target or taking the backup fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx, a transport failure or a 409 (another operation in flight) of the backup create is retried without it, as the snapshot create does (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -824,7 +860,7 @@
   {
     "id": "ev-aura-database-restore-failed",
     "name": "AuraDatabaseRestoreFailed",
-    "description": "Emitted by fail() when resolving the database/backup/target or the RestoreDatabase call itself fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() when resolving the database/backup/target or the RestoreDatabase call itself fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -854,7 +890,7 @@
   {
     "id": "ev-aura-member-failed",
     "name": "AuraMemberFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -890,7 +926,7 @@
   {
     "id": "ev-aura-invite-failed",
     "name": "AuraInviteFailed",
-    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156).",
+    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -902,7 +938,7 @@
   {
     "id": "ev-aura-credentials-invalid",
     "name": "AuraCredentialsInvalid",
-    "description": "Emitted (Warning) when the credential exchange or the proving ListInstances call fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted (Warning) when the credential exchange or the proving ListInstances call fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -944,7 +980,7 @@
   {
     "id": "ev-aura-customer-managed-key-failed",
     "name": "AuraCustomerManagedKeyFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
+    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -986,7 +1022,7 @@
   {
     "id": "ev-aura-ip-filter-failed",
     "name": "AuraIPFilterFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
+    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
     "moduleId": "mod-aura-core"
   },
   {

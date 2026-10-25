@@ -86,6 +86,10 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
 	fleetFailures fleetFailureTracker
+	// fleetPluginPatchFailures remembers, per deployment, the last
+	// AuraFleetManagementPluginPatchFailed it announced, so a patch that keeps
+	// failing the same way is announced once (operations.md id 145).
+	fleetPluginPatchFailures lastAnnounced
 
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
@@ -285,6 +289,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	// rather than adding a second one — a stuck Aura API must not block deletion.
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, standalone)
 	r.fleetFailures.clear(client.ObjectKeyFromObject(standalone))
+	r.fleetPluginPatchFailures.forget(client.ObjectKeyFromObject(standalone).String())
 
 	// Cleanup resources
 	if err := r.cleanupResources(ctx, standalone); err != nil {
@@ -3038,13 +3043,19 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 				"statefulSet", standalone.Name)
 			return nil
 		}
-		logger.Error(err, "Failed to patch StatefulSet NEO4J_PLUGINS for fleet-management")
-		if r.Recorder != nil {
+		// Announced — and logged at info — when the failure starts or its message
+		// changes, at V(1) on the passes in between; it was an ERROR on every pass
+		// (operations.md ids 145, 164). The next pass tries again.
+		announced := r.fleetPluginPatchFailures.changed(client.ObjectKeyFromObject(standalone).String(), err.Error())
+		logRefusal(logger, announced, "Could not add fleet-management to NEO4J_PLUGINS; trying again on the next pass", err)
+		if announced && r.Recorder != nil {
 			r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
 				"Failed to add fleet-management to NEO4J_PLUGINS: %v", err)
 		}
 		return nil
 	}
+	// The patch went through: a failure that comes back is news again.
+	r.fleetPluginPatchFailures.forget(client.ObjectKeyFromObject(standalone).String())
 
 	// --- Phase 2: token registration ---
 	// Either source is valid and they are mutually exclusive — see

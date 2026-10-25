@@ -243,7 +243,7 @@ func (r *AuraDatabaseBackupReconciler) fail(ctx context.Context, req ctrl.Reques
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: aura.MessageWithoutRequestID(cause)}
 		changed := auraConditionChanged(latest.Status.Conditions, want) || latest.Status.Phase != "Error"
 		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.Phase = "Error"

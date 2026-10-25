@@ -28,7 +28,9 @@ The operator uses an additive merge strategy — neither controller overwrites t
 
 - A Neo4j Aura account with Fleet Management enabled.
 - A registration token from the Aura console wizard (see [Generate a token](#generate-a-token)) — **or** Aura API credentials, and let the operator mint the token itself (see [Operator-managed onboarding](#operator-managed-onboarding-mint-the-token-automatically)).
-- Neo4j Enterprise 5.26+ or 2025.x+. All supported enterprise images bundle the fleet-management plugin.
+- Neo4j Enterprise **5.26.11 or a later 5.26, or 2025.08.0 or later** (a floating `5.26-enterprise` or `2026.08-enterprise` tag is fine). The operator installs the plugin by adding `fleet-management` to `NEO4J_PLUGINS`, and the image's entrypoint knows that name only from those releases: on 5.26.0 – 5.26.10 and 2025.01 – 2025.07 it exits on it and the servers do not start. The operator refuses `spec.auraFleetManagement.enabled: true` on those images (`ValidationFailed`, naming these releases) — see [which plugins each release installs](guides/plugins.md#which-plugins-managed-installs).
+
+  A deployment that already enabled it on such an image — whose restarted servers are failing on it — is refused from the first pass of the upgraded operator, and the operator writes nothing to it until the spec changes: its StatefulSet stays as it was. Move `spec.image.tag` to a release that installs the plugin and the servers roll onto it. Or remove `spec.auraFleetManagement`, then take `fleet-management` out of the StatefulSet's `NEO4J_PLUGINS` by hand: the operator only ever adds it.
 
 ## Generate a token
 

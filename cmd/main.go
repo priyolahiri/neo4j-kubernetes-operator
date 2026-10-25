@@ -636,13 +636,8 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 			},
 		},
 		{
-			name: "AuraProviderConfig",
-			controller: &controller.AuraProviderConfigReconciler{
-				Client:       mgr.GetClient(),
-				Scheme:       mgr.GetScheme(),
-				Recorder:     mgr.GetEventRecorderFor("aura-provider-config-controller"),
-				RequeueAfter: controller.GetTestRequeueAfter(),
-			},
+			name:       "AuraProviderConfig",
+			controller: newAuraProviderConfigReconciler(mgr),
 		},
 		{
 			name: "AuraInstance",
@@ -753,6 +748,20 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 	}
 
 	return nil
+}
+
+// newAuraProviderConfigReconciler builds the AuraProviderConfig reconciler for
+// both modes. It sets no RequeueAfter: the controller then validates the
+// credentials every 10 minutes. It used to get the 30s every other controller
+// is wired with — a token exchange and a ListInstances call per config every
+// 30s, against a trial account's 25 Aura API calls a minute that every Aura CR
+// using the config shares (operations.md id 184).
+func newAuraProviderConfigReconciler(mgr ctrl.Manager) *controller.AuraProviderConfigReconciler {
+	return &controller.AuraProviderConfigReconciler{
+		Client:   mgr.GetClient(),
+		Scheme:   mgr.GetScheme(),
+		Recorder: mgr.GetEventRecorderFor("aura-provider-config-controller"),
+	}
 }
 
 // devControllerRegistry maps every controller key dev mode understands to its
@@ -920,12 +929,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 			}, "Neo4jAuthRule"
 		},
 		"auraproviderconfig": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
-			return &controller.AuraProviderConfigReconciler{
-				Client:       mgr.GetClient(),
-				Scheme:       mgr.GetScheme(),
-				Recorder:     mgr.GetEventRecorderFor("aura-provider-config-controller"),
-				RequeueAfter: controller.GetTestRequeueAfter(),
-			}, "AuraProviderConfig"
+			return newAuraProviderConfigReconciler(mgr), "AuraProviderConfig"
 		},
 		"aurainstance": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
 			return &controller.AuraInstanceReconciler{

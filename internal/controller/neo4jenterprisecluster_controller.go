@@ -112,6 +112,10 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// registration that keeps failing the same way is announced once, not on
 	// every reconcile.
 	fleetFailures fleetFailureTracker
+	// fleetPluginPatchFailures remembers, per deployment, the last
+	// AuraFleetManagementPluginPatchFailed it announced, so a patch that keeps
+	// failing the same way is announced once (operations.md id 145).
+	fleetPluginPatchFailures lastAnnounced
 	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
@@ -878,6 +882,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	// rather than adding a second one — a stuck Aura API must not block deletion.
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, cluster)
 	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
+	r.fleetPluginPatchFailures.forget(client.ObjectKeyFromObject(cluster).String())
 	r.availabilityAnnounced.Delete(clusterKey(cluster))
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	r.upgradeDiagnostics.Delete(clusterKey(cluster))
@@ -3543,12 +3548,22 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 				"statefulSet", stsName)
 			return nil
 		}
-		// Non-fatal for the reconcile: the cluster is functional, plugin patching failed.
-		logger.Error(err, "Failed to patch StatefulSet NEO4J_PLUGINS for fleet-management")
-		r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
-			"Failed to add fleet-management to NEO4J_PLUGINS: %v", err)
+		// Non-fatal for the reconcile: the cluster is functional, plugin patching
+		// failed, and the next pass tries again. Announced — and logged at info —
+		// when the failure starts or its message changes, at V(1) on the passes in
+		// between: a StatefulSet without a neo4j container, a write the API server
+		// refuses, lasts. It was an ERROR on every pass, about eight a minute
+		// (operations.md ids 145, 164).
+		announced := r.fleetPluginPatchFailures.changed(client.ObjectKeyFromObject(cluster).String(), err.Error())
+		logRefusal(logger, announced, "Could not add fleet-management to NEO4J_PLUGINS; trying again on the next pass", err)
+		if announced {
+			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
+				"Failed to add fleet-management to NEO4J_PLUGINS: %v", err)
+		}
 		return nil
 	}
+	// The patch went through: a failure that comes back is news again.
+	r.fleetPluginPatchFailures.forget(client.ObjectKeyFromObject(cluster).String())
 
 	// --- Phase 2: token registration ---
 	// The token can come from either place, and they are mutually exclusive:

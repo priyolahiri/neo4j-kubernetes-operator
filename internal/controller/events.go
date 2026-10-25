@@ -382,6 +382,7 @@ const (
 	EventReasonAuraInstanceOrphaned     = "AuraInstanceOrphaned"
 	EventReasonAuraInstanceFailed       = "AuraInstanceFailed"
 	EventReasonAuraSnapshotCreated      = "AuraSnapshotCreated"
+	EventReasonAuraSnapshotFailed       = "AuraSnapshotFailed"
 	EventReasonAuraRestoreStarted       = "AuraRestoreStarted"
 	EventReasonAuraRestoreCompleted     = "AuraRestoreCompleted"
 	EventReasonAuraRestoreFailed        = "AuraRestoreFailed"

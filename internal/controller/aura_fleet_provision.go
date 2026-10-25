@@ -220,12 +220,18 @@ func (fp *fleetProvisioner) reconcileAuraFleetProvision(ctx context.Context, obj
 	// --- deployment ---------------------------------------------------------
 	deploymentID, err := fp.ensureDeployment(ctx, obj, p, apiClient, orgID, projectID)
 	if err != nil {
-		// Refusals are checked BEFORE IsTransient — see the auraRefusalError doc.
-		if !isAuraRefusal(err) && aura.IsTransient(err) {
-			logger.Info("Aura fleet deployment lookup transient failure; will retry")
+		// Only a failed Aura call is retried quietly, marked where it failed
+		// (retryableAuraCall). aura.IsTransient also said yes to a failed write
+		// of the deployment annotation — a Kubernetes error — which then went
+		// unreported; the next pass adopts the deployment by name, but nothing
+		// said why it had to (knowledge rule 88). The message leaves Aura's
+		// request ID out, so a failure that repeats is the same status, not a
+		// status write — and a cluster pass — on every pass (rule 184).
+		if isRetryableAuraCall(err) {
+			logger.Info("Aura fleet deployment lookup transient failure; will retry", "error", err.Error())
 			return nil
 		}
-		return fp.note(ctx, key, fmt.Sprintf("cannot ensure fleet deployment: %v", err))
+		return fp.note(ctx, key, "cannot ensure fleet deployment: "+aura.MessageWithoutRequestID(err))
 	}
 	if deploymentID == "" {
 		// No deployment and managementPolicies forbids Create.
@@ -241,7 +247,7 @@ func (fp *fleetProvisioner) reconcileAuraFleetProvision(ctx context.Context, obj
 		if isRetryableAuraCall(err) {
 			return nil
 		}
-		return fp.note(ctx, key, err.Error())
+		return fp.note(ctx, key, aura.MessageWithoutRequestID(err))
 	}
 
 	// --- observed token metadata + optional telemetry ------------------------
@@ -290,7 +296,7 @@ func (fp *fleetProvisioner) ensureDeployment(
 	name := fleetDeploymentName(p, obj.GetNamespace(), obj.GetName())
 	existing, err := apiClient.ListDeployments(ctx, orgID, projectID)
 	if err != nil {
-		return "", fmt.Errorf("listing fleet deployments: %w", err)
+		return "", retryableAuraCall(fmt.Errorf("listing fleet deployments: %w", err))
 	}
 	for i := range existing {
 		if existing[i].Name == name {
@@ -309,7 +315,7 @@ func (fp *fleetProvisioner) ensureDeployment(
 
 	id, err := apiClient.CreateDeployment(ctx, orgID, projectID, name)
 	if err != nil {
-		return "", fmt.Errorf("creating fleet deployment %q: %w", name, err)
+		return "", retryableAuraCall(fmt.Errorf("creating fleet deployment %q: %w", name, err))
 	}
 	// Persist BEFORE minting a token — see the annotation's doc comment.
 	if err := fp.setDeploymentAnnotation(ctx, obj, id); err != nil {
@@ -458,7 +464,7 @@ func (fp *fleetProvisioner) syncObserved(
 		var serr error
 		servers, serr = apiClient.ListDeploymentServers(ctx, orgID, projectID, deploymentID)
 		if serr != nil {
-			telemetryErr = fmt.Sprintf("listing fleet servers: %v", serr)
+			telemetryErr = "listing fleet servers: " + aura.MessageWithoutRequestID(serr)
 		} else {
 			// Database detail is per-server, so this is an N+1 by necessity. Bound
 			// it by the same cap as the reported lists so a large fleet cannot turn
@@ -469,7 +475,7 @@ func (fp *fleetProvisioner) syncObserved(
 				}
 				dbs, dberr := apiClient.ListServerDatabases(ctx, orgID, projectID, deploymentID, servers[i].ID)
 				if dberr != nil {
-					telemetryErr = fmt.Sprintf("listing databases for server %q: %v", servers[i].Name, dberr)
+					telemetryErr = fmt.Sprintf("listing databases for server %q: %s", servers[i].Name, aura.MessageWithoutRequestID(dberr))
 					break
 				}
 				// Stamp the reporting server: several servers report the same

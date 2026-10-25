@@ -449,7 +449,7 @@ both RBAC modes, because ESO (not this operator) performs the cluster-scoped rea
 
 ### AuraFleetManagementSpec
 
-Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/aura/fleet-management/) for monitoring this cluster from the Aura console. The fleet-management plugin is pre-bundled in all Neo4j Enterprise images (no internet access required).
+Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/aura/fleet-management/) for monitoring this cluster from the Aura console. The fleet-management plugin is pre-bundled in the Neo4j Enterprise images (no internet access required) that list it for `NEO4J_PLUGINS`: **5.26.11 or a later 5.26, and 2025.08.0 or later**. On an earlier image the entrypoint exits on the name and the servers do not start, so `enabled: true` is refused there (`ValidationFailed`).
 
 | Field | Type | Description |
 |---|---|---|

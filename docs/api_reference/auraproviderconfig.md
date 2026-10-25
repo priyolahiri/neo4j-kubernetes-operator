@@ -36,7 +36,7 @@ References a Kubernetes Secret holding the Aura API OAuth client credentials. Th
 
 | Field | Type | Description |
 |---|---|---|
-| `conditions` | `[]metav1.Condition` | `Ready=True` once an access token was successfully obtained with the referenced credentials (reason `CredentialsValidated`). |
+| `conditions` | `[]metav1.Condition` | `Ready=True` once an access token was successfully obtained with the referenced credentials (reason `CredentialsValidated`), `False` with reason `CredentialsInvalid` when not. The operator validates the credentials again every 10 minutes — a token exchange and one `ListInstances` call, against the credential's rate limit that every Aura CR using the config shares. |
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
 
 ## Example

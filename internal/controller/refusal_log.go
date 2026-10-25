@@ -25,6 +25,9 @@ import "github.com/go-logr/logr"
 // A refusal is a status the user has to fix, not a controller error: logged
 // as an ERROR before the status write, it filled the log with one line per
 // pass, every 6–8 seconds, for as long as the spec stayed refused (#562 walk).
+// A lasting failure the operator retries on every pass and announces once
+// through lastAnnounced — a fleet-management patch the StatefulSet cannot
+// take — is logged the same way, announced being what lastAnnounced said.
 func logRefusal(logger logr.Logger, announced bool, msg string, err error) {
 	if announced {
 		logger.Info(msg, "reason", err.Error())

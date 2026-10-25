@@ -151,7 +151,7 @@ is met on many passes. It is announced once:
 |---|---|---|
 | `AuraFleetManagementRegistered` | Normal | Successfully registered with Aura Fleet Management |
 | `AuraFleetManagementFailed` | Warning | Aura Fleet Management token registration failed. Raised when a failure first appears or its message changes, not on every retry; the current message is in `status.auraFleetManagement.message` |
-| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin |
+| `AuraFleetManagementPluginPatchFailed` | Warning | Failed to patch the fleet-management plugin onto the StatefulSet. Raised when the failure starts or its message changes, not on every pass while it lasts; announced again if it comes back after a patch went through. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin |
 | `AuraFleetDeploymentCreated` | Normal | Operator-driven provisioning (`spec.auraFleetManagement.provision`) registered a Fleet Manager deployment in Aura |
 | `AuraFleetDeploymentAdopted` | Normal | Provisioning adopted an existing Aura fleet deployment of the same name instead of creating one |
 | `AuraFleetDeploymentDeleted` | Normal | The Aura fleet deployment was unregistered |
@@ -257,7 +257,7 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 
 ### Aura Orchestration
 
-Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, `AuraRestore`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore`, `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite`). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The `…Ready` events and `AuraCredentialsValidated` are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call.
+Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, `AuraRestore`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore`, `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite`). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The `…Ready` events and `AuraCredentialsValidated` are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call. A failure that repeats is one Warning however often it is retried: Aura gives every response its own request ID, which the Warning carries (quote it to Aura support) and the status message leaves out, so the same refusal reads the same on every retry.
 
 | Reason | Type | Description |
 |---|---|---|
@@ -265,6 +265,7 @@ Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, 
 | `AuraInstanceCreated`, `AuraInstanceAdopted`, `AuraInstanceUpdated`, `AuraInstancePaused`, `AuraInstanceResumed`, `AuraInstanceUpgraded`, `AuraInstanceDeleted`, `AuraInstanceOrphaned` | Normal | Lifecycle of the Aura instance. `AuraInstanceOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials stayed unavailable for 5 minutes after deletion was requested: the cloud instance keeps running, so delete it in the Aura console |
 | `AuraInstanceFailed` | Warning | Aura instance reconcile failed (also: deletion refused while `deletionProtection` is set, recorded on the `Synced` condition, reason `DeletionProtected`; a `Delete` waiting for credentials it cannot read, reason `CredentialsUnavailable`). Once per failure |
 | `AuraSnapshotCreated` | Normal | Aura snapshot requested |
+| `AuraSnapshotFailed` | Warning | Requesting or reading the snapshot failed with an error Aura will not clear on a retry (phase `Error`, reason `CreateFailed` or `ObserveFailed`). Once per failure; the operator keeps retrying. A busy instance (`snapshot-not-allowed`, HTTP 409) and a 429, 5xx or network failure are retried without it |
 | `AuraRestoreStarted`, `AuraRestoreCompleted` | Normal | Instance restore from a snapshot started / completed |
 | `AuraRestoreFailed` | Warning | The instance entered a failed status during restore |
 | `AuraCustomerManagedKeyCreated`, `AuraCustomerManagedKeyAdopted`, `AuraCustomerManagedKeyReady`, `AuraCustomerManagedKeyDeleted`, `AuraCustomerManagedKeyOrphaned` | Normal | Lifecycle of the customer-managed key (`AuraCustomerManagedKeyReady` once when the key becomes ready). `AuraCustomerManagedKeyOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials stayed unavailable for 5 minutes: the key stays registered in Aura |

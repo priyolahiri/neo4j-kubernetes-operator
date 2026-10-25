@@ -283,7 +283,7 @@ func (r *AuraDatabaseRestoreReconciler) fail(ctx context.Context, req ctrl.Reque
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: aura.MessageWithoutRequestID(cause)}
 		changed := auraConditionChanged(latest.Status.Conditions, want) ||
 			(terminal && latest.Status.Phase != auraRestorePhaseError)
 		meta.SetStatusCondition(&latest.Status.Conditions, want)

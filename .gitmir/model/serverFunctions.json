@@ -38,7 +38,9 @@
       "sf-merge-fleet-plugin",
       "sf-recreate-statefulset-as-it-was",
       "sf-forget-abandoned-upgrade",
-      "sf-record-started-target"
+      "sf-record-started-target",
+      "sf-provision-aura-fleet",
+      "sf-deprovision-aura-fleet"
     ],
     "emitsEventIds": [
       "ev-topology-warning",
@@ -121,7 +123,7 @@
     "name": "Merge Fleet Management Plugin",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Phase 1 of Aura Fleet Management, for a cluster or standalone with spec.auraFleetManagement.enabled: addFleetManagementPlugin merges fleet-management into the neo4j container's NEO4J_PLUGINS with MergeNeo4jPluginList. It runs in the write that creates the StatefulSet — after the record of the env the deployment owns, so NEO4J_PLUGINS stays out of the static template and out of that record — so a new deployment's servers start with the plugin; and on every pass as mergeFleetManagementPlugin, which writes only when the entry is missing (enabling it on a running deployment restarts the servers once). A StatefulSet that does not exist yet is not a failure; anything else raises AuraFleetManagementPluginPatchFailed (knowledge operations.md ids 164, 175).",
+    "description": "Phase 1 of Aura Fleet Management, for a cluster or standalone with spec.auraFleetManagement.enabled: addFleetManagementPlugin merges fleet-management into the neo4j container's NEO4J_PLUGINS with MergeNeo4jPluginList. It runs in the write that creates the StatefulSet — after the record of the env the deployment owns, so NEO4J_PLUGINS stays out of the static template and out of that record — so a new deployment's servers start with the plugin; and on every pass as mergeFleetManagementPlugin, which writes only when the entry is missing (enabling it on a running deployment restarts the servers once). A StatefulSet that does not exist yet is not a failure; anything else raises AuraFleetManagementPluginPatchFailed (knowledge operations.md ids 164, 175). A failure that lasts is announced once per cause (fleetPluginPatchFailures, operations.md id 145), and logged at info when announced, at V(1) on the passes in between, never as an ERROR or a reconcile error (id 164); an image whose entrypoint does not list fleet-management never gets here — the validator refuses the spec (id 191).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -129,6 +131,43 @@
     ],
     "emitsEventIds": [
       "ev-aura-fleet-management-plugin-patch-failed"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-provision-aura-fleet",
+    "name": "Provision Aura Fleet Manager deployment and token",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "business_action",
+    "description": "Phase 0 of Aura Fleet Management for a cluster or standalone with spec.auraFleetManagement.provision (reconcileAuraFleetProvision in aura_fleet_provision.go, shared by both reconcilers): resolves the Aura credentials, organization and project; ensures a Fleet Manager deployment — the neo4j.com/external-fleet-deployment-id annotation, else one of the same name (adopted), else CreateDeployment, the annotation written before any token is minted; then ensures the token Secret — POST mints a first token, and when one already exists the token is rotated only if never registered or under tokenPolicy: Rotate, else refused with an explanation. Non-fatal: every failure is a status.auraFleetManagement.message, never a reconcile error. Only an Aura call marked retryable at the call (retryableAuraCall) is retried quietly; a Kubernetes write that fails (the annotation, the token Secret) is reported. Messages leave Aura's request ID out (knowledge operations.md ids 86, 88, 184).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-fleet-deployment-created",
+      "ev-aura-fleet-deployment-adopted",
+      "ev-aura-fleet-token-provisioned",
+      "ev-aura-fleet-token-rotated"
+    ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-deprovision-aura-fleet",
+    "name": "Deprovision Aura Fleet Manager deployment",
+    "serverUnitId": "su-neo4jenterprisecluster",
+    "operation": "delete",
+    "description": "deprovisionAuraFleet, from the cluster's or standalone's deletion: when the provision block says deletionPolicy: Delete and managementPolicies permit Delete, revokes the deployment's token, then unregisters the deployment recorded in the annotation. Best-effort and non-fatal: a stuck Aura API never holds the finalizer.",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [
+      "sf-call-aura-api"
+    ],
+    "emitsEventIds": [
+      "ev-aura-fleet-deployment-deleted"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-cluster"
@@ -155,7 +194,9 @@
       "sf-reload-renewed-tls",
       "sf-reconcile-route",
       "sf-merge-fleet-plugin",
-      "sf-recreate-statefulset-as-it-was"
+      "sf-recreate-statefulset-as-it-was",
+      "sf-provision-aura-fleet",
+      "sf-deprovision-aura-fleet"
     ],
     "emitsEventIds": [
       "ev-validation-failed",
@@ -1726,14 +1767,15 @@
     "name": "Reconcile AuraSnapshot",
     "serverUnitId": "su-aurasnapshot",
     "operation": "job",
-    "description": "AuraSnapshotReconciler.Reconcile: requests a snapshot exactly once via CreateSnapshot, then polls GetSnapshot until Completed/Failed/Cancelled; the create response carries only snapshot_id so the initial phase is recorded as Pending rather than copying fields that are not yet present.",
+    "description": "AuraSnapshotReconciler.Reconcile: requests a snapshot exactly once via CreateSnapshot, then polls GetSnapshot until Completed/Failed/Cancelled; the create response carries only snapshot_id so the initial phase is recorded as Pending rather than copying fields that are not yet present. A create or a poll Aura refuses (not a 409, not transient) goes through fail(): phase Error with the Ready condition, one AuraSnapshotFailed Warning, retried every 30s; a snapshot in a terminal phase (Completed, Failed, Cancelled) is not read again (operations.md id 156).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
       "sf-call-aura-api"
     ],
     "emitsEventIds": [
-      "ev-aura-snapshot-created"
+      "ev-aura-snapshot-created",
+      "ev-aura-snapshot-failed"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-aura-core"
@@ -1864,7 +1906,7 @@
     "name": "Validate Aura credentials",
     "serverUnitId": "su-aura-client",
     "operation": "business_action",
-    "description": "AuraProviderConfigReconciler.Reconcile: resolves the referenced credentials Secret, forces a token exchange and a real ListInstances call to prove the credentials work, and reports CredentialsValidated/CredentialsInvalid on the Ready condition, re-checking every RequeueAfter (30s as deployed, 10 minutes when unset). Each event is announced when the Ready condition changes, not on every re-check (operations.md ids 136 and 145).",
+    "description": "AuraProviderConfigReconciler.Reconcile: resolves the referenced credentials Secret, forces a token exchange and a real ListInstances call to prove the credentials work, and reports CredentialsValidated/CredentialsInvalid on the Ready condition, re-checking every 10 minutes (auraProviderConfigRecheck; the operator wires no RequeueAfter, which had made it 30s). Each event is announced when the Ready condition changes; the condition's message leaves Aura's request ID out (operations.md ids 136, 145, 184).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1882,7 +1924,7 @@
     "name": "Validate Neo4jEnterpriseCluster spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "ClusterValidator.ValidateWithWarnings, called on every reconcile pass and by `kubectl neo4j validate`: the spec rules (topology, image, storage, TLS, auth, spec.config keys and values, memory, spec.upgradeStrategy timeouts as Go durations above zero, MCP, Aura Fleet Management, network policy, CCDR, admin password shape) plus the rules that need the running cluster: spec.image.tag against status.version, the version every server runs, and, while an upgrade is unfinished (in flight, Paused or Failed), against status.upgradeStatus.startedTargetVersion, the newest version a server it restarted has started on, so no tag rolls such a server back; a server whose image could not be pulled never started, so the tag may go back below the target. A record an earlier operator wrote, without that field, is held to status.upgradeStatus.targetVersion once its progress says it restarted a server (operations.md id 149). A tag pinned to a digest (2026.08.1-enterprise@sha256:...) is read as its tag's version. It refuses a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26, and 4.x, following Neo4j's upgrade guide; it does not judge an empty or unparseable status.version. A tag without a patch (5.26-enterprise) floats to the newest patch of its line and is not ordered against a patch of it, so the tag is also held to what the servers report: status.runningVersion for status.version, and status.upgradeStatus.resolvedTargetVersion for an upgrade that has restarted a server; until one is recorded such a patch is not checked (operations.md id 153). There is no webhook and so no previous spec: the old update path read the cluster again and compared it with itself, so its rules never fired (operations.md id 139). The server count has no running-state rule: at least 2 servers is a spec rule, a scale-down is the drain's, and capacity for a scale-up is the scheduler's. The rolling-upgrade state machine calls the same version rule (ValidateVersionUpgrade) before it starts an upgrade (internal/validation/cluster_validator.go, upgrade_validator.go). The reconciler and the CLI apply ApplyDefaults first, to their own copy, which nothing writes back. ApplyDefaults adds no field an error can be reported on (no nameless spec.tls.issuerRef) and replaces no value the user set: it fills in the CRD's defaults (a tls block without a mode is cert-manager, as the API server stores it), takes no tls block as disabled and no service block as a ClusterIP Service, and gives the auth provider lists Neo4j's default, native, when no authentication provider is named, the authorization list only when the user set it nowhere, in spec.auth or spec.config (operations.md id 150). NoEffectWarnings says that Recreate on a cluster does what RollingUpgrade does (operations.md id 144).",
+    "description": "ClusterValidator.ValidateWithWarnings, called on every reconcile pass and by `kubectl neo4j validate`: the spec rules (topology, image, storage, TLS, auth, spec.config keys and values, memory, spec.upgradeStrategy timeouts as Go durations above zero, MCP, Aura Fleet Management, network policy, CCDR, admin password shape) plus the rules that need the running cluster: spec.image.tag against status.version, the version every server runs, and, while an upgrade is unfinished (in flight, Paused or Failed), against status.upgradeStatus.startedTargetVersion, the newest version a server it restarted has started on, so no tag rolls such a server back; a server whose image could not be pulled never started, so the tag may go back below the target. A record an earlier operator wrote, without that field, is held to status.upgradeStatus.targetVersion once its progress says it restarted a server (operations.md id 149). A tag pinned to a digest (2026.08.1-enterprise@sha256:...) is read as its tag's version. It refuses a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26, and 4.x, following Neo4j's upgrade guide; it does not judge an empty or unparseable status.version. A tag without a patch (5.26-enterprise) floats to the newest patch of its line and is not ordered against a patch of it, so the tag is also held to what the servers report: status.runningVersion for status.version, and status.upgradeStatus.resolvedTargetVersion for an upgrade that has restarted a server; until one is recorded such a patch is not checked (operations.md id 153). There is no webhook and so no previous spec: the old update path read the cluster again and compared it with itself, so its rules never fired (operations.md id 139). The server count has no running-state rule: at least 2 servers is a spec rule, a scale-down is the drain's, and capacity for a scale-up is the scheduler's. The rolling-upgrade state machine calls the same version rule (ValidateVersionUpgrade) before it starts an upgrade (internal/validation/cluster_validator.go, upgrade_validator.go). The reconciler and the CLI apply ApplyDefaults first, to their own copy, which nothing writes back. ApplyDefaults adds no field an error can be reported on (no nameless spec.tls.issuerRef) and replaces no value the user set: it fills in the CRD's defaults (a tls block without a mode is cert-manager, as the API server stores it), takes no tls block as disabled and no service block as a ClusterIP Service, and gives the auth provider lists Neo4j's default, native, when no authentication provider is named, the authorization list only when the user set it nowhere, in spec.auth or spec.config (operations.md id 150). NoEffectWarnings says that Recreate on a cluster does what RollingUpgrade does (operations.md id 144). spec.auraFleetManagement.enabled is refused on a spec.image.tag whose entrypoint does not list fleet-management (5.26.0–5.26.10, 2025.01–2025.07), naming 5.26.11 and 2025.08.0 (operations.md id 191).",
     "readsFieldIds": [
       "f-neo4jenterprisecluster-image-tag",
       "f-neo4jenterprisecluster-status-version",
@@ -1902,7 +1944,7 @@
     "name": "Validate Neo4jEnterpriseStandalone spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "StandaloneValidator.Validate, called on every standalone reconcile pass and by `kubectl neo4j validate`: the spec rules (ValidateCreate: name length, licence, image, storage, TLS, auth, spec.config, memory, MCP, Aura Fleet Management, trusted CAs, extra volumes), the admin password's shape read from its Secret (skipped without a client, as offline), and spec.image.tag against status.version, the version the standalone runs, with the cluster's rule: a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26 and 4.x are refused, saying 'the standalone runs'. An empty status.version is not judged. For a status.version without a patch the tag is also held to status.runningVersion, the version the server reports (operations.md id 153). There is no update-only method: ValidateUpdate, which compared an old spec with a new one, was never called (no webhook, no old object) and was deleted (internal/validation/standalone_validator.go; operations.md id 144). Its NoEffectWarnings (ValidationWarning, never an error) include spec.upgradeStrategy.upgradeTimeout, healthCheckTimeout and stabilizationTimeout set to anything but their CRD defaults: they bound steps of a cluster's rolling upgrade that a standalone's upgrade does not have (postUpgradeHealthCheck has no warning: false says what happens, true is the default; operations.md id 102).",
+    "description": "StandaloneValidator.Validate, called on every standalone reconcile pass and by `kubectl neo4j validate`: the spec rules (ValidateCreate: name length, licence, image, storage, TLS, auth, spec.config, memory, MCP, Aura Fleet Management, trusted CAs, extra volumes), the admin password's shape read from its Secret (skipped without a client, as offline), and spec.image.tag against status.version, the version the standalone runs, with the cluster's rule: a downgrade, CalVer to 5.x, CalVer from a 5.x other than 5.26 and 4.x are refused, saying 'the standalone runs'. An empty status.version is not judged. For a status.version without a patch the tag is also held to status.runningVersion, the version the server reports (operations.md id 153). There is no update-only method: ValidateUpdate, which compared an old spec with a new one, was never called (no webhook, no old object) and was deleted (internal/validation/standalone_validator.go; operations.md id 144). Its NoEffectWarnings (ValidationWarning, never an error) include spec.upgradeStrategy.upgradeTimeout, healthCheckTimeout and stabilizationTimeout set to anything but their CRD defaults: they bound steps of a cluster's rolling upgrade that a standalone's upgrade does not have (postUpgradeHealthCheck has no warning: false says what happens, true is the default; operations.md id 102). spec.auraFleetManagement.enabled is refused on a spec.image.tag whose entrypoint does not list fleet-management (5.26.0–5.26.10, 2025.01–2025.07), naming 5.26.11 and 2025.08.0 (operations.md id 191).",
     "readsFieldIds": [
       "f-neo4jenterprisestandalone-image-tag",
       "f-neo4jenterprisestandalone-status-version",
