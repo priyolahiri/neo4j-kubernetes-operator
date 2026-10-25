@@ -8368,12 +8368,17 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>resolvedTargetVersion</code></td>
 <td><code>string</code></td>
-<td>For a <code>targetVersion</code> without a patch, the Neo4j version the servers this upgrade restarted report (<code>SHOW SERVERS</code>, <code>version</code>): what the target resolved to. Recorded when a restarted server passes the upgrade's availability check, or, for a <code>Paused</code> or <code>Failed</code> upgrade, at the next <code>Ready</code>; kept when the target changes mid-upgrade. Once a server has restarted, a <code>spec.image.tag</code> below it is refused too</td>
+<td>For a <code>targetVersion</code> without a patch, the Neo4j version the servers this upgrade restarted report (<code>SHOW SERVERS</code>, <code>version</code>): what the target resolved to. Recorded when a restarted server passes the upgrade's availability check, or, for a <code>Paused</code> or <code>Failed</code> upgrade, at the next <code>Ready</code>; kept when the target changes mid-upgrade. Once a server has started on a target (<code>startedTargetVersion</code>), a <code>spec.image.tag</code> below it is refused too</td>
+</tr>
+<tr>
+<td><code>startedTargetVersion</code></td>
+<td><code>string</code></td>
+<td>The newest version a server this upgrade restarted has started on: <code>previousVersion</code> when the upgrade starts, then the target once a restarted server's Neo4j container has started on it (running, or exited after running). A container waiting on an image it cannot pull (<code>ErrImagePull</code>, <code>ImagePullBackOff</code>, <code>InvalidImageName</code>) or that could not be created (<code>CreateContainerConfigError</code>) has not. Until the upgrade completes, a <code>spec.image.tag</code> below it is refused; a tag between it and <code>targetVersion</code> is allowed, so an upgrade paused on an image that cannot be pulled can go on towards an earlier fixed tag. Kept when the target changes. Empty on an upgrade an earlier operator release started (see <code>progress</code>)</td>
 </tr>
 <tr>
 <td><code>progress</code></td>
 <td><a href="#upgradeprogress"><code>*UpgradeProgress</code></a></td>
-<td>Upgrade progress statistics. Once <code>inProgress</code> or <code>upgraded</code> is above zero the upgrade has restarted a server on its target, and until it completes a <code>spec.image.tag</code> below <code>targetVersion</code> (and below <code>resolvedTargetVersion</code>, when recorded) is refused</td>
+<td>Upgrade progress statistics. On an upgrade without <code>startedTargetVersion</code> (started by an earlier operator release), <code>inProgress</code> or <code>upgraded</code> above zero means the upgrade has restarted a server on its target, and until it completes a <code>spec.image.tag</code> below <code>targetVersion</code> (and below <code>resolvedTargetVersion</code>, when recorded) is refused</td>
 </tr>
 <tr>
 <td><code>message</code></td>

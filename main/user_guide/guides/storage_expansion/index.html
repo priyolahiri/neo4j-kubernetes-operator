@@ -4244,9 +4244,10 @@
 <li>It validates that the StorageClass supports volume expansion.</li>
 <li>It patches each PVC with the new size.</li>
 <li>It orphan-deletes the StatefulSet (pods keep running — zero downtime).</li>
-<li>On the next reconcile, the StatefulSet is recreated with updated VolumeClaimTemplates.</li>
+<li>As soon as the delete has gone through — in the same reconcile — the StatefulSet is recreated with updated VolumeClaimTemplates and otherwise as it was: the same pod template (with the settings, init containers and volumes <code>Neo4jPlugin</code>s added), replica count and update strategy (a held upgrade's partition, see <a href="../upgrades/#when-an-upgrade-stops-paused-and-failed">Upgrades</a>). The pod template is unchanged, so no server restarts. If the operator restarts between the delete and the create, it reads the template from the revision the orphaned pods run. While an upgrade is held, it is created in two steps, a few seconds apart, so that every server keeps the version it runs if it restarts (see <a href="../upgrades/#upgrade-phases-and-resumability">Upgrades</a>).</li>
 <li>The cluster transitions through <code>Expanding</code> → <code>Ready</code>.</li>
 </ol>
+<p>Anything else changed in the same edit (an image, a plugin) is applied by the reconcile after the StatefulSet is back, with its usual checks.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
 <p>Your StorageClass must have <code>allowVolumeExpansion: true</code>. Most cloud provider default StorageClasses support this.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>kubectl<span class="w"> </span>neo4j<span class="w"> </span>preflight<span class="w"> </span>Neo4jEnterpriseCluster/&lt;name&gt;<span class="w"> </span>-n<span class="w"> </span>&lt;namespace&gt;
