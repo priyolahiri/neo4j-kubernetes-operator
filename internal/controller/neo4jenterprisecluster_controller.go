@@ -763,6 +763,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// The rollout checks below read the StatefulSet from the cache, which may
 	// not have this write yet (serverTemplateWriteUnobserved).
 	r.noteServerStatefulSetWrite(cluster, serverStatefulSet)
+	// A server that cannot start and is due for the update — a plugin's repair,
+	// a spec fix — is replaced, where the StatefulSet controller does not
+	// replace it itself (MaxUnavailableStatefulSet, operations.md id 204).
+	r.reconcileStuckServerPods(ctx, cluster)
 
 	// Handle Query Performance Monitoring
 	if cluster.Spec.Monitoring != nil && cluster.Spec.Monitoring.Enabled {
@@ -2489,6 +2493,19 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 			}
 		}
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+	}
+
+	// Rolling, Stabilizing and Verifying decide from the record as stored, not
+	// from the cache, as Staging does (operations.md id 203): a pass whose
+	// cached copy is from before a write that moved the record on — a retarget
+	// recorded, a stop, a partition lowered — waits for the cache rather than
+	// act on the record it replaced.
+	switch phase {
+	case upgradePhaseRolling, upgradePhaseStabilizing, upgradePhaseVerifying:
+		if why := r.upgradeRecordMovedOn(ctx, cluster); why != "" {
+			logger.V(1).Info("The upgrade step waits for the cache: "+why, "phase", phase)
+			return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+		}
 	}
 
 	switch phase {

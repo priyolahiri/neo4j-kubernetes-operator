@@ -47,6 +47,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
@@ -445,11 +446,18 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 		desired.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{}
 	}
 	partition := stagingPartition(live, desired, replicas)
+	// The pods, from the API server: the partition is decided from them
+	// (operations.md ids 180, 203).
+	pods, err := r.serverPodsUncached(ctx, cluster)
+	if err != nil {
+		logger.Info("Staging waits: the server pods could not be read", "error", err.Error())
+		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
+	}
 	// Servers that cannot start on the image they run are replaced on the
 	// target first, when it is another image: they are down, and freezing them
 	// too left them down for good — the walk waits for every pod to be ready
 	// before it lowers the partition (operations.md id 162).
-	down := r.serversDownOnTarget(ctx, cluster, live)
+	down := r.serversDownIn(ctx, cluster, live, pods)
 	if down != nil && down.images[serverImage(desired)] {
 		down = nil // the same image cannot start there either
 	}
@@ -460,11 +468,6 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 	}
 	// A server the upgrade has moved on from the version below the partition
 	// stays at or above it (operations.md id 180).
-	pods, err := r.serverPodsUncached(ctx, cluster)
-	if err != nil {
-		logger.Info("Staging waits: the server pods could not be read", "error", err.Error())
-		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
-	}
 	moved, waitFor := retargetPartition(live, pods, partition, down != nil)
 	if waitFor != "" {
 		logger.Info("Staging waits: "+waitFor, "partition", moved)
@@ -529,9 +532,17 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeRolling(
 	// Mid-flight target changes are handled centrally in handleRollingUpgrade
 	// (re-stage from any active phase) before this step is dispatched.
 
-	live, err := orch.getServerStatefulSet(ctx, cluster)
+	// From the API server: a cached copy from before Staging wrote a new
+	// target counts the servers on the old one as updated, and the step would
+	// lower the partition onto the new template with no check (operations.md
+	// id 203).
+	live, err := r.serverStatefulSetUncached(ctx, cluster)
 	if err != nil {
-		return r.failUpgrade(ctx, cluster, fmt.Errorf("failed to get server StatefulSet: %w", err))
+		if apierrors.IsNotFound(err) {
+			return r.failUpgrade(ctx, cluster, fmt.Errorf("failed to get server StatefulSet: %w", err))
+		}
+		logger.Info("Rolling waits: the server StatefulSet could not be read", "error", err.Error())
+		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
 	}
 	replicas := int32(0)
 	if live.Spec.Replicas != nil {
@@ -539,6 +550,11 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeRolling(
 	}
 	if replicas == 0 {
 		return r.failUpgrade(ctx, cluster, fmt.Errorf("server StatefulSet has zero replicas configured"))
+	}
+	// A server the update replaces that cannot start is replaced now: the
+	// StatefulSet controller does not always do it (operations.md id 204).
+	if live.Status.ReadyReplicas < replicas {
+		r.replaceStuckServerPodsUncached(ctx, cluster, live)
 	}
 
 	// Surface (don't act on) a topology change requested mid-upgrade: Staging

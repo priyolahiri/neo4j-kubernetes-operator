@@ -64,6 +64,11 @@ type statefulSetEmulator struct {
 	unpullable map[string]bool
 	// created lists, per ordinal, the images its pods were created on.
 	created map[int][]string
+	// maxUnavailable135 plays the rolling update of Kubernetes 1.35.0–1.35.3,
+	// where MaxUnavailableStatefulSet is on: a pod that is not available, at
+	// any ordinal, counts against maxUnavailable (1), and nothing is deleted
+	// while it does (operations.md id 204).
+	maxUnavailable135 bool
 }
 
 func newStatefulSetEmulator(t *testing.T, c client.Client) *statefulSetEmulator {
@@ -137,9 +142,10 @@ func (e *statefulSetEmulator) observe() {
 	}
 	sts.Status.Replicas = *sts.Spec.Replicas
 	// A rolling update every pod has completed makes the update revision the
-	// current one.
-	if p := statefulSetPartition(sts); (p == nil || *p == 0) &&
-		sts.Status.UpdatedReplicas == *sts.Spec.Replicas && sts.Status.ReadyReplicas == *sts.Spec.Replicas {
+	// current one, whatever the partition (completeRollingUpdate,
+	// pkg/controller/statefulset/stateful_set_utils.go: every replica updated
+	// and Ready).
+	if sts.Status.UpdatedReplicas == *sts.Spec.Replicas && sts.Status.ReadyReplicas == *sts.Spec.Replicas {
 		sts.Status.CurrentRevision = update
 	}
 	require.NoError(e.t, e.c.Status().Update(context.Background(), sts))
@@ -186,6 +192,13 @@ func (e *statefulSetEmulator) deleteForUpdate() {
 		partition = *p
 	}
 	pods := e.pods()
+	if e.maxUnavailable135 {
+		for _, pod := range pods {
+			if !isPodReady(pod) || pod.DeletionTimestamp != nil {
+				return
+			}
+		}
+	}
 	for ordinal := int(*sts.Spec.Replicas) - 1; ordinal >= int(partition); ordinal-- {
 		if pod := pods[ordinal]; pod != nil && pod.Labels[appsv1.ControllerRevisionHashLabelKey] != sts.Status.UpdateRevision {
 			require.NoError(e.t, e.c.Delete(context.Background(), pod))

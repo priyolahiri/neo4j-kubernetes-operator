@@ -162,6 +162,12 @@
     "moduleId": "mod-cluster"
   },
   {
+    "id": "ev-server-pod-replaced",
+    "name": "ServerPodReplaced",
+    "description": "A Normal event on a cluster: the operator deleted a server pod that cannot start (an image it cannot pull, a container that keeps exiting, an init container that failed) and that the StatefulSet's rolling update is to replace — at or above the partition, on an older revision than an update revision the StatefulSet controller has seen — so that the StatefulSet creates it again from the new template. With MaxUnavailableStatefulSet on (Kubernetes 1.35.0–1.35.3) the StatefulSet controller replaces no pod while one is unavailable, so every repair of a cluster short of a server (a plugin's init container or settings, a held upgrade's new tag, a corrected spec) waited for ever. One per pod deleted; where the StatefulSet controller deletes the pod first, nothing is announced (operations.md id 204).",
+    "moduleId": "mod-cluster"
+  },
+  {
     "id": "ev-splitbrain-repair-failed",
     "name": "SplitBrainRepairFailed",
     "description": "Fires when deleting an orphaned pod during automatic split-brain repair itself errors.",

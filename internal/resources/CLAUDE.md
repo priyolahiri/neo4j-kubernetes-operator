@@ -24,7 +24,7 @@ apply the results.
 ## Key types & functions
 
 - `BuildServerStatefulSetForEnterprise(cluster)` — the **one** server StatefulSet (delegates to
-  `buildStatefulSetForEnterprise(cluster, "server", Spec.Topology.Servers)`). The plural builder that made one StatefulSet per server was removed (#533).
+  `buildStatefulSetForEnterprise(cluster, "server", Spec.Topology.Servers)`). The plural builder that made one StatefulSet per server was removed (#533). Its update strategy is always `RollingUpdate`, with no partition (the upgrade state machine's) and `maxUnavailable: 1` — restart-neutral, outside the pod template (`../../docs/knowledge/operations.md` id 204).
 - `buildVersionSpecificDiscoveryConfig(cluster)` — version-gated discovery conf string; branches on `isCalverImage(tag)`.
 - `BuildConfigMapForEnterprise`, `BuildPodSpecForEnterprise` — startup script + pod spec.
 - `BuildHeadlessServiceForEnterprise`, `BuildClientServiceForEnterprise`, `BuildInternalsServiceForEnterprise`, `BuildMetricsServiceForEnterprise`.

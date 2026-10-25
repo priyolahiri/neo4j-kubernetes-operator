@@ -282,11 +282,19 @@ func buildStatefulSetForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 	// server only when its pod was deleted, and the operator deletes server
 	// pods only to repair a split-brain. A cluster upgrades one server at a
 	// time (operations.md id 144).
+	//
+	// One server at a time, said explicitly: maxUnavailable 1 is what the API
+	// server defaults while MaxUnavailableStatefulSet is on (Kubernetes
+	// 1.35.0-1.35.3, 1.37+) and what the StatefulSet controller assumes when it
+	// is unset; while the gate is off the API server drops the field. It is not
+	// part of the pod template, so writing it restarts nothing (operations.md
+	// id 204).
+	maxUnavailable := intstr.FromInt32(1)
 	updateStrategy := appsv1.StatefulSetUpdateStrategy{
 		Type: appsv1.RollingUpdateStatefulSetStrategyType,
 		RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
-			// Start with maxUnavailable = 0 to prevent concurrent updates
-			Partition: nil, // Will be set during rolling upgrade orchestration
+			Partition:      nil, // Set by the rolling upgrade's state machine
+			MaxUnavailable: &maxUnavailable,
 		},
 	}
 

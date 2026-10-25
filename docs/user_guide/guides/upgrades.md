@@ -228,7 +228,10 @@ What happens next:
   `2026.09.0-enterprise`. The `UpgradeStarted` event names the servers it
   replaces, and while the cluster is short of them `status.message` says the
   upgrade is in progress and that they are replaced first. Each server is
-  replaced once, on the new tag. This applies only when the servers that are
+  replaced once, on the new tag. Where the StatefulSet does not replace a
+  server that is down itself (Kubernetes 1.35.0–1.35.3, with
+  `MaxUnavailableStatefulSet` on), the operator deletes its pod, with one
+  `ServerPodReplaced` event, and the StatefulSet creates it on the new tag. This applies only when the servers that are
   down are the highest-numbered ones, every one of them failing to start on the
   image it runs — one the upgrade restarted, or one running another version
   than the servers that are up — and Neo4j reports no other server unavailable;

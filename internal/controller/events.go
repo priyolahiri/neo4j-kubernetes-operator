@@ -53,6 +53,13 @@ const (
 	// renewed certificate (TLS reload not enabled on it yet) and presents the
 	// previous one until it restarts (#469).
 	EventReasonTLSCertificateNeedsRestart = "TLSCertificateNeedsRestart"
+	// EventReasonServerPodReplaced — the operator deleted a server pod that
+	// cannot start and is due for the StatefulSet's update, so that the
+	// StatefulSet creates it again from its update revision: with
+	// MaxUnavailableStatefulSet on (Kubernetes 1.35.0–1.35.3) the StatefulSet
+	// controller replaces no pod while one is unavailable (operations.md id
+	// 204). One per pod deleted.
+	EventReasonServerPodReplaced = "ServerPodReplaced"
 )
 
 // Rolling upgrade events
