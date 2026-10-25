@@ -157,5 +157,15 @@ var _ = Describe("Neo4jEnterpriseCluster image tag against the version it runs",
 		Expect(got.Status.Phase).NotTo(Equal("Failed"), got.Status.Message)
 		Expect(got.Status.UpgradeStatus.Phase).To(Equal("Staging"))
 		Expect(got.Status.UpgradeStatus.TargetVersion).To(Equal("2026.10.0-enterprise"))
+
+		// Announced once, by the write that records the new target.
+		var retargeted []string
+		for len(rec.Events) > 0 {
+			if e := <-rec.Events; strings.HasPrefix(e, "Normal "+controller.EventReasonUpgradeRetargeted+" ") {
+				retargeted = append(retargeted, e)
+			}
+		}
+		Expect(retargeted).To(ConsistOf("Normal " + controller.EventReasonUpgradeRetargeted +
+			" Rolling upgrade retargeted from " + target + " to 2026.10.0-enterprise during Rolling; the new target is staged"))
 	})
 })

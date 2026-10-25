@@ -2446,8 +2446,10 @@ func (r *Neo4jEnterpriseStandaloneReconciler) isStandaloneUpgradeRequired(ctx co
 	if standalone.Status.Version == "" || standalone.Status.Version == standalone.Spec.Image.Tag {
 		return false
 	}
+	// Read uncached: the pass after the one that wrote the new image could read
+	// the template from before it and announce UpgradeStarted again (#565).
 	sts := &appsv1.StatefulSet{}
-	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, sts); err != nil {
+	if err := r.apiReader().Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, sts); err != nil {
 		return false // not created yet, or unreadable: nothing to check against
 	}
 	if len(sts.Spec.Template.Spec.Containers) == 0 {

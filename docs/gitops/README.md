@@ -19,8 +19,19 @@ Health state mapping:
 | ArgoCD Status  | Neo4j Phase(s)                        |
 |----------------|---------------------------------------|
 | Healthy        | Ready, Completed, Succeeded, Installed; `Neo4jBackup` also `Scheduled` and `Suspended` |
-| Degraded       | Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — every phase `kubectl neo4j status --problems` reports, on every self-managed kind |
+| Degraded       | Failed, Error, Invalid, ValidationFailed, Degraded, Unknown — every phase `kubectl neo4j status --problems` reports, on every self-managed kind; and a `Ready` `Neo4jEnterpriseCluster` whose upgrade `Failed` |
+| Suspended      | A `Ready` `Neo4jEnterpriseCluster` whose upgrade is `Paused` |
 | Progressing    | Forming, Pending, Creating, Waiting, Running, or empty |
+
+A `Neo4jEnterpriseCluster` whose upgrade stops keeps its phase: it is `Ready`
+while every server is available, and serves, and its `status.message` names the
+stopped upgrade. So its health check also reads `status.upgradeStatus.phase`: a
+`Failed` upgrade is Degraded — your image change did not land, and the operator
+retries it — and a `Paused` one is Suspended, waiting for you (set another
+`spec.image.tag`, or turn `spec.upgradeStrategy.autoPauseOnFailure` off). An
+upgrade in progress stays Healthy. Releases up to v1.22.0 set the cluster's
+phase to `Failed` or `Paused` instead, which this check reported as Degraded and
+Progressing.
 
 A `Neo4jDatabase` the operator refused (`ValidationFailed`) is Degraded: nothing
 was created, and nothing changes until the spec is edited. As Progressing (the
@@ -81,6 +92,17 @@ A `Neo4jEnterpriseCluster` keeps `Ready=True` through a short server outage
 (the grace period above); a `Degraded` one reports `Ready=False` with reason
 `ClusterDegraded`, so a Kustomization health-checking it fails until the
 missing server is back.
+
+A cluster whose upgrade stopped (`Paused` or `Failed`) keeps `Ready=True`: it
+serves. It also carries `Stalled=True` (reason `UpgradeFailed` or
+`UpgradePaused`, the message naming the target and the upgrade's last error),
+and Flux's health checks, which use kstatus, read a resource with
+`Stalled=True` as Failed whatever `Ready` says — so a Kustomization
+health-checking the cluster fails after an image change that did not land, as
+it did with v1.22.0. `Stalled` turns `False` once the upgrade goes on, completes
+or is dropped, and kstatus then reads `Ready` again. (kstatus:
+`checkGenericProperties` in `pkg/kstatus/status/generic.go` of
+`sigs.k8s.io/cli-utils`, and of Flux's fork `github.com/fluxcd/cli-utils`.)
 
 ## The operator does not rewrite your spec
 

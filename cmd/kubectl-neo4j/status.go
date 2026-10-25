@@ -46,6 +46,53 @@ type resourceStatus struct {
 	ready     string
 	age       string
 	message   string
+	// upgrade, upgradeTarget and upgradeError are a cluster's
+	// status.upgradeStatus phase, targetVersion and lastError; empty for every
+	// other kind.
+	upgrade       string
+	upgradeTarget string
+	upgradeError  string
+}
+
+// Upgrade phases that mean the upgrade stopped and its image change did not
+// land. A cluster keeps its own phase then (Ready, its message naming the
+// stopped upgrade), so its upgrade record is what says so (#565).
+const (
+	upgradeFailed = "Failed"
+	upgradePaused = "Paused"
+)
+
+// stoppedUpgrade returns the phase of a cluster's upgrade that stopped, Paused
+// or Failed, or "".
+func (r resourceStatus) stoppedUpgrade() string {
+	switch {
+	case strings.EqualFold(r.upgrade, upgradeFailed):
+		return upgradeFailed
+	case strings.EqualFold(r.upgrade, upgradePaused):
+		return upgradePaused
+	}
+	return ""
+}
+
+// phaseCell is what the PHASE column shows: the phase, and an upgrade that
+// stopped.
+func (r resourceStatus) phaseCell() string {
+	if s := r.stoppedUpgrade(); s != "" {
+		return fmt.Sprintf("%s (upgrade %s)", r.phase, s)
+	}
+	return r.phase
+}
+
+// note is the message printed under the table: the status message, and the
+// last error of an upgrade that stopped.
+func (r resourceStatus) note() string {
+	if r.stoppedUpgrade() == "" || r.upgradeError == "" {
+		return r.message
+	}
+	if r.message == "" {
+		return "last error: " + r.upgradeError
+	}
+	return r.message + "; last error: " + r.upgradeError
 }
 
 // problemPhases are the phases that mean something is wrong and needs the
@@ -73,11 +120,16 @@ var problemPhases = []string{
 // someone about a status vocabulary this binary predates (the same reasoning
 // the project's ArgoCD health checks use for the Aura kinds).
 //
-// The decision rests on the phase alone. status.ready is no help: only a
-// couple of kinds have it, and it is `omitempty`, so the operator stores "true"
-// or nothing — a "false" is never written, and a test for it could not match a
+// The decision rests on the phase, and on a cluster's upgrade that stopped:
+// the cluster stays Ready then, and only its upgrade record says that the
+// image change did not land (#565). status.ready is no help: only a couple of
+// kinds have it, and it is `omitempty`, so the operator stores "true" or
+// nothing — a "false" is never written, and a test for it could not match a
 // real resource.
 func (r resourceStatus) healthy() bool {
+	if r.stoppedUpgrade() != "" {
+		return false
+	}
 	for _, p := range problemPhases {
 		if strings.EqualFold(r.phase, p) {
 			return false
@@ -238,6 +290,9 @@ func rowFrom(obj *unstructured.Unstructured) resourceStatus {
 	if msg, ok, _ := unstructured.NestedString(obj.Object, "status", "message"); ok {
 		r.message = msg
 	}
+	r.upgrade, _, _ = unstructured.NestedString(obj.Object, "status", "upgradeStatus", "phase")
+	r.upgradeTarget, _, _ = unstructured.NestedString(obj.Object, "status", "upgradeStatus", "targetVersion")
+	r.upgradeError, _, _ = unstructured.NestedString(obj.Object, "status", "upgradeStatus", "lastError")
 	return r
 }
 
@@ -274,9 +329,9 @@ func renderStatus(rows []resourceStatus, stdout *os.File, allNamespaces, problem
 	}
 	for _, r := range shown {
 		if allNamespaces {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.kind, r.namespace, r.name, r.phase, r.ready, r.age)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", r.kind, r.namespace, r.name, r.phaseCell(), r.ready, r.age)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.kind, r.name, r.phase, r.ready, r.age)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", r.kind, r.name, r.phaseCell(), r.ready, r.age)
 		}
 	}
 	_ = w.Flush()
@@ -294,14 +349,15 @@ func renderStatus(rows []resourceStatus, stdout *os.File, allNamespaces, problem
 	// ones only, so a message never appears without the row it belongs to.
 	var notes []string
 	for _, r := range shown {
-		if r.message == "" {
+		message := r.note()
+		if message == "" {
 			continue
 		}
 		switch {
 		case !r.healthy():
-			notes = append(notes, fmt.Sprintf("✗ %s/%s: %s", r.kind, r.name, r.message))
+			notes = append(notes, fmt.Sprintf("✗ %s/%s: %s", r.kind, r.name, message))
 		case strings.EqualFold(r.phase, "pending"):
-			notes = append(notes, fmt.Sprintf("… %s/%s: %s", r.kind, r.name, r.message))
+			notes = append(notes, fmt.Sprintf("… %s/%s: %s", r.kind, r.name, message))
 		}
 	}
 	// Collect first, then print — so a run with nothing to say does not emit a

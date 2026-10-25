@@ -156,6 +156,8 @@ func (r *RollingUpgradeOrchestrator) updateUpgradeStatus(
 			}
 		}
 		ended = stampUpgradePhaseTransition(latest.Status.UpgradeStatus, prevPhase, prevPhaseStart, metav1.Now())
+		// Stalled follows the record in this same write (operations.md id 149).
+		syncStalledCondition(latest)
 		// Keep the in-memory object consistent for callers that read it after.
 		cluster.Status.UpgradeStatus = latest.Status.UpgradeStatus
 		return r.Status().Update(ctx, latest)

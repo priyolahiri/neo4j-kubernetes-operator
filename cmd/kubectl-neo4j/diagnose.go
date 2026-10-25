@@ -328,6 +328,7 @@ func diagnoseResource(obj *unstructured.Unstructured, env namespaceEnv) diagnosi
 	case "Neo4jEnterpriseCluster":
 		d.summary, d.symptoms = diagnoseInstance(obj.GetKind(), row,
 			resources.ServerPodSelector(obj.GetName()), env)
+		d.symptoms = append(d.symptoms, stoppedUpgradeSymptom(row)...)
 	case "Neo4jEnterpriseStandalone":
 		d.summary, d.symptoms = diagnoseInstance(obj.GetKind(), row,
 			resources.StandalonePodSelector(obj.GetName()), env)
@@ -340,6 +341,38 @@ func diagnoseResource(obj *unstructured.Unstructured, env namespaceEnv) diagnosi
 	d.earlierWarnings, d.stateSince = earlier, since
 	d.symptoms = append(d.symptoms, missingStatusSymptom(obj, row, env.operator)...)
 	return d
+}
+
+// stoppedUpgradeSymptom reports a cluster's upgrade that stopped, Paused or
+// Failed. The cluster keeps its own phase then — Ready, serving, its message
+// naming the stopped upgrade — so the phase no longer says that the image
+// change did not land (#565); the upgrade record does.
+func stoppedUpgradeSymptom(row resourceStatus) []symptom {
+	stopped := row.stoppedUpgrade()
+	if stopped == "" {
+		return nil
+	}
+	s := symptom{
+		mark:    markProblem,
+		subject: "upgrade",
+		what:    fmt.Sprintf("is %s (status.upgradeStatus.phase)", stopped),
+		detail:  row.upgradeError,
+	}
+	if row.upgradeTarget != "" {
+		s.subject = "upgrade to " + row.upgradeTarget
+	}
+	switch stopped {
+	case upgradePaused:
+		s.action = "It waits for you; the servers it has not rolled keep the version they run. Fix what " +
+			"status.upgradeStatus.lastError names, then set spec.image.tag to another target (a fixed image goes " +
+			"on at once, replacing servers that cannot start first), or set spec.upgradeStrategy.autoPauseOnFailure " +
+			"to false to retry this one."
+	default:
+		s.action = "The operator retries it while every server is available. Fix what " +
+			"status.upgradeStatus.lastError names, or set spec.image.tag to another target (a fixed image goes on " +
+			"at once, replacing servers that cannot start first)."
+	}
+	return []symptom{s}
 }
 
 // diagnoseInstance covers the two kinds that own a StatefulSet of Neo4j pods.

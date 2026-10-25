@@ -102,6 +102,12 @@
     "moduleId": "mod-cluster"
   },
   {
+    "id": "ev-upgrade-retargeted",
+    "name": "UpgradeRetargeted",
+    "description": "A Normal event that fires when spec.image.tag changes while a cluster upgrade is mid-flight (Staging, Rolling, Stabilizing or Verifying): the upgrade goes on towards the new tag, staged again ('Rolling upgrade retargeted from A to B during Rolling; the new target is staged'). Announced once per new target, from the status write that records it, judged from the record that write re-read, so a pass whose cached copy still names the old target says nothing (operations.md ids 136, 180). It used to be an info log line only. A Paused or Failed upgrade taken up towards a new tag is announced by UpgradeStarted ('resumed') instead.",
+    "moduleId": "mod-cluster"
+  },
+  {
     "id": "ev-upgrade-deferred",
     "name": "UpgradeDeferred",
     "description": "Fires when an image change is held back: the cluster is not Ready with every server available (holdImageDriftUntilReady), or a scale-down drain is in progress (mutual exclusion — the drain must finish first). Announced once per held target from a per-cluster memory, not on every check: the drain's deferral names the target and was emitted every 15s while the drain ran (#527); the memory is forgotten when the drain releases its hold, so a later drain announces again (knowledge operations.md id 136). Also when the normal pass holds an image change because the cluster is not Ready with every server available: announced on the second pass that holds the same image, once (the pass after a refused tag is fixed holds it for one pass only, #550), and not for a change a stopped upgrade's record already names.",

@@ -23,6 +23,12 @@ data:
   # (cmd/kubectl-neo4j/argocd_health_test.go) pins this against the CLI's list.
   # ---------------------------------------------------------------------------
 
+  # A cluster whose upgrade stopped stays Ready (it serves; dependents keep
+  # working), so its health also reads status.upgradeStatus.phase: a Failed
+  # upgrade is Degraded — the image change did not land — and a Paused one is
+  # Suspended, waiting for you (change spec.image.tag, or turn
+  # autoPauseOnFailure off). status.message names the stopped upgrade.
+  # TestArgoCDHealthChecks_AStoppedUpgradeIsNotHealthy pins this.
   resource.customizations.health.neo4j.neo4j.com_Neo4jEnterpriseCluster: |
     hs = {}
     if obj.status == nil or obj.status.phase == nil or obj.status.phase == "" then
@@ -31,9 +37,21 @@ data:
       return hs
     end
     phase = obj.status.phase
+    upgrade = nil
+    if obj.status.upgradeStatus ~= nil then
+      upgrade = obj.status.upgradeStatus.phase
+    end
     if phase == "Ready" then
-      hs.status = "Healthy"
-      hs.message = obj.status.message or "Neo4j cluster is ready"
+      if upgrade == "Failed" then
+        hs.status = "Degraded"
+        hs.message = obj.status.message or "Neo4j cluster's upgrade failed"
+      elseif upgrade == "Paused" then
+        hs.status = "Suspended"
+        hs.message = obj.status.message or "Neo4j cluster's upgrade is paused"
+      else
+        hs.status = "Healthy"
+        hs.message = obj.status.message or "Neo4j cluster is ready"
+      end
     elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       hs.status = "Degraded"
       hs.message = obj.status.message or "Neo4j cluster is in a failed state"

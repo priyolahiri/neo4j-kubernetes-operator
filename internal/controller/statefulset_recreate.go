@@ -425,7 +425,7 @@ func (r *Neo4jEnterpriseClusterReconciler) restoreHeldTemplate(ctx context.Conte
 		// Read from a revision: the records and the stamp the memory would
 		// have brought, as on any write of the template (#562 re-walk).
 		writeOwnedTemplateItems(sts, desired)
-		r.stampTemplateHashIfApplied(sts, desired)
+		r.stampTemplateHashIfApplied(ctx, sts, desired)
 	}
 	logger.Info("Wrote the held template back to the StatefulSet created again; every server keeps the revision it runs",
 		"statefulSet", sts.Name, "partition", p, "from", from, "currentRevision", sts.Status.CurrentRevision)
@@ -442,8 +442,8 @@ func (r *Neo4jEnterpriseClusterReconciler) restoreHeldTemplate(ctx context.Conte
 // operator now renders differently, see isTemplateChangeSignificant). A
 // template the apply would change keeps no stamp, and the next pass writes the
 // difference: a stamp then would say the operator had applied what it had not.
-func (r *Neo4jEnterpriseClusterReconciler) stampTemplateHashIfApplied(sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) {
-	if !templateApplied(sts, desired) {
+func (r *Neo4jEnterpriseClusterReconciler) stampTemplateHashIfApplied(ctx context.Context, sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) {
+	if !r.templateApplied(ctx, sts, desired) {
 		return
 	}
 	setClusterTemplateHash(sts, desired)
@@ -451,9 +451,66 @@ func (r *Neo4jEnterpriseClusterReconciler) stampTemplateHashIfApplied(sts *appsv
 
 // templateApplied reports whether the update branch of
 // createOrUpdateResourceInternal, applying desired to sts, would leave its
-// template as it is, the order of the env vars, init containers and volumes
-// aside (the merge appends what it keeps; the apply compares them by name).
-func templateApplied(sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) bool {
+// template as the API server stores it, the order of the env vars, init
+// containers and volumes aside (the merge appends what it keeps; the apply
+// compares them by name).
+//
+// As the API server stores it: a template read from a ControllerRevision is
+// the stored one — defaulted (probe thresholds, termination message path and
+// policy, restart and DNS policy, grace period, scheduler name, a volume with
+// no source made an emptyDir) and converted (deprecatedServiceAccount) — and
+// what the operator renders carries none of that. Compared as they were, the
+// two never matched on a real cluster, and the stamp never landed (the
+// re-walk of 2a50fa56: the hash stayed absent until Staging wrote the
+// template).
+// So both templates go through the write the operator is about to make — the
+// create of sts, or the update of the live StatefulSet — as a dry run
+// (storedTemplate): the API server's own defaulting, conversion and mutating
+// admission, whatever its version, and no list of defaults to keep in step
+// with it. A comparison by the fields the operator sets would hide a value
+// someone else set where it sets none; the field-by-field check of
+// isTemplateChangeSignificant compares too little (the stamp is what catches
+// a nodeSelector or a probe). A dry run that is refused stamps nothing: the
+// operator's next write of the template stamps it, as before.
+func (r *Neo4jEnterpriseClusterReconciler) templateApplied(ctx context.Context, sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) bool {
+	applied, err := r.storedTemplate(ctx, sts, appliedTemplate(sts, desired))
+	if err == nil {
+		var current corev1.PodTemplateSpec
+		if current, err = r.storedTemplate(ctx, sts, sts.Spec.Template); err == nil {
+			sortTemplateItems(&applied)
+			sortTemplateItems(&current)
+			return equality.Semantic.DeepEqual(applied, current)
+		}
+	}
+	log.FromContext(ctx).Info("Could not dry-run the StatefulSet's template; its template hash is stamped by the next write of it",
+		"statefulSet", sts.Name, "error", err.Error())
+	return false
+}
+
+// storedTemplate returns template as the API server stores it in sts: the
+// write the operator is about to make — the create of sts, or the update of
+// the live one (it has a UID) — sent as a dry run, with template in place of
+// sts's own. Nothing is stored.
+func (r *Neo4jEnterpriseClusterReconciler) storedTemplate(ctx context.Context, sts *appsv1.StatefulSet, template corev1.PodTemplateSpec) (corev1.PodTemplateSpec, error) {
+	probe := sts.DeepCopy()
+	probe.Spec.Template = *template.DeepCopy()
+	var err error
+	if probe.UID == "" {
+		err = r.Create(ctx, probe, client.DryRunAll)
+	} else {
+		err = r.Update(ctx, probe, client.DryRunAll)
+	}
+	if err != nil {
+		return corev1.PodTemplateSpec{}, err
+	}
+	return probe.Spec.Template, nil
+}
+
+// appliedTemplate is the template the update branch of
+// createOrUpdateResourceInternal writes when it applies desired to sts: desired
+// with the selector's labels, its env vars, init containers and volumes merged
+// with what is not the cluster's, and the pod annotations of both.
+func appliedTemplate(sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) corev1.PodTemplateSpec {
 	current := *sts.Spec.Template.DeepCopy()
 	applied := *desired.DeepCopy()
 	if sts.Spec.Selector != nil {
@@ -471,9 +528,7 @@ func templateApplied(sts *appsv1.StatefulSet, desired corev1.PodTemplateSpec) bo
 	applied.Spec.InitContainers = mergeOwnedByName(current.Spec.InitContainers, desired.Spec.InitContainers, owned.initContainers, containerNameOf)
 	applied.Spec.Volumes = mergeOwnedByName(current.Spec.Volumes, desired.Spec.Volumes, owned.volumes, volumeNameOf)
 	applied.Annotations = mergePodTemplateAnnotations(current.Annotations, desired.Annotations)
-	sortTemplateItems(&applied)
-	sortTemplateItems(&current)
-	return equality.Semantic.DeepEqual(applied, current)
+	return applied
 }
 
 // sortTemplateItems orders t's server container env vars, init containers and

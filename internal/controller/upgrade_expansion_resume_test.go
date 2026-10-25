@@ -136,6 +136,12 @@ func (e *statefulSetEmulator) observe() {
 		}
 	}
 	sts.Status.Replicas = *sts.Spec.Replicas
+	// A rolling update every pod has completed makes the update revision the
+	// current one.
+	if p := statefulSetPartition(sts); (p == nil || *p == 0) &&
+		sts.Status.UpdatedReplicas == *sts.Spec.Replicas && sts.Status.ReadyReplicas == *sts.Spec.Replicas {
+		sts.Status.CurrentRevision = update
+	}
 	require.NoError(e.t, e.c.Status().Update(context.Background(), sts))
 }
 

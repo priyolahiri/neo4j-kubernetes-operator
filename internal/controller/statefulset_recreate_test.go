@@ -27,6 +27,7 @@ package controller
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -34,6 +35,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -212,8 +214,13 @@ func TestCreateOrUpdateResource_AfterARestartTheTemplateComesFromTheRevision(t *
 
 // The stamp says the operator applied what it renders: a template read from a
 // revision is stamped only when the apply would leave it as it is — a spec
-// changed with the expansion is not hidden behind the stamp.
+// changed with the expansion is not hidden behind the stamp. (The fake client
+// defaults nothing, so its dry run returns what it is sent; the API server's
+// defaults are TestStatefulSetCreatedAgainFromARevisionIsStamped_APIServer's.)
 func TestTemplateApplied(t *testing.T) {
+	ctx := context.Background()
+	c := recreateClient(t)
+	r := &Neo4jEnterpriseClusterReconciler{Client: c, Scheme: c.Scheme()}
 	desired := resources.BuildServerStatefulSetForEnterprise(expansionCluster("2Gi")).Spec.Template
 	recreated := func() *appsv1.StatefulSet {
 		sts := resources.BuildServerStatefulSetForEnterprise(expansionCluster("1Gi"))
@@ -221,15 +228,25 @@ func TestTemplateApplied(t *testing.T) {
 		writeOwnedTemplateItems(sts, desired)
 		return sts
 	}
-	assert.True(t, templateApplied(recreated(), desired), "what the operator renders, and the plugins' items")
+	assert.True(t, r.templateApplied(ctx, recreated(), desired), "what the operator renders, and the plugins' items")
 
 	changed := *desired.DeepCopy()
 	changed.Spec.NodeSelector = map[string]string{"disk": "ssd"} // a field only the stamp catches
-	assert.False(t, templateApplied(recreated(), changed))
+	assert.False(t, r.templateApplied(ctx, recreated(), changed))
 
 	changed = *desired.DeepCopy()
 	changed.Spec.Containers[0].Env = append(changed.Spec.Containers[0].Env, corev1.EnvVar{Name: "NEO4J_server_x", Value: "1"})
-	assert.False(t, templateApplied(recreated(), changed))
+	assert.False(t, r.templateApplied(ctx, recreated(), changed))
+
+	// A dry run the API server refuses stamps nothing; the next write of the
+	// template stamps it.
+	refusing := interceptor.NewClient(fake.NewClientBuilder().WithScheme(c.Scheme()).Build(), interceptor.Funcs{
+		Create: func(ctx context.Context, cl client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			return apierrors.NewForbidden(appsv1.Resource("statefulsets"), obj.GetName(), errors.New("quota exceeded"))
+		},
+	})
+	r = &Neo4jEnterpriseClusterReconciler{Client: refusing, Scheme: c.Scheme()}
+	assert.False(t, r.templateApplied(ctx, recreated(), desired))
 }
 
 func TestTemplateFromControllerRevision(t *testing.T) {

@@ -43,6 +43,21 @@ const (
 	// completes (operations.md id 163).
 	ConditionTypeTopologyChangeDeferred = "TopologyChangeDeferred"
 
+	// ConditionTypeStalled is True on a Neo4jEnterpriseCluster while its
+	// upgrade is stopped — status.upgradeStatus.phase Failed (reason
+	// UpgradeFailed) or Paused (reason UpgradePaused) — and False once it goes
+	// on, completes or is dropped; absent on a cluster whose upgrade never
+	// stopped. The cluster stays Ready then (it serves), so this is what tells
+	// kstatus readers — Flux health checks — that the image change did not
+	// land: kstatus reports a resource with Stalled=True as Failed (operations.md
+	// id 149).
+	ConditionTypeStalled = "Stalled"
+	// ConditionReasonUpgradeFailed / ConditionReasonUpgradePaused /
+	// ConditionReasonUpgradeNotStopped are the Stalled condition's reasons.
+	ConditionReasonUpgradeFailed     = "UpgradeFailed"
+	ConditionReasonUpgradePaused     = "UpgradePaused"
+	ConditionReasonUpgradeNotStopped = "UpgradeNotStopped"
+
 	// ConditionTypeCrossClusterProxySecure reports whether anything
 	// authenticates the tx-shipping port that spec.crossClusterReplication
 	// publishes through a load balancer. The proxy is a TCP passthrough, so

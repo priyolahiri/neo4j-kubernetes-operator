@@ -1295,7 +1295,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					// step, with the held template).
 					writeOwnedTemplateItems(sts, desiredSpec.Template)
 					if !twoStep {
-						r.stampTemplateHashIfApplied(sts, desiredSpec.Template)
+						r.stampTemplateHashIfApplied(ctx, sts, desiredSpec.Template)
 					}
 				}
 				// A cluster with Aura Fleet Management starts its servers with
@@ -2399,9 +2399,28 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	// failed attempt left has held the servers it had not rolled, so the
 	// retry rolls them through the machine's gates (operations.md id 149).
 	us := cluster.Status.UpgradeStatus
-	return upgradeHeld(cluster) &&
-		us.TargetVersion == cluster.Spec.Image.Tag &&
-		cluster.Status.Version != cluster.Spec.Image.Tag
+	if !upgradeHeld(cluster) || us.TargetVersion != cluster.Spec.Image.Tag ||
+		cluster.Status.Version == cluster.Spec.Image.Tag {
+		return false
+	}
+	// The retry waits until every server is available, as for a Paused
+	// upgrade: the normal pass runs meanwhile and records the shortfall — the
+	// Degraded condition, then, past the grace, the Degraded phase — which the
+	// check at the top then reads. The status cannot say so on its own: the
+	// upgrade stopped on a cluster that read Ready with every server available,
+	// and a retry on every pass kept the normal pass from running at all, so a
+	// server that could not start on the target stayed hidden behind
+	// Degraded=False "All 3 servers are available" (the walk of be1e0a6f,
+	// after #565 kept a stopped upgrade's cluster Ready). A server pod
+	// that is not Ready is one (the retry's first gate,
+	// validateStatefulSetsReady, would only wait for it); a server the
+	// pre-upgrade check finds unavailable refuses the retry, which is not tried
+	// again for upgradeStartRetry, so the normal pass runs in between and
+	// records it.
+	if serverSts.Spec.Replicas == nil || serverSts.Status.ReadyReplicas < *serverSts.Spec.Replicas {
+		return false
+	}
+	return !startRefusedRecently(us, cluster.Spec.Image.Tag, time.Now())
 }
 
 // handleRollingUpgrade dispatches one state-machine step per reconcile (#174).
@@ -2448,7 +2467,13 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 			"previousTarget", cluster.Status.UpgradeStatus.TargetVersion, "newTarget", cluster.Spec.Image.Tag)
 		now := metav1.Now()
 		newTarget := cluster.Spec.Image.Tag
+		// Announced from the write that records the new target, once per
+		// target (operations.md id 136): a pass whose cached copy still names
+		// the target being left writes the same record again and says nothing.
+		var announce bool
+		var previous, during string
 		if err := r.patchUpgradeStatus(ctx, cluster, func(us *neo4jv1beta1.UpgradeStatus) {
+			announce, previous, during = us.TargetVersion != newTarget, us.TargetVersion, us.Phase
 			us.Phase = upgradePhaseStaging
 			us.TargetVersion = newTarget
 			us.StepStartTime = &now
@@ -2458,6 +2483,10 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 			logger.Error(err, "Failed to persist re-staging transition")
 		} else {
 			r.noteUpgradeInClusterMessage(ctx, cluster)
+			if announce {
+				r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeRetargeted,
+					"Rolling upgrade retargeted from %s to %s during %s; the new target is staged", previous, newTarget, during)
+			}
 		}
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 	}

@@ -61,6 +61,12 @@ const (
 	EventReasonUpgradeCompleted = "UpgradeCompleted"
 	EventReasonUpgradePaused    = "UpgradePaused"
 	EventReasonUpgradeFailed    = "UpgradeFailed"
+	// EventReasonUpgradeRetargeted — spec.image.tag changed while the upgrade
+	// was mid-flight (Staging, Rolling, Stabilizing or Verifying): the upgrade
+	// goes on towards the new tag, staged again (operations.md id 180).
+	// Announced once per new target, from the status write that records it
+	// (id 136).
+	EventReasonUpgradeRetargeted = "UpgradeRetargeted"
 	// EventReasonUpgradeDeferred — an image change was held back: the cluster
 	// is not Ready with every server available, or a scale-down drain is in
 	// progress (#173/#174 mutual exclusion). The upgrade starts once it is.

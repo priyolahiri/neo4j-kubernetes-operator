@@ -39,6 +39,7 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | No pods at all | a StatefulSet that wants replicas but has none |
 | No workload at all | a cluster or standalone with neither StatefulSet nor pods. If the operator has written its status, it reconciled the resource and chose not to build it (a refused spec, a missing StorageClass): the hint points at that status message and `explain`. With no status, the operator may not be running or watching the namespace, and the hint says how to check |
 | Backup Job failed | the Job's `Failed` condition being `True` (including a missed `activeDeadlineSeconds`, where no pod failed), plus its pods, container by container. The verdict is the Job's conditions, not its `status.failed` count: that counts failed *attempts* and never goes down, so a backup that retried and then completed is a success — it gets a `⚠` line noting the retries, and one still retrying gets `…`, neither of which changes the exit code |
+| Upgrade stopped | a cluster whose `status.upgradeStatus.phase` is `Failed` or `Paused`, with the upgrade's last error and what to do. The cluster keeps its phase (`Ready`) when an upgrade stops, so this line is what says the image change did not land; it counts as a problem |
 | Nothing ever reconciled | a CR with no status at all after two minutes |
 | Operator warnings | the three most recent `Warning` events on the resource that still describe its current state (see below) |
 
