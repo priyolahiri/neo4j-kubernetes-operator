@@ -4293,6 +4293,7 @@
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>["apoc","fleet-management"]
 </span></code></pre></div>
 <p>The operator uses an additive merge strategy — neither controller overwrites the other's entries.</p>
+<p>Fleet Management's <code>dbms.security.procedures.unrestricted</code> line does not take the other plugins' place either. The Neo4j image gives each plugin it installs its own unrestricted entry (APOC <code>apoc.*</code>, GDS <code>gds.*</code>, …) only while nothing else sets that list, so beside Fleet Management's line APOC used to lose <code>apoc.*</code> (operators up to v1.22.x). The operator now keeps each installed plugin's entry in the list, unless you set <code>dbms.security.procedures.unrestricted</code> yourself, in the deployment's <code>spec.config</code> or <code>spec.env</code>. A cluster's servers pick this up at their next start; a standalone restarts once for it.</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li>A Neo4j Aura account with Fleet Management enabled.</li>
