@@ -684,6 +684,8 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - **A storage expansion restarts nothing.** The StatefulSet is recreated as it was — its template with everything plugins and other controllers wrote, its replicas, strategy, partition and template hash — with the new claim templates, in the same pass that deleted it. Before, it was rebuilt from the cluster's spec alone, and every server restarted without its plugins. During a `Paused` or `Failed` upgrade it is created in two steps, so the servers below the partition keep their version if they restart; the StatefulSet carries `neo4j.com/recreate-restore-partition` and `neo4j.com/recreate-restore-revision` between them.
 - **Image tags pinned to a digest** (`2026.08.1-enterprise@sha256:…`) work: labels carry the tag without the digest, and an image change that is held back splits the reference correctly.
 
+- **On Kubernetes 1.35.0–1.35.3** (`MaxUnavailableStatefulSet` on by default) the StatefulSet controller replaces no pod while one is unavailable, so a repair of a cluster with a server that cannot start used to wait for ever. The operator now replaces such a server pod itself — at or above the partition, on the revision being left, failing to start — with one Normal `ServerPodReplaced`. The server StatefulSet carries `updateStrategy.rollingUpdate.maxUnavailable: 1`, which restarts nothing. Upgrade steps read the stored upgrade record and StatefulSet uncached where they move the partition.
+
 **Clusters**
 
 - **A cluster server pod is `Ready` only once its server is available in the cluster** — `system` available on it, no database failing, a primary back in its Raft groups — for at most 5 minutes after its container starts. Rolls the StatefulSet paces (plugin installs, configuration and TLS changes) now restart the next server only after the previous one rejoined. Upgrading the operator restarts nothing for this; each server gets the new check at its next restart. A pod may take longer to turn `Ready` after a restart, and a wrong admin password in the cluster's Secret holds every restart for the full 5 minutes.
@@ -699,11 +701,18 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - **A plugin waits for its target.** One applied before its cluster or standalone is `Pending` with one `ClusterNotFound`, then installs (it used to be `Failed` until edited). One whose target's StatefulSet does not exist yet, or while a storage expansion creates it again, waits with no event and no ERROR, and a `Ready` plugin stays `Ready`.
 - **Deleting a plugin whose standalone pod keeps failing on it replaces that pod**: the finalizer waits up to five minutes for it.
 
+- **Plugins keep their image's unrestricted defaults.** Neo4j's image gives each installed plugin an unrestricted entry (`apoc.*`, `gds.*`, `genai.*` — `genai.*,ai.*` from 2026.10 — `bloom.*`) only when nothing else sets `dbms.security.procedures.unrestricted`; Aura Fleet Management, another plugin (GDS, Bloom) or a plugin's `spec.security` used to wipe them, leaving APOC procedures that need unrestricted access restricted. The servers now keep them, unless the deployment sets the list itself — in `spec.config`, or as `NEO4J_dbms_security_procedures_unrestricted` in `spec.env` — where, as in Neo4j, the explicit setting wins. Clusters take it at each server's next start; see the restarts below for standalones.
+- **A standalone's `spec.env` list variable joins its `neo4j.conf`** (a plain-valued `NEO4J_dbms_security_procedures_*` and the other shared lists) instead of replacing its `spec.config` and plugin entries; one restart. A variable from a Secret or ConfigMap is unchanged.
+- **Duplicate plugins:** an enabled `Neo4jPlugin` wins over a disabled one with the same `clusterRef` and `spec.name` (the disabled one is `Disabled` and names it); handing a plugin over between duplicates restarts nothing, and a held-back duplicate takes over as soon as the other is disabled or deleted. A `Disabled` plugin clears `status.installedVersion` and `status.installationTime`.
+- `PluginProceduresHidden` is judged against what the servers will start with: no transient Warning while the operator upgrade rewrites ConfigMaps, and a newly applied hiding list is reported before the roll.
+
 **Aura Fleet Management**
 
 - **It no longer narrows the allowlist.** Fleet Management (and a fleet-management `Neo4jPlugin`) used to set the servers' allowlist to `fleetManagement.*` alone — through the operator's configuration and through the Neo4j image's own plugin defaults — which hid APOC and every plugin without `allowedProcedures`. It now joins the allowlist only beside one something else sets; otherwise the servers keep Neo4j's default `*`.
 - **It is built into Neo4j from 2026.03**, so the operator no longer adds `fleet-management` to `NEO4J_PLUGINS` there. Deployments that already list it keep it and restart nothing; their servers log a harmless `ERROR: could not query null` at start (remove the entry by hand at a restart of your choosing). A `Neo4jPlugin` named fleet-management on 2026.03+ is `Ready` and installs nothing. Before 2026.03, a new deployment with `spec.auraFleetManagement.enabled` starts with `fleet-management` and does not restart for it.
 - `AuraFleetManagementPluginPatchFailed` is announced and logged once per cause.
+
+- `AuraFleetManagementPluginPatchFailed` says "Failed to add fleet-management to NEO4J_PLUGINS" only when the StatefulSet write fails; a failed read or check says "Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management". Alerts matching the old text need updating.
 
 **Users, roles, bindings and auth rules**
 
@@ -711,23 +720,33 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - **Learn mode resolves a statement that names a database in capitals** on the first reconcile after the upgrade, without a grant. Out-of-band rows it absorbed into `status.unattributedPrivileges` stay there until removed by hand.
 - **Password events:** `PasswordRotated` once per password Secret version; a user whose password Neo4j already holds (the admin `neo4j` user) emits only "password already matches spec".
 
+- A `Neo4jUser` applied before both its cluster and its password Secret reports `ClusterNotFound` first and `SecretPending` after.
+
 **Deletion**
 
 - **Deleting during a restart no longer leaves access behind.** Deleting a `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias` or `Neo4jReplicaDatabase` while its target is down, refusing connections or being replaced keeps the CR `Terminating` (status `deletion waits to remove …`, one Warning) until the target answers, for at most 5 minutes; it is then released with a Warning naming what is left in Neo4j and the statement to run. A failed `DROP` or `REVOKE` sets the object to `Failed`, announced once, and is retried for the same 5 minutes. A target CR that is gone still releases at once; `deletionPolicy: Retain` is unchanged.
 - **Aura deletion needs credentials only to call Aura.** A terminating `AuraInstance`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraInvite`, `AuraOrganizationMember` or `AuraProjectMember` with `deletionPolicy: Orphan` is removed even after its Secret or provider config is gone. With `Delete` and no credentials it waits 5 minutes, then is removed with a Warning (`…Orphaned`, or the new `AuraMemberOrphaned`); delete what was left in the Aura console. A `Delete` CR already stuck `Terminating` for longer is released on the upgraded operator's first pass, and the cloud resource stays.
 - **A finalizer release never logs an ERROR**: on an object already gone it is success, and it no longer fails with a Conflict on a stale copy; another controller's finalizer is kept.
 
+- **A deleted target's retention policy decides its dependents.** When the cluster or standalone itself is being deleted with `spec.storage.retentionPolicy: Delete` (the default), its users, roles, bindings, auth rules, databases, composites, aliases and replicas are released at once, without a Warning — a namespace teardown no longer waits on them. With `Retain`, a dependent whose target CR is gone while its volumes remain waits up to 5 minutes for a deployment re-created from them, then is released with a Warning naming what the volumes still hold; before, it was released silently and a re-created deployment brought those users and grants back.
+- **Aura deletions Aura refuses are bounded.** A `deletionPolicy: Delete` that Aura refuses (not a 409, 429, 5xx or network error) waits with phase `Error`, reason `DeletionRefused`, then after 5 minutes is removed with the kind's `…Orphaned` Warning; a customer-managed key still in use is bounded the same way (`AuraCustomerManagedKeyOrphaned`). An `AuraDatabase` whose `AuraInstance` CR is already gone is removed at once with a Warning `AuraDatabaseOrphaned` (delete databases before their instance); one whose credentials are missing waits up to 5 minutes.
+- Adding a finalizer no longer logs a Conflict or `Reconciler error` when the operator's copy is out of date.
+
 **Databases**
 
 - **Database kinds stay `Ready` through a target restart.** A `Neo4jDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`, `Neo4jShardedDatabase` (`Ready`) or `Neo4jReplicaDatabase` (`Replicating`) keeps its phase while its target restarts, rolls out or refuses Bolt, with `ClusterNotReady=True`; its Ready event is not repeated. A target that does not answer for 5 minutes makes it `Failed` with `ConnectionFailed` (`ClientCreationFailed` for a sharded database). Each `Neo4jDatabase` gets `ClusterNotReady=False` on its first pass after the upgrade: one status write, no event. `Neo4jDatabase` never reports phase `Unknown`.
 - **A missing cluster is a wait on every kind.** A `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding` or `Neo4jAuthRule` applied before its cluster or standalone waits in `Pending` with one `ClusterNotFound` Warning and goes on once it exists, instead of going `ValidationFailed`/`Failed` with a `ValidationFailed` Warning; every spec error is still reported at once. Composites, aliases and replicas raise that one Warning too.
 
+- "Database validation failed" and the database kinds' other refusals and waits are logged once at info per cause, not as an ERROR on every requeue.
+
 **Backups and restores**
 
 - **Sharded backups name only their shards**: the Job runs `neo4j-admin database backup "<name>-g*" "<name>-p*"` (name lower-cased) instead of `"<name>*"`, so a database that only begins with the name (a restored copy) is no longer taken along or blocks the backup, and `shardArtifacts[].shardName` is lower-cased. A backup of a capitalised `spec.name` now records each shard's file; runs taken earlier recorded none and cannot seed — take a new backup. A one-time backup that is `Completed` stays so; `status.lastRunTime` is set when a run starts and no longer rewritten on every pass.
 - **Restore attempts:** restore Jobs carry `neo4j.com/restore-attempt`. Re-running a restore by editing its spec deletes the previous attempt's Job first — a completed one still within its TTL too — and waits in `Pending` until it is gone; a retry never adopts a terminating Job.
-- **Restore events:** an offline restore emits one `RestoreStarted` ("Restore job … started: restoring offline with neo4j-admin, …"). An all-databases restore emits one `RestoreStarted` naming the databases, from `neo4j-restore-controller`, one `RestoreDatabaseFailed` Warning per database it cannot restore and `RestoreSeedProgress` (when a database's progress changes, and every 10 minutes otherwise) from `neo4j-restore-progress`, and ends with one `RestoreCompleted` or `RestoreFailed`.
+- **Restore events:** an offline restore emits one `RestoreStarted` ("Restore job … started: restoring offline with neo4j-admin, …"). An all-databases restore emits one `RestoreStarted` naming the databases, from `neo4j-restore-controller`, one `RestoreDatabaseFailed` Warning per database it cannot restore and one `RestoreSeedProgress` summary ("N of M database(s) restored, F failed; seeding "db": …, unchanged for …") at the first seed poll and every 10 minutes after, from `neo4j-restore-progress` — no longer one event per database change, so alerts matching `database "x": …` need updating, and ends with one `RestoreCompleted` or `RestoreFailed`.
 - **A PVC `backupPath` is relative to the PVC's root**; one starting with `/backup/` raises a `ValidationWarning`.
+
+- **A backup or restore whose target does not exist yet** raises one `ClusterNotFound` Warning; the backup stays in phase `Waiting`, the restore in `Pending`. A `Neo4jRestore` that is `Completed` or `Failed` at its generation stays so when its target is deleted — before, it went `Pending` and could run again when a target of the same name was created.
 
 **Aura**
 
@@ -739,7 +758,7 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - `validate` applies each CRD's defaults before judging a manifest, for every kind (a manifest it passed may now report what the operator would refuse after apply, such as a standalone `tls: {}` without `issuerRef`). With `--connect` it reports a missing deployment as pending, not as an error, may warn that `spec.storage.className` has no effect on existing volumes, and compares versions only with the operator that is running (or prints `version skew not checked: …`).
 - `diagnose` marks only Warnings that describe the current state and counts the earlier ones in one line; `status` and `explain` know `PendingDependencies`, `Disabled` and a stopped upgrade.
 
-**New advisory `ValidationWarning`s** (no restart): a standalone's `spec.upgradeStrategy` timeouts set to anything but their default; `spec.storage.className` naming a class the existing data volumes do not use; `spec.service.route.tls.secretName` (and the MCP Route's), which never had an effect; a PVC restore `backupPath` under `/backup/`.
+**New advisory `ValidationWarning`s** (no restart): a standalone's `spec.upgradeStrategy` timeouts set to anything but their default; `spec.storage.className` naming a class the existing data volumes do not use; `spec.service.route.tls.secretName` (and the MCP Route's), which never had an effect; a PVC restore `backupPath` under `/backup/`; `storage.path` on a PVC backup or restore storage, which nothing reads.
 
 ### Fixes
 
@@ -757,6 +776,8 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - A cluster or standalone with Aura Fleet Management whose allowlist was fleet's entry alone (no allowlist of its own): one rolling restart, after which APOC and other plugins load again. A cluster with Fleet Management and a plugin's allowlist: one rolling restart, after which the servers list both.
 - `neo4j.com/plugin-entries.*` and the other new records are metadata patches; writing them restarts nothing.
 - The new readiness check and the plugin-list union reach each server at its next restart; upgrading the operator restarts nothing for them.
+- A standalone whose `neo4j.conf` sets the unrestricted list and runs Managed plugins (Aura Fleet Management beside a plugin, GDS or Bloom beside APOC, a plugin with `spec.security`): one restart, after which it keeps the plugins' image entries. Clusters take the same change at each server's next start and restart nothing for it.
+- A standalone whose `spec.env` sets a shared-list variable with a plain value: one restart, moving it into `neo4j.conf`.
 
 ## Upgrading between future releases
 
