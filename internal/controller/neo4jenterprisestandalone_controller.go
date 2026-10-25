@@ -504,37 +504,20 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 	// owner of neo4j.conf (issue #146). These keys become operator-owned (tracked
 	// in the annotation below), so an uninstalled plugin's keys are PRUNED on the
 	// next reconcile, and there's no after-the-fact ConfigMap patching by the
-	// plugin controller to fight with.
+	// plugin controller to fight with. With them: the list variables of its
+	// spec.env, its plugins' image defaults in the unrestricted list, and
+	// Neo4j's default allowlist against the image's fleet-management default
+	// (desiredStandaloneConfigMap; operations.md ids 192, 193).
 	//
 	// A LISTING FAILURE MUST BE FATAL here: treating it as "no plugins" would
 	// prune the plugin-owned security keys from neo4j.conf and roll the pod with
 	// those settings stripped. Returning the error requeues without rewriting the
 	// ConfigMap, so the existing (correct) conf is preserved.
-	pluginConf, fleetPlugin, err := r.collectPluginConfSettings(ctx, standalone)
+	desired, err := desiredStandaloneConfigMap(ctx, r.Client, standalone)
 	if err != nil {
 		return fmt.Errorf("failed to collect plugin-derived config: %w", err)
 	}
-	// Fully re-render the operator-owned config from spec each reconcile. Aura
-	// Fleet Management's allowlist entry is rendered only beside an allowlist
-	// something else sets (operations.md id 192).
-	_, pluginAllowlist := pluginConf[resources.AllowlistSetting]
-	desired := r.renderConfigMap(standalone, pluginAllowlist)
 	desiredConf := desired.Data["neo4j.conf"]
-	if len(pluginConf) > 0 {
-		desiredConf = resources.DedupeNeo4jConf(resources.UpsertNeo4jConfSettings(desiredConf, pluginConf))
-	}
-	// The image's entrypoint narrows an allowlist set nowhere: for
-	// fleet-management in NEO4J_PLUGINS it adds
-	// dbms.security.procedures.allowlist=fleetManagement.* to a neo4j.conf
-	// without the setting, and nothing else loads. Neo4j's default, *, in the
-	// conf keeps it from doing so (operations.md id 192). Only where the
-	// entrypoint installs the plugin: from 2026.03 it cannot, and adds nothing.
-	if (standaloneInstallsFleetManagement(standalone) || fleetPlugin) && !validation.FleetManagementBuiltIn(standalone.Spec.Image.Tag) {
-		if _, set := resources.Neo4jConfSettings(desiredConf)[resources.AllowlistSetting]; !set {
-			desiredConf = resources.DedupeNeo4jConf(resources.UpsertNeo4jConfSettings(desiredConf,
-				map[string]string{resources.AllowlistSetting: "*"}))
-		}
-	}
 	desiredKeys := resources.Neo4jConfSettings(desiredConf) // operator-owned keys this reconcile
 
 	configMap := &corev1.ConfigMap{
@@ -548,34 +531,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 			// EXISTING object, so the desired state MUST be (re)applied here in the
 			// mutate fn — an empty mutate would silently write the stale data back
 			// (the cause of stale spec.config keys never clearing on update).
-			prevOwned := splitCSVSet(configMap.Annotations[ownedStandaloneConfKeysAnnotation])
-
-			// Decide which EXISTING conf keys to carry forward:
-			//   - operator-owned this reconcile (in desiredKeys): SKIP — desiredConf
-			//     already holds the authoritative value (scalar, or the additive
-			//     UNION computed from spec.config + all plugin CRs). Carrying the
-			//     existing value back would re-introduce stale additive tokens from
-			//     an uninstalled plugin, so the key would never prune.
-			//   - previously operator-owned but no longer (prevOwned ∖ desiredKeys):
-			//     SKIP — the user/plugin removed it; don't resurrect it.
-			//   - everything else: a genuinely FOREIGN key (added by some other
-			//     actor the operator doesn't manage) → preserve it.
-			mergeBack := make(map[string]string)
-			for k, v := range resources.Neo4jConfSettings(configMap.Data["neo4j.conf"]) {
-				if _, owned := desiredKeys[k]; owned {
-					continue
-				}
-				if _, wasOwned := prevOwned[k]; wasOwned {
-					continue
-				}
-				mergeBack[k] = v
-			}
-			// Start from the freshly-rendered operator conf, then merge the
-			// preserved keys back: additive keys union (so plugin tokens survive),
-			// scalars add-if-absent (so the operator's re-rendered value wins).
-			// Idempotent → no ConfigMap churn and no tug-of-war with the plugin
-			// controller (it sees its settings already present and makes no change).
-			merged := resources.DedupeNeo4jConf(resources.UpsertNeo4jConfSettings(desiredConf, mergeBack))
+			merged := mergeStandaloneConf(desiredConf, configMap)
 
 			// A change of dynamic settings only is applied to the running pod
 			// before the conf is written (#466); see applyStandaloneConfLive.
@@ -619,52 +575,6 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 	// flows through the normal template-apply path: present from pod creation (no
 	// deferred extra restart), retried on failure, idempotent when unchanged.
 	return nil
-}
-
-// collectPluginConfSettings returns the union of neo4j.conf settings derived from
-// every Neo4jPlugin on this standalone (#146): enabled, and not refused by its
-// image (operations.md id 170) — and whether one of them is a Managed
-// fleet-management plugin, which puts fleet-management in NEO4J_PLUGINS
-// (operations.md id 192). A list error is
-// returned (not swallowed) so the caller can requeue without pruning plugin-owned
-// keys from neo4j.conf.
-func (r *Neo4jEnterpriseStandaloneReconciler) collectPluginConfSettings(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (map[string]string, bool, error) {
-	// Cluster-first target resolution, mirroring the plugin controller's
-	// getTargetDeployment: a Neo4jPlugin's clusterRef resolves to a same-named
-	// Neo4jEnterpriseCluster when one exists, otherwise to the standalone. So if a
-	// cluster of this name coexists in the namespace, plugins referencing the name
-	// target the CLUSTER — fold none of them into this standalone's neo4j.conf.
-	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-	switch err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, cluster); {
-	case err == nil:
-		return nil, false, nil // a same-named cluster owns these plugins
-	case !errors.IsNotFound(err):
-		return nil, false, fmt.Errorf("checking for a same-named cluster: %w", err)
-	}
-
-	plugins := &neo4jv1beta1.Neo4jPluginList{}
-	if err := r.List(ctx, plugins, client.InNamespace(standalone.Namespace)); err != nil {
-		return nil, false, fmt.Errorf("listing Neo4jPlugins in %s: %w", standalone.Namespace, err)
-	}
-	fleetPlugin := false
-	for i := range plugins.Items {
-		p := &plugins.Items[i]
-		if p.Spec.ClusterRef == standalone.Name && p.DeletionTimestamp == nil && pluginOnImage(p, standalone.Spec.Image.Tag) &&
-			!shouldSkipNeo4jPluginsEnv(p) && validation.EntrypointPluginName(p.Spec.Name) == resources.FleetManagementPlugin {
-			fleetPlugin = true
-		}
-	}
-	// A fleet-management plugin's automatic allowlist entry joins only an
-	// allowlist the standalone's own spec.config or another plugin sets: alone
-	// it loaded nothing else (operations.md id 192). Computed both ways so an
-	// allowlist that has it keeps its order, and the standalone's neo4j.conf
-	// does not change where nothing else does.
-	without := unionPluginConf(plugins.Items, standalone.Name, standalone.Spec.Image.Tag, false)
-	_, own := standalone.Spec.Config[resources.AllowlistSetting]
-	if _, others := without[resources.AllowlistSetting]; !own && !others {
-		return without, fleetPlugin, nil
-	}
-	return unionPluginConfSettings(plugins.Items, standalone.Name, standalone.Spec.Image.Tag), fleetPlugin, nil
 }
 
 // standaloneConfigHashAnnotation carries a hash of the rendered neo4j.conf on the
@@ -1567,6 +1477,15 @@ func (r *Neo4jEnterpriseStandaloneReconciler) createConfigMap(standalone *neo4jv
 // standalone's plugins set an allowlist, beside which Aura Fleet
 // Management's entry is rendered (operations.md id 192).
 func (r *Neo4jEnterpriseStandaloneReconciler) renderConfigMap(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, pluginAllowlist bool) *corev1.ConfigMap {
+	return renderStandaloneConfigMap(standalone, pluginAllowlist)
+}
+
+// renderStandaloneConfigMap renders the standalone's ConfigMap from its spec
+// alone: what reconcileConfigMap then adds its plugins' settings to
+// (desiredStandaloneConfigMap). pluginAllowlist says whether something else
+// sets an allowlist — a plugin, or a variable of its spec.env — beside which
+// Aura Fleet Management's entry is rendered (operations.md id 192).
+func renderStandaloneConfigMap(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, pluginAllowlist bool) *corev1.ConfigMap {
 	// Build neo4j.conf content
 	var configLines []string
 
@@ -2673,9 +2592,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1be
 	// Add user-provided environment variables. Skip operator-managed keys so a
 	// stray spec.env entry can't shadow them with a duplicate (mirrors the
 	// cluster path): license acceptance comes from spec.acceptLicenseAgreement,
-	// and NEO4J_AUTH is managed from the admin Secret.
+	// and NEO4J_AUTH is managed from the admin Secret. A procedure or extension
+	// list set as a variable is in neo4j.conf instead, joined with the
+	// standalone's own and its plugins' (standaloneEnvLists, operations.md id
+	// 193): the entrypoint writes a variable in place of the conf's line.
 	for _, e := range standalone.Spec.Env {
-		if e.Name == "NEO4J_ACCEPT_LICENSE_AGREEMENT" || e.Name == "NEO4J_AUTH" {
+		if e.Name == "NEO4J_ACCEPT_LICENSE_AGREEMENT" || e.Name == "NEO4J_AUTH" || foldedStandaloneEnv(e) {
 			continue
 		}
 		envVars = append(envVars, e)

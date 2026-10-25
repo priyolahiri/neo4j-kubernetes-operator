@@ -30,8 +30,8 @@ const (
 )
 
 var (
-	image526  = entrypointsim.Image{FleetJAR: true}                // 5.26.32: products/ has the fleet JAR
-	image2026 = entrypointsim.Image{CalVer: true, FleetJAR: false} // 2026.08.1: built in, no JAR
+	image526  = entrypointsim.Image{FleetJAR: true}                                         // 5.26.32: products/ has the fleet JAR
+	image2026 = entrypointsim.Image{Release: entrypointsim.Release2026090, FleetJAR: false} // 2026.09.0: built in, no JAR
 )
 
 func sortedTokens(list string) string {
@@ -54,7 +54,7 @@ func sortedTokens(list string) string {
 // allowlist the block adds fleet's entry; where the image has no fleet JAR
 // (2026.03+) the entrypoint applies no default, and * is the default anyway.
 func TestServerStart_TheEntrypointsFleetDefault(t *testing.T) {
-	block := buildPluginListMergeBlock()
+	block := buildPluginListMergeBlock(nil, nil)
 	fleet := "dbms.security.procedures.unrestricted=fleetManagement.*\n"
 	for _, tc := range []struct {
 		name          string
@@ -67,7 +67,7 @@ func TestServerStart_TheEntrypointsFleetDefault(t *testing.T) {
 		{"5.26: Aura Fleet Management alone", image526, fleet,
 			map[string]string{"NEO4J_PLUGINS": `["fleet-management"]`}, "*", "fleetManagement.*"},
 		{"5.26: Aura Fleet Management and a Managed APOC", image526, fleet,
-			map[string]string{"NEO4J_PLUGINS": `["fleet-management","apoc"]`}, "*", "fleetManagement.*"},
+			map[string]string{"NEO4J_PLUGINS": `["fleet-management","apoc"]`}, "*", "fleetManagement.*,apoc.*"},
 		{"5.26: and a plugin's allowlist", image526, fleet,
 			map[string]string{"NEO4J_PLUGINS": `["fleet-management","apoc"]`, allowlistEnv: "apoc.*", unrestrictedEnv: "apoc.*"},
 			"apoc.*,fleetManagement.*", "apoc.*,fleetManagement.*"},
@@ -77,7 +77,7 @@ func TestServerStart_TheEntrypointsFleetDefault(t *testing.T) {
 			map[string]string{"NEO4J_PLUGINS": `["fleet-management"]`, unrestrictedEnv: "fleetManagement.*"}, "*", "fleetManagement.*"},
 		{"5.26: an empty allowlist of the user's stays", image526, fleet + "dbms.security.procedures.allowlist=\n",
 			map[string]string{"NEO4J_PLUGINS": `["fleet-management"]`}, "-", "fleetManagement.*"},
-		{"2026.08: fleet-management left in NEO4J_PLUGINS by an earlier operator", image2026, fleet,
+		{"2026.09: fleet-management left in NEO4J_PLUGINS by an earlier operator", image2026, fleet,
 			map[string]string{"NEO4J_PLUGINS": `["fleet-management"]`}, "*", "fleetManagement.*"},
 		{"no fleet: APOC alone keeps Neo4j's default", image526, "",
 			map[string]string{"NEO4J_PLUGINS": `["apoc"]`}, "", "apoc.*"},

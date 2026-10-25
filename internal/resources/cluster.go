@@ -1998,6 +1998,17 @@ func IsAdditiveConfEnvName(name string) bool {
 	return false
 }
 
+// AdditiveConfKeyForEnvName returns the additive list key (IsAdditiveConfKey)
+// whose Neo4jSettingEnvVarName form name is; ok is false for any other name.
+func AdditiveConfKeyForEnvName(name string) (key string, ok bool) {
+	for key := range additiveConfKeys {
+		if Neo4jSettingEnvVarName(key) == name {
+			return key, true
+		}
+	}
+	return "", false
+}
+
 // MergeConfListValues returns the comma-separated union of two list values,
 // de-duplicated and in first-seen order (a's tokens first, then b's new tokens).
 // Used for additive keys both in neo4j.conf and in NEO4J_*-style env vars.
@@ -2550,7 +2561,7 @@ fi
 ` + buildSystemDatabaseModeBlock(cluster) + buildAsyncRaftChannelsBlock(cluster) + buildTLSReloadBlock(cluster) + `
 # Add server mode constraint if specified
 ` + buildServerModeConstraintConfig(cluster) + `
-` + buildPluginListMergeBlock() + `
+` + buildPluginListMergeBlock(cluster.Spec.Config, cluster.Spec.Env) + `
 
 # NEO4J_CONF is deliberately NOT exported. The entrypoint writes the settings
 # it derives from environment variables into ${NEO4J_HOME}/conf, never into
@@ -2722,8 +2733,13 @@ fi
 }
 
 // AllowlistSetting is Neo4j's list of the procedures and functions it loads
-// (default *, every one).
-const AllowlistSetting = "dbms.security.procedures.allowlist"
+// (default *, every one), and UnrestrictedSetting its list of those it lets
+// use unrestricted (low-level) APIs: a loaded procedure that needs them and
+// is not listed is not available.
+const (
+	AllowlistSetting    = "dbms.security.procedures.allowlist"
+	UnrestrictedSetting = "dbms.security.procedures.unrestricted"
+)
 
 // FleetManagementProcedures is the entry Aura Fleet Management's procedures
 // need in the procedure lists, and FleetManagementPlugin the name the Neo4j
@@ -2769,11 +2785,21 @@ const PluginListMergeMarker = "# Procedure and extension lists: this cluster's o
 // as before, each plugin writes only its own tokens (id 173), and each side's
 // change restarts the servers as it did, once.
 //
+// The unrestricted list also gets the entry the image gives each plugin
+// NEO4J_PLUGINS installs (apoc.*, gds.*, genai.*, …), unless the cluster sets
+// the list itself, in its spec.config or its spec.env (config, env;
+// OwnsUnrestrictedList): the entrypoint adds those only to a neo4j.conf
+// without the list, and a variable replaces them, so a cluster with Aura
+// Fleet Management's line, or a plugin that sets the list, lost them
+// (operations.md id 193). The block reads them from the image's own
+// /startup/neo4j-plugins.json, as the entrypoint does, so a server gets what
+// its release's table says.
+//
 // It is restart-neutral: it changes nothing for a server that is already
 // running, so adding it in an operator upgrade restarts no server. A server
 // whose list it changes — a cluster with a list of its own and a plugin that
 // sets the same list — gets the union at its next start.
-func buildPluginListMergeBlock() string {
+func buildPluginListMergeBlock(config map[string]string, env []corev1.EnvVar) string {
 	settings := make([]string, 0, len(additiveConfKeys))
 	for key := range additiveConfKeys {
 		settings = append(settings, key)
@@ -2782,8 +2808,13 @@ func buildPluginListMergeBlock() string {
 	var calls strings.Builder
 	for _, key := range settings {
 		call := "operator_merge_list " + key + " " + Neo4jSettingEnvVarName(key)
-		if key == AllowlistSetting {
+		switch key {
+		case AllowlistSetting:
 			call += " " + FleetManagementPlugin + " '" + FleetManagementProcedures + "'"
+		case UnrestrictedSetting:
+			if !OwnsUnrestrictedList(config, env) {
+				call += " '' '' " + pluginDefaultsArg
+			}
 		}
 		calls.WriteString(call + "\n")
 	}
@@ -2794,9 +2825,36 @@ func buildPluginListMergeBlock() string {
 # given the cluster's own entries (spec.config, Aura Fleet Management) too. An
 # allowlist set anywhere also gets Aura Fleet Management's entry while
 # NEO4J_PLUGINS installs it; an allowlist set nowhere stays unset (every
-# procedure loads).
+# procedure loads). The unrestricted list keeps the image's entry for each
+# plugin NEO4J_PLUGINS installs, unless the cluster's spec.config or spec.env
+# sets the list.
+
+# The entries the image's entrypoint gives a setting, by default, for the
+# plugins it installs from NEO4J_PLUGINS, in that order: what
+# /startup/neo4j-plugins.json says for each plugin it finds in the image (its
+# location) or would download (a versions URL), as install_neo4j_plugins does.
+operator_plugin_defaults() {
+    local setting="$1" name location versions value out=""
+    if [ -z "${NEO4J_PLUGINS:-}" ] || [ ! -r /startup/neo4j-plugins.json ]; then
+        return 0
+    fi
+    while IFS=$'\t' read -r name location versions value; do
+        [ -n "$value" ] || continue
+        if [ "$location" != "null" ] && [ -n "$(shopt -s nullglob; echo ${location})" ]; then
+            :
+        elif [ "$versions" = "null" ]; then
+            continue
+        fi
+        out="${out:+${out},}${value}"
+    done < <(jq --raw-output --arg setting "$setting" --argjson plugins "${NEO4J_PLUGINS}" \
+        '. as $table | $plugins[] | . as $name | ($table[$name] // empty)
+         | [$name, (.location // "null"), (.versions // "null"), (.properties[$setting] // "")] | @tsv' \
+        /startup/neo4j-plugins.json 2>/dev/null)
+    printf '%s' "$out"
+}
+
 operator_merge_list() {
-    local setting="$1" var="$2" plugin="${3:-}" extra="${4:-}" env_value conf_value conf_set line union token
+    local setting="$1" var="$2" plugin="${3:-}" extra="${4:-}" defaults="${5:-}" env_value conf_value conf_set line union token
     local -a tokens
     env_value="${!var:-}"
     conf_value=""
@@ -2810,24 +2868,33 @@ operator_merge_list() {
         *"\"${plugin}\""*) ;;
         *) extra="" ;;
     esac
-    if [ -z "$env_value" ] && [ -z "$conf_set" ] && [ -n "$extra" ]; then
-        # Set nowhere, and the entrypoint would set it: for fleet-management it
-        # adds an allowlist of fleetManagement.* alone to a neo4j.conf without
-        # one (apply_plugin_default_configuration), which loads no other plugin.
+    if [ -z "$env_value" ] && [ -z "$conf_set" ]; then
+        # Set nowhere. The entrypoint adds the plugins' own defaults to a
+        # neo4j.conf without the setting itself. For fleet-management that is
+        # an allowlist of fleetManagement.* alone
+        # (apply_plugin_default_configuration), which loads no other plugin:
         # Neo4j's default, as the variable, replaces that line in its
         # environment pass, which runs after.
+        [ -n "$extra" ] || return 0
         export "${var}=*"
         echo "${setting}: Neo4j's default (*), in place of the entrypoint's ${plugin} default"
         return 0
     fi
-    if [ -z "$env_value" ] && { [ -z "$conf_value" ] || [ -z "$extra" ]; }; then
+    if [ "$defaults" = "` + pluginDefaultsArg + `" ]; then
+        # The entrypoint skips its plugin defaults for a setting the conf has,
+        # and a variable replaces them: they are added here.
+        defaults="$(operator_plugin_defaults "$setting")"
+    else
+        defaults=""
+    fi
+    if [ -z "$env_value" ] && { [ -z "$conf_value" ] || [ -z "${extra}${defaults}" ]; }; then
         return 0
     fi
-    if [ -z "$conf_value" ] && [ -z "$extra" ]; then
+    if [ -z "$conf_value" ] && [ -z "${extra}${defaults}" ]; then
         return 0
     fi
     union=""
-    IFS=',' read -r -a tokens <<< "${conf_value},${extra},${env_value}"
+    IFS=',' read -r -a tokens <<< "${conf_value},${extra},${env_value},${defaults}"
     for token in "${tokens[@]}"; do
         token="${token#"${token%%[![:space:]]*}"}"
         token="${token%"${token##*[![:space:]]}"}"
@@ -2841,39 +2908,86 @@ operator_merge_list() {
         return 0
     fi
     export "${var}=${union}"
-    echo "${setting}: this cluster's list and ${var}, together"
+    echo "${setting}: this cluster's list, ${var} and its plugins' defaults, together"
 }
 ` + calls.String() + RestartNeutralEnd + `
 `
+}
+
+// pluginDefaultsArg is the block's argument that gives a list the image's
+// entries for the plugins NEO4J_PLUGINS installs (operations.md id 193).
+const pluginDefaultsArg = "plugin-defaults"
+
+// OwnsUnrestrictedList reports whether a deployment sets
+// dbms.security.procedures.unrestricted itself: the key in its spec.config
+// (config), or NEO4J_dbms_security_procedures_unrestricted in its spec.env
+// (env) — a value of its own, or one from a Secret or ConfigMap. The
+// entrypoint writes such a variable in place of the whole line, the image's
+// plugin entries included, and an explicit setting wins in Neo4j: the
+// operator adds no image entries to a list the deployment sets
+// (operations.md id 193). An empty variable, which the entrypoint does not
+// write, does not count; neither do Aura Fleet Management's line nor the
+// plugins' lists.
+func OwnsUnrestrictedList(config map[string]string, env []corev1.EnvVar) bool {
+	if _, own := config[UnrestrictedSetting]; own {
+		return true
+	}
+	name := Neo4jSettingEnvVarName(UnrestrictedSetting)
+	for _, e := range env {
+		if e.Name == name && (e.ValueFrom != nil || strings.TrimSpace(e.Value) != "") {
+			return true
+		}
+	}
+	return false
 }
 
 // ServerProcedureList is the value a cluster's server starts with for the
 // procedure or extension list setting, as its startup script's list block
 // (buildPluginListMergeBlock) and then the Neo4j entrypoint build it from the
 // rendered neo4j.conf (confValue, confSet), the neo4j container's
-// NEO4J_<setting> variable (envValue, envSet) and the names NEO4J_PLUGINS
-// installs: the union of the conf's, Aura Fleet Management's entry for an
-// allowlist set anywhere while fleet-management is installed, and the
-// variable's. set is false when the server starts without the setting.
-func ServerProcedureList(setting, confValue string, confSet bool, envValue string, envSet bool, plugins []string) (value string, set bool) {
+// NEO4J_<setting> variable (envValue, envSet), the names NEO4J_PLUGINS
+// installs (plugins) and the image's entries for those (defaults, in
+// NEO4J_PLUGINS order; validation.ImageUnrestrictedDefaults for the
+// unrestricted list, nil for any other): the union of the conf's, Aura Fleet
+// Management's entry for an allowlist set anywhere while fleet-management is
+// installed, the variable's, and the image's entries. The caller passes no
+// defaults for a list the cluster sets itself (OwnsUnrestrictedList: its
+// spec.config, or its spec.env's variable): an explicit setting wins, and the
+// block adds nothing to it either. A list set nowhere gets the entries from
+// the entrypoint itself. set is false when the server starts without the
+// setting.
+func ServerProcedureList(setting, confValue string, confSet bool, envValue string, envSet bool, plugins, defaults []string) (value string, set bool) {
 	extra := ""
 	if setting == AllowlistSetting && slices.Contains(plugins, FleetManagementPlugin) {
 		extra = FleetManagementProcedures
 	}
 	envSet = envSet && strings.TrimSpace(envValue) != ""
 	confHas := confSet && strings.TrimSpace(confValue) != ""
-	if extra != "" && !envSet && !confSet {
-		// The entrypoint's fleet-management default, countered with Neo4j's
-		// own (id 192).
-		return "*", true
-	}
-	switch {
-	case !envSet && (!confHas || extra == ""):
+	if !envSet && !confSet {
+		switch {
+		case extra != "":
+			// The entrypoint's fleet-management default, countered with Neo4j's
+			// own (id 192).
+			return "*", true
+		case len(defaults) > 0:
+			// The entrypoint writes the first plugin's entry, then puts each
+			// next one in front of the line (apply_plugin_default_configuration).
+			line := defaults[0]
+			for _, entry := range defaults[1:] {
+				line = entry + "," + line
+			}
+			return line, true
+		}
 		return confValue, confSet
-	case !confHas && extra == "":
+	}
+	added := MergeConfListValues(extra, strings.Join(defaults, ","))
+	switch {
+	case !envSet && (!confHas || added == ""):
+		return confValue, confSet
+	case !confHas && added == "":
 		return envValue, true
 	}
-	union := MergeConfListValues(MergeConfListValues(confValue, extra), envValue)
+	union := MergeConfListValues(MergeConfListValues(MergeConfListValues(confValue, extra), envValue), strings.Join(defaults, ","))
 	if !envSet && union == strings.TrimSpace(confValue) {
 		return confValue, confSet
 	}

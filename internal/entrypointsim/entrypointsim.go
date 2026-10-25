@@ -19,9 +19,9 @@ limitations under the License.
 // variables into the neo4j.conf the server reads: the plugin defaults of
 // install_neo4j_plugins (apply_plugin_default_configuration), then the
 // environment pass (add_env_setting_to_conf). testdata/entrypoint-excerpt.sh
-// holds those functions, copied verbatim from github.com/neo4j/docker-neo4j,
-// and testdata/neo4j-plugins-{5,calver}.json the images' plugin tables
-// (docs/knowledge/operations.md ids 179, 192).
+// holds those functions, copied verbatim from the images (5.26.32 and
+// 2026.09.0, which agree), and testdata/neo4j-plugins-<release>.json the
+// images' plugin tables (docs/knowledge/operations.md ids 179, 192, 193).
 //
 // It is test support: nothing outside tests imports it.
 package entrypointsim
@@ -35,8 +35,29 @@ import (
 	"testing"
 )
 
-//go:embed testdata/entrypoint-excerpt.sh testdata/neo4j-plugins-5.json testdata/neo4j-plugins-calver.json
+//go:embed testdata/entrypoint-excerpt.sh testdata/neo4j-plugins-*.json
 var files embed.FS
+
+// The releases whose /startup/neo4j-plugins.json is vendored, read from the
+// images (5.26.0, 5.26.32, 2026.09.0) and from github.com/neo4j/docker-neo4j
+// at tag neo4j-2026.10.0, all on 2026-10-25: 5.26.0 has no fleet-management;
+// genai's unrestricted entry is genai.* up to 2026.09.0 and genai.*,ai.* from
+// 2026.10.0 (docker-neo4j #571).
+const (
+	Release5260    = "5.26.0"
+	Release52632   = "5.26.32"
+	Release2026090 = "2026.09.0"
+	Release2026100 = "2026.10.0"
+)
+
+// Releases lists the vendored releases, oldest first.
+var Releases = []string{Release5260, Release52632, Release2026090, Release2026100}
+
+// PluginTable returns the vendored /startup/neo4j-plugins.json of release.
+func PluginTable(t testing.TB, release string) []byte {
+	t.Helper()
+	return []byte(read(t, "testdata/neo4j-plugins-"+release+".json"))
+}
 
 // ConfPath is the path the operator's startup script reads the neo4j.conf it
 // assembled from; Start points a prelude's references to it at the conf it
@@ -45,8 +66,8 @@ const ConfPath = "/conf/neo4j.conf"
 
 // Image is what the entrypoint of one Neo4j image finds.
 type Image struct {
-	// CalVer picks the CalVer plugin table, else the 5.x one.
-	CalVer bool
+	// Release picks the plugin table (Release52632 when empty).
+	Release string
 	// FleetJAR is a fleet-management JAR in products/: on 5.26.12 and later
 	// and 2025.08.0 to 2026.02.x. From 2026.03 Fleet Manager is built in and
 	// products/ has none; the table still names the plugin, without a
@@ -56,9 +77,11 @@ type Image struct {
 
 // Start runs prelude — the operator's startup-script lines that run before
 // the entrypoint; "" for none — then the entrypoint's plugin install (when
-// NEO4J_PLUGINS is set) and its environment pass, over conf with env set, and
-// returns the neo4j.conf the server reads. It skips the test without bash or
-// jq.
+// NEO4J_PLUGINS is set), its docker defaults (an Enterprise image's) and its
+// environment pass, over conf with env set, and
+// returns the neo4j.conf the server reads. The prelude's references to the
+// image's /startup/neo4j-plugins.json read the release's table. It skips the
+// test without bash or jq.
 func Start(t testing.TB, image Image, conf, prelude string, env map[string]string) string {
 	t.Helper()
 	for _, tool := range []string{"bash", "jq"} {
@@ -72,17 +95,18 @@ func Start(t testing.TB, image Image, conf, prelude string, env map[string]strin
 		mkdir(t, filepath.Join(home, dir))
 	}
 	jars := []string{"labs/apoc-5.26.32-core.jar", "products/neo4j-genai-plugin-1.0.0.jar",
-		"products/neo4j-graph-data-science-2.13.0.jar"}
+		"products/neo4j-graph-data-science-2.13.0.jar", "products/bloom-plugin-5.x-2.20.0.jar"}
 	if image.FleetJAR {
 		jars = append(jars, "products/neo4j-fleet-management-plugin-1.2.0-v5.jar")
 	}
 	for _, jar := range jars {
 		write(t, filepath.Join(home, jar), "")
 	}
-	table := "testdata/neo4j-plugins-5.json"
-	if image.CalVer {
-		table = "testdata/neo4j-plugins-calver.json"
+	release := image.Release
+	if release == "" {
+		release = Release52632
 	}
+	table := "testdata/neo4j-plugins-" + release + ".json"
 	tablePath := filepath.Join(root, "neo4j-plugins.json")
 	write(t, tablePath, strings.ReplaceAll(read(t, table), "/var/lib/neo4j", home))
 	confPath := filepath.Join(home, "conf", "neo4j.conf")
@@ -90,12 +114,14 @@ func Start(t testing.TB, image Image, conf, prelude string, env map[string]strin
 
 	excerpt := strings.ReplaceAll(read(t, "testdata/entrypoint-excerpt.sh"), "/startup/neo4j-plugins.json", tablePath)
 	script := "set -eu\n" + excerpt + "\nNEO4J_HOME=" + home + "\n" +
-		strings.ReplaceAll(prelude, ConfPath, confPath) + "\n" +
+		strings.ReplaceAll(strings.ReplaceAll(prelude, ConfPath, confPath), "/startup/neo4j-plugins.json", tablePath) + "\n" +
 		"if [[ -n \"${NEO4J_PLUGINS:-}\" ]]; then install_neo4j_plugins; fi\n" +
+		"apply_docker_defaults\n" +
 		"apply_environment_settings\n"
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
 	cmd.Dir = root
-	cmd.Env = []string{"PATH=" + gnuPath(t, root) + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + root}
+	cmd.Env = []string{"PATH=" + gnuPath(t, root) + string(os.PathListSeparator) + os.Getenv("PATH"), "HOME=" + root,
+		"NEO4J_EDITION=enterprise"}
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, k+"="+v)
 	}

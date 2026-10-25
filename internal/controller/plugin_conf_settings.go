@@ -156,7 +156,7 @@ func unionPluginConfSettings(plugins []neo4jv1beta1.Neo4jPlugin, targetRef, imag
 
 // unionPluginConf is unionPluginConfSettings, with the fleet-management
 // plugin's automatic allowlist entry left out when fleetAllowlist is false
-// (standaloneFleetAllowlist).
+// (collectStandalonePluginConf).
 func unionPluginConf(plugins []neo4jv1beta1.Neo4jPlugin, targetRef, imageTag string, fleetAllowlist bool) map[string]string {
 	sorted := make([]*neo4jv1beta1.Neo4jPlugin, 0, len(plugins))
 	for i := range plugins {

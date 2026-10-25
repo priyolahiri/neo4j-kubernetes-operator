@@ -117,7 +117,8 @@ func TestServers_FleetAloneLeavesTheAllowlistUnset(t *testing.T) {
 
 	lists := serverLists(t, cm, liveSTSEnv(t, r.Client, "c-server"))
 	assert.Equal(t, "*", lists["dbms.security.procedures.allowlist"], "Neo4j's default: every procedure loads")
-	assert.Equal(t, []string{"fleetManagement.*"}, tokensOf(lists["dbms.security.procedures.unrestricted"]))
+	assert.Equal(t, []string{"apoc.*", "fleetManagement.*"}, tokensOf(lists["dbms.security.procedures.unrestricted"]),
+		"APOC keeps the image's apoc.* beside Aura Fleet Management's line (id 193)")
 	assert.Nil(t, findCondition(getPlugin(t, r, "apoc").Status.Conditions, ConditionTypeProceduresHidden))
 	assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonPluginProceduresHidden))
 }

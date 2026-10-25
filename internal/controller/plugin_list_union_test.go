@@ -160,7 +160,8 @@ func TestServers_AddAPluginsAllowlistToTheClustersOwn(t *testing.T) {
 	lists := serverLists(t, cm, liveSTSEnv(t, r.Client, "c-server"))
 	assert.Equal(t, []string{"ai.*", "apoc.coll.*", "genai.*"}, tokensOf(lists["dbms.security.procedures.allowlist"]),
 		"the cluster's own entries and the plugin's, together")
-	assert.Equal(t, []string{"ai.*", "genai.*"}, tokensOf(lists["dbms.security.procedures.unrestricted"]))
+	assert.Equal(t, []string{"ai.*", "apoc.*", "genai.*"}, tokensOf(lists["dbms.security.procedures.unrestricted"]),
+		"the plugin's list, and the image's apoc.* for the APOC that NEO4J_PLUGINS installs (id 193)")
 
 	drainEvents(rec)
 	reconcilePlugin(t, r, "apoc")

@@ -24,6 +24,8 @@ Fleet Management works alongside any `Neo4jPlugin` CRDs you apply to the same de
 
 The operator uses an additive merge strategy — neither controller overwrites the other's entries.
 
+Fleet Management's `dbms.security.procedures.unrestricted` line does not take the other plugins' place either. The Neo4j image gives each plugin it installs its own unrestricted entry (APOC `apoc.*`, GDS `gds.*`, …) only while nothing else sets that list, so beside Fleet Management's line APOC used to lose `apoc.*` (operators up to v1.22.x). The operator now keeps each installed plugin's entry in the list, unless you set `dbms.security.procedures.unrestricted` yourself, in the deployment's `spec.config` or `spec.env`. A cluster's servers pick this up at their next start; a standalone restarts once for it.
+
 ## Prerequisites
 
 - A Neo4j Aura account with Fleet Management enabled.
