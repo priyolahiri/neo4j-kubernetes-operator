@@ -754,7 +754,10 @@ func buildShardedDatabaseOptions(shardedDB *neo4jv1beta1.Neo4jShardedDatabase) (
 		entries := make([]string, 0, len(keys))
 		for i, key := range keys {
 			p := fmt.Sprintf("seed_uri_%d", i)
-			entries = append(entries, fmt.Sprintf("`%s`: $%s", neo4j.EscapeBackticks(key), p))
+			// A key is a shard name, which Neo4j matches exactly against
+			// the lower-cased names it derives (shardSeedKey): a spec's
+			// `Products-g000` was refused as missing.
+			entries = append(entries, fmt.Sprintf("`%s`: $%s", neo4j.EscapeBackticks(strings.ToLower(key)), p))
 			params[p] = shardedDB.Spec.SeedURIs[key]
 		}
 		options = append(options, "seedURI: { "+strings.Join(entries, ", ")+" }")
@@ -891,6 +894,11 @@ func (r *Neo4jShardedDatabaseReconciler) transitionStatus(ctx context.Context, s
 			return err
 		}
 		transitioned = changed
+		// The pass goes on from its own copy, so it gets the status it just
+		// wrote: from the copy it read, the first pass of a new CR still had
+		// no phase after writing "Validating", and never wrote "Creating"
+		// (#549).
+		latest.Status.DeepCopyInto(&shardedDB.Status)
 		return nil
 	})
 	return transitioned && err == nil, err

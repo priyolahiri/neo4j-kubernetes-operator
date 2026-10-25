@@ -246,7 +246,7 @@
     "id": "su-neo4jrestore",
     "name": "Neo4jRestore Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jRestore CRD: drives a standalone offline neo4j-admin restore Job, a cluster in-place Cypher dbms.recreateDatabase, or a per-database all-databases restore loop, from a resolved backup artifact.",
+    "description": "Reconciler for the Neo4jRestore CRD: drives a standalone offline neo4j-admin restore Job, a cluster in-place Cypher dbms.recreateDatabase, or a per-database all-databases restore loop, from a resolved backup artifact. Its per-database events go through a second recorder, ProgressRecorder (source neo4j-restore-progress), so they keep their own event budget.",
     "entityIds": [
       "ent-neo4jrestore"
     ],

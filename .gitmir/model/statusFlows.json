@@ -572,7 +572,7 @@
       {
         "from": "Validating",
         "to": "Creating",
-        "label": "Validation passes"
+        "label": "Validation passes (written on the first pass too: the pass goes on from the status it wrote)"
       },
       {
         "from": "Creating",
