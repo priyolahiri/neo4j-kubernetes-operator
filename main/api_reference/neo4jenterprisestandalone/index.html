@@ -6026,8 +6026,8 @@ standard core/v1 shapes.</p>
 <h4 id="phase-string"><code>phase</code> (string)<a class="headerlink" href="#phase-string" title="Anchor link to this section">&para;</a></h4>
 <p>Current deployment phase:</p>
 <ul>
-<li><code>Pending</code>: Deployment is being created</li>
-<li><code>Ready</code>: Deployment is running and ready for connections</li>
+<li><code>Pending</code>: Deployment is being created, or its pod restarts onto a new pod template ("Waiting for the standalone to restart on its latest pod template: …" — from the template write until the new pod is ready, so databases, users, roles and plugins that wait for a <code>Ready</code> standalone do not act on the pod about to restart)</li>
+<li><code>Ready</code>: Deployment is running and ready for connections: its pod is ready on the StatefulSet's latest pod template</li>
 <li><code>Failed</code>: Deployment has failed — including spec validation errors and a missing StorageClass (the reason is in <code>status.message</code>; there is no separate <code>ValidationFailed</code> phase)</li>
 </ul>
 <h4 id="effectivecypherlanguage-string"><code>effectiveCypherLanguage</code> (string)<a class="headerlink" href="#effectivecypherlanguage-string" title="Anchor link to this section">&para;</a></h4>

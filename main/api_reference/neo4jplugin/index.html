@@ -2810,6 +2810,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#disabling-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disabling a plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3178,6 +3189,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Plugin Status Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-procedure-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared procedure allowlist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -4582,6 +4610,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#disabling-a-plugin" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Disabling a plugin
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4951,6 +4990,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Plugin Status Phases">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#shared-procedure-allowlist" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Shared procedure allowlist
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -5271,7 +5327,7 @@
 <li><strong>Configuration Application</strong>: Adds plugin-specific settings as <code>NEO4J_*</code> environment variables, records their names on the StatefulSet (annotation <code>neo4j.com/plugin-env-vars.&lt;plugin name&gt;</code>), and removes the ones it recorded before and no longer sets</li>
 <li><strong>StatefulSet Update</strong>: Patches the target StatefulSet with new configuration — in one update (with a <code>VerifiedDownload</code> plugin's init container and volumes), and only when something changes. Because the update restarts every server, it waits (phase <code>Waiting</code>, a <code>PluginInstallDeferred</code> event) until the target is <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code>), nor while it is forming, rolling its servers or upgrading</li>
 <li><strong>Rolling Restart</strong>: Triggers controlled pod restarts to apply changes</li>
-<li><strong>Verification</strong>: Confirms plugin installation and updates status</li>
+<li><strong>Ready once rolled out</strong>: The plugin is <code>Ready</code> once every server runs the new pod template. Every setting reaches the servers when they start (an env var, or on a standalone its <code>neo4j.conf</code>); nothing is set at runtime, and the operator does not call Neo4j once the roll is done</li>
 </ol>
 <blockquote>
 <p><strong>Multi-plugin coexistence</strong>: The plugin controller, the cluster/standalone controller, and the Aura Fleet Management reconciler all use an additive merge strategy for <code>NEO4J_PLUGINS</code>. Installing APOC via <code>Neo4jPlugin</code> and enabling Fleet Management via <code>spec.auraFleetManagement</code> simultaneously results in <code>["apoc","fleet-management"]</code> — neither entry is overwritten on subsequent reconciles.</p>
@@ -5300,8 +5356,12 @@
 </ul>
 <h3 id="removing-settings-and-uninstalling">Removing settings and uninstalling<a class="headerlink" href="#removing-settings-and-uninstalling" title="Anchor link to this section">&para;</a></h3>
 <p>The plugin records the variables it sets on the target's StatefulSet, under <code>neo4j.com/plugin-env-vars.&lt;plugin name&gt;</code>. When a key leaves <code>spec.config</code>, the plugin removes its variable — one rolling restart, which waits like an install until the target is <code>Ready</code> with every server available. When every server that is down keeps failing in its <code>neo4j</code> container while running a variable the removal changes (Neo4j refused the setting), those are the highest-numbered servers, and Neo4j reports no other server unavailable, the removal does not wait: phase <code>Installing</code>, one <code>PluginSettingsFailing</code> Warning, and the restart replaces the failing servers first; on a standalone the plugin then deletes the stuck pod. A variable the cluster or standalone renders from its own spec, or one another plugin of the target sets, is never removed.</p>
-<p>Deleting the <code>Neo4jPlugin</code> takes off the StatefulSet, in one write, everything the plugin wrote: its variables, its tokens in the procedure allowlists (not those another plugin needs), in Managed mode its <code>NEO4J_PLUGINS</code> entry and its dependencies' (not those another plugin of the target installs, nor <code>fleet-management</code> while <code>spec.auraFleetManagement</code> installs it, nor anything when <code>NEO4J_PLUGINS</code> comes from the cluster's own <code>spec.env</code>), a <code>VerifiedDownload</code> plugin's init container and volumes, and the record.</p>
-<p>A plugin installed by an operator older than v1.22.0 has no record: its first reconcile records what it sets now (a metadata write, no restart) and removes nothing. A variable a key removal left behind before the upgrade stays until removed by hand.</p>
+<p>It records its <code>NEO4J_PLUGINS</code> names the same way, under <code>neo4j.com/plugin-entries.&lt;plugin name&gt;</code>: a dependency dropped from <code>spec.dependencies</code>, or a switch away from <code>Managed</code> mode, takes its names out of <code>NEO4J_PLUGINS</code> in the plugin's next write (not those another plugin of the target installs, nor <code>fleet-management</code> while <code>spec.auraFleetManagement</code> installs it). After a switch to <code>VerifiedDownload</code> the entrypoint therefore no longer installs the plugin beside the verified JAR.</p>
+<p>On a cluster, each shared procedure list (<code>dbms.security.procedures.unrestricted</code>, <code>…allowlist</code>, <code>…denylist</code>, <code>dbms.security.http_auth_allowlist</code>, <code>server.unmanaged_extension_classes</code>) is exactly what the cluster's enabled plugins put there — their <code>spec.security</code>, their automatic settings, and the list keys of their <code>spec.config</code> — written with a plugin's write. A token a plugin no longer asks for goes, and a list key in <code>spec.config</code> adds to the list rather than replacing it. On a standalone the lists are in its <code>neo4j.conf</code>, where its controller unions its own <code>spec.config</code> with its plugins' settings.</p>
+<p>Deleting the <code>Neo4jPlugin</code> — or setting <code>spec.enabled: false</code> — takes off the StatefulSet, in one write, everything the plugin wrote: its variables, its tokens in the procedure lists (not those another plugin needs), its <code>NEO4J_PLUGINS</code> names (those it recorded, and in Managed mode its own and its dependencies'; not those another plugin of the target installs, nor <code>fleet-management</code> while <code>spec.auraFleetManagement</code> installs it, nor anything when <code>NEO4J_PLUGINS</code> comes from the cluster's own <code>spec.env</code>), a <code>VerifiedDownload</code> plugin's init container and volumes, and its records.</p>
+<p>A plugin installed by an operator older than v1.22.0 has no record of its variables, and one older than this release none of its <code>NEO4J_PLUGINS</code> names: its first reconcile records what it sets now (a metadata write, no restart) and removes nothing. What a removal left behind before the upgrade stays until removed by hand.</p>
+<h3 id="disabling-a-plugin">Disabling a plugin<a class="headerlink" href="#disabling-a-plugin" title="Anchor link to this section">&para;</a></h3>
+<p><code>spec.enabled: false</code> keeps the plugin off its target's servers and keeps the CR. An installed plugin is removed in the one write described above, phase <code>Installing</code> ("Removing the plugin … (spec.enabled: false)") while the servers restart without it, then <code>Disabled</code>, with one <code>PluginDisabled</code> event; a plugin created disabled is <code>Disabled</code> at once and writes nothing. Like an install, the removal waits (<code>Waiting</code>, one <code>PluginInstallDeferred</code> event, "… removing the disabled plugin restarts every server") until the target is <code>Ready</code> with every server available — except when every server that is down keeps failing in what the plugin set (its <code>VerifiedDownload</code> init container, or a setting Neo4j refuses): then it is written at once, with one <code>PluginInitContainerFailing</code> or <code>PluginSettingsFailing</code> Warning, and the restart replaces the failing servers first. Setting <code>spec.enabled: true</code> again installs the plugin again (one rolling restart). On a standalone with settings in its <code>neo4j.conf</code> (an allowlist, say), those leave with the standalone's own restart first and the plugin's write restarts it once more, as on install.</p>
 <h2 id="api-version">API Version<a class="headerlink" href="#api-version" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
@@ -5339,7 +5399,7 @@
 <td><code>enabled</code></td>
 <td><code>boolean</code></td>
 <td>❌</td>
-<td>Enable the plugin (default: <code>true</code>)</td>
+<td>Whether the plugin is on its target's servers (default: <code>true</code>). <code>false</code> removes an installed plugin (one rolling restart) and keeps the CR, in phase <code>Disabled</code>; <code>true</code> again installs it. See <a href="#disabling-a-plugin">Disabling a plugin</a></td>
 </tr>
 <tr>
 <td><code>installMode</code></td>
@@ -5544,12 +5604,12 @@
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td>A single <code>Ready</code> condition derived from <code>phase</code> (<code>Ready</code> → <code>True</code>; <code>Failed</code>/<code>Invalid</code> → <code>False</code>; <code>Pending</code>/<code>Waiting</code>/<code>Installing</code> → <code>Unknown</code>)</td>
+<td>A <code>Ready</code> condition derived from <code>phase</code> (<code>Ready</code> → <code>True</code>; <code>Failed</code>/<code>Invalid</code> → <code>False</code>; <code>Disabled</code> → <code>False</code>, reason <code>Disabled</code>; <code>Pending</code>/<code>Waiting</code>/<code>Installing</code> → <code>Unknown</code>), and <code>ProceduresHidden</code> (<code>True</code>, reason <code>NotInAllowlist</code>) while the target's effective <code>dbms.security.procedures.allowlist</code> loads none of the plugin's procedures — see <a href="#shared-procedure-allowlist">Shared procedure allowlist</a></td>
 </tr>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Current phase: <code>"Pending"</code>, <code>"Installing"</code>, <code>"Ready"</code>, <code>"Failed"</code>, <code>"Waiting"</code>, <code>"Invalid"</code> (spec failed validation; not retried until the CR is edited)</td>
+<td>Current phase: <code>"Pending"</code>, <code>"Installing"</code>, <code>"Ready"</code>, <code>"Failed"</code>, <code>"Waiting"</code>, <code>"Invalid"</code> (spec failed validation; not retried until the CR is edited), <code>"Disabled"</code> (<code>spec.enabled: false</code>, and nothing of the plugin is on its target)</td>
 </tr>
 <tr>
 <td><code>message</code></td>
@@ -5682,11 +5742,14 @@
 </table>
 <h2 id="supply-chain">Supply-chain<a class="headerlink" href="#supply-chain" title="Anchor link to this section">&para;</a></h2>
 <p>The Neo4j Enterprise Docker entrypoint resolves <code>NEO4J_PLUGINS</code> at pod
-startup. For <strong>APOC core</strong> that's deterministic — the JAR is bundled in
-the image and just gets copied to <code>/plugins/</code>. For <strong>every other plugin</strong>
-(<code>graph-data-science</code>, <code>bloom</code>, <code>genai</code>, <code>n10s</code>, <code>graphql</code>, <code>apoc-extended</code>)
-the entrypoint <strong>downloads from the internet on every pod start</strong>, which
-has three production consequences:</p>
+startup. For a plugin the image ships, that's deterministic — the JAR is
+copied to <code>/plugins/</code>: <strong>APOC core</strong> from <code>labs/</code>, and from <code>products/</code>
+<strong>GenAI</strong>, <strong>Graph Data Science</strong> and <strong>Fleet Management</strong> (the Operations
+Manual lists them as pre-installed; Bloom too, on CalVer). The entrypoint
+copies one of these from the image when it is there and downloads it only
+when it is not. <strong>Every other plugin</strong> (<code>apoc-extended</code>, <code>n10s</code>) is
+<strong>downloaded from the internet on every pod start</strong>, which has three
+production consequences:</p>
 <ul>
 <li><strong>Non-reproducibility</strong> — a restart can pull a different artifact than
   the one originally validated.</li>
@@ -5855,7 +5918,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
 </span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">official</span>
 </span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>
-</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">  </span><span class="c1"># APOC-specific configuration (becomes NEO4J_APOC_* env vars)</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">  </span><span class="c1"># APOC-specific configuration (becomes NEO4J_apoc_* env vars)</span>
 </span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">    </span><span class="s">"apoc.export.file.enabled"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"true"</span>
 </span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">    </span><span class="s">"apoc.import.file.enabled"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"true"</span>
@@ -5871,8 +5934,8 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <p><strong>Result</strong>: Updates <code>my-cluster-server</code> StatefulSet with:</p>
 <ul>
 <li><code>NEO4J_PLUGINS=["apoc"]</code></li>
-<li><code>NEO4J_APOC_EXPORT_FILE_ENABLED=true</code></li>
-<li><code>NEO4J_APOC_IMPORT_FILE_ENABLED=true</code></li>
+<li><code>NEO4J_apoc_export_file_enabled=true</code></li>
+<li><code>NEO4J_apoc_import_file_enabled=true</code></li>
 <li>Security settings for APOC procedures</li>
 </ul>
 <h3 id="graph-data-science-plugin-for-standalone">Graph Data Science Plugin for Standalone<a class="headerlink" href="#graph-data-science-plugin-for-standalone" title="Anchor link to this section">&para;</a></h3>
@@ -6045,8 +6108,8 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <tr>
 <td><strong>GenAI</strong></td>
 <td><code>genai</code></td>
-<td>AI/ML integration</td>
-<td>✅ Commercial License</td>
+<td>AI/ML integration (ships with Neo4j in <code>products/</code>)</td>
+<td>❌ None</td>
 <td>❌ Manual setup</td>
 </tr>
 </tbody>
@@ -6059,16 +6122,16 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <li>Automatically applies required security settings for proper operation</li>
 <li>No manual configuration needed for basic functionality</li>
 <li>Automatically configured settings:</li>
-<li><code>NEO4J_DBMS_SECURITY_PROCEDURES_UNRESTRICTED=bloom.*</code></li>
-<li><code>NEO4J_DBMS_SECURITY_HTTP_AUTH_ALLOWLIST=/,/browser.*,/bloom.*</code></li>
-<li><code>NEO4J_SERVER_UNMANAGED_EXTENSION_CLASSES=com.neo4j.bloom.server=/bloom</code></li>
+<li><code>NEO4J_dbms_security_procedures_unrestricted=bloom.*</code></li>
+<li><code>NEO4J_dbms_security_http__auth__allowlist=/,/browser.*,/bloom.*</code></li>
+<li><code>NEO4J_server_unmanaged__extension__classes=com.neo4j.bloom.server=/bloom</code></li>
 </ul>
 <p><strong>Graph Data Science Plugin</strong>:</p>
 <ul>
 <li>Automatically applies default security settings</li>
 <li>User security configuration can override defaults</li>
 <li>Automatically configured settings:</li>
-<li><code>dbms.security.procedures.unrestricted=gds.*</code> and <code>dbms.security.procedures.allowlist=gds.*</code> (additive — merged with, never replacing, existing values)</li>
+<li><code>dbms.security.procedures.unrestricted=gds.*,apoc.load.*</code> (a shared list: on a cluster the union of what the target's plugins put there, on a standalone merged into its <code>neo4j.conf</code>)</li>
 </ul>
 <h3 id="examples-with-automatic-security">Examples with Automatic Security<a class="headerlink" href="#examples-with-automatic-security" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Bloom Plugin (Zero Configuration)</strong>:
@@ -6096,7 +6159,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-10-10"><a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
 </span><span id="__span-10-11"><a id="__codelineno-10-11" name="__codelineno-10-11" href="#__codelineno-10-11"></a><span class="w">    </span><span class="nt">sandbox</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">  </span><span class="c1"># Uses allowlist instead of unrestricted</span>
 </span><span id="__span-10-12"><a id="__codelineno-10-12" name="__codelineno-10-12" href="#__codelineno-10-12"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span><span class="w"> </span><span class="p p-Indicator">[</span><span class="s">"gds.*"</span><span class="p p-Indicator">,</span><span class="w"> </span><span class="s">"apoc.load.*"</span><span class="p p-Indicator">]</span>
-</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">    </span><span class="c1"># Results in: NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST=gds.*,apoc.load.*</span>
+</span><span id="__span-10-13"><a id="__codelineno-10-13" name="__codelineno-10-13" href="#__codelineno-10-13"></a><span class="w">    </span><span class="c1"># Results in: NEO4J_dbms_security_procedures_allowlist=gds.*,apoc.load.*</span>
 </span></code></pre></div></p>
 <p><strong>Automatic vs Manual Security Configuration</strong>:</p>
 <table>
@@ -6180,19 +6243,22 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="nt">config</span><span class="p">:</span>
 </span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">  </span><span class="s">"dbms.bloom.license_file"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"/licenses/bloom.license"</span>
 </span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="c1"># Automatically applied by operator:</span>
-</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="c1"># - NEO4J_DBMS_SECURITY_PROCEDURES_UNRESTRICTED=bloom.*</span>
-</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="c1"># - NEO4J_DBMS_SECURITY_HTTP_AUTH_ALLOWLIST=/,/browser.*,/bloom.*</span>
-</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># - NEO4J_SERVER_UNMANAGED_EXTENSION_CLASSES=com.neo4j.bloom.server=/bloom</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="c1"># - NEO4J_dbms_security_procedures_unrestricted=bloom.*</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="c1"># - NEO4J_dbms_security_http__auth__allowlist=/,/browser.*,/bloom.*</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="c1"># - NEO4J_server_unmanaged__extension__classes=com.neo4j.bloom.server=/bloom</span>
 </span></code></pre></div></p>
 <h2 id="plugin-status-phases">Plugin Status Phases<a class="headerlink" href="#plugin-status-phases" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><strong>Pending</strong>: Plugin resource created, waiting for processing</li>
-<li><strong>Waiting</strong>: Waiting for the deployment to be functional, or — when the plugin has something to write to its StatefulSet, which restarts every server — for it to be <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), nor while it is forming, rolling its servers or upgrading. A <code>PluginInstallDeferred</code> event (or, for a <code>Ready</code> plugin that lost something, a <code>PluginMissing</code> one) marks the start of the wait; the plugin checks again every 30 seconds</li>
-<li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it, while one cannot be reached yet, while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event), and while a <code>VerifiedDownload</code> plugin brings its trusted CAs in line with the target's changed <code>spec.trustedCASecrets</code> ("Updating the plugin's trusted CAs: …"). While its roll is stuck, the message names the pods that cannot start ("…; cannot start: c-server-2 (container neo4j exited with code 1)")</li>
+<li><strong>Waiting</strong>: When the plugin has something to write to its StatefulSet, which restarts every server: waiting for the target to answer, or for it to be <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), nor while it is forming, rolling its servers or upgrading. A <code>PluginInstallDeferred</code> event (or, for a <code>Ready</code> plugin that lost something, a <code>PluginMissing</code> one) marks the start of the wait; the plugin checks again every 30 seconds</li>
+<li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it (a pass waiting for that restart asks Neo4j nothing, so a standalone restarting its one pod does not turn the plugin <code>Waiting</code>), while a disabled plugin is removed (<code>spec.enabled: false</code>), while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event), and while a <code>VerifiedDownload</code> plugin brings its trusted CAs in line with the target's changed <code>spec.trustedCASecrets</code> ("Updating the plugin's trusted CAs: …"). While its roll is stuck, the message names the pods that cannot start ("…; cannot start: c-server-2 (container neo4j exited with code 1)")</li>
 <li><strong>Ready</strong>: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets, a <code>VerifiedDownload</code> init container or volume), the plugin goes back to <code>Installing</code> and restores it — or <code>Waiting</code>, while the target is not <code>Ready</code> with every server available; if nothing is missing, the check writes nothing and the phase stays <code>Ready</code>, whatever state the target is in</li>
-<li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, and when the cluster's own spec sets a variable the plugin would have to change). An install or configuration failure is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
+<li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, and when the cluster's own spec sets a variable the plugin would have to change). A failed install is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
 <li><strong>Invalid</strong>: The spec failed validation (for example an unsupported <code>securityPolicy</code>, a missing <code>source.url</code>/<code>checksum</code>, or a non-https URL); the controller does not requeue until the CR is edited</li>
+<li><strong>Disabled</strong>: <code>spec.enabled: false</code>, and nothing of the plugin is on its target's servers (its removal written and rolled out, or nothing there to remove). One <code>PluginDisabled</code> event. Not a fault: the <code>Ready</code> condition is <code>False</code> with reason <code>Disabled</code></li>
 </ul>
+<h3 id="shared-procedure-allowlist">Shared procedure allowlist<a class="headerlink" href="#shared-procedure-allowlist" title="Anchor link to this section">&para;</a></h3>
+<p><code>dbms.security.procedures.allowlist</code> is one server-wide list. Once any plugin of a target sets it (<code>spec.security.allowedProcedures</code>, or the key in <code>spec.config</code>) — or the target's own <code>spec.config</code> does — Neo4j loads only the procedures and functions it matches, and every other plugin's are not loaded at all: calls to them fail as unknown. Installing the GenAI example (<code>genai.*</code>, <code>ai.*</code>) beside an APOC plugin with no <code>security</code> block hides APOC that way. The operator does not widen the list for you — it is a security boundary someone set — but a plugin whose procedures the effective list loads none of carries the condition <code>ProceduresHidden</code> (<code>True</code>, reason <code>NotInAllowlist</code>), naming the list, where it is set and who sets it, with one <code>PluginProceduresHidden</code> Warning when it appears or changes. The plugin stays <code>Ready</code> (its JAR is on the servers). Add the plugin's namespace (<code>apoc.*</code>, …) to <code>allowedProcedures</code> of this plugin or of the one that sets the list; the condition goes when the list loads it again. Plugins the operator knows are judged (APOC, APOC Extended, GDS, Bloom, GenAI, N10s, Fleet Management); a custom plugin is not.</p>
 <h2 id="supported-plugin-sources">Supported Plugin Sources<a class="headerlink" href="#supported-plugin-sources" title="Anchor link to this section">&para;</a></h2>
 <h3 id="official-repository">Official Repository<a class="headerlink" href="#official-repository" title="Anchor link to this section">&para;</a></h3>
 <p>Neo4j's official plugin repository (recommended for production):</p>
@@ -6232,7 +6298,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <li><strong>StatefulSet Update</strong>: Patches target StatefulSet with plugin configuration</li>
 <li><strong>Rolling Restart</strong>: Initiates controlled pod restart sequence</li>
 <li><strong>Health Monitoring</strong>: Tracks pod restart progress and Neo4j startup</li>
-<li><strong>Installation Verification</strong>: Confirms plugin loading via Neo4j procedures</li>
+<li><strong>Rolled out</strong>: <code>Ready</code> once every server runs the new template; the operator does not query Neo4j for the plugin's procedures (the <code>ProceduresHidden</code> condition is judged from the configuration)</li>
 </ol>
 <h3 id="phase-4-status-and-monitoring">Phase 4: Status and Monitoring<a class="headerlink" href="#phase-4-status-and-monitoring" title="Anchor link to this section">&para;</a></h3>
 <ol>
@@ -6263,11 +6329,11 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-15-8"><a id="__codelineno-15-8" name="__codelineno-15-8" href="#__codelineno-15-8"></a><span class="nt">env</span><span class="p">:</span>
 </span><span id="__span-15-9"><a id="__codelineno-15-9" name="__codelineno-15-9" href="#__codelineno-15-9"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_PLUGINS</span>
 </span><span id="__span-15-10"><a id="__codelineno-15-10" name="__codelineno-15-10" href="#__codelineno-15-10"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'["apoc"]'</span>
-</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_APOC_EXPORT_FILE_ENABLED</span>
+</span><span id="__span-15-11"><a id="__codelineno-15-11" name="__codelineno-15-11" href="#__codelineno-15-11"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_apoc_export_file_enabled</span>
 </span><span id="__span-15-12"><a id="__codelineno-15-12" name="__codelineno-15-12" href="#__codelineno-15-12"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'true'</span>
-</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_APOC_IMPORT_FILE_ENABLED</span>
+</span><span id="__span-15-13"><a id="__codelineno-15-13" name="__codelineno-15-13" href="#__codelineno-15-13"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_apoc_import_file_enabled</span>
 </span><span id="__span-15-14"><a id="__codelineno-15-14" name="__codelineno-15-14" href="#__codelineno-15-14"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'true'</span>
-</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_APOC_TRIGGER_ENABLED</span>
+</span><span id="__span-15-15"><a id="__codelineno-15-15" name="__codelineno-15-15" href="#__codelineno-15-15"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_apoc_trigger_enabled</span>
 </span><span id="__span-15-16"><a id="__codelineno-15-16" name="__codelineno-15-16" href="#__codelineno-15-16"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'true'</span>
 </span></code></pre></div></p>
 <p><strong>Graph Data Science (Environment + Config)</strong>:
@@ -6282,11 +6348,11 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-16-9"><a id="__codelineno-16-9" name="__codelineno-16-9" href="#__codelineno-16-9"></a><span class="nt">env</span><span class="p">:</span>
 </span><span id="__span-16-10"><a id="__codelineno-16-10" name="__codelineno-16-10" href="#__codelineno-16-10"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_PLUGINS</span>
 </span><span id="__span-16-11"><a id="__codelineno-16-11" name="__codelineno-16-11" href="#__codelineno-16-11"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'["apoc",</span><span class="nv"> </span><span class="s">"graph-data-science"]'</span>
-</span><span id="__span-16-12"><a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_GDS_ENTERPRISE_LICENSE_FILE</span>
+</span><span id="__span-16-12"><a id="__codelineno-16-12" name="__codelineno-16-12" href="#__codelineno-16-12"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_gds_enterprise_license__file</span>
 </span><span id="__span-16-13"><a id="__codelineno-16-13" name="__codelineno-16-13" href="#__codelineno-16-13"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'/licenses/gds.license'</span>
-</span><span id="__span-16-14"><a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_GDS_GRAPH_STORE_MAX_SIZE</span>
+</span><span id="__span-16-14"><a id="__codelineno-16-14" name="__codelineno-16-14" href="#__codelineno-16-14"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_gds_graph_store_max__size</span>
 </span><span id="__span-16-15"><a id="__codelineno-16-15" name="__codelineno-16-15" href="#__codelineno-16-15"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'4GB'</span>
-</span><span id="__span-16-16"><a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_DBMS_SECURITY_PROCEDURES_UNRESTRICTED</span>
+</span><span id="__span-16-16"><a id="__codelineno-16-16" name="__codelineno-16-16" href="#__codelineno-16-16"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_dbms_security_procedures_unrestricted</span>
 </span><span id="__span-16-17"><a id="__codelineno-16-17" name="__codelineno-16-17" href="#__codelineno-16-17"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'gds.*,apoc.*'</span>
 </span></code></pre></div></p>
 <p><strong>Multiple Plugins with Dependencies</strong>:
@@ -6295,11 +6361,11 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="nt">env</span><span class="p">:</span>
 </span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_PLUGINS</span>
 </span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'["apoc",</span><span class="nv"> </span><span class="s">"graph-data-science",</span><span class="nv"> </span><span class="s">"streams"]'</span>
-</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_APOC_EXPORT_FILE_ENABLED</span>
+</span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_apoc_export_file_enabled</span>
 </span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'true'</span>
-</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_GDS_ENTERPRISE_LICENSE_FILE</span>
+</span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_gds_enterprise_license__file</span>
 </span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'/licenses/gds.license'</span>
-</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_STREAMS_SINK_TOPIC_CYPHER_NODES</span>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_streams_sink_topic_cypher_nodes</span>
 </span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'CREATE</span><span class="nv"> </span><span class="s">(n:Node</span><span class="nv"> </span><span class="s">{id:</span><span class="nv"> </span><span class="s">event.id})'</span>
 </span></code></pre></div></p>
 <h2 id="advanced-plugin-configurations">Advanced Plugin Configurations<a class="headerlink" href="#advanced-plugin-configurations" title="Anchor link to this section">&para;</a></h2>

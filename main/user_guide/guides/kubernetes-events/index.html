@@ -4660,7 +4660,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>PluginInstalled</code></td>
 <td>Normal</td>
-<td>Plugin successfully installed</td>
+<td>Plugin installed: every server runs the new pod template. Once per install, from the status write that makes the plugin <code>Ready</code> (a pass that read an older copy of the plugin says nothing)</td>
 </tr>
 <tr>
 <td><code>PluginInstallFailed</code></td>
@@ -4675,12 +4675,32 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>PluginInstallDeferred</code></td>
 <td>Normal</td>
-<td>Installing the plugin — or a <code>VerifiedDownload</code> plugin's update of its trusted CAs after the target's <code>spec.trustedCASecrets</code> changed — would restart the servers of a target that is not <code>Ready</code> with every server available (a cluster <code>Degraded</code>, or forming, rolling or upgrading); the plugin is <code>Waiting</code> and writes once the target is. Once per wait</td>
+<td>Installing the plugin — or a <code>VerifiedDownload</code> plugin's update of its trusted CAs after the target's <code>spec.trustedCASecrets</code> changed, or the removal of a plugin set to <code>spec.enabled: false</code> — would restart the servers of a target that is not <code>Ready</code> with every server available (a cluster <code>Degraded</code>, or forming, rolling or upgrading); the plugin is <code>Waiting</code> and writes once the target is. Once per wait</td>
 </tr>
 <tr>
 <td><code>PluginDuplicate</code></td>
 <td>Warning</td>
 <td>Another <code>Neo4jPlugin</code> already targets this name (only the first owner reconciles; duplicates sit in <code>Failed</code> until the conflict is resolved). Once per conflict</td>
+</tr>
+<tr>
+<td><code>PluginInitContainerFailing</code></td>
+<td>Warning / Normal</td>
+<td>A <code>VerifiedDownload</code> plugin writes a change of its own failing init container — a fixed source, a CA list, or its removal when it is disabled — to a target that is not <code>Ready</code> (Warning, once), or deletes a standalone's pod stuck in that container (Normal)</td>
+</tr>
+<tr>
+<td><code>PluginSettingsFailing</code></td>
+<td>Warning / Normal</td>
+<td>The plugin writes a change of the settings every down server keeps failing with — a key removed, or the plugin disabled — to a target that is not <code>Ready</code> (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal)</td>
+</tr>
+<tr>
+<td><code>PluginDisabled</code></td>
+<td>Normal</td>
+<td><code>spec.enabled: false</code>, and nothing of the plugin is on its target's servers any more (its removal written and rolled out, or nothing there): phase <code>Disabled</code>. Once</td>
+</tr>
+<tr>
+<td><code>PluginProceduresHidden</code></td>
+<td>Warning</td>
+<td>The target's effective <code>dbms.security.procedures.allowlist</code> — shared by every plugin of the target — loads none of this plugin's procedures; the plugin carries the condition <code>ProceduresHidden</code> (reason <code>NotInAllowlist</code>) and stays <code>Ready</code>. When the condition appears or its message changes</td>
 </tr>
 </tbody>
 </table>
