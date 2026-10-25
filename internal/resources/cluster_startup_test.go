@@ -380,8 +380,8 @@ func TestBuildConfigMapForEnterprise_HealthScript(t *testing.T) {
 
 // duplicateConfKeys returns any neo4j.conf key declared more than once. CalVer
 // Neo4j (2025.x+) treats a repeated key as fatal ("<key> declared multiple
-// times") and refuses to start. server.jvm.additional / dbms.jvm.additional are
-// legitimately repeatable and excluded.
+// times") and refuses to start. server.jvm.additional is legitimately
+// repeatable and excluded, with its 4.x name, as repeatableConfKey does.
 func duplicateConfKeys(conf string) []string {
 	counts := map[string]int{}
 	for _, line := range strings.Split(conf, "\n") {

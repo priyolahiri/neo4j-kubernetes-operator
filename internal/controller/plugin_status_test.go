@@ -30,6 +30,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -157,4 +158,67 @@ func TestUpdatePluginStatus_NewVersionIsANewInstallation(t *testing.T) {
 	assert.Equal(t, "5.26.1", got.Status.InstalledVersion)
 	require.NotNil(t, got.Status.InstallationTime)
 	assert.True(t, got.Status.InstallationTime.After(old.Time), "a new version is a new installation")
+}
+
+// A Disabled plugin kept the version and time of its last install, so
+// status read as installed while nothing of it was on the servers. Both are
+// cleared once the plugin is Disabled — not while its removal still rolls out
+// (Installing) — and enabling it again records a new installation
+// (operations.md id 196).
+func TestReconcile_ADisabledPluginReportsNothingInstalled(t *testing.T) {
+	for _, tg := range envTargets() {
+		t.Run(tg.name, func(t *testing.T) {
+			plugin := disabledFixturePlugin(tg.ref(), "")
+			r, _, _, _ := gateReconciler(t, nil, append([]client.Object{plugin}, tg.objects()...)...)
+			installAndRoll(t, r, "apoc", tg.sts)
+			first := getPlugin(t, r, "apoc").Status
+			require.Equal(t, "5.26.0", first.InstalledVersion)
+			require.NotNil(t, first.InstallationTime)
+
+			editPlugin(t, r.Client, "apoc", func(p *neo4jv1beta1.Neo4jPlugin) { p.Spec.Enabled = false })
+			reconcilePlugin(t, r, "apoc")
+			removing := getPlugin(t, r, "apoc")
+			require.Equal(t, neo4jv1beta1.PhaseInstalling, removing.Status.Phase)
+			assert.Equal(t, "5.26.0", removing.Status.InstalledVersion, "the servers still run it")
+
+			rollOut(t, r.Client, tg.sts)
+			reconcilePlugin(t, r, "apoc")
+			disabled := getPlugin(t, r, "apoc")
+			require.Equal(t, neo4jv1beta1.PhaseDisabled, disabled.Status.Phase)
+			assert.Empty(t, disabled.Status.InstalledVersion)
+			assert.Nil(t, disabled.Status.InstallationTime)
+
+			editPlugin(t, r.Client, "apoc", func(p *neo4jv1beta1.Neo4jPlugin) { p.Spec.Enabled = true })
+			installAndRoll(t, r, "apoc", tg.sts)
+			again := getPlugin(t, r, "apoc").Status
+			assert.Equal(t, "5.26.0", again.InstalledVersion)
+			require.NotNil(t, again.InstallationTime)
+		})
+	}
+}
+
+// A plugin Disabled under an operator that kept both fields is cleared by its
+// next pass, which otherwise has nothing to write.
+func TestUpdatePluginStatus_ClearsAnAlreadyDisabledPlugin(t *testing.T) {
+	installed := metav1.NewTime(time.Now().Add(-time.Hour))
+	plugin := newPluginForStatus("kept", "5.26.0")
+	plugin.Spec.Enabled = false
+	plugin.Status = neo4jv1beta1.Neo4jPluginStatus{
+		Phase: neo4jv1beta1.PhaseDisabled, Message: "off", ObservedGeneration: 1,
+		InstalledVersion: "5.26.0", InstallationTime: &installed,
+		Conditions: []metav1.Condition{{
+			Type: ConditionTypeReady, Status: metav1.ConditionFalse, Reason: ConditionReasonDisabled,
+			Message: "off", ObservedGeneration: 1, LastTransitionTime: installed,
+		}},
+	}
+	r := newPluginReconciler(plugin)
+
+	assert.False(t, r.updatePluginStatus(context.Background(), plugin, neo4jv1beta1.PhaseDisabled, "off"), "no transition to announce")
+
+	got := getPlugin(t, r, "kept")
+	assert.Empty(t, got.Status.InstalledVersion)
+	assert.Nil(t, got.Status.InstallationTime)
+	rv := got.ResourceVersion
+	r.updatePluginStatus(context.Background(), plugin, neo4jv1beta1.PhaseDisabled, "off")
+	assert.Equal(t, rv, getPlugin(t, r, "kept").ResourceVersion, "then nothing more to write")
 }

@@ -101,7 +101,7 @@ func isVerifiedDownloadInstallMode(plugin *neo4jv1beta1.Neo4jPlugin) bool {
 // JAR-already-in-/plugins install modes is active. Both PreBaked and
 // VerifiedDownload share the "operator must NOT add this plugin to
 // NEO4J_PLUGINS" semantics — wrapping both into one predicate keeps
-// the callsite in installPluginViaEnvironment readable.
+// its callsites (applyPluginEnv, the removal's withoutPlugin) readable.
 func shouldSkipNeo4jPluginsEnv(plugin *neo4jv1beta1.Neo4jPlugin) bool {
 	return isPreBakedInstallMode(plugin) || isVerifiedDownloadInstallMode(plugin)
 }
@@ -171,19 +171,22 @@ const PluginFinalizer = "neo4j.neo4j.com/plugin-finalizer"
 // checkForDuplicatePlugin lists every Neo4jPlugin in the same namespace
 // and returns the metadata.name of the CR that should "own" the
 // (clusterRef, plugin name) tuple — i.e. the one this controller will
-// actually reconcile. The newer duplicate is expected to drop itself
-// into Failed state and stop reconciling.
+// actually reconcile. A newer enabled duplicate drops itself into Failed
+// state and stops reconciling; a disabled one is never held back
+// (Reconcile), as it installs nothing.
 //
-// Selection rules:
+// Selection rules (sameTuplePlugins, winsTuple):
 //   - Candidates with a different clusterRef or a different plugin name
 //     are ignored.
 //   - Candidates currently being deleted (DeletionTimestamp != nil)
 //     are ignored — they're on their way out, no point handing them
 //     ownership.
 //   - Among the remaining candidates (including the plugin under
-//     reconciliation), the oldest CreationTimestamp wins; UID is the
-//     tiebreaker when timestamps collide (which is rare but possible
-//     in fast test loops).
+//     reconciliation), an enabled CR wins over a disabled one: a CR that
+//     asks for the plugin to be off never keeps another from installing
+//     it. Then the oldest CreationTimestamp wins; UID is the tiebreaker
+//     when timestamps collide (which is rare but possible in fast test
+//     loops).
 //
 // Returns the empty string if no other live CR contests the tuple —
 // the caller treats that the same as "this CR is the winner".
@@ -198,28 +201,9 @@ func (r *Neo4jPluginReconciler) checkForDuplicatePlugin(
 
 	winner := plugin
 	contested := false
-	for i := range list.Items {
-		candidate := &list.Items[i]
-		if candidate.UID == plugin.UID {
-			continue
-		}
-		if candidate.Spec.ClusterRef != plugin.Spec.ClusterRef {
-			continue
-		}
-		if candidate.Spec.Name != plugin.Spec.Name {
-			continue
-		}
-		if candidate.DeletionTimestamp != nil {
-			continue
-		}
+	for _, candidate := range sameTuplePlugins(list.Items, plugin) {
 		contested = true
-		// Older CreationTimestamp wins. If timestamps tie, lower UID
-		// wins — gives a deterministic ordering across replicas of
-		// the operator.
-		if candidate.CreationTimestamp.Before(&winner.CreationTimestamp) {
-			winner = candidate
-		} else if candidate.CreationTimestamp.Equal(&winner.CreationTimestamp) &&
-			string(candidate.UID) < string(winner.UID) {
+		if winsTuple(candidate, winner) {
 			winner = candidate
 		}
 	}
@@ -228,6 +212,61 @@ func (r *Neo4jPluginReconciler) checkForDuplicatePlugin(
 		return "", nil
 	}
 	return winner.Name, nil
+}
+
+// sameTuplePlugins returns the Neo4jPlugins of items, other than plugin, that
+// contest its (clusterRef, spec.name) tuple: same clusterRef, same spec.name,
+// and not being deleted.
+func sameTuplePlugins(items []neo4jv1beta1.Neo4jPlugin, plugin *neo4jv1beta1.Neo4jPlugin) []*neo4jv1beta1.Neo4jPlugin {
+	var out []*neo4jv1beta1.Neo4jPlugin
+	for i := range items {
+		candidate := &items[i]
+		// The list is of plugin's namespace, so its name is the object.
+		if candidate.Name == plugin.Name ||
+			candidate.Spec.ClusterRef != plugin.Spec.ClusterRef ||
+			candidate.Spec.Name != plugin.Spec.Name ||
+			candidate.DeletionTimestamp != nil {
+			continue
+		}
+		out = append(out, candidate)
+	}
+	return out
+}
+
+// winsTuple reports whether candidate owns a (clusterRef, spec.name) tuple
+// over current: an enabled CR over a disabled one, then the older
+// CreationTimestamp, then the lower UID — a deterministic order across
+// replicas of the operator.
+func winsTuple(candidate, current *neo4jv1beta1.Neo4jPlugin) bool {
+	if candidate.Spec.Enabled != current.Spec.Enabled {
+		return candidate.Spec.Enabled
+	}
+	if !candidate.CreationTimestamp.Equal(&current.CreationTimestamp) {
+		return candidate.CreationTimestamp.Before(&current.CreationTimestamp)
+	}
+	return string(candidate.UID) < string(current.UID)
+}
+
+// pluginSuccessor returns, from items, the Neo4jPlugin that installs plugin's
+// spec.name on its target once plugin no longer contests the tuple — plugin
+// disabled or being deleted: the winner of the rest (winsTuple), when it is
+// enabled and its target's image takes it (pluginOnTarget). nil when plugin
+// still contests the tuple, or no such CR exists. What plugin's removal takes
+// away leaves what that CR installs (otherPlugins).
+func pluginSuccessor(items []neo4jv1beta1.Neo4jPlugin, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) *neo4jv1beta1.Neo4jPlugin {
+	if plugin.Spec.Enabled && plugin.DeletionTimestamp == nil {
+		return nil
+	}
+	var winner *neo4jv1beta1.Neo4jPlugin
+	for _, candidate := range sameTuplePlugins(items, plugin) {
+		if winner == nil || winsTuple(candidate, winner) {
+			winner = candidate
+		}
+	}
+	if winner == nil || !pluginOnTarget(winner, deployment) {
+		return nil
+	}
+	return winner
 }
 
 //+kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jplugins,verbs=get;list;watch;create;update;patch;delete
@@ -296,28 +335,32 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// same /plugins directory + NEO4J_PLUGINS env var produces flapping
 	// state (one CR adds, the other removes, restart cycle). Validator
 	// can't catch this — it's structural-only, no cross-CR visibility.
-	// Resolved here at reconcile time with a deterministic "oldest
-	// wins" tiebreaker; newer duplicates surface the conflict via
-	// status + Event and stop reconciling. When the winner is deleted,
-	// the watch on Neo4jPlugin fires for the survivor — at which point
-	// the previously-failed duplicate becomes the new winner on its
-	// own next reconcile.
-	winner, dupErr := r.checkForDuplicatePlugin(ctx, plugin)
-	if dupErr != nil {
-		logger.Error(dupErr, "Failed to check for duplicate Neo4jPlugin CRs")
-		return ctrl.Result{}, dupErr
-	}
-	if winner != "" && winner != plugin.Name {
-		msg := fmt.Sprintf(
-			"duplicate Neo4jPlugin: %q (older) already targets cluster %q with plugin name %q; delete one CR before this one can reconcile",
-			winner, plugin.Spec.ClusterRef, plugin.Spec.Name,
-		)
-		// Announced when the conflict starts, not again on the pass its own
-		// status write starts, nor on every resync (knowledge rule 145).
-		if r.updatePluginStatus(ctx, plugin, "Failed", msg) {
-			r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginDuplicate, msg)
+	// Resolved here at reconcile time (checkForDuplicatePlugin: enabled
+	// before disabled, then oldest); a newer enabled duplicate surfaces
+	// the conflict via status + Event and stops reconciling. A disabled
+	// CR is never held back: it installs nothing, and its removal leaves
+	// what the enabled one installs (pluginSuccessor, operations.md id
+	// 195). When the winner is deleted, disabled or renamed, the watch on
+	// the CRs that share its tuple (pluginsSharingTuple) reconciles the
+	// survivor, which then becomes the new winner.
+	if plugin.Spec.Enabled {
+		winner, dupErr := r.checkForDuplicatePlugin(ctx, plugin)
+		if dupErr != nil {
+			logger.Error(dupErr, "Failed to check for duplicate Neo4jPlugin CRs")
+			return ctrl.Result{}, dupErr
 		}
-		return ctrl.Result{}, nil
+		if winner != "" && winner != plugin.Name {
+			msg := fmt.Sprintf(
+				"duplicate Neo4jPlugin: %q (older) already targets cluster %q with plugin name %q; delete one CR, or set spec.enabled: false on one, before this one can reconcile",
+				winner, plugin.Spec.ClusterRef, plugin.Spec.Name,
+			)
+			// Announced when the conflict starts, not again on the pass its own
+			// status write starts, nor on every resync (knowledge rule 145).
+			if r.updatePluginStatus(ctx, plugin, "Failed", msg) {
+				r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginDuplicate, msg)
+			}
+			return ctrl.Result{}, nil
+		}
 	}
 
 	// Get target deployment (cluster or standalone)
@@ -890,10 +933,11 @@ func (r *Neo4jPluginReconciler) uninstallPlugin(ctx context.Context, plugin *neo
 }
 
 // updatePluginStatus writes the phase, message and Ready condition, and the
-// installed version on reaching Ready. It reports whether the write changed
-// the phase, the message or the Ready condition's status or reason — a state
-// transition — from the attempt whose write succeeded, so a caller can emit
-// the matching event once, on the transition.
+// installed version on reaching Ready (cleared on reaching Disabled). It
+// reports whether the write changed the phase, the message or the Ready
+// condition's status or reason — a state transition — from the attempt whose
+// write succeeded, so a caller can emit the matching event once, on the
+// transition.
 func (r *Neo4jPluginReconciler) updatePluginStatus(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, phase, message string) bool {
 	transitioned, _, _ := r.writePluginStatus(ctx, plugin, phase, message)
 	return transitioned
@@ -927,6 +971,13 @@ func (r *Neo4jPluginReconciler) writePluginStatus(ctx context.Context, plugin *n
 		// below rather than being treated as settled.
 		recordInstall := phase == neo4jv1beta1.PhaseReady &&
 			(latest.Status.InstalledVersion != installedVersion || latest.Status.InstallationTime == nil)
+		// A Disabled plugin has nothing of its own on the servers: its removal
+		// rolled out (reconcileDisabled), or it never installed. Both fields
+		// go with it, also on a plugin Disabled under an operator that kept
+		// them (operations.md id 196). Enabled again, its next Ready records a
+		// new installation.
+		clearInstall := phase == neo4jv1beta1.PhaseDisabled &&
+			(latest.Status.InstalledVersion != "" || latest.Status.InstallationTime != nil)
 
 		// A write that changes nothing still produces a watch event, which
 		// reconciles again, which writes again: the CR was observed being
@@ -935,7 +986,7 @@ func (r *Neo4jPluginReconciler) writePluginStatus(ctx context.Context, plugin *n
 		if latest.Status.Phase == phase &&
 			latest.Status.Message == message &&
 			latest.Status.ObservedGeneration == latest.Generation &&
-			!recordInstall {
+			!recordInstall && !clearInstall {
 			return nil
 		}
 		changed := latest.Status.Phase != phase || latest.Status.Message != message
@@ -946,6 +997,10 @@ func (r *Neo4jPluginReconciler) writePluginStatus(ctx context.Context, plugin *n
 			now := metav1.Now()
 			latest.Status.InstalledVersion = installedVersion
 			latest.Status.InstallationTime = &now
+		}
+		if clearInstall {
+			latest.Status.InstalledVersion = ""
+			latest.Status.InstallationTime = nil
 		}
 		condStatus, condReason := PhaseToConditionStatus(phase)
 		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message) {
@@ -965,21 +1020,15 @@ func (r *Neo4jPluginReconciler) writePluginStatus(ctx context.Context, plugin *n
 	return transitioned, prevPhase, prevMessage
 }
 
-// installPluginViaEnvironment writes the plugin onto its target's StatefulSet,
-// in one update: its env edits (NEO4J_PLUGINS in Managed mode — the approach
-// Neo4j recommends for its Docker image — and its settings) and, in
-// VerifiedDownload mode, its checksum-verifying init container and the volumes
-// that container reads (applyPluginToTemplate). A pass whose edits change
-// nothing writes nothing.
-func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
-	_, err := r.writePluginToTarget(ctx, plugin, deployment)
-	return err
-}
-
-// writePluginToTarget is installPluginViaEnvironment, and returns the
-// StatefulSet generation its write created (0 when it wrote nothing), so the
-// pass can wait for that generation's roll: the cached StatefulSet it reads
-// next may not have seen the write yet, and reads as rolled out.
+// writePluginToTarget writes the plugin onto its target's StatefulSet, in one
+// update: its env edits (NEO4J_PLUGINS in Managed mode — the approach Neo4j
+// recommends for its Docker image — and its settings) and, in VerifiedDownload
+// mode, its checksum-verifying init container and the volumes that container
+// reads (applyPluginToTemplate). A pass whose edits change nothing writes
+// nothing. It returns the StatefulSet generation its write created (0 when it
+// wrote nothing), so the pass can wait for that generation's roll: the cached
+// StatefulSet it reads next may not have seen the write yet, and reads as
+// rolled out.
 func (r *Neo4jPluginReconciler) writePluginToTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (int64, error) {
 	logger := log.FromContext(ctx)
 	switch {
@@ -1058,7 +1107,7 @@ func (r *Neo4jPluginReconciler) writePluginToTarget(ctx context.Context, plugin 
 // applyPluginToTemplate makes on template, the target's pod template, every
 // edit the plugin owns: its env edits on the neo4j container (applyPluginEnv)
 // and, in VerifiedDownload mode, its init container and volumes
-// (applyVerifiedDownload). installPluginViaEnvironment writes what it
+// (applyVerifiedDownload). writePluginToTarget writes what it
 // produces; missingFromTarget and installChangesTarget compare against it, so
 // the three cannot disagree about what the plugin needs.
 func (r *Neo4jPluginReconciler) applyPluginToTemplate(template *corev1.PodTemplateSpec, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
@@ -1100,7 +1149,7 @@ func neo4jContainerEnv(pod corev1.PodSpec) []corev1.EnvVar {
 // applyPluginEnv makes on container, the target's neo4j container, every env
 // edit the plugin owns: its names in NEO4J_PLUGINS (Managed mode), its
 // spec.config settings, and its security settings (unioned into a cluster's
-// env; kept out of a standalone's). installPluginViaEnvironment writes what it
+// env; kept out of a standalone's). writePluginToTarget writes what it
 // produces and missingFromTarget compares against it, so the two cannot
 // disagree about what the plugin needs.
 func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
@@ -1131,9 +1180,8 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 				Value: fmt.Sprintf("[%s]", strings.Join(quotedPlugins, ",")),
 			})
 		} else {
-			// Update existing NEO4J_PLUGINS — delegate to the same helper used
-			// in installPluginViaEnvironment's outer block so the merge is
-			// JSON-aware, idempotent, and bug-free. A previous inline
+			// Update existing NEO4J_PLUGINS through addPluginToList, so the
+			// merge is JSON-aware and idempotent. A previous inline
 			// implementation read `currentValue` once but then mutated only
 			// `pluginsEnvVar.Value`, leaving `currentValue` stale across loop
 			// iterations — only the first plugin in pluginsToInstall would
@@ -1968,7 +2016,58 @@ func (r *Neo4jPluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&appsv1.StatefulSet{},
 			handler.EnqueueRequestsFromMapFunc(r.readyPluginsForStatefulSet),
 			builder.WithPredicates(podTemplateChanged)).
+		// Which CR of a (clusterRef, spec.name) tuple installs the plugin
+		// (checkForDuplicatePlugin) changes with the other CRs of the tuple,
+		// and a duplicate that lost is not requeued: without this, one held
+		// back by a CR since deleted or disabled stayed Failed until the
+		// operator restarted (operations.md id 195).
+		Watches(&neo4jv1beta1.Neo4jPlugin{},
+			handler.EnqueueRequestsFromMapFunc(r.pluginsSharingTuple),
+			builder.WithPredicates(tupleOwnershipChanged)).
 		Complete(r)
+}
+
+// pluginsSharingTuple maps a Neo4jPlugin to the other Neo4jPlugins of its
+// namespace with the same clusterRef and spec.name. On an update the handler
+// maps the old object too, so a CR that moves to another tuple wakes the ones
+// it leaves.
+func (r *Neo4jPluginReconciler) pluginsSharingTuple(ctx context.Context, obj client.Object) []reconcile.Request {
+	plugin, ok := obj.(*neo4jv1beta1.Neo4jPlugin)
+	if !ok {
+		return nil
+	}
+	plugins := &neo4jv1beta1.Neo4jPluginList{}
+	if err := r.List(ctx, plugins, client.InNamespace(plugin.Namespace)); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to list the Neo4jPlugins that share a plugin's target and name",
+			"plugin", plugin.Name, "namespace", plugin.Namespace)
+		return nil
+	}
+	var requests []reconcile.Request
+	for i := range plugins.Items {
+		other := &plugins.Items[i]
+		if other.Name == plugin.Name || other.Spec.ClusterRef != plugin.Spec.ClusterRef || other.Spec.Name != plugin.Spec.Name {
+			continue
+		}
+		requests = append(requests, reconcile.Request{NamespacedName: client.ObjectKeyFromObject(other)})
+	}
+	return requests
+}
+
+// tupleOwnershipChanged passes the Neo4jPlugin events that can change which CR
+// of a tuple installs the plugin (winsTuple): a CR created or gone, one whose
+// spec changed (clusterRef, spec.name, spec.enabled), and one whose deletion
+// started. Status writes, which every pass makes, do not pass.
+var tupleOwnershipChanged = predicate.Funcs{
+	CreateFunc: func(event.CreateEvent) bool { return true },
+	DeleteFunc: func(event.DeleteEvent) bool { return true },
+	UpdateFunc: func(e event.UpdateEvent) bool {
+		if e.ObjectOld == nil || e.ObjectNew == nil {
+			return false
+		}
+		return e.ObjectOld.GetGeneration() != e.ObjectNew.GetGeneration() ||
+			(e.ObjectOld.GetDeletionTimestamp() == nil) != (e.ObjectNew.GetDeletionTimestamp() == nil)
+	},
+	GenericFunc: func(event.GenericEvent) bool { return false },
 }
 
 // readyPluginsForStatefulSet maps a StatefulSet to the Ready Neo4jPlugins in

@@ -1052,7 +1052,7 @@
   {
     "id": "ev-plugin-duplicate",
     "name": "PluginDuplicate",
-    "description": "Emitted when another Neo4jPlugin CR in the same namespace already targets the same clusterRef with the same spec.name; the newer CR (by creationTimestamp) is marked Failed rather than racing on the shared NEO4J_PLUGINS value. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Warning on an enabled Neo4jPlugin when another live enabled CR in the same namespace targets the same clusterRef with the same spec.name and owns it: an enabled CR wins over a disabled one, then the older creationTimestamp, then the lower UID. The CR that loses is marked Failed (\"duplicate Neo4jPlugin: \"<winner>\" (older) … delete one CR, or set spec.enabled: false on one, …\") and writes nothing, rather than racing on the shared NEO4J_PLUGINS value. A disabled CR is never a duplicate and never holds an enabled one back: it is Disabled and names the CR that installs the plugin in its place (operations.md id 195). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
     "moduleId": "mod-plugins"
   },
   {

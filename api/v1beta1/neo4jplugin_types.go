@@ -225,7 +225,9 @@ type Neo4jPluginStatus struct {
 	// successfully: the spec.version it was asked for when the plugin reached
 	// Ready. It is the version requested, not one read back from the running
 	// plugin. Left unchanged while a later attempt is Installing or Failed, so
-	// it always names the last install that worked.
+	// it always names the last install that worked. Cleared, with
+	// installationTime, when the plugin is Disabled: nothing of it is on the
+	// servers then, and enabling it again records a new installation.
 	InstalledVersion string `json:"installedVersion,omitempty"`
 
 	// InstallationTime is when the plugin was first recorded as installed at
@@ -233,7 +235,7 @@ type Neo4jPluginStatus struct {
 	// later reconciles or by Ready -> Installing -> Ready cycles at the same
 	// version. A different version is a new installation and restarts it. For a
 	// plugin that was already Ready before this field existed it is the time the
-	// operator first saw it so.
+	// operator first saw it so. Cleared when the plugin is Disabled.
 	InstallationTime *metav1.Time `json:"installationTime,omitempty"`
 
 	// Plugin health status.

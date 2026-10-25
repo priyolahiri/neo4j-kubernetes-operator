@@ -611,21 +611,21 @@
         "name": "status.phase",
         "type": "string",
         "isNullable": true,
-        "note": "Pending|Waiting|Installing|Ready|Failed|Invalid|Disabled. Disabled: spec.enabled false and nothing of the plugin on its target (Ready condition False, reason Disabled). A plugin whose procedures the target's effective dbms.security.procedures.allowlist loads none of stays Ready and carries the condition ProceduresHidden (True, reason NotInAllowlist) (operations.md ids 160, 161). Failed also for a Managed plugin whose NEO4J_PLUGINS name the target's image does not install, with one PluginUnknownToImage Warning (operations.md id 170)."
+        "note": "Pending|Waiting|Installing|Ready|Failed|Invalid|Disabled. Disabled: spec.enabled false and nothing this CR wrote on its target (Ready condition False, reason Disabled); an enabled CR with the same spec.name may install the plugin there, and the message then names it (operations.md id 195). Failed also for an enabled duplicate of the CR that installs the plugin (PluginDuplicate). A plugin whose procedures the target's effective dbms.security.procedures.allowlist loads none of stays Ready and carries the condition ProceduresHidden (True, reason NotInAllowlist) (operations.md ids 160, 161). Failed also for a Managed plugin whose NEO4J_PLUGINS name the target's image does not install, with one PluginUnknownToImage Warning (operations.md id 170)."
       },
       {
         "id": "f-neo4jplugin-status-installed-version",
         "name": "status.installedVersion",
         "type": "string",
         "isNullable": true,
-        "note": "The spec.version the operator last installed successfully, recorded when the plugin reaches Ready; unchanged while a later attempt is Installing or Failed."
+        "note": "The spec.version the operator last installed successfully, recorded when the plugin reaches Ready; unchanged while a later attempt is Installing or Failed. Cleared, with status.installationTime, once the plugin is Disabled: nothing of it is on the servers then (operations.md id 196)."
       },
       {
         "id": "f-neo4jplugin-status-installation-time",
         "name": "status.installationTime",
         "type": "timestamp",
         "isNullable": true,
-        "note": "When the plugin was first recorded as installed at status.installedVersion; set on reaching Ready and restarted only by a different version."
+        "note": "When the plugin was first recorded as installed at status.installedVersion; set on reaching Ready and restarted only by a different version. Cleared when the plugin is Disabled (operations.md id 196)."
       },
       {
         "id": "f-neo4jplugin-status-health-status",

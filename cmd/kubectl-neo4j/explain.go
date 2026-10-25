@@ -304,8 +304,11 @@ var phaseGuidance = map[string]guidance{
 			"role created in Neo4j) and the rule is granted to them on its own, without re-applying it.",
 	},
 	neo4jv1beta1.PhaseUnknown: {
-		meaning: "the operator could not determine the state.",
-		action:  "Usually a connectivity problem between the operator and Neo4j rather than a broken deployment. Check status.diagnostics.collectionError and the operator log.",
+		meaning: "a state the operator that wrote it had no phase for. Only operators up to v1.21 write it: a " +
+			"Neo4jDatabase whose target had no seed credentials Secret yet. A later operator never writes Unknown.",
+		action: "The object was last written by an operator up to v1.21. status.message says what was missing. A current " +
+			"operator replaces the phase on its next pass of the object (Pending while the Secret is still missing); " +
+			"if it stays Unknown, check which operator runs (`kubectl get deploy -A -l app.kubernetes.io/name=neo4j-operator -o wide`).",
 	},
 	neo4jv1beta1.ReplicaPhaseSeeding: {
 		meaning: "the replica is loading its initial copy of the upstream database.",

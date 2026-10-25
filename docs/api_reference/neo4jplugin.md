@@ -173,10 +173,10 @@ kind: Neo4jPlugin
 | Field | Type | Description |
 |-------|------|-------------|
 | `conditions` | `[]metav1.Condition` | A `Ready` condition derived from `phase` (`Ready` → `True`; `Failed`/`Invalid` → `False`; `Disabled` → `False`, reason `Disabled`; `Pending`/`Waiting`/`Installing` → `Unknown`), and `ProceduresHidden` (`True`, reason `NotInAllowlist`) while the target's effective `dbms.security.procedures.allowlist` loads none of the plugin's procedures — see [Shared procedure allowlist](#shared-procedure-allowlist) |
-| `phase` | `string` | Current phase: `"Pending"`, `"Installing"`, `"Ready"`, `"Failed"`, `"Waiting"`, `"Invalid"` (spec failed validation; not retried until the CR is edited), `"Disabled"` (`spec.enabled: false`, and nothing of the plugin is on its target) |
+| `phase` | `string` | Current phase: `"Pending"`, `"Installing"`, `"Ready"`, `"Failed"`, `"Waiting"`, `"Invalid"` (spec failed validation; not retried until the CR is edited), `"Disabled"` (`spec.enabled: false`, and nothing this CR wrote is on its target; an enabled CR with the same `spec.name` may install the plugin there, and the message then names it) |
 | `message` | `string` | Human-readable status message |
-| `installedVersion` | `string` | The version the operator last installed successfully: `spec.version` as it was when the plugin reached `Ready` (the version *requested*, not read back from the running plugin). Left unchanged while a later attempt is `Installing` or `Failed`, so it always names the last install that worked |
-| `installationTime` | `*metav1.Time` | When the plugin was first recorded as installed at `installedVersion`: set on reaching `Ready`, not touched by later reconciles or by `Ready` → `Installing` → `Ready` cycles at the same version. A different `spec.version` is a new installation and restarts it |
+| `installedVersion` | `string` | The version the operator last installed successfully: `spec.version` as it was when the plugin reached `Ready` (the version *requested*, not read back from the running plugin). Left unchanged while a later attempt is `Installing` or `Failed`, so it always names the last install that worked. Cleared, with `installationTime`, once the plugin is `Disabled`: nothing of it is on the servers then (a disabled plugin's removal is `Installing` until its roll is done, and keeps both until then), and enabling it again records a new installation |
+| `installationTime` | `*metav1.Time` | When the plugin was first recorded as installed at `installedVersion`: set on reaching `Ready`, not touched by later reconciles or by `Ready` → `Installing` → `Ready` cycles at the same version. A different `spec.version` is a new installation and restarts it. Cleared when the plugin is `Disabled` |
 | `health` | [`*PluginHealth`](#pluginhealth) | **Reserved — never populated today.** Intended: plugin health and performance information |
 | `usage` | [`*PluginUsage`](#pluginusage) | **Reserved — never populated today.** Intended: plugin usage statistics |
 | `observedGeneration` | `int64` | Generation of the most recently observed spec |
@@ -382,18 +382,29 @@ same `/plugins` directory and the same `NEO4J_PLUGINS` env value — one
 controller adds, the other removes, restart cycle. The reconciler
 detects this and refuses to install the duplicate:
 
-- The **oldest CR (by `creationTimestamp`)** keeps reconciling
-  normally. UID is the tiebreaker on identical timestamps.
-- The **newer duplicate** is marked `status.phase=Failed` with a
+- An **enabled CR wins over a disabled one** (`spec.enabled: false`):
+  a CR that keeps the plugin off never holds back one that installs it.
+  Among the rest, the **oldest CR (by `creationTimestamp`)** keeps
+  reconciling normally. UID is the tiebreaker on identical timestamps.
+- A **newer enabled duplicate** is marked `status.phase=Failed` with a
   message naming the older CR, and a `PluginDuplicate` Warning Event
-  is emitted. It stops reconciling until the older CR is deleted.
+  is emitted. It stops reconciling until the older CR is deleted or
+  disabled.
+- A **disabled duplicate** is never `Failed`: it is `Disabled`, its
+  message names the enabled CR that installs the plugin in its place,
+  and neither it nor its deletion takes off the servers what that CR
+  installs (the NEO4J_PLUGINS name, the settings, the procedure-list
+  tokens and a VerifiedDownload init container the two share).
 - A duplicate that's mid-delete (DeletionTimestamp set) doesn't block
   its replacement — a stuck finalizer on the older CR can't lock out
-  the survivor.
+  the survivor. The deleted CR's uninstall keeps what the survivor
+  installs, so the hand-over restarts nothing when the two CRs ask for
+  the same plugin.
 
 Action when you see `phase=Failed` with a duplicate message: delete
-the unwanted CR. The surviving CR reconciles on its next watch event
-(triggered by the deletion) and takes ownership.
+the unwanted CR, or set `spec.enabled: false` on it. The other CRs with
+the same `clusterRef` and `spec.name` are reconciled when one of them is
+created, deleted or edited, so the survivor takes ownership at once.
 
 ## Examples
 
