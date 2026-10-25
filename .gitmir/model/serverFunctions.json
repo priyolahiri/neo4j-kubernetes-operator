@@ -62,15 +62,30 @@
     "name": "Reconcile Cluster ConfigMap",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "Renders the cluster's {cluster}-config ConfigMap (neo4j.conf, startup.sh, health.sh) and decides whether the servers must restart. The restart decision compares a normalised rendering that drops full-line comments and blank lines and masks runtime-variable lines. When only neo4j.conf changed and every changed setting is dynamic (SHOW SETTINGS isDynamic), not set by an env var, and the cluster is Ready with every server up, it runs dbms.setConfigValue on every server first and restarts nothing (ConfigAppliedLive); otherwise it stamps config-restart on the server StatefulSet, rolling every server (ConfigNeedsRestart says why). The ConfigMap is written whenever its raw content changes, after any live apply, so a later restart keeps the values. Startup-script lines between the restart-neutral markers (the system database role block, which makes servers past minSystemPrimaries system secondaries at their first start and records the role on their volume) never count; a change confined to the membership lines (TOTAL_SERVERS, the discovery endpoint list) restarts nothing unless a scale-up adds a system primary (ScaledWithoutRestart). It records on the ConfigMap which settings it applies at the next restart and since when (neo4j.com/deferred-settings, neo4j.com/deferred-settings-since). When spec.monitoring.logs.stdout lists a log, it also renders server-logs.xml (Neo4j's default file appenders for the line plus a JSON Console appender per listed log) and adds server.logs.config=/operator-conf/server-logs.xml; the restart hash never covers server-logs.xml, so a changed list reloads through the mount without a restart. neo4j.conf sets dbms.cluster.network.connect_timeout=5s (Neo4j's default is 30s) unless spec.config sets it: a replaced pod's old IP can stay in the other servers' DNS cache for up to 30s, and a connection to it waits out the whole timeout.",
+    "description": "Renders the cluster's {cluster}-config ConfigMap (neo4j.conf, startup.sh, health.sh) and decides whether the servers must restart. The restart decision compares a normalised rendering that drops full-line comments and blank lines and masks runtime-variable lines. When only neo4j.conf changed and every changed setting is dynamic (SHOW SETTINGS isDynamic), not set by an env var, and the cluster is Ready with every server up, it runs dbms.setConfigValue on every server first and restarts nothing (ConfigAppliedLive); otherwise it stamps config-restart on the server StatefulSet, rolling every server (ConfigNeedsRestart says why). The ConfigMap is written whenever its raw content changes, after any live apply, so a later restart keeps the values. Startup-script lines between the restart-neutral markers (the system database role block, which makes servers past minSystemPrimaries system secondaries at their first start and records the role on their volume) never count; a change confined to the membership lines (TOTAL_SERVERS, the discovery endpoint list) restarts nothing unless a scale-up adds a system primary (ScaledWithoutRestart). It records on the ConfigMap which settings it applies at the next restart and since when (neo4j.com/deferred-settings, neo4j.com/deferred-settings-since). When spec.monitoring.logs.stdout lists a log, it also renders server-logs.xml (Neo4j's default file appenders for the line plus a JSON Console appender per listed log) and adds server.logs.config=/operator-conf/server-logs.xml; the restart hash never covers server-logs.xml, so a changed list reloads through the mount without a restart. neo4j.conf sets dbms.cluster.network.connect_timeout=5s (Neo4j's default is 30s) unless spec.config sets it: a replaced pod's old IP can stay in the other servers' DNS cache for up to 30s, and a connection to it waits out the whole timeout. health.sh never counts for the restart decision: the probes run the copy each container makes at its start, so a new version reaches every server at its next restart and an operator upgrade restarts nothing for it (knowledge operations.md id 181).",
     "readsFieldIds": [],
     "writesFieldIds": [],
-    "callsFunctionIds": [],
+    "callsFunctionIds": [
+      "sf-cluster-server-readiness"
+    ],
     "emitsEventIds": [
       "ev-config-applied-live",
       "ev-config-needs-restart",
       "ev-scaled-without-restart"
     ],
+    "subscribesEventIds": [],
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-cluster-server-readiness",
+    "name": "Cluster Server Readiness Check",
+    "serverUnitId": "su-resource-builders",
+    "operation": "business_action",
+    "description": "buildHealthScript renders /conf/health.sh, which the readiness, liveness and startup probes of every cluster server run. Until the server has been seen available in this container, and for at most ReadyWindowSeconds (300) of the container's age, it passes only when the server is available in the cluster as it sees itself: GET /db/system/cluster/available answers 200 and GET /dbms/cluster/status reports no unhealthy database and no primary out of its Raft group, read on the local HTTP port with the container's admin credentials through bash's /dev/tcp. Afterwards, and when the container's age cannot be read, it checks the process and the HTTP port only, so the liveness probe never restarts a server for being out of the cluster. A StatefulSet roll (plugin, config, TLS) therefore restarts the next server only after the previous one rejoined; first formation is not held back (Parallel pod management, not-ready addresses published). The probes are unchanged, so no pod template moves (knowledge operations.md ids 6, 181).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-cluster"
   },

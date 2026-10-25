@@ -159,8 +159,9 @@ func (cm *ConfigMapManager) scaleNeedsNoRestart(oldCM, newCM *corev1.ConfigMap, 
 }
 
 // onlyNeo4jConfChanged reports whether neo4j.conf is the only file whose
-// restart-relevant content differs. startup.sh and health.sh run only when a
-// container starts, so any change there needs a restart.
+// restart-relevant content differs. startup.sh runs only when a container
+// starts, so a change there needs a restart; health.sh has no restart-relevant
+// content (normalizeConfigContent).
 func (cm *ConfigMapManager) onlyNeo4jConfChanged(oldCM, newCM *corev1.ConfigMap) bool {
 	for _, key := range []string{"startup.sh", "health.sh"} {
 		if cm.normalizeConfigContent(key, oldCM.Data[key]) != cm.normalizeConfigContent(key, newCM.Data[key]) {
@@ -465,7 +466,13 @@ func (cm *ConfigMapManager) normalizeConfigContent(key, value string) string {
 	case "startup.sh":
 		return cm.normalizeStartupScript(value)
 	case "health.sh":
-		return stripCommentAndBlankLines(value)
+		// Restart-neutral as a whole. The probes run /conf/health.sh, the copy
+		// startup.sh makes when a container starts, so a new version reaches
+		// each server at its next restart and restarting every server for it
+		// would only bring that forward. The readiness check of #564 reached
+		// the servers this way: an operator upgrade restarts nothing for it
+		// (operations.md id 181).
+		return ""
 	default:
 		return value
 	}
@@ -473,26 +480,12 @@ func (cm *ConfigMapManager) normalizeConfigContent(key, value string) string {
 
 // isCommentOrBlankLine reports whether a line of neo4j.conf or of a rendered
 // shell script carries no meaning: blank, or a full-line comment. In neo4j.conf
-// Neo4j ignores both. In startup.sh/health.sh a "#" line is either a shell
+// Neo4j ignores both. In startup.sh a "#" line is either a shell
 // comment or, inside a heredoc, a comment line written into neo4j.conf. A
 // trailing "# …" after a command is NOT stripped, so a change there still counts.
 func isCommentOrBlankLine(line string) bool {
 	trimmed := strings.TrimSpace(line)
 	return trimmed == "" || strings.HasPrefix(trimmed, "#")
-}
-
-// stripCommentAndBlankLines drops the lines isCommentOrBlankLine matches, so a
-// reworded comment does not change a restart hash (#465). Without this, an
-// operator upgrade that only edits a comment in the rendered startup script
-// restarted every server of every cluster.
-func stripCommentAndBlankLines(content string) string {
-	var kept []string
-	for _, line := range strings.Split(content, "\n") {
-		if !isCommentOrBlankLine(line) {
-			kept = append(kept, line)
-		}
-	}
-	return strings.Join(kept, "\n")
 }
 
 // normalizeNeo4jConf normalizes neo4j.conf content to remove duplicates and runtime values

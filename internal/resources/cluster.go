@@ -2907,39 +2907,6 @@ func ValidateServerRoleHints(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []str
 	return errors
 }
 
-func buildHealthScript(_ *neo4jv1beta1.Neo4jEnterpriseCluster) string {
-	// Enhanced health check for cluster deployments
-	return `#!/bin/bash
-# Health check script for Neo4j clustering
-
-# Check if Neo4j process is running
-if ! (pgrep -f "EnterpriseEntryPoint" > /dev/null || pgrep -f "Neo4jEnterprise" > /dev/null); then
-    echo "Neo4j process not running"
-    exit 1
-fi
-
-# Try HTTP port check
-if (echo > /dev/tcp/localhost/7474) >/dev/null 2>&1; then
-    echo "Neo4j HTTP port responding - healthy"
-    exit 0
-fi
-
-# If HTTP not responding, check if we're in cluster formation process
-if grep -q "Resolved endpoints" /logs/neo4j.log 2>/dev/null || \
-   grep -q "Starting.*cluster" /logs/neo4j.log 2>/dev/null || \
-   grep -q "Waiting for.*servers" /logs/neo4j.log 2>/dev/null || \
-   grep -q "minimum_initial_system_primaries_count" /logs/neo4j.log 2>/dev/null || \
-   grep -q "cluster formation barrier" /logs/neo4j.log 2>/dev/null; then
-    echo "Neo4j in cluster formation process - allowing more time"
-    exit 0
-fi
-
-# If process is running but no clustering activity, fail
-echo "Neo4j process running but HTTP port not responding and no cluster activity detected"
-exit 1
-`
-}
-
 // buildReadinessProbe creates a readiness probe
 func buildReadinessProbe(_ *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Probe {
 	return &corev1.Probe{

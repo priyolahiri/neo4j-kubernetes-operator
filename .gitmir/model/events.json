@@ -110,7 +110,7 @@
   {
     "id": "ev-scale-down-blocked",
     "name": "ScaleDownBlocked",
-    "description": "Fires when a scale-down cannot proceed: below the system database's minimum voting-member floor, a DEALLOCATE dry-run fails, or a DROP SERVER fails — replicas stay held at the current count.",
+    "description": "Fires when a scale-down cannot proceed: below the system database's minimum voting-member floor, a DEALLOCATE dry-run fails, or a DROP SERVER fails — replicas stay held at the current count. Announced from the ServersPendingDrain condition write, once per cause (its message), never from the pass's own copy of the condition, which a lagging cache can hand over from before the last pass's write (#565; knowledge operations.md id 145).",
     "moduleId": "mod-cluster"
   },
   {

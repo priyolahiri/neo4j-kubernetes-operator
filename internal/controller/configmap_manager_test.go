@@ -243,7 +243,6 @@ func TestCalculateConfigMapHash_IgnoresCommentsAndBlankLines(t *testing.T) {
 	for key, changed := range map[string]string{
 		"neo4j.conf": "# memory\nserver.memory.heap.max_size=2g\n",
 		"startup.sh": "#!/bin/bash\n# start it\nset -e\nexec neo4j # trailing note\n",
-		"health.sh":  "#!/bin/bash\n# probe\ncurl -sf localhost:7475\n",
 	} {
 		data := map[string]string{}
 		for k, v := range base {
@@ -253,6 +252,90 @@ func TestCalculateConfigMapHash_IgnoresCommentsAndBlankLines(t *testing.T) {
 		if cm.calculateConfigMapHash(configMapWithData("c", "ns", data)) == baseHash {
 			t.Errorf("a real change to %s must change the restart hash", key)
 		}
+	}
+
+	// health.sh reaches a server at its next restart, whatever changed in it
+	// (operations.md id 181).
+	data := map[string]string{}
+	for k, v := range base {
+		data[k] = v
+	}
+	data["health.sh"] = "#!/bin/bash\n# probe\ncurl -sf localhost:7475\n"
+	if cm.calculateConfigMapHash(configMapWithData("d", "ns", data)) != baseHash {
+		t.Error("a change to health.sh must not change the restart hash")
+	}
+}
+
+// preReadinessHealthScript is the health.sh releases up to v1.22 rendered for
+// a cluster server: the process, then anything answering on 7474, then a
+// cluster-formation line in the log.
+const preReadinessHealthScript = `#!/bin/bash
+# Health check script for Neo4j clustering
+
+# Check if Neo4j process is running
+if ! (pgrep -f "EnterpriseEntryPoint" > /dev/null || pgrep -f "Neo4jEnterprise" > /dev/null); then
+    echo "Neo4j process not running"
+    exit 1
+fi
+
+# Try HTTP port check
+if (echo > /dev/tcp/localhost/7474) >/dev/null 2>&1; then
+    echo "Neo4j HTTP port responding - healthy"
+    exit 0
+fi
+
+# If HTTP not responding, check if we're in cluster formation process
+if grep -q "Resolved endpoints" /logs/neo4j.log 2>/dev/null || \
+   grep -q "Starting.*cluster" /logs/neo4j.log 2>/dev/null || \
+   grep -q "Waiting for.*servers" /logs/neo4j.log 2>/dev/null || \
+   grep -q "minimum_initial_system_primaries_count" /logs/neo4j.log 2>/dev/null || \
+   grep -q "cluster formation barrier" /logs/neo4j.log 2>/dev/null; then
+    echo "Neo4j in cluster formation process - allowing more time"
+    exit 0
+fi
+
+# If process is running but no clustering activity, fail
+echo "Neo4j process running but HTTP port not responding and no cluster activity detected"
+exit 1
+`
+
+// The operator upgrade that brings the readiness check of #564 writes the new
+// health.sh to every cluster's ConfigMap and restarts no server: each picks it
+// up at its next restart (operations.md id 181). Together with the probes, which
+// are unchanged (TestServerProbes_Unchanged), no pod template moves.
+func TestReconcileConfigMap_NewHealthScriptRestartsNothing(t *testing.T) {
+	ctx := context.Background()
+	cluster := minimalCluster("c564", "default")
+	existing := resources.BuildConfigMapForEnterprise(cluster)
+	if existing.Data["health.sh"] == preReadinessHealthScript {
+		t.Fatal("test premise: the rendered health.sh is the new one")
+	}
+	existing.Data["health.sh"] = preReadinessHealthScript
+	sts := serverSTS("c564", "default")
+	fc := fake.NewClientBuilder().WithScheme(newTestScheme()).WithObjects(cluster, sts, existing).Build()
+	before := &appsv1.StatefulSet{}
+	if err := fc.Get(ctx, types.NamespacedName{Name: "c564-server", Namespace: "default"}, before); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := NewConfigMapManager(fc).ReconcileConfigMap(ctx, cluster); err != nil {
+		t.Fatalf("ReconcileConfigMap: %v", err)
+	}
+
+	got := &corev1.ConfigMap{}
+	if err := fc.Get(ctx, types.NamespacedName{Name: "c564-config", Namespace: "default"}, got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Data["health.sh"] != resources.BuildConfigMapForEnterprise(cluster).Data["health.sh"] {
+		t.Error("the new health.sh must be written, for each server's next restart")
+	}
+	after := &appsv1.StatefulSet{}
+	if err := fc.Get(ctx, types.NamespacedName{Name: "c564-server", Namespace: "default"}, after); err != nil {
+		t.Fatal(err)
+	}
+	if after.ResourceVersion != before.ResourceVersion {
+		t.Errorf("the StatefulSet was written (template annotations %v): the servers would restart",
+			after.Spec.Template.Annotations)
 	}
 }
 

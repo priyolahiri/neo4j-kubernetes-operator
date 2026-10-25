@@ -10,6 +10,7 @@ apply the results.
 | File | What it does |
 |---|---|
 | `cluster.go` | The bulk: StatefulSet, Services, ConfigMap (startup script + version-gated discovery), TLS Certificate, the server ServiceAccount (bound to no Role), Ingress, auth/audit/monitoring conf, conf merge helpers |
+| `health_script.go` | `buildHealthScript`: a cluster server's `/conf/health.sh`. Readiness waits, at most `ReadyWindowSeconds` after a container starts, for the server to be available in the cluster (`/db/system/cluster/available`, `/dbms/cluster/status` on its own HTTP port); afterwards the process and the port only, so liveness never restarts a server for it. The probes are unchanged, and the ConfigMap manager never restarts a server for a `health.sh` change (`../../docs/knowledge/operations.md` id 181) |
 | `memory_config.go` | Heap/pagecache sizing (`CalculateOptimalMemorySettings`, `…ForNeo4j526Plus`, `GetMemoryConfigForCluster`) |
 | `plugin_init_container.go` | Verified-download init container for `Neo4jPlugin` (`BuildPluginVerifiedDownloadInitContainer`, plugin auth/CA volumes) |
 | `networkpolicy.go` | `BuildNetworkPolicyForEnterprise` / `…ForStandalone` |
