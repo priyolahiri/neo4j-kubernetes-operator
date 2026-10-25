@@ -48,20 +48,23 @@ func targetCluster(tag string) *neo4jv1beta1.Neo4jEnterpriseCluster {
 
 // #563: with --connect, validate holds a Managed plugin's NEO4J_PLUGINS name to
 // the image its target runs, as the operator does (operations.md id 170) —
-// n10s passes against 5.26 and is refused against CalVer; graphql is refused on
-// both; a standalone target is read too.
+// n10s passes against 5.26.21 and earlier, and is refused against later 5.26
+// releases, which do not run its JAR (id 170), and against CalVer; graphql is
+// refused on both lines; a standalone target is read too.
 func TestValidate_Connected_ChecksAPluginAgainstItsTargetsImage(t *testing.T) {
 	for _, tc := range []struct {
 		name, plugin, tag string
 		refused           bool
+		why               string
 	}{
-		{"n10s on 5.26", "n10s", "5.26.32-enterprise", false},
-		{"n10s on a floating 5.26 tag", "n10s", "5.26-enterprise", false},
-		{"n10s on CalVer", "n10s", "2026.08.1-enterprise", true},
-		{"n10s on a floating CalVer tag", "n10s", "2026.08-enterprise", true},
-		{"graphql on 5.26", "graphql", "5.26.32-enterprise", true},
-		{"graphql on CalVer", "graphql", "2026.08.1-enterprise", true},
-		{"apoc on CalVer", "apoc", "2026.08.1-enterprise", false},
+		{"n10s on 5.26.21", "n10s", "5.26.21-enterprise", false, ""},
+		{"n10s on 5.26.32", "n10s", "5.26.32-enterprise", true, "image can run in installMode Managed"},
+		{"n10s on a floating 5.26 tag", "n10s", "5.26-enterprise", true, "image can run in installMode Managed"},
+		{"n10s on CalVer", "n10s", "2026.08.1-enterprise", true, "image can install"},
+		{"n10s on a floating CalVer tag", "n10s", "2026.08-enterprise", true, "image can install"},
+		{"graphql on 5.26", "graphql", "5.26.32-enterprise", true, "image can install"},
+		{"graphql on CalVer", "graphql", "2026.08.1-enterprise", true, "image can install"},
+		{"apoc on CalVer", "apoc", "2026.08.1-enterprise", false, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			results, err := validateSource(writeManifest(t, pluginManifest(tc.plugin)), testClient(t, targetCluster(tc.tag)), "")
@@ -73,7 +76,7 @@ func TestValidate_Connected_ChecksAPluginAgainstItsTargetsImage(t *testing.T) {
 			}
 			require.Equal(t, 1, results[0].errorCount(), "%s", findingsText(results[0]))
 			assert.Equal(t, "spec.name", results[0].findings[0].path)
-			assert.Contains(t, results[0].findings[0].detail, "not a plugin the neo4j:"+tc.tag+" image can install")
+			assert.Contains(t, results[0].findings[0].detail, "not a plugin the neo4j:"+tc.tag+" "+tc.why)
 			assert.Contains(t, results[0].findings[0].detail, "installMode: VerifiedDownload")
 		})
 	}
@@ -90,23 +93,30 @@ func TestValidate_Connected_ChecksAPluginAgainstItsTargetsImage(t *testing.T) {
 		results, err := validateSource(writeManifest(t, pluginManifest("n10s")), testClient(t), "")
 		require.NoError(t, err)
 		assert.Equal(t, 0, results[0].errorCount())
-		require.Equal(t, 1, results[0].warningCount(), "%s", findingsText(results[0]))
+		require.Equal(t, 2, results[0].warningCount(), "%s", findingsText(results[0]))
 		assert.Contains(t, findingsText(results[0]), "checked against every supported Neo4j image")
+		assert.Contains(t, findingsText(results[0]), "only from 5.26.0 to 5.26.21")
 	})
 }
 
-// Offline the image is unknown: a name no supported image installs is a
-// warning, a name one of them does (n10s, on 5.26) passes, and the summary says
-// the rest needs --connect.
+// Offline the image is unknown: a name no supported image installs is one
+// warning — not two, the compatibility matrix says nothing of a name the
+// entrypoint check covers (v1.22.0 re-walk) — n10s, which runs on 5.26.0 to
+// 5.26.21 only, is one, and the summary says the rest needs --connect.
 func TestValidate_Offline_WarnsAboutAPluginNoImageInstalls(t *testing.T) {
 	results, err := validateSource(writeManifest(t, pluginManifest("graphql")), nil, "")
 	require.NoError(t, err)
 	assert.Equal(t, 0, results[0].errorCount())
-	// Beside the compatibility matrix's advisory note, which knows no graphql.
-	require.Equal(t, 2, results[0].warningCount(), "%s", findingsText(results[0]))
+	require.Equal(t, 1, results[0].warningCount(), "%s", findingsText(results[0]))
 	assert.Contains(t, findingsText(results[0]), `spec.name "graphql" is not a plugin any supported Neo4j image can install`)
+	assert.NotContains(t, findingsText(results[0]), "compatibility matrix")
 
 	results, err = validateSource(writeManifest(t, pluginManifest("n10s")), nil, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, results[0].warningCount(), "%s", findingsText(results[0]))
+	assert.Contains(t, findingsText(results[0]), "only from 5.26.0 to 5.26.21")
+
+	results, err = validateSource(writeManifest(t, pluginManifest("apoc")), nil, "")
 	require.NoError(t, err)
 	assert.Empty(t, results[0].findings, "%s", findingsText(results[0]))
 

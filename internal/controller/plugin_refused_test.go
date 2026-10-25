@@ -116,10 +116,9 @@ func TestReconcile_APluginTheTargetsImageCannotInstallIsRefused(t *testing.T) {
 // The refusal is per line, not per name.
 func TestReconcile_APluginTheTargetsImageListsIsInstalled(t *testing.T) {
 	for _, tc := range []struct{ tag, plugin string }{
-		{"5.26.32-enterprise", "n10s"},
-		{"5.26-enterprise", "n10s"},
-		{"5.26-enterprise", "neosemantics"},
-		{"2025.04-enterprise", "n10s"},
+		// n10s runs on 5.26.0 to 5.26.21 only (operations.md id 170).
+		{"5.26.21-enterprise", "n10s"},
+		{"5.26.21-enterprise", "neosemantics"},
 		{"5.26.11-enterprise", "fleet-management"},
 		{"2026.08.1-enterprise", "graph-data-science"},
 	} {
@@ -133,6 +132,29 @@ func TestReconcile_APluginTheTargetsImageListsIsInstalled(t *testing.T) {
 			v, _ := envValueOf(t, r, "c-server", "NEO4J_PLUGINS")
 			assert.Equal(t, fmt.Sprintf("[%q]", r.mapPluginName(tc.plugin)), v)
 			assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonPluginUnknownToImage))
+		})
+	}
+}
+
+// The defect (v1.22.0 re-walk of the combined build): n10s, a name every 5.26
+// entrypoint installs, was written to a 5.26.32 server, which crash-looped on
+// the jackson-annotations its neosemantics 5.26.0 JAR bundles
+// (NoSuchMethodError JsonProperty.isRequired()). From 5.26.22 it is refused like
+// a name the image does not list: nothing written, Failed with the reason, one
+// PluginUnknownToImage (operations.md id 170).
+func TestReconcile_N10sIsRefusedWhereItsJARDoesNotRun(t *testing.T) {
+	for _, tag := range []string{"5.26.32-enterprise", "5.26-enterprise"} {
+		t.Run(tag, func(t *testing.T) {
+			plugin := managedPlugin("n10s", "")
+			r, rec, writes, _ := gateReconciler(t, boltMustNotRun(t), append([]client.Object{plugin, clusterOn(tag), selfHealSTS()}, readyClusterPods()...)...)
+
+			reconcilePlugin(t, r, "n10s")
+
+			assert.Zero(t, *writes)
+			got := getPlugin(t, r, "n10s")
+			assert.Equal(t, neo4jv1beta1.PhaseFailed, got.Status.Phase)
+			assert.Contains(t, got.Status.Message, "NoSuchMethodError JsonProperty.isRequired()")
+			assert.Len(t, eventsWithReason(drainEvents(rec), EventReasonPluginUnknownToImage), 1)
 		})
 	}
 }
@@ -267,7 +289,7 @@ func TestReconcile_ARefusedPluginsRemovalWaitsWhenSomethingElseIsDown(t *testing
 // cluster upgrades, and no server is down on it yet, that waits.
 func TestReconcile_AnImageChangeRefusesAnInstalledPlugin(t *testing.T) {
 	plugin := managedPlugin("n10s", "")
-	cluster := clusterOn("5.26.32-enterprise")
+	cluster := clusterOn("5.26.21-enterprise")
 	r, rec, writes, _ := gateReconciler(t, nil, append([]client.Object{plugin, cluster, selfHealSTS()}, readyClusterPods()...)...)
 	installAndRoll(t, r, "n10s", "c-server")
 	require.Equal(t, 1, *writes)
@@ -305,7 +327,7 @@ func TestOtherPlugins_LeavesOutRefusedPlugins(t *testing.T) {
 	n10s.Spec.Security = &neo4jv1beta1.PluginSecurity{AllowedProcedures: []string{"n10s.*"}}
 	r, _, _, _ := gateReconciler(t, nil, apoc, n10s, clusterOn("2026.08.1-enterprise"), selfHealSTS())
 	calver := &DeploymentInfo{Type: "cluster", Name: "c", Namespace: selfHealNS, Object: clusterOn("2026.08.1-enterprise")}
-	lts := &DeploymentInfo{Type: "cluster", Name: "c", Namespace: selfHealNS, Object: clusterOn("5.26.32-enterprise")}
+	lts := &DeploymentInfo{Type: "cluster", Name: "c", Namespace: selfHealNS, Object: clusterOn("5.26.21-enterprise")}
 
 	others, err := r.otherPlugins(context.Background(), apoc, calver)
 	require.NoError(t, err)

@@ -21,7 +21,8 @@ package controller
 // (operations.md id 170; #563). The Neo4j Docker entrypoint exits on a name its
 // /startup/neo4j-plugins.json does not list, so writing one crash-loops every
 // server it reaches: graphql on every supported release, n10s on CalVer from
-// 2025.05, and the name of any custom JAR. Earlier operators wrote them, so a
+// 2025.05, and the name of any custom JAR. So is a name the image lists whose
+// JAR it does not run: n10s from 5.26.22, and on CalVer before 2025.05. Earlier operators wrote them, so a
 // target may already carry one; the refused plugin takes it off, as a disabled
 // plugin does (id 160).
 

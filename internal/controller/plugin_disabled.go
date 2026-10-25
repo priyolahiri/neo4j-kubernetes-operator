@@ -61,8 +61,10 @@ func (r *Neo4jPluginReconciler) reconcileDisabled(ctx context.Context, plugin *n
 	changes, err := r.installChangesTarget(ctx, plugin, deployment)
 	switch {
 	case errors.IsNotFound(err):
-		r.reportDisabled(ctx, plugin, fmt.Sprintf("Plugin disabled (spec.enabled: false): %s has no StatefulSet", targetName(deployment)))
-		return ctrl.Result{}, nil
+		// No StatefulSet now; one created again as it was (a storage
+		// expansion, id 171) may still carry the plugin, so it is waited for
+		// unless the plugin is Disabled already (awaitStatefulSet, id 177).
+		return r.awaitStatefulSet(ctx, plugin, deployment)
 	case err != nil:
 		logger.Error(err, "Cannot tell whether the disabled plugin is still on its target")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil

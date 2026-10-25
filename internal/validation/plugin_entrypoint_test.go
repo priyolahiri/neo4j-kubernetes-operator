@@ -96,11 +96,8 @@ func TestManagedPluginImageErrors(t *testing.T) {
 		{name: "graphql on 5.26", plugin: managed("graphql"), tag: "5.26.32-enterprise", fields: []string{"spec.name"}},
 		{name: "graphql on a floating 5.26 tag", plugin: managed("graphql"), tag: "5.26-enterprise", fields: []string{"spec.name"}},
 		{name: "graphql on CalVer", plugin: managed("graphql"), tag: "2026.08.1-enterprise", fields: []string{"spec.name"}},
-		{name: "n10s on 5.26", plugin: managed("n10s"), tag: "5.26.32-enterprise"},
-		{name: "n10s on a floating 5.26 tag", plugin: managed("n10s"), tag: "5.26-enterprise"},
 		{name: "n10s on CalVer", plugin: managed("n10s"), tag: "2026.08.1-enterprise", fields: []string{"spec.name"}},
 		{name: "n10s on a floating CalVer tag", plugin: managed("n10s"), tag: "2026.08-enterprise", fields: []string{"spec.name"}},
-		{name: "n10s on CalVer before 2025.05", plugin: managed("n10s"), tag: "2025.04.0-enterprise"},
 		{name: "neosemantics is n10s", plugin: managed("neosemantics"), tag: "2026.08.1-enterprise", fields: []string{"spec.name"}},
 		{name: "gds is graph-data-science", plugin: managed("gds"), tag: "2026.08.1-enterprise"},
 		{name: "a dependency", plugin: managed("apoc", "apoc-extended", "n10s"), tag: "2026.08.1-enterprise", fields: []string{"spec.dependencies[1].name"}},
@@ -157,14 +154,65 @@ func TestManagedPluginImageErrors(t *testing.T) {
 
 // Offline there is no target, so no image: `kubectl neo4j validate` warns about
 // a name no supported release installs, and not about one a release does.
+// The defect (v1.22.0 re-walk of the combined build): n10s is a name every
+// 5.26 entrypoint installs, so the operator let it through on 5.26.32, and the
+// server crash-looped: the entrypoint downloads neosemantics 5.26.0, the only
+// neosemantics release for 5.26, whose JAR bundles jackson-annotations 2.18.0,
+// and Neo4j runs Jackson 2.21 and later from 5.26.22 (NoSuchMethodError
+// JsonProperty.isRequired()). On CalVer before 2025.05 the entrypoint finds no
+// neosemantics release at all and starts without it. n10s in Managed mode is
+// refused wherever it does not run (operations.md id 170).
+func TestManagedPluginImageErrors_N10sWhereItsJARDoesNotRun(t *testing.T) {
+	for _, tc := range []struct {
+		tag, refusal string
+	}{
+		{"5.26.32-enterprise", "NoSuchMethodError JsonProperty.isRequired()"},
+		{"5.26.22-enterprise", "NoSuchMethodError JsonProperty.isRequired()"},
+		{"5.26-enterprise", "NoSuchMethodError JsonProperty.isRequired()"},
+		{"5.26.21-enterprise", ""},
+		{"5.26.0-enterprise", ""},
+		{"2025.04.0-enterprise", "finds no neosemantics release for CalVer"},
+		{"2025.01.0-enterprise", "finds no neosemantics release for CalVer"},
+		{"2026.08.1-enterprise", "image can install"}, // not on the list at all
+	} {
+		t.Run(tc.tag, func(t *testing.T) {
+			for _, name := range []string{"n10s", "neosemantics"} {
+				errs := ManagedPluginImageErrors(managed(name), tc.tag)
+				if tc.refusal == "" {
+					assert.Empty(t, errs, name)
+					continue
+				}
+				require.Len(t, errs, 1, name)
+				assert.Equal(t, "spec.name", errs[0].Field)
+				assert.Contains(t, errs[0].Detail, tc.refusal)
+				assert.Contains(t, errs[0].Detail, "installMode: VerifiedDownload")
+			}
+		})
+	}
+	// A dependency is judged the same way.
+	errs := ManagedPluginImageErrors(managed("apoc", "n10s"), "5.26.32-enterprise")
+	require.Len(t, errs, 1)
+	assert.Equal(t, "spec.dependencies[0].name", errs[0].Field)
+	// VerifiedDownload never touches NEO4J_PLUGINS: any JAR goes.
+	verified := managed("n10s")
+	verified.Spec.InstallMode = "VerifiedDownload"
+	assert.Empty(t, ManagedPluginImageErrors(verified, "5.26.32-enterprise"))
+}
+
 func TestManagedPluginNameWarnings(t *testing.T) {
 	assert.Len(t, ManagedPluginNameWarnings(managed("graphql")), 1)
 	assert.Len(t, ManagedPluginNameWarnings(managed("acme-procs")), 1)
 	assert.Len(t, ManagedPluginNameWarnings(managed("apoc", "graphql")), 1)
 	assert.Contains(t, ManagedPluginNameWarnings(managed("graphql"))[0],
 		`spec.name "graphql" is not a plugin any supported Neo4j image can install`)
-	for _, ok := range []*neo4jv1beta1.Neo4jPlugin{managed("n10s"), managed("neosemantics"), managed("apoc"), managed("gds"), managed("fleet-management")} {
+	for _, ok := range []*neo4jv1beta1.Neo4jPlugin{managed("apoc"), managed("gds"), managed("fleet-management")} {
 		assert.Empty(t, ManagedPluginNameWarnings(ok), ok.Spec.Name)
+	}
+	// n10s runs on 5.26.0 to 5.26.21 only: offline, the image unknown, said.
+	for _, n10s := range []*neo4jv1beta1.Neo4jPlugin{managed("n10s"), managed("neosemantics")} {
+		warnings := ManagedPluginNameWarnings(n10s)
+		require.Len(t, warnings, 1, n10s.Spec.Name)
+		assert.Contains(t, warnings[0], "only from 5.26.0 to 5.26.21")
 	}
 	verified := managed("graphql")
 	verified.Spec.InstallMode = "VerifiedDownload"

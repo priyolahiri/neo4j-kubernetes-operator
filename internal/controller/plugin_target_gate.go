@@ -187,21 +187,29 @@ func (r *Neo4jPluginReconciler) failingPods(ctx context.Context, sts *appsv1.Sta
 // plugin of this generation has written nothing to wait for) and the template
 // changes the pod's env in variables the standalone does not render itself —
 // what the plugin's write changed.
-func (r *Neo4jPluginReconciler) replaceStuckPods(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) {
+//
+// It reports whether a pod is stuck so but cannot be deleted yet, because the
+// StatefulSet's controller has not seen its latest template: the uninstall of
+// a deleted plugin keeps its finalizer for that (uninstallWaitsForStuckPod), as
+// it is the plugin's last pass.
+func (r *Neo4jPluginReconciler) replaceStuckPods(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) bool {
 	if deployment.Type != "standalone" {
-		return
+		return false
 	}
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
-		return
+		return false
 	}
-	if sts.Spec.PodManagementPolicy == appsv1.ParallelPodManagement ||
-		sts.Status.ObservedGeneration < sts.Generation || sts.Status.UpdateRevision == "" {
-		return
+	if sts.Spec.PodManagementPolicy == appsv1.ParallelPodManagement {
+		return false
 	}
+	seen := sts.Status.ObservedGeneration >= sts.Generation && sts.Status.UpdateRevision != ""
 	name := resources.PluginInitContainerName(plugin.Spec.Name)
 	verified := isVerifiedDownloadInstallMode(plugin)
-	settled := plugin.Status.Phase == neo4jv1beta1.PhaseReady && plugin.Status.ObservedGeneration == plugin.Generation
+	// Settled: Ready at its generation and still to be on the target. A
+	// plugin being deleted, disabled or refused has just written its removal.
+	settled := plugin.Status.Phase == neo4jv1beta1.PhaseReady && plugin.Status.ObservedGeneration == plugin.Generation &&
+		plugin.DeletionTimestamp == nil && plugin.Spec.Enabled
 	targetOwned := targetOwnedEnvNames(sts)
 	stuck := func(pod *corev1.Pod) (string, bool) {
 		if code, ok := initContainerFailure(pod, name); ok && verified {
@@ -223,8 +231,17 @@ func (r *Neo4jPluginReconciler) replaceStuckPods(ctx context.Context, plugin *ne
 		}
 		return "", false
 	}
+	waiting := false
 	for _, pod := range r.failingPods(ctx, sts, deployment, stuck) {
-		if isPodReady(pod) || pod.DeletionTimestamp != nil || pod.Labels[appsv1.ControllerRevisionHashLabelKey] == sts.Status.UpdateRevision {
+		if isPodReady(pod) || pod.DeletionTimestamp != nil {
+			continue
+		}
+		if !seen {
+			// Deleted now, it would come back on the template it fails with.
+			waiting = true
+			continue
+		}
+		if pod.Labels[appsv1.ControllerRevisionHashLabelKey] == sts.Status.UpdateRevision {
 			continue
 		}
 		why, _ := stuck(pod)
@@ -241,6 +258,7 @@ func (r *Neo4jPluginReconciler) replaceStuckPods(ctx context.Context, plugin *ne
 				"an OrderedReady StatefulSet does not replace a pod that is not Ready",
 			pod.Name, targetName(deployment), why, sts.Name, sts.Status.UpdateRevision)
 	}
+	return waiting
 }
 
 // selfRepair decides whether a write of the plugin may go to a target that is

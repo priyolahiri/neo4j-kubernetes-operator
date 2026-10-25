@@ -114,7 +114,8 @@ func allowlistLoadsAny(allowlist string, namespaces []string) bool {
 func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployment *DeploymentInfo) (value, where string, set bool, err error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
-		return "", "", false, client.IgnoreNotFound(err)
+		// NotFound included: a missing StatefulSet tells nothing (id 177).
+		return "", "", false, err
 	}
 	envName := resources.Neo4jSettingEnvVarName(allowlistSetting)
 	for _, e := range neo4jContainerEnv(sts.Spec.Template.Spec) {
@@ -188,7 +189,11 @@ func (r *Neo4jPluginReconciler) reportHiddenProcedures(ctx context.Context, plug
 	if deployment != nil && pluginOnTarget(plugin, deployment) {
 		var err error
 		if message, err = r.hiddenProceduresMessage(ctx, plugin, deployment); err != nil {
-			log.FromContext(ctx).Error(err, "Cannot tell whether the target's allowlist hides the plugin's procedures")
+			// A StatefulSet that does not exist (not created yet, or deleted
+			// for a storage expansion) leaves the condition as it is (id 177).
+			if !errors.IsNotFound(err) {
+				log.FromContext(ctx).Error(err, "Cannot tell whether the target's allowlist hides the plugin's procedures")
+			}
 			return
 		}
 	}

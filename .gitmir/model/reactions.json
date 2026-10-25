@@ -51,7 +51,7 @@
   {
     "id": "rx-plugin-target-self-heal",
     "name": "Plugin Restores What Its Target Lost",
-    "description": "When a Neo4jPlugin's target StatefulSet (a cluster's {name}-server, a standalone's {name}) is created or its pod template changes, the plugin controller re-checks every Ready plugin targeting it. If the template still carries what the plugin set, nothing is written and the plugin stays Ready; if something removed it (NEO4J_PLUGINS, a variable the plugin sets, a VerifiedDownload init container or volume), the plugin turns Installing, emits PluginMissing and writes it back, which restarts the servers — or, while the target is not Ready with every server available, turns Waiting and restores it once the target is. Values someone else gave the plugin's variables are left alone, and variables the cluster renders from its own spec are never overwritten.",
+    "description": "When a Neo4jPlugin's target StatefulSet (a cluster's {name}-server, a standalone's {name}) is created or its pod template changes, the plugin controller re-checks every Ready plugin targeting it. If the template still carries what the plugin set, nothing is written and the plugin stays Ready; if something removed it (NEO4J_PLUGINS, a variable the plugin sets, a VerifiedDownload init container or volume), the plugin turns Installing, emits PluginMissing and writes it back, which restarts the servers — or, while the target is not Ready with every server available, turns Waiting and restores it once the target is. Values someone else gave the plugin's variables are left alone, and variables the cluster renders from its own spec are never overwritten. While the StatefulSet does not exist (before its creation, or for the seconds a storage expansion takes to create it again as it was) the plugin waits with no event and stays Ready; a StatefulSet created as it was is not drift (operations.md id 177).",
     "moduleId": "mod-plugins",
     "trigger": {
       "entityId": "ent-neo4jenterprisecluster",
@@ -195,7 +195,7 @@
   {
     "id": "rx-plugin-deleted-cleans-target",
     "name": "Deleted Plugin Takes Away What It Wrote",
-    "description": "When a Neo4jPlugin is deleted, its finalizer takes off the target's StatefulSet, in one write (one rolling restart), everything the plugin wrote: the variables its record lists and those its spec sets, its tokens in the procedure lists (on a cluster each list keeps only what the other enabled plugins ask for, and gains nothing), its NEO4J_PLUGINS names — those its record lists and, in Managed mode, its own and its dependencies' — that no other Managed plugin of the target installs (fleet-management stays while the target's spec.auraFleetManagement installs it; a NEO4J_PLUGINS the target renders itself is left alone), a VerifiedDownload plugin's init container, auth volume and, once nothing mounts it, the shared CA volume, and its record. What the target renders from its own spec stays. The uninstall does not wait for a fully available target.",
+    "description": "When a Neo4jPlugin is deleted, its finalizer takes off the target's StatefulSet, in one write (one rolling restart), everything the plugin wrote: the variables its record lists and those its spec sets, its tokens in the procedure lists (on a cluster each list keeps only what the other enabled plugins ask for, and gains nothing), its NEO4J_PLUGINS names — those its record lists and, in Managed mode, its own and its dependencies' — that no other Managed plugin of the target installs (fleet-management stays while the target's spec.auraFleetManagement installs it; a NEO4J_PLUGINS the target renders itself is left alone), a VerifiedDownload plugin's init container, auth volume and, once nothing mounts it, the shared CA volume, and its record. What the target renders from its own spec stays. The uninstall does not wait for a fully available target. On a standalone whose pod keeps failing on the plugin, the finalizer stays until that pod is deleted and replaced from the new template (at most five minutes from the deletion), since its OrderedReady StatefulSet does not replace a pod that is not Ready.",
     "moduleId": "mod-plugins",
     "trigger": {
       "entityId": "ent-neo4jplugin",
@@ -208,6 +208,12 @@
         "entityId": "ent-neo4jenterprisecluster",
         "fieldName": "StatefulSet.spec.template (neo4j container env; initContainers and volumes); StatefulSet annotation neo4j.com/plugin-env-vars.<plugin>",
         "description": "One update removing the plugin's variables, list tokens, NEO4J_PLUGINS names, init container and volumes, and its record."
+      },
+      {
+        "kind": "delete",
+        "entityId": "ent-neo4jenterprisestandalone",
+        "fieldName": "Pod {name}-0",
+        "description": "On a standalone whose pod keeps failing on the plugin, deletes that pod once the StatefulSet has seen the uninstall's template, so it starts without the plugin (operations.md id 155)."
       },
       {
         "kind": "delete",

@@ -364,6 +364,17 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		return r.reconcileRefused(ctx, plugin, deployment, refusal)
 	}
 
+	// A target whose StatefulSet does not exist — not created yet, or deleted
+	// by a storage expansion that creates it again as it was (id 171) — is
+	// waited for, quietly: nothing of the plugin can be judged, written or lost
+	// meanwhile (awaitStatefulSet, operations.md id 177).
+	if absent, err := r.statefulSetAbsent(ctx, deployment); err != nil {
+		logger.Error(err, "Cannot read the target's StatefulSet")
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	} else if absent {
+		return r.awaitStatefulSet(ctx, plugin, deployment)
+	}
+
 	// Standalone neo4j.conf (plugin security settings) is owned by the standalone
 	// controller, which folds in the union of all Neo4jPlugin CRs for the target
 	// and rolls the pod on change (issue #146). It watches Neo4jPlugin, so creating
@@ -420,6 +431,8 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		drift, err := r.targetDrift(ctx, plugin, deployment)
 		missing, outdated := drift.missing, drift.outdated
 		switch {
+		case errors.IsNotFound(err):
+			return r.awaitStatefulSet(ctx, plugin, deployment)
 		case err != nil:
 			// The install below reads the same StatefulSet and reports it.
 			logger.Error(err, "Cannot tell whether the target still carries the plugin")
@@ -466,6 +479,9 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// — one waiting for the servers this install restarted, which turned the
 	// cluster Forming — carries on.
 	changes, changesErr := r.installChangesTarget(ctx, plugin, deployment)
+	if errors.IsNotFound(changesErr) {
+		return r.awaitStatefulSet(ctx, plugin, deployment)
+	}
 	if changesErr != nil {
 		// The install below reads the same StatefulSet and reports it.
 		logger.Error(changesErr, "Cannot tell whether installing the plugin would change its target")
@@ -537,6 +553,9 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	// Install plugin using NEO4J_PLUGINS environment variable (recommended by Neo4j docs)
 	written, err := r.writePluginToTarget(ctx, plugin, deployment)
 	if err != nil {
+		if errors.IsNotFound(err) {
+			return r.awaitStatefulSet(ctx, plugin, deployment)
+		}
 		if retryablePluginError(err) {
 			logger.Info("Plugin installation interrupted; retrying", "error", err.Error())
 			r.updatePluginStatus(ctx, plugin, neo4jv1beta1.PhaseInstalling,
@@ -713,6 +732,13 @@ func (r *Neo4jPluginReconciler) handleDeletion(ctx context.Context, plugin *neo4
 	if err := r.uninstallPlugin(ctx, plugin); err != nil {
 		logger.Error(err, "Failed to uninstall plugin")
 		return ctrl.Result{}, err
+	}
+
+	// A standalone's pod that keeps failing on what the plugin set is not
+	// replaced once the uninstall is written: the finalizer waits until the
+	// plugin has deleted it (uninstallWaitsForStuckPod, operations.md id 155).
+	if r.uninstallWaitsForStuckPod(ctx, plugin) {
+		return ctrl.Result{RequeueAfter: stuckPodRecheck}, nil
 	}
 
 	// Remove finalizer
@@ -1187,9 +1213,8 @@ func (r *Neo4jPluginReconciler) targetDrift(ctx context.Context, plugin *neo4jv1
 	stsName := r.getStatefulSetName(deployment)
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: deployment.Namespace}, sts); err != nil {
-		if errors.IsNotFound(err) {
-			return pluginTargetDrift{missing: fmt.Sprintf("StatefulSet %s does not exist", stsName)}, nil
-		}
+		// A StatefulSet that does not exist is not drift: nothing was taken
+		// off it, and nothing can be put back yet (awaitStatefulSet, id 177).
 		return pluginTargetDrift{}, fmt.Errorf("failed to get StatefulSet %s: %w", stsName, err)
 	}
 	if neo4jContainer(&sts.Spec.Template.Spec) == nil {

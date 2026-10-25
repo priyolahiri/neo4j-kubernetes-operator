@@ -263,9 +263,13 @@ func TestUnionPluginConfSettings(t *testing.T) {
 	if strings.Contains(u, "graphql.*") || strings.Contains(u, "n10s.*") {
 		t.Errorf("a plugin the standalone's image refuses must not contribute, got %q", u)
 	}
-	// On 5.26 the entrypoint installs n10s: its settings are in.
-	if u := unionPluginConfSettings(plugins, "sa", "5.26.32-enterprise")["dbms.security.procedures.unrestricted"]; !strings.Contains(u, "n10s.*") || strings.Contains(u, "graphql.*") {
-		t.Errorf("on 5.26, n10s contributes and graphql does not, got %q", u)
+	// On 5.26 up to 5.26.21 the entrypoint installs n10s and it runs: its
+	// settings are in (operations.md id 170).
+	if u := unionPluginConfSettings(plugins, "sa", "5.26.21-enterprise")["dbms.security.procedures.unrestricted"]; !strings.Contains(u, "n10s.*") || strings.Contains(u, "graphql.*") {
+		t.Errorf("on 5.26.21, n10s contributes and graphql does not, got %q", u)
+	}
+	if u := unionPluginConfSettings(plugins, "sa", "5.26.32-enterprise")["dbms.security.procedures.unrestricted"]; strings.Contains(u, "n10s.*") {
+		t.Errorf("on 5.26.32, n10s is refused and does not contribute, got %q", u)
 	}
 	if got["server.unmanaged_extension_classes"] == "" {
 		t.Error("bloom's unmanaged_extension_classes should be present")

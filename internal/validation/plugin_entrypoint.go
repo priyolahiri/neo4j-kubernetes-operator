@@ -78,6 +78,64 @@ var entrypointPluginLists = []entrypointPluginList{
 	{from: "2025.08.0", names: []string{"apoc", "apoc-extended", "bloom", "fleet-management", "genai", "graph-data-science"}},
 }
 
+// entrypointBrokenPlugin is a name the entrypoint of a range of releases
+// lists, and installs, but whose JAR that release does not run: from release
+// from to the end of its line (or until the line's list drops the name). why
+// says what happens; instead what to do.
+type entrypointBrokenPlugin struct {
+	name, from string
+	why        string
+	instead    string
+}
+
+// entrypointBrokenPlugins are the names the entrypoint installs that do not
+// work, release by release (operations.md id 170). Read on 2026-10-25:
+//   - n10s: every 5.26.x maps, in the versions.json the entrypoint downloads it
+//     by (neo4j-labs.github.io/neosemantics), to neosemantics 5.26.0, the only
+//     neosemantics release for 5.26. Its JAR bundles jackson-annotations 2.18.0
+//     unshaded. Neo4j moved to Jackson 2.21 at 5.26.22 (2.22 by 5.26.32; the
+//     pom of neo4j/neo4j at each tag), and its server stops at startup with
+//     NoSuchMethodError JsonProperty.isRequired() (v1.22.0 re-walk, 5.26.32).
+//     From 5.26.0 to 5.26.21 Neo4j ships the same Jackson 2.18.0.
+//   - n10s on CalVer 2025.01 to 2025.04, whose images still list the name: the
+//     versions.json has no CalVer release, so the entrypoint finds no JAR and
+//     starts the server without it ("No compatible "n10s" plugin found"); from
+//     2025.05 the list drops it (entrypointPluginLists).
+var entrypointBrokenPlugins = []entrypointBrokenPlugin{
+	{
+		name: "n10s", from: "5.26.22",
+		why: "its entrypoint downloads neosemantics 5.26.0 for it, the only neosemantics release for 5.26, which bundles " +
+			"jackson-annotations 2.18.0; from 5.26.22 Neo4j runs Jackson 2.21 or later, and the server stops at startup " +
+			"with NoSuchMethodError JsonProperty.isRequired()",
+		instead: "; no neosemantics release starts on 5.26.22 or later: run a 5.26 release up to 5.26.21, or a CalVer release " +
+			"with neosemantics 2025.06.1 installed by installMode: VerifiedDownload",
+	},
+	{
+		name: "n10s", from: "2025.01.0",
+		why: "its entrypoint finds no neosemantics release for CalVer in the versions.json it installs n10s by, and starts " +
+			"the server without the plugin",
+		instead: "; install a neosemantics JAR built for your release with installMode: VerifiedDownload (source.url + source.checksum) instead",
+	},
+}
+
+// brokenEntrypointPlugin returns the entry of entrypointBrokenPlugins that
+// holds for name on the release v; nil when none does.
+func brokenEntrypointPlugin(name string, v *VersionInfo) *entrypointBrokenPlugin {
+	var found *entrypointBrokenPlugin
+	for i := range entrypointBrokenPlugins {
+		b := &entrypointBrokenPlugins[i]
+		from := parseTagVersion(b.from)
+		if b.name != name || (from.Major >= 2025) != (v.Major >= 2025) {
+			continue
+		}
+		key, fromKey := versionKey(v), versionKey(from)
+		if slices.Compare(fromKey[:], key[:]) <= 0 {
+			found = b
+		}
+	}
+	return found
+}
+
 // EntrypointPluginName is the name the entrypoint knows a plugin by in
 // NEO4J_PLUGINS, for a Neo4jPlugin's spec.name or a dependency's name: the
 // operator's aliases gds (graph-data-science) and neosemantics (n10s), and
@@ -150,6 +208,18 @@ func anySupportedPluginNames() []string {
 	return all
 }
 
+// managedNameUnknownToEveryImage reports whether the plugin is Managed and its
+// own name, as the entrypoint knows it, is one no supported image installs —
+// a name ManagedPluginNameWarnings and the operator's refusal speak for.
+func managedNameUnknownToEveryImage(plugin *neo4jv1beta1.Neo4jPlugin) bool {
+	for _, e := range managedPluginEntries(plugin) {
+		if !e.dependency {
+			return !slices.Contains(anySupportedPluginNames(), e.name)
+		}
+	}
+	return false
+}
+
 // managedPluginEntry is a name a Managed plugin puts in NEO4J_PLUGINS: as the
 // spec gives it (value, at path) and as the entrypoint knows it (name).
 type managedPluginEntry struct {
@@ -219,9 +289,14 @@ func ManagedPluginImageErrors(plugin *neo4jv1beta1.Neo4jPlugin, imageTag string)
 	if !ok {
 		return nil
 	}
+	v := parseTagVersion(imageTag)
 	var errs field.ErrorList
 	for _, e := range entries {
 		if slices.Contains(known, e.name) {
+			if b := brokenEntrypointPlugin(e.name, v); b != nil {
+				errs = append(errs, field.Invalid(e.path, e.value, fmt.Sprintf(
+					"not a plugin the neo4j:%s image can run in installMode Managed: %s%s", imageTag, b.why, b.instead)))
+			}
 			continue
 		}
 		errs = append(errs, field.Invalid(e.path, e.value, fmt.Sprintf(
@@ -233,12 +308,22 @@ func ManagedPluginImageErrors(plugin *neo4jv1beta1.Neo4jPlugin, imageTag string)
 
 // ManagedPluginNameWarnings is ManagedPluginImageErrors without a target, as
 // `kubectl neo4j validate` runs offline: the image is unknown, so it warns about
-// a name no supported release installs — graphql, a custom JAR's — and says
-// nothing about one some release does (n10s, on 5.26).
+// a name no supported release installs — graphql, a custom JAR's — and about
+// n10s, which runs on 5.26.0 to 5.26.21 only, and says nothing about a name
+// every release it lists runs.
 func ManagedPluginNameWarnings(plugin *neo4jv1beta1.Neo4jPlugin) []string {
 	all := anySupportedPluginNames()
 	var out []string
 	for _, e := range managedPluginEntries(plugin) {
+		if e.name == "n10s" {
+			// Installed by name on 5.26.0 to 5.26.21 only (entrypointBrokenPlugins).
+			out = append(out, fmt.Sprintf(
+				"%s %q: in installMode Managed, Neo4j runs n10s only from 5.26.0 to 5.26.21 — later 5.26 releases stop at startup on "+
+					"the jackson-annotations its neosemantics JAR bundles, and CalVer releases install none — so the operator refuses it "+
+					"on any other image; elsewhere install a neosemantics JAR built for your release with installMode: VerifiedDownload",
+				e.path, e.value))
+			continue
+		}
 		if slices.Contains(all, e.name) {
 			continue
 		}
