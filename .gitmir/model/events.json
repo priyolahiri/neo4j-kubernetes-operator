@@ -176,7 +176,7 @@
   {
     "id": "ev-aura-fleet-management-plugin-patch-failed",
     "name": "AuraFleetManagementPluginPatchFailed",
-    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the write that creates the StatefulSet already lists the plugin (#531; knowledge operations.md ids 164, 175). Announced when the failure starts or its error text changes, not on every pass while it lasts: the reconciler remembers the last one per deployment (lastAnnounced), forgets it when the patch goes through or the deployment is deleted, so a failure that comes back is announced again (operations.md id 145).",
+    "description": "Fires when the live StatefulSet patch that merges fleet-management into NEO4J_PLUGINS fails. Not raised for a server StatefulSet that does not exist yet — a new cluster's first pass reaches the patch before it writes its StatefulSet, and a new standalone reads the one it just created from a cache that has not seen it — since the write that creates the StatefulSet already lists the plugin (#531; knowledge operations.md ids 164, 175). Announced when the failure starts or its error text changes, not on every pass while it lasts: the reconciler remembers the last one per deployment (lastAnnounced), forgets it when the patch goes through or the deployment is deleted, so a failure that comes back is announced again (operations.md id 145). Worded for the step that failed (fleetPluginPatchFailure): \"Failed to add fleet-management to NEO4J_PLUGINS\" only for the StatefulSet write, \"Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management\" for the check before it (the StatefulSet unreadable, no neo4j container, an unparseable list) — all a pass does on an image with Fleet Manager built in (2026.03+), where nothing is added (operations.md id 192).",
     "moduleId": "mod-cluster"
   },
   {
@@ -764,13 +764,13 @@
   {
     "id": "ev-aura-instance-orphaned",
     "name": "AuraInstanceOrphaned",
-    "description": "Emitted (Normal) when handleDeletion leaves the cloud instance running under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
+    "description": "Emitted (Normal) when handleDeletion leaves the cloud instance running under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157). Also a Warning when Aura kept refusing the DELETE (not a conflict, not transient) for finalizerDeletionGracePeriod: the cloud instance keeps running (operations.md id 201).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-instance-failed",
     "name": "AuraInstanceFailed",
-    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
+    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also records a Delete Aura refused (reason DeletionRefused, id 201).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -830,13 +830,13 @@
   {
     "id": "ev-aura-database-orphaned",
     "name": "AuraDatabaseOrphaned",
-    "description": "Emitted when handleDeletion leaves the database in place under deletionPolicy=Orphan.",
+    "description": "Emitted when handleDeletion leaves the database in place under deletionPolicy=Orphan. A Warning when deletionPolicy is Delete but the database cannot be deleted: at once when its AuraInstance CR no longer exists (the credentials come through it; the database went with the instance if that was deleted in Aura, otherwise it is still there with its data), and after finalizerDeletionGracePeriod when the credentials, the organization or project, or the instance ID stayed unavailable, or Aura kept refusing the DELETE: the database stays on the instance with its data (operations.md ids 157, 201, 202). It was a Normal event, at once, for any of these.",
     "moduleId": "mod-aura-database"
   },
   {
     "id": "ev-aura-database-failed",
     "name": "AuraDatabaseFailed",
-    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The InstanceNotMultiDatabase refusal, once on status for the current generation and the same Aura instance, is not asked again (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
+    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The InstanceNotMultiDatabase refusal, once on status for the current generation and the same Aura instance, is not asked again (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also records a Delete that waits for what it needs to reach Aura (reason CredentialsUnavailable, id 202) or on a DELETE Aura refused (reason DeletionRefused, id 201).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -896,7 +896,7 @@
   {
     "id": "ev-aura-member-failed",
     "name": "AuraMemberFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also the wait of a deletionPolicy=Delete deletion for credentials it cannot resolve (reason CredentialsUnavailable, phase Error), announced once (operations.md id 178).",
+    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also the wait of a deletionPolicy=Delete deletion for credentials it cannot resolve (reason CredentialsUnavailable, phase Error), announced once (operations.md id 178). Also records a Delete Aura refused (reason DeletionRefused, id 201).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -926,13 +926,13 @@
   {
     "id": "ev-aura-invite-orphaned",
     "name": "AuraInviteOrphaned",
-    "description": "Emitted when handleDeletion leaves the invite pending: a Normal event under deletionPolicy=Orphan; a Warning when deletionPolicy=Delete could not resolve the credentials or the organization within finalizerDeletionGracePeriod, so the finalizer is released, the invite stays pending in Aura and can still be accepted (operations.md ids 157, 178).",
+    "description": "Emitted when handleDeletion leaves the invite pending: a Normal event under deletionPolicy=Orphan; a Warning when deletionPolicy=Delete could not resolve the credentials or the organization within finalizerDeletionGracePeriod, so the finalizer is released, the invite stays pending in Aura and can still be accepted (operations.md ids 157, 178). Also a Warning when Aura kept refusing the DELETE for finalizerDeletionGracePeriod (operations.md id 201).",
     "moduleId": "mod-aura-rbac"
   },
   {
     "id": "ev-aura-invite-failed",
     "name": "AuraInviteFailed",
-    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also the wait of a deletionPolicy=Delete deletion for credentials it cannot resolve (reason CredentialsUnavailable, phase Error), announced once (operations.md id 178).",
+    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also the wait of a deletionPolicy=Delete deletion for credentials it cannot resolve (reason CredentialsUnavailable, phase Error), announced once (operations.md id 178). Also records a Delete Aura refused (reason DeletionRefused, id 201).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -968,7 +968,7 @@
   {
     "id": "ev-aura-customer-managed-key-delete-blocked",
     "name": "AuraCustomerManagedKeyDeleteBlocked",
-    "description": "Emitted (Warning) when DeleteCustomerManagedKey is refused (400 encryption-key-is-active) because an instance still uses the key. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted (Warning) when DeleteCustomerManagedKey is refused (400 encryption-key-is-active) because an instance still uses the key. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The wait is bounded: Synced=False with reason KeyInUse names the deadline, and once finalizerDeletionGracePeriod has passed the finalizer is released with a Warning AuraCustomerManagedKeyOrphaned; it waited for ever, holding the namespace Terminating (operations.md id 201).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -980,13 +980,13 @@
   {
     "id": "ev-aura-customer-managed-key-orphaned",
     "name": "AuraCustomerManagedKeyOrphaned",
-    "description": "Emitted (Normal) when handleDeletion leaves the key registered under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
+    "description": "Emitted (Normal) when handleDeletion leaves the key registered under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157). Also a Warning when Aura kept refusing the DELETE, or the key was still in use, for finalizerDeletionGracePeriod: the key stays registered in Aura (operations.md id 201).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-customer-managed-key-failed",
     "name": "AuraCustomerManagedKeyFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
+    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also records a Delete Aura refused (reason DeletionRefused, id 201).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -1022,13 +1022,13 @@
   {
     "id": "ev-aura-ip-filter-orphaned",
     "name": "AuraIPFilterOrphaned",
-    "description": "Emitted (Normal) when handleDeletion leaves the filter in place under deletionPolicy=Orphan, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials or organization could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
+    "description": "Emitted (Normal) when handleDeletion leaves the filter in place under deletionPolicy=Orphan, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials or organization could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157). Also a Warning when Aura kept refusing the DELETE for finalizerDeletionGracePeriod: the filter stays in place (operations.md id 201).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-ip-filter-failed",
     "name": "AuraIPFilterFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
+    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also records a Delete Aura refused (reason DeletionRefused, id 201).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -1172,7 +1172,7 @@
   {
     "id": "ev-aura-member-orphaned",
     "name": "AuraMemberOrphaned",
-    "description": "Emitted when an AuraOrganizationMember or AuraProjectMember deletion leaves the person in Aura: a Normal event under deletionPolicy=Orphan; a Warning when deletionPolicy=Delete could not resolve the credentials, the organization (or, for a project member, the project) within finalizerDeletionGracePeriod, so the finalizer is released and they keep their role (operations.md ids 157, 178).",
+    "description": "Emitted when an AuraOrganizationMember or AuraProjectMember deletion leaves the person in Aura: a Normal event under deletionPolicy=Orphan; a Warning when deletionPolicy=Delete could not resolve the credentials, the organization (or, for a project member, the project) within finalizerDeletionGracePeriod, so the finalizer is released and they keep their role (operations.md ids 157, 178). Also a Warning when Aura kept refusing the DELETE for finalizerDeletionGracePeriod (operations.md id 201).",
     "moduleId": "mod-aura-rbac"
   }
 ]

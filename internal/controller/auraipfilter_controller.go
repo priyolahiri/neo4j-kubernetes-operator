@@ -295,16 +295,23 @@ func (r *AuraIPFilterReconciler) handleDeletion(
 		r.Recorder.Event(f, corev1.EventTypeWarning, EventReasonAuraIPFilterOrphaned,
 			auraOrphanedWithoutCredentials("IP filter", externalID, "it stays in place in Aura", targetErr))
 	case deleteCloud && externalID != "":
-		if err := apiClient.DeleteIPFilter(ctx, orgID, externalID); err != nil {
-			if aura.IsConflict(err) || aura.IsTransient(err) {
-				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-			}
-			if !aura.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
+		// A DELETE Aura refused is waited on, bounded, then the filter is left
+		// and named — it was returned as an error, with backoff for ever
+		// (knowledge rule 201).
+		err := apiClient.DeleteIPFilter(ctx, orgID, externalID)
+		switch {
+		case err == nil || aura.IsNotFound(err):
+			r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterDeleted,
+				fmt.Sprintf("Deleted IP filter %s", externalID))
+		case !auraDeleteRefused(err):
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		case !deletionGracePeriodExceeded(f):
+			return r.fail(ctx, req, f, auraReasonDeletionRefused,
+				auraDeletionRefusedWait(f, "IP filter", externalID, err))
+		default:
+			r.Recorder.Event(f, corev1.EventTypeWarning, EventReasonAuraIPFilterOrphaned,
+				auraOrphanedAfterRefusal("IP filter", externalID, "it stays in place in Aura", err))
 		}
-		r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterDeleted,
-			fmt.Sprintf("Deleted IP filter %s", externalID))
 	case externalID != "":
 		r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterOrphaned,
 			fmt.Sprintf("Orphaning IP filter %s; it stays in place in Aura", externalID))

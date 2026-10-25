@@ -3092,11 +3092,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 		// Announced — and logged at info — when the failure starts or its message
 		// changes, at V(1) on the passes in between; it was an ERROR on every pass
 		// (operations.md ids 145, 164). The next pass tries again.
+		// Worded for what failed: on an image with Fleet Manager built in nothing
+		// is added, only the StatefulSet read (fleetPluginPatchFailure).
+		event, logMsg := fleetPluginPatchFailure(err)
 		announced := r.fleetPluginPatchFailures.changed(client.ObjectKeyFromObject(standalone).String(), err.Error())
-		logRefusal(logger, announced, "Could not add fleet-management to NEO4J_PLUGINS; trying again on the next pass", err)
+		logRefusal(logger, announced, logMsg, err)
 		if announced && r.Recorder != nil {
-			r.Recorder.Eventf(standalone, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed,
-				"Failed to add fleet-management to NEO4J_PLUGINS: %v", err)
+			r.Recorder.Event(standalone, corev1.EventTypeWarning, EventReasonAuraFleetPluginPatchFailed, event)
 		}
 		return nil
 	}
@@ -3188,9 +3190,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 			return fmt.Errorf("%w in StatefulSet %s", err, stsName)
 		}
 		if !changed {
-			return nil // already present — nothing to patch
+			return nil // already present, or built into the image — nothing to patch
 		}
-		return r.Update(ctx, stsCopy)
+		if err := r.Update(ctx, stsCopy); err != nil {
+			// Marked as the write, for the event's wording (fleetPluginPatchFailure);
+			// a Conflict is still one to RetryOnConflict.
+			return &fleetPluginWriteError{err: err}
+		}
+		return nil
 	})
 }
 

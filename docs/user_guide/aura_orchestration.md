@@ -307,7 +307,10 @@ Once the key is `Ready`, copy `status.customerManagedKeyId` into an
 - **Deletion.** `Orphan` (default) leaves the key registered in Aura; `Delete`
   deregisters it. Aura refuses to delete a key that is still bound to a running
   instance — the CR then reports a `KeyInUse` condition and keeps its finalizer
-  until you detach/delete those instances.
+  while you detach/delete those instances, for up to 5 minutes after the
+  deletion was requested. Then it is removed with a Warning
+  `AuraCustomerManagedKeyOrphaned`, and the key stays registered in Aura: delete
+  the instances first, or deregister the key in the Aura console afterwards.
 
 ## Management policies
 
@@ -515,11 +518,25 @@ which also makes create idempotent (a crash can't produce a duplicate instance).
 Only `Delete` calls Aura, so only it needs the credentials. When a namespace is
 torn down, its credentials Secret and `AuraProviderConfig` can go before the Aura
 CRs: an `Orphan` CR is removed regardless, while a `Delete` CR (`AuraInstance`,
-`AuraCustomerManagedKey`, `AuraIPFilter`) waits for the credentials with
+`AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraInvite`,
+`AuraOrganizationMember`, `AuraProjectMember`) waits for the credentials with
 `Ready=False`, reason `CredentialsUnavailable`, and after 5 minutes is removed
 anyway, with a Warning (`AuraInstanceOrphaned`, …) saying the resource was left
 in Aura. Delete the Aura CRs before their credentials, or delete what was left
 in the Aura console.
+
+A delete Aura refuses is waited on the same way, with reason `DeletionRefused`:
+asked again for 5 minutes after the deletion was requested, then the CR is
+removed with the same Warning naming what is left. A conflict (another operation
+in flight), a rate limit, a 5xx or a network failure is not a refusal; it is
+retried for as long as it lasts.
+
+An `AuraDatabase` is reached through its `AuraInstance` CR. If that CR is
+already gone, nothing can reach Aura for the database any more, so the
+`AuraDatabase` is removed at once with a Warning `AuraDatabaseOrphaned`: the
+database went with the instance if that was deleted in Aura, and is otherwise
+still there with its data. Delete databases before their instance — as in the
+clean-up step above.
 
 ## Known limitations
 

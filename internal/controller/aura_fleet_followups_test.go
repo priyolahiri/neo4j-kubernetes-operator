@@ -376,8 +376,94 @@ func TestFleetPluginPatchFailed_IsLoggedOnceNotAsAnError(t *testing.T) {
 				require.NoError(t, pass(ctx), "a lasting patch failure is not a reconcile error")
 			}
 			assert.Empty(t, sink.errors(), "a lasting patch failure is not logged as an ERROR")
-			assert.Len(t, sink.mentioning(0, "fleet-management to NEO4J_PLUGINS"), 1, "logged at info when it is announced")
-			assert.Len(t, sink.mentioning(1, "fleet-management to NEO4J_PLUGINS"), 2, "and at V(1) on the passes in between")
+			assert.Len(t, sink.mentioning(0, "for fleet-management"), 1, "logged at info when it is announced")
+			assert.Len(t, sink.mentioning(1, "for fleet-management"), 2, "and at V(1) on the passes in between")
 		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AuraFleetManagementPluginPatchFailed names what failed (rule 192).
+//
+// It said "Failed to add fleet-management to NEO4J_PLUGINS" whatever failed —
+// also on an image with Fleet Manager built in (2026.03+), where the merge
+// never adds anything and all a pass does is read the StatefulSet and look at
+// its neo4j container. "Failed to add" is now said only of the write.
+// ---------------------------------------------------------------------------
+
+func TestFleetPluginPatchFailed_NamesWhatFailed(t *testing.T) {
+	scheme := auraTestScheme(t)
+	ctx := context.Background()
+	refused := errors.New("the API server refused the request")
+	readsRefused := interceptor.Funcs{
+		Get: func(ctx context.Context, cw client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
+			if _, ok := obj.(*appsv1.StatefulSet); ok {
+				return refused
+			}
+			return cw.Get(ctx, key, obj, opts...)
+		},
+	}
+	writesRefused := interceptor.Funcs{
+		Update: func(ctx context.Context, cw client.WithWatch, obj client.Object, opts ...client.UpdateOption) error {
+			if _, ok := obj.(*appsv1.StatefulSet); ok {
+				return refused
+			}
+			return cw.Update(ctx, obj, opts...)
+		},
+	}
+	const builtIn = "neo4j:2026.08.1-enterprise"
+	const check = "Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management: "
+	cases := []struct {
+		name      string
+		image     string
+		container string
+		funcs     interceptor.Funcs
+		want      string
+	}{
+		{"a built-in image, the StatefulSet unreadable", builtIn, "neo4j", readsRefused, check + "get StatefulSet"},
+		{"a built-in image, no neo4j container", builtIn, "not-neo4j", interceptor.Funcs{}, check + "neo4j container not found"},
+		{"an image that needs the plugin, the write refused", "neo4j:5.26.12-enterprise", "neo4j", writesRefused,
+			"Failed to add fleet-management to NEO4J_PLUGINS: the API server refused the request"},
+	}
+	for _, tc := range cases {
+		server := func(name string) *appsv1.StatefulSet {
+			sts := fleetTestStatefulSet(name)
+			sts.Spec.Template.Spec.Containers[0].Name = tc.container
+			sts.Spec.Template.Spec.Containers[0].Image = tc.image
+			return sts
+		}
+		passes := map[string]func(t *testing.T, rec record.EventRecorder){
+			"cluster": func(t *testing.T, rec record.EventRecorder) {
+				cl := &neo4jv1beta1.Neo4jEnterpriseCluster{
+					ObjectMeta: metav1.ObjectMeta{Name: "cl", Namespace: testNS},
+					Spec:       neo4jv1beta1.Neo4jEnterpriseClusterSpec{AuraFleetManagement: fleetTokenRef("fleet-token")},
+				}
+				r := &Neo4jEnterpriseClusterReconciler{Scheme: scheme, Recorder: rec,
+					Client: auraFakeClientBuilder(t, scheme, cl, server("cl-server")).WithInterceptorFuncs(tc.funcs).Build()}
+				require.NoError(t, r.reconcileAuraFleetManagement(ctx, cl))
+			},
+			"standalone": func(t *testing.T, rec record.EventRecorder) {
+				sa := &neo4jv1beta1.Neo4jEnterpriseStandalone{
+					ObjectMeta: metav1.ObjectMeta{Name: "sa", Namespace: testNS},
+					Spec:       neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{AuraFleetManagement: fleetTokenRef("fleet-token")},
+				}
+				r := &Neo4jEnterpriseStandaloneReconciler{Scheme: scheme, Recorder: rec,
+					Client: auraFakeClientBuilder(t, scheme, sa, server("sa")).WithInterceptorFuncs(tc.funcs).Build()}
+				require.NoError(t, r.reconcileAuraFleetManagement(ctx, sa))
+			},
+		}
+		for kind, pass := range passes {
+			t.Run(kind+": "+tc.name, func(t *testing.T) {
+				rec := record.NewFakeRecorder(20)
+				pass(t, rec)
+				failed := eventsWithReason(drainEvents(rec), EventReasonAuraFleetPluginPatchFailed)
+				require.Len(t, failed, 1)
+				assert.Contains(t, failed[0], tc.want)
+				if tc.image == builtIn {
+					assert.NotContains(t, failed[0], "Failed to add",
+						"nothing is added on an image with Fleet Manager built in: %q", failed[0])
+				}
+			})
+		}
 	}
 }

@@ -45,6 +45,8 @@ type fakeDatabaseAPI struct {
 	backupStatus    string
 	restoreCalls    int
 	lastRestoreReq  aura.RestoreDatabaseRequest
+	deleteCalls     int
+	deleteErr       error
 }
 
 // NOTE: these fakes mirror the PUBLISHED v2beta1 shapes. A Database carries only
@@ -73,7 +75,10 @@ func (f *fakeDatabaseAPI) ListDatabases(_ context.Context, _, _, _ string) ([]au
 	}
 	return nil, nil
 }
-func (f *fakeDatabaseAPI) DeleteDatabase(_ context.Context, _, _, _, _ string) error { return nil }
+func (f *fakeDatabaseAPI) DeleteDatabase(_ context.Context, _, _, _, _ string) error {
+	f.deleteCalls++
+	return f.deleteErr
+}
 
 // The create response is `{id}` only — no status.
 func (f *fakeDatabaseAPI) CreateDatabaseBackup(_ context.Context, _, _, _, _ string) (*aura.DatabaseBackup, error) {
@@ -123,6 +128,7 @@ type fakeMemberAPI struct {
 	invites          []aura.Invite
 	listInviteCalls  int
 	lastInviteReq    aura.CreateInviteRequest
+	deleteErr        error
 }
 
 func (f *fakeMemberAPI) ListOrgMembers(_ context.Context, _ string) ([]aura.Member, error) {
@@ -134,7 +140,7 @@ func (f *fakeMemberAPI) UpdateOrgMemberRole(_ context.Context, _, userID, role s
 }
 func (f *fakeMemberAPI) DeleteOrgMember(_ context.Context, _, _ string) error {
 	f.deleteOrgMember = true
-	return nil
+	return f.deleteErr
 }
 func (f *fakeMemberAPI) ListProjectMembers(_ context.Context, _, _ string) ([]aura.Member, error) {
 	if f.projectMembersFn != nil {
@@ -154,7 +160,7 @@ func (f *fakeMemberAPI) UpdateProjectMemberRole(_ context.Context, _, _, userID,
 }
 func (f *fakeMemberAPI) DeleteProjectMember(_ context.Context, _, _, _ string) error {
 	f.deleteProjMember = true
-	return nil
+	return f.deleteErr
 }
 func (f *fakeMemberAPI) CreateInvite(_ context.Context, _ string, req aura.CreateInviteRequest) (*aura.Invite, error) {
 	f.createInvite = true
@@ -188,7 +194,7 @@ func (f *fakeMemberAPI) ListInvites(_ context.Context, _ string) ([]aura.Invite,
 }
 func (f *fakeMemberAPI) DeleteInvite(_ context.Context, _, _ string) error {
 	f.deleteInvite = true
-	return nil
+	return f.deleteErr
 }
 
 func memberFactory(f *fakeMemberAPI) auraMemberClientFactory {

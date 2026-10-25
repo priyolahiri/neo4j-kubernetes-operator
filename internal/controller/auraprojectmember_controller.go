@@ -231,16 +231,24 @@ func (r *AuraProjectMemberReconciler) handleDeletion(ctx context.Context, req ct
 				fmt.Sprintf("they keep the role %s in the project", m.Spec.Role), targetErr))
 		return r.releaseFinalizer(ctx, req)
 	}
-	if err := apiClient.DeleteProjectMember(ctx, orgID, projectID, m.Status.UserID); err != nil {
-		if aura.IsConflict(err) || aura.IsTransient(err) {
-			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-		}
-		if !aura.IsNotFound(err) {
-			return ctrl.Result{}, err
-		}
+	// A DELETE Aura refused is waited on, bounded, then the member is left
+	// and named — it was returned as an error, with backoff for ever
+	// (knowledge rule 201).
+	err := apiClient.DeleteProjectMember(ctx, orgID, projectID, m.Status.UserID)
+	switch {
+	case err == nil || aura.IsNotFound(err):
+		r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberRemoved,
+			fmt.Sprintf("Removed %q from the project", m.Spec.Email))
+	case !auraDeleteRefused(err):
+		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+	case !deletionGracePeriodExceeded(m):
+		return r.fail(ctx, req, m, auraReasonDeletionRefused,
+			auraDeletionRefusedWait(m, what, m.Status.UserID, err))
+	default:
+		r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberOrphaned,
+			auraOrphanedAfterRefusal(what, m.Status.UserID,
+				fmt.Sprintf("they keep the role %s in the project", m.Spec.Role), err))
 	}
-	r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberRemoved,
-		fmt.Sprintf("Removed %q from the project", m.Spec.Email))
 	return r.releaseFinalizer(ctx, req)
 }
 

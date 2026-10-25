@@ -297,6 +297,8 @@ func auraStatusOf(t *testing.T, o client.Object) ([]metav1.Condition, string) {
 		return v.Status.Conditions, v.Status.Phase
 	case *neo4jv1beta1.AuraProjectMember:
 		return v.Status.Conditions, v.Status.Phase
+	case *neo4jv1beta1.AuraDatabase:
+		return v.Status.Conditions, v.Status.Phase
 	}
 	t.Fatalf("no status accessor for %T", o)
 	return nil, ""

@@ -44,7 +44,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 
 `deletionPolicy: Delete` removes the member from the project in Aura, then releases the finalizer. `Orphan` (the default), or a member whose Aura user ID was never recorded, calls nothing: it needs no credentials and the CR is removed at once (an `AuraMemberOrphaned` event names a member who keeps their role).
 
-Removing needs the credentials, the organization and the project. While they cannot be resolved — the credentials Secret or provider config deleted first in a namespace teardown, say — the CR waits with phase `Error`, `Ready=False`, reason `CredentialsUnavailable`, announced once. After 5 minutes it is removed anyway with a Warning `AuraMemberOrphaned`: the person keeps their project role in Aura, so remove them in the console. Before, the finalizer was released at once and without a word.
+Removing needs the credentials, the organization and the project. While they cannot be resolved — the credentials Secret or provider config deleted first in a namespace teardown, say — the CR waits with phase `Error`, `Ready=False`, reason `CredentialsUnavailable`, announced once. After 5 minutes it is removed anyway with a Warning `AuraMemberOrphaned`: the person keeps their project role in Aura, so remove them in the console. Before, the finalizer was released at once and without a word. A delete Aura refuses — anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last — is waited on the same way: `Ready=False`, reason `DeletionRefused`, announced once, asked again until 5 minutes after deletion was requested, then the CR is removed with the same Warning.
 
 ## Example
 

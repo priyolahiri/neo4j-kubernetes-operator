@@ -41,7 +41,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 | `region` | `string` | Region the key applies to, e.g. `europe-west1`. **Required. Immutable.** |
 | `instanceType` | `string` | Enum `enterprise-db` / `enterprise-ds` — CMKs are supported for the dedicated tiers only. **Required. Immutable.** |
 | `keyId` | `string` | The cloud KMS key resource identifier Aura will use: an AWS KMS key ARN, a GCP KMS key resource name, or an Azure Key Vault key URL. The customer must grant Aura access to this key out of band. **Required. Immutable.** |
-| `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (leave the key registered in Aura on CR delete). `Delete` deregisters it — fails while any instance still uses it. |
+| `deletionPolicy` | `string` | Enum `Orphan` / `Delete`. Default `Orphan` (leave the key registered in Aura on CR delete). `Delete` deregisters it — refused while any instance still uses it, which is waited on for 5 minutes (see the deletion note). |
 | `managementPolicies` | `[]string` | Items enum `Observe` / `Create` / `Update` / `Delete` / `*`. Default `["*"]` (full management). |
 
 ## Status
@@ -56,9 +56,9 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef` for API access.
 
 ## Deletion note
 
-A key still bound to an instance **cannot be deleted** — Aura returns `encryption-key-is-active`. The CR then sets `Synced=False` with reason `KeyInUse` and keeps its finalizer until the key is no longer referenced by any instance.
+A key still bound to an instance **cannot be deleted** — Aura returns `encryption-key-is-active`. The CR then sets `Synced=False` with reason `KeyInUse`, raises one `AuraCustomerManagedKeyDeleteBlocked`, and keeps its finalizer while it asks again — until 5 minutes after deletion was requested (the condition names the time). Then it releases the finalizer with a Warning `AuraCustomerManagedKeyOrphaned`: the key stays registered in Aura, still bound to an instance, so deregister it in the Aura console once nothing uses it. Detach or delete the instances first to have the CR deregister it. Before, a key in use held the CR — and its namespace — for as long as anything used it.
 
-`Orphan` needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). `Delete` needs them: while they cannot be read the CR waits, with `Ready=False`, reason `CredentialsUnavailable`, and after 5 minutes it is removed anyway with a Warning `AuraCustomerManagedKeyOrphaned` — the key stays registered in Aura.
+`Orphan` needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). `Delete` needs them: while they cannot be read the CR waits, with `Ready=False`, reason `CredentialsUnavailable`, and after 5 minutes it is removed anyway with a Warning `AuraCustomerManagedKeyOrphaned` — the key stays registered in Aura. A delete Aura refuses — anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last — is waited on the same way: `Ready=False`, reason `DeletionRefused`, announced once, asked again until 5 minutes after deletion was requested, then the CR is removed with the same Warning.
 
 ## Example
 

@@ -33,6 +33,33 @@ const fleetManagementPluginEntry = "fleet-management"
 // errNoNeo4jContainer is returned for a pod template without a neo4j container.
 var errNoNeo4jContainer = errors.New("neo4j container not found")
 
+// fleetPluginWriteError marks the fleet merge's write of the StatefulSet
+// failing, as opposed to the read or the inspection of its template before it.
+// On an image with Fleet Manager built in (2026.03+) the merge never writes
+// (addFleetManagementPlugin adds nothing, id 192), so a failure there is never
+// a failure to add the plugin.
+type fleetPluginWriteError struct{ err error }
+
+func (e *fleetPluginWriteError) Error() string { return e.err.Error() }
+func (e *fleetPluginWriteError) Unwrap() error { return e.err }
+
+// fleetPluginPatchFailure words AuraFleetManagementPluginPatchFailed, and the
+// line logged with it, for what failed: the write that adds fleet-management
+// to NEO4J_PLUGINS, or the check before it — the read of the server
+// StatefulSet, its neo4j container, the list already there — which is all a
+// pass does on an image with Fleet Manager built in. It said "Failed to add
+// fleet-management to NEO4J_PLUGINS" for both, on images where nothing is ever
+// added (knowledge rule 192).
+func fleetPluginPatchFailure(err error) (event, logMsg string) {
+	var write *fleetPluginWriteError
+	if errors.As(err, &write) {
+		return fmt.Sprintf("Failed to add fleet-management to NEO4J_PLUGINS: %v", err),
+			"Could not add fleet-management to NEO4J_PLUGINS; trying again on the next pass"
+	}
+	return fmt.Sprintf("Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management: %v", err),
+		"Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management; trying again on the next pass"
+}
+
 // clusterInstallsFleetManagement and standaloneInstallsFleetManagement report
 // whether the deployment's own spec installs the fleet-management plugin
 // (spec.auraFleetManagement.enabled).

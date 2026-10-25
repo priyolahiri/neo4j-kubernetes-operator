@@ -22,9 +22,11 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -109,19 +111,17 @@ func (r *AuraDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, nil
 	}
 
+	// Deletion first: it resolves the instance and the credentials only to
+	// call Aura (knowledge rules 157, 202).
+	if !d.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, req, d)
+	}
+
 	tgt, err := r.resolveTarget(ctx, d)
 	if err != nil {
-		// Deletion can still proceed best-effort even if the target is unresolved.
-		if !d.DeletionTimestamp.IsZero() {
-			return r.handleDeletion(ctx, req, d, nil, tgt)
-		}
 		return r.fail(ctx, req, d, "TargetUnresolved", err)
 	}
 	apiClient := resolveDatabaseClient(r.ClientFactory, tgt.creds)
-
-	if !d.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, req, d, apiClient, tgt)
-	}
 
 	if !controllerutil.ContainsFinalizer(d, AuraDatabaseFinalizer) {
 		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraDatabase) {
@@ -251,9 +251,23 @@ func (r *AuraDatabaseReconciler) observeOrCreate(
 	return created.ID, false, nil
 }
 
-func (r *AuraDatabaseReconciler) handleDeletion(
-	ctx context.Context, req ctrl.Request, d *neo4jv1beta1.AuraDatabase, apiClient auraDatabaseAPI, tgt auraDatabaseTarget,
-) (ctrl.Result, error) {
+// handleDeletion honours the deletion policy: Delete (the default) deletes the
+// database, Orphan leaves it. Only Delete calls Aura, so only it resolves the
+// AuraInstance the database is on and the credentials, which come through it.
+//
+// It used to release the finalizer whenever they could not be resolved, with a
+// Normal "Orphaning database" event: a database, with its data, left in Aura
+// and announced as routine. Now (knowledge rule 202):
+//   - the AuraInstance CR is gone: nothing can reach Aura for the database any
+//     more, and nothing will (its credentials came through it), so the
+//     finalizer is released at once — with a Warning, since the database is
+//     still there unless the instance was deleted in Aura too;
+//   - anything else (the credentials Secret, the provider config, the
+//     organization or project, an instance not yet created): the deletion
+//     waits finalizerDeletionGracePeriod for it, then releases with a Warning
+//     naming what is left (rule 157);
+//   - a DELETE Aura refuses: the same bounded wait (rule 201).
+func (r *AuraDatabaseReconciler) handleDeletion(ctx context.Context, req ctrl.Request, d *neo4jv1beta1.AuraDatabase) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(d, AuraDatabaseFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -262,25 +276,54 @@ func (r *AuraDatabaseReconciler) handleDeletion(
 		externalID = d.Status.DatabaseID
 	}
 	deleteCloud := d.Spec.DeletionPolicy != "Orphan" && managementAllows(d.Spec.ManagementPolicies, auraPolicyDelete)
-	if deleteCloud && externalID != "" && apiClient != nil && tgt.orgID != "" && tgt.projectID != "" && tgt.instanceID != "" {
-		if err := apiClient.DeleteDatabase(ctx, tgt.orgID, tgt.projectID, tgt.instanceID, externalID); err != nil {
-			if aura.IsConflict(err) || aura.IsTransient(err) {
-				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-			}
-			if !aura.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
-		}
-		r.Recorder.Event(d, corev1.EventTypeNormal, EventReasonAuraDatabaseDeleted,
-			fmt.Sprintf("Deleted database %s", externalID))
-	} else if externalID != "" {
+	remains := fmt.Sprintf("it stays on Aura instance %q with its data", d.Spec.InstanceRef)
+	switch {
+	case externalID == "":
+	case !deleteCloud:
 		r.Recorder.Event(d, corev1.EventTypeNormal, EventReasonAuraDatabaseOrphaned,
 			fmt.Sprintf("Orphaning database %s; it stays in place in Aura", externalID))
+	case r.instanceGone(ctx, d):
+		r.Recorder.Event(d, corev1.EventTypeWarning, EventReasonAuraDatabaseOrphaned, fmt.Sprintf(
+			"Orphaning database %s although deletionPolicy is Delete: its AuraInstance %q no longer exists, so the operator "+
+				"cannot reach Aura to delete it. It went with the instance if that was deleted in Aura; otherwise it is still "+
+				"there with its data, so check the Aura console", externalID, d.Spec.InstanceRef))
+	default:
+		tgt, err := r.resolveTarget(ctx, d)
+		if err != nil {
+			if !deletionGracePeriodExceeded(d) {
+				return r.fail(ctx, req, d, "CredentialsUnavailable",
+					auraDeletionNeedsCredentials(d, "Aura database", externalID, err))
+			}
+			r.Recorder.Event(d, corev1.EventTypeWarning, EventReasonAuraDatabaseOrphaned,
+				auraOrphanedWithoutCredentials("Aura database", externalID, remains, err))
+			break
+		}
+		err = resolveDatabaseClient(r.ClientFactory, tgt.creds).DeleteDatabase(ctx, tgt.orgID, tgt.projectID, tgt.instanceID, externalID)
+		switch {
+		case err == nil || aura.IsNotFound(err):
+			r.Recorder.Event(d, corev1.EventTypeNormal, EventReasonAuraDatabaseDeleted,
+				fmt.Sprintf("Deleted database %s", externalID))
+		case !auraDeleteRefused(err):
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		case !deletionGracePeriodExceeded(d):
+			return r.fail(ctx, req, d, auraReasonDeletionRefused,
+				auraDeletionRefusedWait(d, "Aura database", externalID, err))
+		default:
+			r.Recorder.Event(d, corev1.EventTypeWarning, EventReasonAuraDatabaseOrphaned,
+				auraOrphanedAfterRefusal("Aura database", externalID, remains, err))
+		}
 	}
 	// One removal a stale cache or a status write just before cannot turn
 	// into a Conflict, and that an object already gone has done already
 	// (knowledge rule 189).
 	return ctrl.Result{}, removeFinalizerAt(ctx, r.Client, req.NamespacedName, &neo4jv1beta1.AuraDatabase{}, AuraDatabaseFinalizer)
+}
+
+// instanceGone reports whether the AuraInstance the database is on no longer
+// exists as a CR. Another read error is not "gone": the deletion waits on it.
+func (r *AuraDatabaseReconciler) instanceGone(ctx context.Context, d *neo4jv1beta1.AuraDatabase) bool {
+	err := r.Get(ctx, types.NamespacedName{Name: d.Spec.InstanceRef, Namespace: d.Namespace}, &neo4jv1beta1.AuraInstance{})
+	return apierrors.IsNotFound(err)
 }
 
 func (r *AuraDatabaseReconciler) setExternalID(ctx context.Context, req ctrl.Request, id string) error {

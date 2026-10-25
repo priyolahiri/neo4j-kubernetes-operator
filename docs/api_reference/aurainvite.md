@@ -43,7 +43,7 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 
 `deletionPolicy: Delete` revokes the invite in Aura if it is still pending, then releases the finalizer. `Orphan`, or an invite the operator never recorded an ID for, calls nothing: it needs no credentials and the CR is removed at once (an `AuraInviteOrphaned` event names an invite left pending).
 
-Revoking needs the credentials and the organization. While they cannot be resolved — the credentials Secret or provider config deleted first in a namespace teardown, say — the CR waits with phase `Error`, `Ready=False`, reason `CredentialsUnavailable`, announced once. After 5 minutes it is removed anyway with a Warning `AuraInviteOrphaned`: the invite stays pending in Aura and can still be accepted, so revoke it in the console. Before, the finalizer was released at once and without a word.
+Revoking needs the credentials and the organization. While they cannot be resolved — the credentials Secret or provider config deleted first in a namespace teardown, say — the CR waits with phase `Error`, `Ready=False`, reason `CredentialsUnavailable`, announced once. After 5 minutes it is removed anyway with a Warning `AuraInviteOrphaned`: the invite stays pending in Aura and can still be accepted, so revoke it in the console. Before, the finalizer was released at once and without a word. A delete Aura refuses — anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last — is waited on the same way: `Ready=False`, reason `DeletionRefused`, announced once, asked again until 5 minutes after deletion was requested, then the CR is removed with the same Warning.
 
 ## Example
 

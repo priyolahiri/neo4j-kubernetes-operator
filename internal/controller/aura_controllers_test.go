@@ -56,6 +56,7 @@ type fakeAuraAPI struct {
 	createSnapshotFn  func(ctx context.Context, instanceID string) (*aura.Snapshot, error)
 	getSnapshotFn     func(ctx context.Context, instanceID, snapshotID string) (*aura.Snapshot, error)
 	restoreSnapshotFn func(ctx context.Context, instanceID, snapshotID string) (*aura.Instance, error)
+	deleteErr         error
 
 	// Call flags / captured args.
 	listCalled     bool
@@ -124,7 +125,7 @@ func (f *fakeAuraAPI) UpgradeInstance(ctx context.Context, id string) error {
 
 func (f *fakeAuraAPI) DeleteInstance(ctx context.Context, id string) error {
 	f.deleteCalled = true
-	return nil
+	return f.deleteErr
 }
 
 func (f *fakeAuraAPI) GetTenant(ctx context.Context, id string) (*aura.Tenant, error) {
@@ -1114,10 +1115,11 @@ func TestAuraCMK_ObserveOnly_NoCreate(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 type fakeIPFilterAPI struct {
-	createFn func(ctx context.Context, orgID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error)
-	getFn    func(ctx context.Context, orgID, id string) (*aura.IPFilter, error)
-	listFn   func(ctx context.Context, orgID string) ([]aura.IPFilter, error)
-	updateFn func(ctx context.Context, orgID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error)
+	createFn  func(ctx context.Context, orgID string, req aura.CreateIPFilterRequest) (*aura.IPFilter, error)
+	getFn     func(ctx context.Context, orgID, id string) (*aura.IPFilter, error)
+	listFn    func(ctx context.Context, orgID string) ([]aura.IPFilter, error)
+	updateFn  func(ctx context.Context, orgID, id string, req aura.UpdateIPFilterRequest) (*aura.IPFilter, error)
+	deleteErr error
 
 	createCalled bool
 	listCalled   bool
@@ -1162,7 +1164,7 @@ func (f *fakeIPFilterAPI) UpdateIPFilter(ctx context.Context, orgID, id string, 
 
 func (f *fakeIPFilterAPI) DeleteIPFilter(ctx context.Context, orgID, id string) error {
 	f.deleteCalled = true
-	return nil
+	return f.deleteErr
 }
 
 func ipFilterFactoryFor(f *fakeIPFilterAPI) auraIPFilterClientFactory {
