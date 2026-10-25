@@ -313,7 +313,7 @@ Provenance about the backup this restore was seeded from, populated on success. 
 
 ### Condition Types
 
-The operator maintains a single **`Ready`** condition, derived from `phase`: `Completed` → `True`; `Failed` → `False` (reason `Failed`); `Pending`/`Running` → `Unknown`. No other condition types are set.
+The operator maintains a **`Ready`** condition, derived from `phase`: `Completed` → `True`; `Failed` → `False` (reason `Failed`); `Pending`/`Running` → `Unknown`. An all-databases restore also carries **`ClusterNotReady`** once its target has not answered for a moment — recreating `neo4j` over itself makes it unavailable, as does a restart: `True` (reason `ClusterUnreachable`) while it waits, keeping its phase and its databases' results, and `False` (reason `ClusterReady`) once the target answers again; it resumes where it was. A wait longer than 5 minutes raises one `ConnectionFailed` Warning, and the restore goes on waiting.
 
 ## Post-Restore Database Bring-Up (offline standalone restore)
 

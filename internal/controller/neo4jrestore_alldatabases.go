@@ -25,6 +25,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
@@ -157,11 +158,19 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 
 	neo4jClient, err := r.allDatabasesClient(target)
 	if err != nil {
+		if allDatabasesTargetAway(err) {
+			// Recreating a database the target's driver checks — `neo4j`,
+			// over itself — makes it unavailable for a moment; a restart does
+			// too. The rest of the target's outage, not the restore's
+			// (knowledge id 206).
+			return r.awaitAllDatabasesTarget(ctx, restore, target, err)
+		}
 		logger.Error(err, "Failed to connect for all-databases restore", "kind", target.kind())
 		r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting to connect to %s %q: %v", target.kind(), target.name(), err))
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 	defer func() { _ = neo4jClient.Close() }()
+	r.allDatabasesTargetAnswered(ctx, restore)
 
 	imageTag := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	version, vErr := neo4j.GetImageVersion(imageTag)
@@ -206,6 +215,9 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			}
 			exists, exErr := neo4jClient.DatabaseExists(ctx, db)
 			if exErr != nil {
+				if allDatabasesTargetAway(exErr) {
+					return r.awaitAllDatabasesTarget(ctx, restore, target, exErr)
+				}
 				r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Checking database %q: %v", db, exErr))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
@@ -600,12 +612,21 @@ func (r *Neo4jRestoreReconciler) markDatabaseResult(ctx context.Context, restore
 			return err
 		}
 		before := ""
+		started := false // a database of this attempt had left Pending before this write
 		for _, res := range latest.Status.DatabaseResults {
 			if res.Database == db {
 				before = res.Phase
 			}
+			if res.Phase != "" && res.Phase != StatusPending {
+				started = true
+			}
 		}
-		wasRunning := latest.Status.Phase == StatusRunning
+		// Announced when the write moves the restore into Running and no
+		// database had started before it: a restore a wait put back in Pending
+		// mid-way (a seed proxy restarting, a target briefly away) re-entered
+		// Running on its next write and announced its start a second time
+		// (round-8 walk, knowledge id 206).
+		alreadyStarted := latest.Status.Phase == StatusRunning || started
 		latest.Status.DatabaseResults = results
 		if latest.Status.Phase != StatusCompleted && latest.Status.Phase != StatusFailed {
 			latest.Status.Phase = StatusRunning
@@ -613,7 +634,7 @@ func (r *Neo4jRestoreReconciler) markDatabaseResult(ctx context.Context, restore
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
-		restoreEntered = !wasRunning && latest.Status.Phase == StatusRunning
+		restoreEntered = !alreadyStarted && latest.Status.Phase == StatusRunning
 		databaseFailed = phase == StatusFailed && before != StatusFailed
 		return nil
 	})
@@ -627,6 +648,86 @@ func (r *Neo4jRestoreReconciler) markDatabaseResult(ctx context.Context, restore
 	if databaseFailed {
 		r.progressRecorder().Event(restore, corev1.EventTypeWarning, EventReasonRestoreDatabaseFailed,
 			fmt.Sprintf("All-databases restore: database %q failed: %s", db, message))
+	}
+}
+
+// allDatabasesTargetAway reports an error that says the restore's target cannot
+// serve it right now: unreachable (targetUnreachable — refused, reset, a
+// timeout, a database unavailable) or a Neo4j error the driver would retry
+// (IsTransientError). Recreating `neo4j` over itself makes the database the
+// driver's connectivity check uses unavailable for a moment.
+func allDatabasesTargetAway(err error) bool {
+	return targetUnreachable(err) || neo4j.IsTransientError(err)
+}
+
+// awaitAllDatabasesTarget waits out a target that cannot serve an
+// all-databases restore for now, as a dependent waits out its target's restart
+// (knowledge ids 172, 183): the restore keeps its phase and its databases'
+// results, so it resumes where it was; the wait is recorded in the
+// ClusterNotReady condition (reason ClusterUnreachable, its start the
+// condition's lastTransitionTime) and logged at info, with no event and no
+// error. Only a wait longer than targetUnreachableGrace is reported: one
+// ConnectionFailed Warning, while the restore goes on waiting — the seeds run
+// on the servers, and a restore failed for an outage would have to be started
+// again. It used to log an ERROR, write Pending, and announce RestoreStarted
+// again when the next write made it Running (round-8 walk, knowledge id 206).
+func (r *Neo4jRestoreReconciler) awaitAllDatabasesTarget(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, target restoreTarget, cause error) (ctrl.Result, error) {
+	lastingMsg := fmt.Sprintf("%s %q has not answered for more than %s; the restore waits for it and carries on where it was",
+		target.kind(), target.name(), targetUnreachableGrace)
+	announce := false
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		announce = false
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		before := latest.Status.DeepCopy()
+		previous := ""
+		if c := findCondition(latest.Status.Conditions, ConditionTypeClusterNotReady); c != nil {
+			previous = c.Message
+		}
+		SetNamedCondition(&latest.Status.Conditions, ConditionTypeClusterNotReady, latest.Generation,
+			metav1.ConditionTrue, ConditionReasonClusterUnreachable,
+			fmt.Sprintf("%s %q does not answer: %v", target.kind(), target.name(), cause))
+		c := findCondition(latest.Status.Conditions, ConditionTypeClusterNotReady)
+		if time.Since(c.LastTransitionTime.Time) > targetUnreachableGrace {
+			c.Message = lastingMsg
+			announce = previous != lastingMsg
+		}
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
+		return r.Status().Update(ctx, latest)
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record the target wait on Neo4jRestore")
+		announce = false
+	}
+	if announce {
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonConnectionFailed, fmt.Sprintf("%s: %v", lastingMsg, cause))
+	}
+	log.FromContext(ctx).Info("All-databases restore: the target does not answer; waiting",
+		"kind", target.kind(), "target", target.name(), "error", cause.Error())
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// allDatabasesTargetAnswered writes ClusterNotReady=False once the restore
+// reached its target again, when a wait had set it.
+func (r *Neo4jRestoreReconciler) allDatabasesTargetAnswered(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore) {
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		latest := &neo4jv1beta1.Neo4jRestore{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
+			return err
+		}
+		c := findCondition(latest.Status.Conditions, ConditionTypeClusterNotReady)
+		if c == nil || c.Status != metav1.ConditionTrue {
+			return nil
+		}
+		targetAnswered(&latest.Status.Conditions, latest.Generation)
+		return r.Status().Update(ctx, latest)
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record that the target answered on Neo4jRestore")
 	}
 }
 
