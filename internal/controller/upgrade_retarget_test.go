@@ -263,6 +263,59 @@ func TestRetarget_AfterEveryServerRolled_WaitsForTheCurrentRevision(t *testing.T
 	require.Equal(t, upgradePhaseStabilizing, got.Status.UpgradeStatus.Phase, got.Status.UpgradeStatus.LastError)
 }
 
+// A retarget during a repair with every server on the first target and
+// server-2 unable to start on it (decided in round 8, operations.md id 180).
+// Kubernetes has not recorded the first target as current — server-2 is not
+// Ready — so a server recreated below a partition would come back on the
+// version before the upgrade, over a store the first target opened. Staging
+// stages the new target at partition 0: the StatefulSet replaces server-2
+// first, then each server once the one before is Ready, which is available in
+// the cluster (id 181); the walk checks server-0, and Stabilizing and
+// Verifying the whole cluster. Freezing at the repair partition instead would
+// leave servers 0 and 1 below it on the first target; freezing every server
+// would leave server-2 down, and the walk waits for every server Ready.
+func TestRetarget_RepairWithEveryServerOnTheFirstTarget_NeverGoesBack(t *testing.T) {
+	ctx := context.Background()
+	r, fc, emu, c := walkingTo(t, upgradePhasePaused, 2)
+	first := emu.sts().Status.UpdateRevision
+	for _, ordinal := range []int{0, 1} {
+		require.NoError(t, fc.Delete(ctx, emu.pods()[ordinal]))
+		emu.createPod(ordinal, first)
+	}
+	pod := emu.pods()[2]
+	pod.Status.Conditions[0].Status = corev1.ConditionFalse
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{Name: "neo4j",
+		State:                corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 1, Reason: "Error"}}}}
+	require.NoError(t, fc.Status().Update(ctx, pod))
+	emu.observe()
+	require.NotEqual(t, first, emu.sts().Status.CurrentRevision, "server-2 is not Ready: the first target is not current")
+	emu.created = map[int][]string{}
+
+	setTag(t, fc, c, repairTag)
+	require.True(t, r.isUpgradeRequired(ctx, latestCluster(t, fc, c)))
+	_, err := r.handleRollingUpgrade(ctx, latestCluster(t, fc, c))
+	require.NoError(t, err)
+	require.Equal(t, upgradePhaseStaging, latestCluster(t, fc, c).Status.UpgradeStatus.Phase)
+	_, err = r.handleRollingUpgrade(ctx, latestCluster(t, fc, c))
+	require.NoError(t, err)
+	assert.Equal(t, "neo4j:"+repairTag, serverImage(emu.sts()))
+	assert.Equal(t, int32(0), *statefulSetPartition(emu.sts()), "every server that moved on is in the update range")
+	emu.observe()
+
+	// A node drain takes server-0 before the roll reaches it.
+	emu.drain(0)
+	assert.Equal(t, []string{"neo4j:" + repairTag}, emu.created[0], "server-0 comes back on the new target, not on the version before the upgrade")
+
+	got := rollToTheEnd(t, r, fc, emu, c)
+	require.Equal(t, upgradePhaseStabilizing, got.Status.UpgradeStatus.Phase, got.Status.UpgradeStatus.LastError)
+	for ordinal, images := range emu.created {
+		for _, image := range images {
+			assert.Equal(t, "neo4j:"+repairTag, image, "server-%d was created on %s", ordinal, image)
+		}
+	}
+}
+
 func TestRetargetPartition(t *testing.T) {
 	sts := gateTestSTS("neo4j:"+holdTarget, 3, "rev-0", "rev-a", 1, 3)
 	pods := func(revisions ...string) []corev1.Pod {

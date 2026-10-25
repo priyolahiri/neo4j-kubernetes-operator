@@ -84,6 +84,11 @@ they are exercised together. It has found a release blocker on every pass so
 far. The image floor is `2026.08+`, which is the pinned CI anchor as of
 v1.15.0, so "no such image" is no longer a reason to skip it; if a pass really
 is skipped, say so in the log rather than recording the phase as passed.
+**Phase 2c (repairs on a Kubernetes 1.35 node image)** runs on its own Kind
+cluster: walk it whenever a release touches how a cluster replaces a server
+that cannot start — the plugin repairs, the upgrade repair, the server
+StatefulSet's update strategy — or before the Kind anchor moves to a
+Kubernetes version that runs `MaxUnavailableStatefulSet` on.
 
 ### Phase 0 — CLI (no Neo4j deployment)
 
@@ -272,7 +277,39 @@ and every server pod's UID and restart count.
 | A Failed upgrade's retry is quiet and waits for every server; a stopped upgrade leaves the cluster's phase alone (#565, rules 105, 149) | A 3-server cluster, `upgradeStrategy: {autoPauseOnFailure: false, upgradeTimeout: 2m}`, an upgrade whose step keeps timing out (e.g. a database kept from catching up on the restarted server, or a server stopped by hand mid-walk): `Failed`, one `UpgradeFailed`; the cluster's phase stays `Ready` (message "… its upgrade to … failed …"), never `Failed`. Leave it 10 minutes: the operator retries every few minutes, and `kubectl get events --field-selector involvedObject.name=<name>` shows one `UpgradeFailed` and no new `ClusterReady`; `status.upgradeStatus.lastError` says why. With `autoPauseOnFailure: true`: `Paused`, one `UpgradePaused`, the cluster `Ready` (not `Paused`). With the published Argo CD health checks applied, the Application shows the cluster Degraded while its upgrade is `Failed` and Suspended while it is `Paused`, with the cluster's message; `kubectl neo4j status --problems` lists it as `Ready (upgrade Failed)` with the last error, and `kubectl neo4j diagnose` reports "upgrade to … is Failed" and exits 1. The cluster carries `Stalled=True` (`kubectl get neo4jenterprisecluster <name> -o jsonpath='{.status.conditions[?(@.type=="Stalled")]}'`, reason `UpgradeFailed` or `UpgradePaused`) with `Ready` still `True`; with Flux, a Kustomization health-checking the cluster fails. Set a fixed tag: `Stalled` turns `False` (`UpgradeNotStopped`) as the upgrade goes on. A `Failed` upgrade on a server that cannot start (`autoPauseOnFailure: false`, the tag a patch that was never published, so server-2 sits in `ImagePullBackOff`): within a pass or two the `Degraded` condition is `True` naming server-2 ("2 of 3 servers available; unavailable: …-server-2 …", not "All 3 servers are available"), the phase `Ready`; past the 5-minute grace the phase is `Degraded` with one `ClusterDegraded` Warning, `Stalled` still `True`; no "Upgrade waiting for StatefulSet readiness" line repeating in the operator log meanwhile. Set a fixed tag: the upgrade goes on at once and replaces server-2 first (rule 162). A standalone moved to a new tag: one `UpgradeStarted` |
 | CalVer TLS standalone, created fresh | A `Neo4jEnterpriseStandalone` on the CI anchor with cert-manager TLS: its `neo4j.conf` has `dbms.security.tls_reload_enabled=true`. A new TLS standalone restarts once about 30 seconds after its first `Ready` (the `neo4j.com/tls-cert-sans` stamp is added once its Secret exists; pre-existing), so note the pod UID after that. Renew (delete `<name>-tls-secret`): `TLSCertificateReloaded`, same pod UID, and the presented certificate is the new one within about two minutes. Delete the standalone: `<name>-tls-secret` is gone. A non-TLS standalone with a hand-made `<name>-tls-secret`, deleted: the Secret is kept, and the operator logs why |
 
-→ **Tear down** each deployment before the next, and the last before Phase 3.
+→ **Tear down** each deployment before the next, and the last before Phase 2c.
+
+### Phase 2c — Repairs on Kubernetes 1.35 (`MaxUnavailableStatefulSet` on)
+
+The Kind anchor (`kindest/node:v1.34.0`) runs the StatefulSet controller with
+`MaxUnavailableStatefulSet` off. Kubernetes 1.35.0–1.35.3 run it on (and 1.37+),
+and its rolling update replaces **no** pod while one is unavailable, so a pod
+that cannot start is replaced by the operator instead (rule 204). Walk this on a
+**separate Kind cluster**, one deployment at a time, after Phase 2b:
+
+1. Recreate the dev cluster on a 1.35 node image with the gate on (`v1.35.0` or
+   `v1.35.1`; the `v1.35.5` and `v1.35.8` images run it **off**): `make dev-down`,
+   then `make dev-up KIND_NODE_IMAGE=kindest/node:v1.35.1@sha256:05d7bcdefbda08b4e038f644c4df690cdac3fba8b06f8289f30e10026720a1ab`
+   (the Docker Hub digest of `kindest/node:v1.35.1`, read 2026-10-25; use a Kind
+   release that lists v1.35 node images). `kubectl version` reports `v1.35.1`.
+2. Confirm the gate: `kubectl get --raw /metrics | grep 'kubernetes_feature_enabled{name="MaxUnavailableStatefulSet"'`
+   ends in ` 1`. Once a cluster exists,
+   `kubectl get sts <name>-server -o jsonpath='{.spec.updateStrategy.rollingUpdate.maxUnavailable}'`
+   prints `1` (on the v1.34 anchor it prints nothing: the API server drops the
+   field while the gate is off).
+3. Walk the rows below on a 3-server cluster on the CI anchor, then
+   `make dev-down` and `make dev-up` (the anchor again) before Phase 3.
+
+| Scenario | Verify |
+|---|---|
+| A plugin repairs its own failing download on 1.35 (rules 152, 204) | As Phase 2's rule 152 row: a `VerifiedDownload` plugin with a wrong `sha256:` → server-2 in `Init:Error` (`plugin-init-<name>`), the roll stops there. Fix the checksum: **one** `PluginInitContainerFailing` on the plugin and, within about 30 seconds, **one** Normal `ServerPodReplaced` on the cluster (`kubectl get events --field-selector reason=ServerPodReplaced`): "Deleted pod <name>-server-2, which cannot start on revision … (init container plugin-init-<name> exited with code …), so that StatefulSet <name>-server creates it again from its update revision …". server-2 comes back with a new UID and `controller-revision-hash` equal to the StatefulSet's `status.updateRevision`, starts, and only then do server-1 and server-0 restart, one at a time (`kubectl get pods -w`: never two servers not Ready at once). The plugin is `Ready`. On the previous release, the same steps leave server-2 in `Init:Error` on the old revision for good |
+| A plugin's refused setting is taken back on 1.35 (rules 155, 204) | As Phase 2's rule 155 row (`genai.vector.enabled: "true"`): server-2 in `CrashLoopBackOff`; remove the key → **one** `PluginSettingsFailing`, **one** `ServerPodReplaced` naming server-2 and "container neo4j exited with code 1", server-2 starts on the new revision, the rest roll one at a time |
+| An upgrade held on a tag that was never published goes on on 1.35 (rules 162, 204) | `upgradeStrategy: {autoPauseOnFailure: true}`; set the tag to `2026.09.9-enterprise` (never published): server-2 `ImagePullBackOff`, `Paused`. Set a published tag: `UpgradeStarted` "resumed … is replaced first", then **one** `ServerPodReplaced` for server-2 ("container neo4j: ImagePullBackOff"), server-2 on the published tag, the walk takes server-1 and server-0 through its checks, `Completed`; every server restarted once |
+| One server at a time on 1.35 | With every server up, change something that rolls them (`spec.config`, or install a plugin): `maxUnavailable` is `1` on the StatefulSet, the servers restart highest first, each only after the one before is Ready, no `ServerPodReplaced` |
+
+Optionally repeat the first row on `kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5`,
+whose controller replaces such a pod itself: the same outcome, with or without
+a `ServerPodReplaced` (whichever deletes the pod first).
 
 ### Phase 3 — Property sharding (cluster, the CalVer CI anchor, 3 servers)
 

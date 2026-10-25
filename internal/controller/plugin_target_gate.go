@@ -174,7 +174,10 @@ func (r *Neo4jPluginReconciler) failingPods(ctx context.Context, sts *appsv1.Sta
 // not enough, the broken pod must be deleted too. So the plugin's write that
 // repairs the init container never reached the pod (checked on Kind v1.34: the
 // pod stayed on the broken revision). A cluster's StatefulSet uses Parallel
-// pod management and replaces such a pod itself, highest ordinal first.
+// pod management and replaces such a pod itself, highest ordinal first —
+// except with MaxUnavailableStatefulSet on in Kubernetes 1.35.0–1.35.3, where
+// the cluster controller deletes it (reconcileStuckServerPods, operations.md
+// id 204).
 //
 // Deleted only while the StatefulSet's controller has seen its latest template
 // (status.observedGeneration) and the pod is on an older revision than it: a

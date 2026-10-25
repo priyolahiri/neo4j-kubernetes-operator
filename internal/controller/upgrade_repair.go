@@ -109,7 +109,22 @@ func (r *Neo4jEnterpriseClusterReconciler) heldUpgradeRepair(ctx context.Context
 // replica count), servers that run another image than every server that is
 // up — recreated from a revision the walk had not put them on. nil otherwise:
 // a server down on the version the others run is down for another reason.
+// The pods come from the cache: it decides whether to start a repair, which
+// Staging judges again from the API server (serversDownIn, operations.md id
+// 203).
 func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet) *serversDown {
+	pods := &corev1.PodList{}
+	if err := r.List(ctx, pods, client.InNamespace(cluster.Namespace), client.MatchingLabels{
+		"neo4j.com/cluster":    cluster.Name,
+		"neo4j.com/clustering": "true",
+	}); err != nil {
+		return nil
+	}
+	return r.serversDownIn(ctx, cluster, sts, pods.Items)
+}
+
+// serversDownIn is serversDownOnTarget on the server pods given.
+func (r *Neo4jEnterpriseClusterReconciler) serversDownIn(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet, pods []corev1.Pod) *serversDown {
 	replicas := int32(1)
 	if sts.Spec.Replicas != nil {
 		replicas = *sts.Spec.Replicas
@@ -121,13 +136,6 @@ func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Conte
 	if partition <= 0 {
 		return nil
 	}
-	pods := &corev1.PodList{}
-	if err := r.List(ctx, pods, client.InNamespace(cluster.Namespace), client.MatchingLabels{
-		"neo4j.com/cluster":    cluster.Name,
-		"neo4j.com/clustering": "true",
-	}); err != nil {
-		return nil
-	}
 	frozen := partition >= replicas
 	view := sts
 	if frozen {
@@ -135,13 +143,13 @@ func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Conte
 		zero := int32(0)
 		view.Spec.UpdateStrategy.RollingUpdate.Partition = &zero
 	}
-	failing, down := podsDownOnlyIn(view, pods.Items, podCannotStart)
+	failing, down := podsDownOnlyIn(view, pods, podCannotStart)
 	if len(down) == 0 {
 		return nil
 	}
 	images, upImages := map[string]bool{}, map[string]bool{}
-	for i := range pods.Items {
-		pod := &pods.Items[i]
+	for i := range pods {
+		pod := &pods[i]
 		image := podServerImage(pod)
 		switch {
 		case down[pod.Name]:

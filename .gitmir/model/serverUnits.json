@@ -17,7 +17,8 @@
       "internal/controller/restart_pending.go",
       "internal/controller/tls_reload.go",
       "internal/controller/reconcile_cadence.go",
-      "internal/controller/refusal_log.go"
+      "internal/controller/refusal_log.go",
+      "internal/controller/stuck_server_pods.go"
     ]
   },
   {
@@ -56,7 +57,8 @@
       "internal/controller/upgrade_repair.go",
       "internal/controller/upgrade_topology.go",
       "internal/controller/upgrade_started_target.go",
-      "internal/controller/upgrade_retarget.go"
+      "internal/controller/upgrade_retarget.go",
+      "internal/controller/upgrade_uncached.go"
     ]
   },
   {

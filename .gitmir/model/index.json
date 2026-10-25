@@ -3,14 +3,14 @@
     "modules": 11,
     "entities": 26,
     "serverUnits": 41,
-    "serverFunctions": 152,
+    "serverFunctions": 153,
     "apiRoutes": 3,
     "frontendUnits": 0,
-    "events": 196,
+    "events": 197,
     "processes": 10,
     "statusFlows": 9,
     "reactions": 13
   },
-  "at": "2026-10-25T18:57:11Z",
+  "at": "2026-10-25T18:58:05Z",
   "project": "neo4j-kubernetes-operator"
 }

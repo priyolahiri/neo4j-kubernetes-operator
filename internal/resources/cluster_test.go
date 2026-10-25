@@ -10,6 +10,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -449,6 +450,10 @@ func TestBuildServerStatefulSetForEnterprise_AlwaysRollingUpdate(t *testing.T) {
 		require.NotNil(t, sts.Spec.UpdateStrategy.RollingUpdate)
 		assert.Nil(t, sts.Spec.UpdateStrategy.RollingUpdate.Partition,
 			"the partition belongs to the upgrade state machine")
+		// One server at a time, whatever a Kubernetes version defaults
+		// (MaxUnavailableStatefulSet, operations.md id 204).
+		require.NotNil(t, sts.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
+		assert.Equal(t, intstr.FromInt32(1), *sts.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
 	}
 }
 
