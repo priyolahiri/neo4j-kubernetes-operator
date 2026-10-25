@@ -4388,6 +4388,11 @@ is met on many passes. It is announced once:</p>
 <td>cert-manager renewed the TLS certificate and the operator reloaded it on the named servers (<code>dbms.security.reloadTLS()</code>, CalVer 2025.03+); no restart. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
 </tr>
 <tr>
+<td><code>ServerPodReplaced</code></td>
+<td>Normal</td>
+<td>The operator deleted a server pod that cannot start (an image it cannot pull, a container that keeps exiting, an init container that failed) and that the StatefulSet's update is to replace — after a plugin's repair, an upgrade's new tag or a corrected spec — so that the StatefulSet creates it again from the new template. On Kubernetes 1.35.0–1.35.3 (<code>MaxUnavailableStatefulSet</code> on) the StatefulSet does not replace a pod while it is unavailable; elsewhere it usually gets there first and the event does not appear. Once per pod deleted; the pod was down, so nothing it served is lost</td>
+</tr>
+<tr>
 <td><code>TLSCertificateNeedsRestart</code></td>
 <td>Warning</td>
 <td>A renewed TLS certificate could not be reloaded on the named servers: TLS reload is not enabled on them yet (they get it at their next restart), or they still presented the old certificate ten minutes after the new one was issued. They serve the previous certificate until they restart. Also emitted by <code>Neo4jEnterpriseStandalone</code></td>
