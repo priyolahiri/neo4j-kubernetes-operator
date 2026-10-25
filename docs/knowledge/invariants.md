@@ -204,11 +204,10 @@ Quick reference (folded in from the former AGENT-GUARDRAILS table); per-invarian
   with `replicas` equal to `spec.topology.servers`, and no `primary`/`secondary` in its
   name. `TestListDiscoveryConfiguration` (`internal/resources/cluster_startup_test.go`)
   additionally asserts the pod FQDNs `{cluster}-server-N` that the discovery endpoints
-  use. Beware `TestBuildStatefulSetForEnterprise_WithFeatures` (`cluster_test.go`) and its
-  `…_ParallelManagement` sibling: they drive the **Deprecated** plural builder
-  `BuildServerStatefulSetsForEnterprise` (N one-replica StatefulSets), so they do NOT
-  prove this invariant — `internal/resources/CLAUDE.md` tells you not to use that
-  builder. The shape is also exercised end to end by the integration specs in
+  use. `TestBuildStatefulSetForEnterprise_WithFeatures` (`cluster_test.go`) and its
+  `…_ParallelManagement` sibling drove a plural builder that made N one-replica
+  StatefulSets — the banned shape — until it was removed as dead code (#533); they now
+  drive `BuildServerStatefulSetForEnterprise` and assert its name and replicas too. The shape is also exercised end to end by the integration specs in
   `test/integration/multi_node_cluster_test.go` (extended: fetches `{cluster}-server`
   and asserts `replicas`) and `plugin_test.go` (core). The removed-backup half is guard-checked —
   `scripts/check-invariants.sh` greps for `BuildBackupStatefulSet`, a

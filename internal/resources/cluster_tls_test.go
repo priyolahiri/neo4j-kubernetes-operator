@@ -115,11 +115,8 @@ func TestBuildStatefulSetForEnterprise_TLSClusterFormation(t *testing.T) {
 	}
 
 	// Test that TLS clusters use parallel pod management
-	serverStatefulSets := resources.BuildServerStatefulSetsForEnterprise(cluster)
-	require.Len(t, serverStatefulSets, 5, "should create 5 StatefulSets for 5 servers")
-
-	// Test the first StatefulSet as representative
-	serverSts := serverStatefulSets[0]
+	serverSts := resources.BuildServerStatefulSetForEnterprise(cluster)
+	require.Equal(t, int32(5), *serverSts.Spec.Replicas, "one StatefulSet with a replica per server")
 	assert.Equal(t, serverSts.Spec.PodManagementPolicy, appsv1.ParallelPodManagement,
 		"TLS clusters must use ParallelPodManagement for reliable formation")
 }
@@ -326,7 +323,7 @@ func TestBuildStatefulSet_TLSVolume_OptOutFlatMount(t *testing.T) {
 		},
 	}
 
-	sts := resources.BuildServerStatefulSetsForEnterprise(cluster)[0]
+	sts := resources.BuildServerStatefulSetForEnterprise(cluster)
 
 	var certsVol *corev1.Volume
 	for i := range sts.Spec.Template.Spec.Volumes {
@@ -367,7 +364,7 @@ func TestBuildStatefulSet_TLSVolumeProjectsCAToTrustedDir(t *testing.T) {
 		},
 	}
 
-	sts := resources.BuildServerStatefulSetsForEnterprise(cluster)[0]
+	sts := resources.BuildServerStatefulSetForEnterprise(cluster)
 
 	var certsVol *corev1.Volume
 	for i := range sts.Spec.Template.Spec.Volumes {
@@ -431,7 +428,7 @@ func TestBuildStatefulSet_TLSVolumeDefaultMode0440(t *testing.T) {
 				},
 			}
 
-			sts := resources.BuildServerStatefulSetsForEnterprise(cluster)[0]
+			sts := resources.BuildServerStatefulSetForEnterprise(cluster)
 			var certsVol *corev1.Volume
 			for i := range sts.Spec.Template.Spec.Volumes {
 				v := &sts.Spec.Template.Spec.Volumes[i]

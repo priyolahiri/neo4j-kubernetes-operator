@@ -5596,7 +5596,9 @@ spec:
                       ClassName is the StorageClass for the data PVCs. If omitted (or empty),
                       the PVCs inherit the cluster's default StorageClass. When set, the named
                       class must exist — the operator verifies this at apply time and reports an
-                      explicit error rather than leaving pods Pending indefinitely.
+                      explicit error rather than leaving pods Pending indefinitely. It applies to
+                      volumes when they are created: an existing volume keeps its StorageClass,
+                      so a later change has no effect on it, and a ValidationWarning says so.
                     type: string
                   retentionPolicy:
                     default: Delete
@@ -5935,7 +5937,9 @@ spec:
                     default: 5m
                     description: |-
                       HealthCheckTimeout bounds the check, after a cluster's upgrade, that every
-                      server runs the new version. A Go duration above zero ("5m").
+                      server runs the new version. A Go duration above zero ("5m"). A
+                      Neo4jEnterpriseStandalone runs no such check: there a value other than
+                      the default raises a ValidationWarning.
                     type: string
                   maxUnavailableDuringUpgrade:
                     default: 1
@@ -5949,8 +5953,10 @@ spec:
                     type: integer
                   postUpgradeHealthCheck:
                     default: true
-                    description: PostUpgradeHealthCheck enables cluster health validation
-                      after upgrade
+                    description: |-
+                      PostUpgradeHealthCheck enables cluster health validation after upgrade.
+                      A Neo4jEnterpriseStandalone runs no check after its upgrade, whatever
+                      the value.
                     type: boolean
                   preUpgradeHealthCheck:
                     default: true
@@ -5961,7 +5967,9 @@ spec:
                     default: 3m
                     description: |-
                       StabilizationTimeout specifies how long to wait for cluster stabilization
-                      after its upgrade. A Go duration above zero ("3m").
+                      after its upgrade. A Go duration above zero ("3m"). A
+                      Neo4jEnterpriseStandalone has no such wait: there a value other than the
+                      default raises a ValidationWarning.
                     type: string
                   strategy:
                     default: RollingUpgrade
@@ -5979,7 +5987,9 @@ spec:
                     description: |-
                       UpgradeTimeout bounds each step of a cluster's rolling upgrade: staging
                       the new template, and each server's restart until its databases have
-                      caught up. A Go duration above zero ("30m", "1h30m").
+                      caught up. A Go duration above zero ("30m", "1h30m"). A
+                      Neo4jEnterpriseStandalone's upgrade has no such step: there a value
+                      other than the default raises a ValidationWarning.
                     type: string
                 type: object
             required:

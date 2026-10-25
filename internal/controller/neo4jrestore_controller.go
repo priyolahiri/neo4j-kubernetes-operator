@@ -2005,7 +2005,7 @@ func (r *Neo4jRestoreReconciler) buildRestoreFromPath(restore *neo4jv1beta1.Neo4
 
 // isLocalPVCRestoreSource reports whether the restore reads from a
 // PVC-mounted backup directory (as opposed to a cloud URI). Used in two
-// places: (1) shell-side file-path resolution via buildLocalRestoreFilePath,
+// places: (1) shell-side file-path resolution (standaloneRestoreFromPath),
 // and (2) the `mkdir -p /tmp/restore-tmp` prelude that pairs with the
 // default `--temp-path=/tmp/restore-tmp`. Centralising the condition makes
 // these two stay in sync.
@@ -2034,11 +2034,9 @@ func isLocalPVCRestoreSource(restore *neo4jv1beta1.Neo4jRestore) bool {
 	return st.Type == "" || st.Type == "pvc"
 }
 
-// buildLocalRestoreFilePath returns a shell command-substitution expression
-// that resolves the target database's `<dbname>-*.backup` file path at Pod
-// exec time, suitable to pass to `neo4j-admin database restore --from-path=`.
-//
-// Returns "" for sources that don't need shell-side resolution (cloud URIs).
+// resolveLocalPVCFromPath, given a `--from-path` string and a database name,
+// returns the shell command-substitution form for local PVC mounts (path
+// starts with `/backup`) and the input unchanged for cloud URIs.
 //
 // Why this is necessary: per the Neo4j 5.26 docs, `neo4j-admin database
 // restore --from-path=<path>` requires <path> to be a FILE path (or a
@@ -2055,28 +2053,7 @@ func isLocalPVCRestoreSource(restore *neo4jv1beta1.Neo4jRestore) bool {
 // multi-database directory issue (cluster-target backups co-locate one
 // .backup per database in one folder).
 //
-// Cloud URIs (s3://, gs://, azb://) bypass this — neo4j-admin's native
-// cloud readers handle per-file selection from the bucket prefix, and the
-// shell `ls` would have no filesystem to enumerate anyway.
-//
-// Security note: shellQuote() wraps the database name (user-controlled via
-// spec.DatabaseName) so shell metacharacters can't escape the glob.
-func buildLocalRestoreFilePath(restore *neo4jv1beta1.Neo4jRestore, sourceDir string) string {
-	if !isLocalPVCRestoreSource(restore) {
-		return ""
-	}
-	if restoreSourceDatabase(restore) == "" {
-		return ""
-	}
-	return resolveLocalPVCFromPath(sourceDir, restoreSourceDatabase(restore))
-}
-
-// resolveLocalPVCFromPath is the path-based equivalent of
-// buildLocalRestoreFilePath: given a `--from-path` string and a database
-// name, returns the shell command-substitution form for local PVC mounts
-// (path starts with `/backup`) and the input unchanged for cloud URIs.
-//
-// This exists for the PITR code path where the source is determined by
+// It is also the PITR code path's, where the source is determined by
 // resolving a `BaseBackup` (which could be a Neo4jBackup ref OR explicit
 // storage), not by inspecting `Source.Type/Storage` directly. The PVC
 // detection is purely string-based here: anything starting with `/backup`

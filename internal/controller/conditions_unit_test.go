@@ -128,6 +128,7 @@ func TestPhaseToConditionStatus_Table(t *testing.T) {
 		{neo4jv1beta1.PhaseForming, metav1.ConditionUnknown, ConditionReasonForming},
 		{neo4jv1beta1.PhaseCreating, metav1.ConditionUnknown, ConditionReasonForming},
 		{neo4jv1beta1.PhasePending, metav1.ConditionUnknown, ConditionReasonPending},
+		{neo4jv1beta1.PhasePendingDependencies, metav1.ConditionUnknown, ConditionReasonPending},
 		{neo4jv1beta1.PhaseWaiting, metav1.ConditionUnknown, ConditionReasonPending},
 		{neo4jv1beta1.PhaseRunning, metav1.ConditionUnknown, ConditionReasonPending},
 		{neo4jv1beta1.PhaseUnknown, metav1.ConditionUnknown, ConditionReasonPending},

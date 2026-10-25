@@ -18,6 +18,7 @@ package validation
 
 import (
 	"fmt"
+	"time"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
@@ -136,7 +137,48 @@ func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnt
 		"a standalone has one server; remove it"); w != "" {
 		warnings = append(warnings, w)
 	}
+	warnings = append(warnings, standaloneUpgradeTimeoutWarnings(standalone.Spec.UpgradeStrategy)...)
 	return append(warnings, AuthProviderWarnings(standalone.Spec.Auth, field.NewPath("spec", "auth"))...)
+}
+
+// standaloneUpgradeTimeoutWarnings covers the upgradeStrategy timeouts, which
+// bound steps of a cluster's rolling upgrade that a standalone's upgrade does
+// not have: it checks the server is reachable (preUpgradeHealthCheck, with
+// autoPauseOnFailure), then replaces its one pod. Nothing on the standalone's
+// path reads them. The CRD gives each a default wherever upgradeStrategy is
+// present, so the default cannot be told from "never mentioned" and stays
+// silent; a value meaning the same duration ("1800s") is the default too.
+//
+// postUpgradeHealthCheck is not read on a standalone either, and has no
+// warning: false says no check runs after the upgrade, which is what happens,
+// and true is its default.
+func standaloneUpgradeTimeoutWarnings(strategy *neo4jv1beta1.UpgradeStrategySpec) []string {
+	if strategy == nil {
+		return nil
+	}
+	path := field.NewPath("spec", "upgradeStrategy")
+	timeouts := []struct {
+		name, value string
+		crdDefault  time.Duration
+		bounds      string
+	}{
+		{"upgradeTimeout", strategy.UpgradeTimeout, 30 * time.Minute, "each step of a cluster's rolling upgrade"},
+		{"healthCheckTimeout", strategy.HealthCheckTimeout, 5 * time.Minute, "the check, after a cluster's upgrade, that every server runs the new version"},
+		{"stabilizationTimeout", strategy.StabilizationTimeout, 3 * time.Minute, "a cluster's wait for its servers to settle after its upgrade"},
+	}
+	var warnings []string
+	for _, timeout := range timeouts {
+		if timeout.value == "" {
+			continue
+		}
+		if d, err := time.ParseDuration(timeout.value); err == nil && d == timeout.crdDefault {
+			continue
+		}
+		warnings = append(warnings, NoEffectWarning(path.Child(timeout.name), fmt.Sprintf(
+			"it bounds %s, and a standalone's upgrade has no such step: the operator checks the server is reachable "+
+				"(preUpgradeHealthCheck) and replaces its one pod. Remove it", timeout.bounds)))
+	}
+	return warnings
 }
 
 // pluginNoEffectWarnings reports Neo4jPlugin spec fields that are set but not

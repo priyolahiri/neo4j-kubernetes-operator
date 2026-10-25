@@ -644,32 +644,6 @@ func pluralIs(n int) string {
 	return "are"
 }
 
-// canonicaliseDesired turns the spec privileges into a deduplicated, sorted
-// slice of canonical statements plus a map from each canonical form back to the
-// original spec text. The diff is keyed on the canonical form, but callers
-// execute the original text — the canonical form upper-cases bare tokens
-// (including unquoted identifiers) and is explicitly not safe to feed to Neo4j.
-func (r *Neo4jRoleReconciler) canonicaliseDesired(stmts []string) ([]string, map[string]string, error) {
-	set := map[string]struct{}{}
-	byCanonical := map[string]string{}
-	for _, s := range stmts {
-		canon := neo4jclient.CanonicalisePrivilegeStatement(s)
-		if canon == "" {
-			continue
-		}
-		set[canon] = struct{}{}
-		if _, exists := byCanonical[canon]; !exists {
-			byCanonical[canon] = s // first original wins for a given canonical form
-		}
-	}
-	out := make([]string, 0, len(set))
-	for k := range set {
-		out = append(out, k)
-	}
-	sort.Strings(out)
-	return out, byCanonical, nil
-}
-
 // fetchCurrentPrivileges reads SHOW ROLE PRIVILEGES AS COMMANDS and returns:
 //   - canonical: sorted, deduplicated set of canonical statements
 //   - immutable: set (by canonical form) of statements flagged immutable

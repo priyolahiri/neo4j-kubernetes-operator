@@ -98,10 +98,11 @@ type kindValidator struct {
 //     Secret, the live deployment's status) are skipped on nil.
 var validators = map[string]kindValidator{
 	// The same entry point the operator runs on every pass, after the same
-	// defaults, so a manifest is held to the same rules here as when it is
-	// applied. The defaults go on the decoded copy that is validated; nothing
-	// prints that copy, and ApplyDefaults adds no field an error can then be
-	// reported on (operations.md id 144).
+	// defaults (the CRD's, which every kind gets in validateDoc, then the
+	// operator's own ApplyDefaults), so a manifest is held to the same rules
+	// here as when it is applied. The defaults go on the decoded copy that is
+	// validated; nothing prints that copy, and ApplyDefaults adds no field an
+	// error can then be reported on (operations.md id 144).
 	"Neo4jEnterpriseCluster": {
 		connectedChecks: "a Neo4jEnterpriseCluster's spec.image.tag against the version the cluster already runs",
 		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
@@ -118,8 +119,9 @@ var validators = map[string]kindValidator{
 			return out.Errors, append(warnings, notChecked...), nil, nil
 		},
 	},
-	// The operator applies no defaults to a standalone before it validates
-	// one, so neither does this.
+	// The operator applies no defaults of its own to a standalone before it
+	// validates one, so neither does this: the CRD's, which the API server
+	// stores, are in the document already (validateDoc).
 	"Neo4jEnterpriseStandalone": {
 		connectedChecks: "a Neo4jEnterpriseStandalone's spec.image.tag against the version it already runs",
 		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
@@ -235,18 +237,24 @@ var validators = map[string]kindValidator{
 		out := validation.NewAuthRuleValidator(c).Validate(context.Background(), &obj)
 		return out.Errors, out.Warnings, nil, nil
 	}},
-	// ShardedDatabase is the odd one out: its entrypoint returns a plain error
-	// rather than an errors-plus-warnings result, so it is adapted here rather
-	// than changing the operator's signature for the CLI's convenience.
+	// The reconciler's entry point (ValidateShardedDatabase) folds everything
+	// into one error; Validate is the same rules with each finding apart, so
+	// every error keeps its own field path. A cluster that does not exist yet
+	// is a wait, as it is for the operator; a cluster that cannot be read
+	// leaves the rules that need it unchecked, which is said.
 	"Neo4jShardedDatabase": {needsClient: true, fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jShardedDatabase
 		if err := yaml.Unmarshal(doc, &obj); err != nil {
 			return nil, nil, nil, err
 		}
-		if vErr := validation.NewShardedDatabaseValidator(c).ValidateShardedDatabase(context.Background(), &obj); vErr != nil {
-			return field.ErrorList{field.Invalid(field.NewPath("spec"), obj.Spec.Name, vErr.Error())}, nil, nil, nil
+		out := validation.NewShardedDatabaseValidator(c).Validate(context.Background(), &obj)
+		warnings := out.Warnings
+		if out.ClusterReadErr != nil {
+			warnings = append(warnings, fmt.Sprintf(
+				"could not read Neo4jEnterpriseCluster %s/%s, so the rules that need the cluster were not checked: %v",
+				obj.Namespace, obj.Spec.ClusterRef, out.ClusterReadErr))
 		}
-		return nil, nil, nil, nil
+		return out.Errors, warnings, out.Pending, nil
 	}},
 }
 
@@ -715,6 +723,10 @@ func validateDoc(doc []byte, source string, c client.Client, defaultNamespace st
 	if defaultNamespace != "" {
 		doc = withDefaultNamespace(doc, meta.Namespace, defaultNamespace)
 	}
+
+	// The object the operator validates is the one the API server stored,
+	// with the CRD's defaults in it; judge that one (validate_schema_defaults.go).
+	doc = withSchemaDefaults(meta.Kind, meta.APIVersion, doc)
 
 	errs, warns, pending, err := kv.fn(doc, c)
 	if err != nil {

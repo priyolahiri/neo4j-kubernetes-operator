@@ -111,11 +111,3 @@ func (v *ImageValidator) Validate(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) 
 func isCommunityTag(tag string) bool {
 	return strings.Contains(strings.ToLower(tag), "community")
 }
-
-func (v *ImageValidator) isVersionSupported(version string) bool {
-	parsed, err := neo4j.ParseVersion(version)
-	if err != nil {
-		return false
-	}
-	return parsed.IsSupported()
-}

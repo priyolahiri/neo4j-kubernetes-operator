@@ -272,7 +272,7 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			fmt.Sprintf("auth rule %q is in sync (enabled=%t, roles=%v)", ruleName, final.Enabled, appliedRoles),
 			appliedRoles, &final.Enabled)
 	} else if len(missingRoles) > 0 {
-		r.setStatus(ctx, rule, "PendingDependencies", metav1.ConditionFalse, ConditionReasonRolesPending,
+		r.setStatus(ctx, rule, neo4jv1beta1.PhasePendingDependencies, metav1.ConditionFalse, ConditionReasonRolesPending,
 			fmt.Sprintf("auth rule %q applied; %d/%d granted, waiting on missing roles %v", ruleName, len(appliedRoles), len(desiredRoles), missingRoles),
 			appliedRoles, &final.Enabled)
 	} else {
