@@ -305,7 +305,8 @@
     "moduleId": "mod-security",
     "paths": [
       "internal/controller/neo4juser_controller.go",
-      "internal/controller/role_resolution.go"
+      "internal/controller/role_resolution.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {
@@ -325,7 +326,8 @@
     "paths": [
       "internal/controller/neo4jrole_normalise.go",
       "internal/controller/neo4jrole_learn.go",
-      "internal/controller/neo4jrole_controller.go"
+      "internal/controller/neo4jrole_controller.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {
@@ -344,7 +346,8 @@
     "moduleId": "mod-security",
     "paths": [
       "internal/controller/neo4jrolebinding_controller.go",
-      "internal/controller/role_resolution.go"
+      "internal/controller/role_resolution.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {
@@ -362,7 +365,8 @@
     ],
     "moduleId": "mod-security",
     "paths": [
-      "internal/controller/neo4jauthrule_controller.go"
+      "internal/controller/neo4jauthrule_controller.go",
+      "internal/controller/target_wait.go"
     ]
   },
   {

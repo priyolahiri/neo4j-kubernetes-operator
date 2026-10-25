@@ -51,9 +51,9 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `BindingReady`, `RolesPending`, `UserNotFound`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `BindingFailed`, `ValidationFailed` | True when the user exists and all desired roles are granted. |
+| `Ready` | `BindingReady`, `RolesPending`, `UserNotFound`, `ClusterNotFound`, `ClusterNotReady`, `ConnectionFailed`, `BindingFailed`, `ValidationFailed` | True when the user exists and all desired roles are granted. A binding that is `Ready` stays `Ready` while its target is not (a restart); `ClusterNotReady` here means it was not yet `Ready` at its generation when the target went away. `BindingFailed` during deletion (phase `Failed`): a revoke failed and is retried. |
 | `RolesSynced` | `RolesMatch`, `RolesPending` | True when `grantedRoles` covers `.spec.roles`. |
-| `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `.spec.roles` correspond to a Neo4jRole CR that does not yet exist. |
+| `PendingDependencies` | `RolesPending`, `AllDependenciesPresent` | True when one or more `.spec.roles` name a role that exists nowhere yet: not a built-in, not a `Neo4jRole`, not in `SHOW ROLES`. |
 | `UserNotFound` | `UserNotFound`, `UserPresent` | True when the user named by `.spec.username` is absent from Neo4j. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterReady` | Mirrors the readiness of the referenced cluster. |
 | `RoleNamesResolved` | `RoleCRNamesResolved` | Present only while `.spec.roles` names a `Neo4jRole` by its CR `metadata.name`; True, and the message maps each such name to the Neo4j role granted. A `RolesResolved` event announces the mapping when it appears or changes. |
@@ -72,11 +72,11 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 | Create | `GRANT ROLE r TO username` for each role in `.spec.roles` (skipping built-ins not yet listed in current grants is fine; PUBLIC is always skipped) |
 | Update (`.spec.roles` changes) | `GRANT` for additions; `REVOKE` for removals from `.spec.roles` *and* roles previously listed in `status.grantedRoles` |
 | Update (`enforceExclusive: true`) | Same as above + revoke any extra roles on the user that are not in `.spec.roles` |
-| Delete (`Revoke` policy) | `REVOKE ROLE r FROM username` for each role in `status.grantedRoles`, then remove finalizer |
+| Delete (`Revoke` policy) | `REVOKE ROLE r FROM username` for each role in `status.grantedRoles`, then remove finalizer. A failed revoke is recorded in status (phase `Failed`, reason `BindingFailed`), announced once, and retried for up to 5 minutes before the finalizer is released anyway |
 | Delete (`Retain` policy) | Remove finalizer only |
 | User absent | No-op; `UserNotFound` condition; reconcile every 30s until the user appears |
-| Cluster not Ready | No-op; `ClusterNotReady` condition; reconcile every 30s |
-| Missing custom role | Skip the grant for that role; `PendingDependencies` condition; the binding controller watches `Neo4jRole` and re-reconciles when the role lands |
+| Cluster not Ready | No-op; `ClusterNotReady` condition; reconcile every 30s. A `Ready` binding stays `Ready` (a target restart announces nothing); any other waits in `Pending` |
+| Missing custom role | Skip the grant for that role; `PendingDependencies` condition; the binding controller watches `Neo4jRole` and re-reconciles when one lands, and every 30s for a role created in Neo4j directly |
 
 ## Examples
 
