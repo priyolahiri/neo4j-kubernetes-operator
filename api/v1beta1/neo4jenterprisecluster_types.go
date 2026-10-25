@@ -855,7 +855,13 @@ type RouteTLSSpec struct {
 	// +kubebuilder:validation:Enum=None;Allow;Redirect
 	InsecureEdgeTerminationPolicy string `json:"insecureEdgeTerminationPolicy,omitempty"`
 
-	// Secret containing the certificate (for reencrypt/passthrough)
+	// Secret containing the certificate (for reencrypt/passthrough).
+	//
+	// Reserved: accepted by the schema but not acted on today. No Route the
+	// operator writes names a certificate, so the OpenShift router serves its
+	// default one (edge, reencrypt) or the server's own (passthrough). The
+	// operator raises a ValidationWarning event whenever it is set; a
+	// certificate added to the Route itself is kept.
 	SecretName string `json:"secretName,omitempty"`
 }
 

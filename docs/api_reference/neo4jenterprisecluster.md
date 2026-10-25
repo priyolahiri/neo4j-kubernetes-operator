@@ -817,7 +817,7 @@ Configures an Ingress resource for HTTP(S) access to Neo4j Browser.
 | Field | Type | Description |
 |---|---|---|
 | `enabled` | `bool` | Enable OpenShift Route creation |
-| `host` | `string` | Hostname for the Route (optional) |
+| `host` | `string` | Hostname for the Route (optional). Without it OpenShift generates one, which the operator keeps; removing `host` later keeps the Route's current host, since OpenShift ignores an update that clears it |
 | `path` | `string` | Path for the Route (default: `"/"`) |
 | `annotations` | `map[string]string` | Route annotations |
 | `tls` | [`*RouteTLSSpec`](#routetlsspec) | TLS settings for the Route |
@@ -829,7 +829,7 @@ Configures an Ingress resource for HTTP(S) access to Neo4j Browser.
 |---|---|---|
 | `termination` | `string` | TLS termination: `"edge"`, `"reencrypt"`, `"passthrough"` |
 | `insecureEdgeTerminationPolicy` | `string` | `"None"`, `"Allow"`, `"Redirect"` |
-| `secretName` | `string` | Secret containing certificate (reencrypt/passthrough) |
+| `secretName` | `string` | **Reserved — no effect today.** Intended for the Route's certificate, but no Route the operator writes names one: the OpenShift router serves its default certificate (`edge`, `reencrypt`) or the server's own (`passthrough`). A `ValidationWarning` event is raised when it is set. To serve another certificate at the router, add it to the Route itself (`spec.tls.certificate` and `key`, or `spec.tls.externalCertificate`); the operator keeps what it does not render |
 
 ### MCPServerSpec
 

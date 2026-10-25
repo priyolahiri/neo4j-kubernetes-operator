@@ -64,11 +64,34 @@ func tlsNoEffectWarnings(tls *neo4jv1beta1.TLSSpec, resourceName string) []strin
 			"certificate chain, point spec.tls.issuerRef at an Issuer backed by it", resourceName))}
 }
 
+// routeNoEffectWarnings covers the OpenShift Routes the cluster and the
+// standalone share: spec.service.route and the MCP server's
+// spec.mcp.http.service.route. tls.secretName is rendered into neither — a
+// Route has no field that names a certificate Secret the way an Ingress does —
+// so the router serves the certificate it would serve anyway (#536).
+func routeNoEffectWarnings(service *neo4jv1beta1.ServiceSpec, mcp *neo4jv1beta1.MCPServerSpec) []string {
+	const instead = "the Route carries no certificate of its own, so the OpenShift router serves its default " +
+		"certificate for edge and reencrypt, and passthrough serves the Neo4j server's own (spec.tls). To serve " +
+		"another certificate at the router, add it to the Route itself (spec.tls.certificate and spec.tls.key, " +
+		"or spec.tls.externalCertificate where your OpenShift supports it); the operator leaves it in place"
+	var warnings []string
+	if service != nil && service.Route != nil && service.Route.TLS != nil && service.Route.TLS.SecretName != "" {
+		warnings = append(warnings, NoEffectWarning(field.NewPath("spec", "service", "route", "tls", "secretName"), instead))
+	}
+	if mcp != nil && mcp.HTTP != nil && mcp.HTTP.Service != nil && mcp.HTTP.Service.Route != nil &&
+		mcp.HTTP.Service.Route.TLS != nil && mcp.HTTP.Service.Route.TLS.SecretName != "" {
+		warnings = append(warnings, NoEffectWarning(
+			field.NewPath("spec", "mcp", "http", "service", "route", "tls", "secretName"), instead))
+	}
+	return warnings
+}
+
 // NoEffectWarnings reports cluster spec fields that are set but not read, plus
 // the advisory AuthProviderWarnings, which share the same ValidationWarning
 // channel.
 func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
 	warnings := tlsNoEffectWarnings(cluster.Spec.TLS, cluster.Name)
+	warnings = append(warnings, routeNoEffectWarnings(cluster.Spec.Service, cluster.Spec.MCP)...)
 
 	if p := cluster.Spec.Topology.Placement; p != nil {
 		placementPath := field.NewPath("spec", "topology", "placement")
@@ -119,6 +142,7 @@ func maxUnavailableNoEffectWarning(strategy *neo4jv1beta1.UpgradeStrategySpec, i
 // the reconciler turns into events.
 func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []string {
 	warnings := tlsNoEffectWarnings(standalone.Spec.TLS, standalone.Name)
+	warnings = append(warnings, routeNoEffectWarnings(standalone.Spec.Service, standalone.Spec.MCP)...)
 
 	// strictPeerValidation picks the CLUSTER SSL policy. It is read for
 	// Neo4jEnterpriseCluster only; a standalone has no intra-cluster traffic and
