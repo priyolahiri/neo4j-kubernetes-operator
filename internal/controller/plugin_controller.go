@@ -1153,8 +1153,9 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 	} else {
 		// Apply security settings as environment variables, unioning additive
 		// allowlists across plugins (see mergePluginSecurityEnv), with the
-		// lists the plugin's spec.config sets. applyPlugin then makes each
-		// list exactly what the target's plugins put there (setClusterPluginLists).
+		// lists the plugin's spec.config sets. applyPlugin then takes out of
+		// each list what no plugin of the target asks for any more
+		// (setClusterPluginLists); it never adds another plugin's tokens.
 		settings := r.pluginSecuritySettings(plugin)
 		for k, v := range pluginListSettings(plugin) {
 			settings[k] = v
@@ -1287,7 +1288,8 @@ func pluginPodDrift(live, desired corev1.PodSpec) (missing, outdated []string) {
 // So is a cluster's shared list that the plugins no longer put anything in
 // (setClusterPluginLists): the next write of a plugin takes it away, and a
 // settled plugin does not restart the servers for it — not on its first pass
-// after an operator upgrade either.
+// after an operator upgrade either. Another plugin's tokens never make a list
+// "missing" here: desired adds only this plugin's own (operations.md id 173).
 func pluginEnvDrift(live, desired []corev1.EnvVar, standalone bool) []string {
 	have, want := envByName(live), envByName(desired)
 	var drift []string

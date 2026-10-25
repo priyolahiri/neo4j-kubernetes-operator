@@ -27,6 +27,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -242,6 +243,110 @@ func csvTokens(value string) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+// installedAPOCAndGDS is cluster "c"'s server StatefulSet with a Managed APOC
+// plugin (a setting, no security block) and a Managed GDS plugin (its
+// automatic unrestricted list) written and rolled out, records and all.
+func installedAPOCAndGDS() (*neo4jv1beta1.Neo4jPlugin, *neo4jv1beta1.Neo4jPlugin, *appsv1.StatefulSet) {
+	apoc := selfHealPlugin("apoc", "c", neo4jv1beta1.PhaseReady, "Plugin installed and configured successfully")
+	gds := selfHealPlugin("gds", "c", neo4jv1beta1.PhaseReady, "Plugin installed and configured successfully")
+	gds.Spec.Name, gds.Spec.Config = "graph-data-science", nil
+	sts := selfHealSTS(
+		corev1.EnvVar{Name: "NEO4J_PLUGINS", Value: `["apoc","graph-data-science"]`},
+		corev1.EnvVar{Name: "NEO4J_apoc_export_file_enabled", Value: "true"},
+		corev1.EnvVar{Name: unrestrictedVar, Value: "gds.*,apoc.load.*"},
+	)
+	sts.Annotations = map[string]string{
+		pluginEnvVarsAnnotation("apoc"): "NEO4J_apoc_export_file_enabled",
+		pluginEntriesAnnotation("apoc"): "apoc", pluginEntriesAnnotation("gds"): "graph-data-science",
+	}
+	return apoc, gds, sts
+}
+
+// The defect (v1.22.0 combined walk A5, #561): installing the GenAI example
+// (allowedProcedures genai.*, ai.*) beside a Ready APOC and GDS took three
+// rolls instead of two. GDS's settled pass built the cluster's shared lists
+// over every enabled plugin — GenAI too, before GenAI had written anything —
+// found the allowlist "missing", announced PluginMissing ("does not hold what
+// the plugin sets in NEO4J_dbms_security_procedures_allowlist") and wrote
+// GenAI's tokens; GenAI's own install then rolled the servers again. A plugin
+// adds only its own tokens: GenAI's arrive with GenAI's write.
+func TestReconcile_ASettledPluginDoesNotWriteAPendingPluginsTokens(t *testing.T) {
+	apoc, gds, sts := installedAPOCAndGDS()
+	genai := genaiPlugin("c", "")
+	genai.Name, genai.Spec.Config = "genai-plugin", nil
+	genai.Spec.Security = &neo4jv1beta1.PluginSecurity{AllowedProcedures: []string{"genai.*", "ai.*"}}
+	r, rec, writes, _ := gateReconciler(t, nil, append([]client.Object{apoc, gds, genai, readyCluster(), sts}, readyClusterPods()...)...)
+
+	for _, settled := range []string{"gds", "apoc"} {
+		reconcilePlugin(t, r, settled)
+		assert.Equal(t, neo4jv1beta1.PhaseReady, getPlugin(t, r, settled).Status.Phase, settled)
+	}
+	assert.Zero(t, *writes, "a settled plugin writes nothing for a plugin not on the target yet")
+	assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonPluginMissing))
+	_, ok := envValueOf(t, r, "c-server", allowlistVar)
+	assert.False(t, ok, "GenAI's allowlist waits for GenAI's write")
+
+	// GenAI's own install: one write, with its tokens and nobody's lost.
+	installAndRoll(t, r, "genai-plugin", "c-server")
+	assert.Equal(t, 1, *writes)
+	v, _ := envValueOf(t, r, "c-server", allowlistVar)
+	assert.Equal(t, "genai.*,ai.*", v)
+	v, _ = envValueOf(t, r, "c-server", unrestrictedVar)
+	assert.ElementsMatch(t, []string{"gds.*", "apoc.load.*", "genai.*", "ai.*"}, csvTokens(v))
+	v, _ = envValueOf(t, r, "c-server", "NEO4J_PLUGINS")
+	assert.Equal(t, `["apoc","graph-data-science","genai"]`, v)
+
+	// The settled plugins, woken by GenAI's write, write nothing either.
+	drainEvents(rec)
+	for _, settled := range []string{"gds", "apoc"} {
+		reconcilePlugin(t, r, settled)
+	}
+	assert.Equal(t, 1, *writes)
+	assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonPluginMissing))
+}
+
+// A storage expansion recreates a cluster's StatefulSet from the cluster's own
+// template, without what the plugins wrote. A disabled plugin has nothing on
+// it to remove — but its removal built the shared lists over the other
+// plugins and wrote GDS's tokens back: a write, and a roll, for a plugin that
+// is off (walked live, A5 follow-up). Taking a plugin off the target never adds
+// anything; GDS restores its own tokens with its own write.
+func TestReconcile_ADisabledPluginWritesNothingToARecreatedStatefulSet(t *testing.T) {
+	apoc, gds, _ := installedAPOCAndGDS()
+	apoc.Spec.Enabled = false
+	apoc.Status.Phase, apoc.Status.Message = neo4jv1beta1.PhaseDisabled, "Plugin disabled (spec.enabled: false): not on the servers of Neo4jEnterpriseCluster c"
+	recreated := selfHealSTS(corev1.EnvVar{Name: "NEO4J_AUTH", Value: "neo4j/secret"})
+	r, rec, writes, _ := gateReconciler(t, nil, append([]client.Object{apoc, gds, readyCluster(), recreated}, readyClusterPods()...)...)
+
+	reconcilePlugin(t, r, "apoc")
+
+	assert.Zero(t, *writes)
+	assert.Equal(t, neo4jv1beta1.PhaseDisabled, getPlugin(t, r, "apoc").Status.Phase)
+	assert.Empty(t, drainEvents(rec))
+	assert.Equal(t, []string{"NEO4J_AUTH"}, envNames(liveSTSEnv(t, r.Client, "c-server")))
+}
+
+// A removal keeps another plugin's tokens and takes away only what nobody
+// asks for: the uninstall's list arithmetic.
+func TestPluginListValue(t *testing.T) {
+	claimed := map[string]struct{}{"gds.*": {}, "apoc.load.*": {}}
+	for _, tc := range []struct {
+		name, live string
+		own        []string
+		want       string
+	}{
+		{"own tokens added, others kept", "gds.*,apoc.load.*", []string{"apoc.*"}, "gds.*,apoc.load.*,apoc.*"},
+		{"an unclaimed token goes", "gds.*,old.*", nil, "gds.*"},
+		{"another's missing token is not added", "", nil, ""},
+		{"the same tokens keep their order", "apoc.load.*,gds.*", nil, "apoc.load.*,gds.*"},
+		{"own and claimed are one token", "gds.*", []string{"gds.*"}, "gds.*"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, pluginListValue(tc.live, tc.own, claimed))
+		})
+	}
 }
 
 // The names record's key is a valid annotation key for any CR name, and two
