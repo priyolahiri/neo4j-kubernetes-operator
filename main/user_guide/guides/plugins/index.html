@@ -4616,7 +4616,7 @@ defaults.</p>
 </span></code></pre></div>
 <p>Note that every pod restart re-runs the init container and re-downloads the JAR (≈ 30 MB for GDS) — budget bandwidth accordingly.</p>
 <h3 id="duplicate-cr-protection-all-modes">Duplicate-CR protection (all modes)<a class="headerlink" href="#duplicate-cr-protection-all-modes" title="Anchor link to this section">&para;</a></h3>
-<p>Two <code>Neo4jPlugin</code> CRs in the same namespace targeting the same <code>clusterRef</code> with the same plugin <code>name</code> would race on the same <code>/plugins</code> directory and <code>NEO4J_PLUGINS</code> value. The reconciler refuses the duplicate: the <strong>oldest CR wins</strong>, the newer one is set to <code>status.phase: Failed</code> with a message naming the older CR, and a <code>PluginDuplicate</code> Warning event is emitted. Delete the unwanted CR; the survivor takes over on its next watch event.</p>
+<p>Two <code>Neo4jPlugin</code> CRs in the same namespace targeting the same <code>clusterRef</code> with the same plugin <code>name</code> would race on the same <code>/plugins</code> directory and <code>NEO4J_PLUGINS</code> value. The reconciler refuses the duplicate: an <strong>enabled CR wins over a disabled one</strong>, then the <strong>oldest CR wins</strong>; a newer enabled one is set to <code>status.phase: Failed</code> with a message naming the older CR, and a <code>PluginDuplicate</code> Warning event is emitted. A disabled duplicate (<code>spec.enabled: false</code>) is never held back and never holds one back: it is <code>Disabled</code>, its message names the CR that installs the plugin in its place, and neither it nor its deletion takes the plugin off the servers. Delete the unwanted CR, or disable it; the other CRs with the same <code>clusterRef</code> and <code>name</code> are reconciled at once, and the survivor takes over without a restart when it asks for the same plugin.</p>
 <h2 id="plugin-configuration">Plugin configuration<a class="headerlink" href="#plugin-configuration" title="Anchor link to this section">&para;</a></h2>
 <p><code>spec.config</code> is a string map of plugin settings. Where each entry lands depends on the plugin:</p>
 <ul>
@@ -4757,7 +4757,7 @@ defaults.</p>
 <tr>
 <td><code>PluginDuplicate</code></td>
 <td>Warning</td>
-<td>Another CR already owns this <code>(clusterRef, name)</code> pair — delete one</td>
+<td>Another enabled CR already owns this <code>(clusterRef, name)</code> pair — delete one, or set <code>spec.enabled: false</code> on one</td>
 </tr>
 <tr>
 <td><code>ValidationFailed</code></td>

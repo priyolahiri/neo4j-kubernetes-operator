@@ -5642,7 +5642,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Current phase: <code>"Pending"</code>, <code>"Installing"</code>, <code>"Ready"</code>, <code>"Failed"</code>, <code>"Waiting"</code>, <code>"Invalid"</code> (spec failed validation; not retried until the CR is edited), <code>"Disabled"</code> (<code>spec.enabled: false</code>, and nothing of the plugin is on its target)</td>
+<td>Current phase: <code>"Pending"</code>, <code>"Installing"</code>, <code>"Ready"</code>, <code>"Failed"</code>, <code>"Waiting"</code>, <code>"Invalid"</code> (spec failed validation; not retried until the CR is edited), <code>"Disabled"</code> (<code>spec.enabled: false</code>, and nothing this CR wrote is on its target; an enabled CR with the same <code>spec.name</code> may install the plugin there, and the message then names it)</td>
 </tr>
 <tr>
 <td><code>message</code></td>
@@ -5652,12 +5652,12 @@
 <tr>
 <td><code>installedVersion</code></td>
 <td><code>string</code></td>
-<td>The version the operator last installed successfully: <code>spec.version</code> as it was when the plugin reached <code>Ready</code> (the version <em>requested</em>, not read back from the running plugin). Left unchanged while a later attempt is <code>Installing</code> or <code>Failed</code>, so it always names the last install that worked</td>
+<td>The version the operator last installed successfully: <code>spec.version</code> as it was when the plugin reached <code>Ready</code> (the version <em>requested</em>, not read back from the running plugin). Left unchanged while a later attempt is <code>Installing</code> or <code>Failed</code>, so it always names the last install that worked. Cleared, with <code>installationTime</code>, once the plugin is <code>Disabled</code>: nothing of it is on the servers then (a disabled plugin's removal is <code>Installing</code> until its roll is done, and keeps both until then), and enabling it again records a new installation</td>
 </tr>
 <tr>
 <td><code>installationTime</code></td>
 <td><code>*metav1.Time</code></td>
-<td>When the plugin was first recorded as installed at <code>installedVersion</code>: set on reaching <code>Ready</code>, not touched by later reconciles or by <code>Ready</code> → <code>Installing</code> → <code>Ready</code> cycles at the same version. A different <code>spec.version</code> is a new installation and restarts it</td>
+<td>When the plugin was first recorded as installed at <code>installedVersion</code>: set on reaching <code>Ready</code>, not touched by later reconciles or by <code>Ready</code> → <code>Installing</code> → <code>Ready</code> cycles at the same version. A different <code>spec.version</code> is a new installation and restarts it. Cleared when the plugin is <code>Disabled</code></td>
 </tr>
 <tr>
 <td><code>health</code></td>
@@ -5920,18 +5920,29 @@ same <code>/plugins</code> directory and the same <code>NEO4J_PLUGINS</code> env
 controller adds, the other removes, restart cycle. The reconciler
 detects this and refuses to install the duplicate:</p>
 <ul>
-<li>The <strong>oldest CR (by <code>creationTimestamp</code>)</strong> keeps reconciling
-  normally. UID is the tiebreaker on identical timestamps.</li>
-<li>The <strong>newer duplicate</strong> is marked <code>status.phase=Failed</code> with a
+<li>An <strong>enabled CR wins over a disabled one</strong> (<code>spec.enabled: false</code>):
+  a CR that keeps the plugin off never holds back one that installs it.
+  Among the rest, the <strong>oldest CR (by <code>creationTimestamp</code>)</strong> keeps
+  reconciling normally. UID is the tiebreaker on identical timestamps.</li>
+<li>A <strong>newer enabled duplicate</strong> is marked <code>status.phase=Failed</code> with a
   message naming the older CR, and a <code>PluginDuplicate</code> Warning Event
-  is emitted. It stops reconciling until the older CR is deleted.</li>
+  is emitted. It stops reconciling until the older CR is deleted or
+  disabled.</li>
+<li>A <strong>disabled duplicate</strong> is never <code>Failed</code>: it is <code>Disabled</code>, its
+  message names the enabled CR that installs the plugin in its place,
+  and neither it nor its deletion takes off the servers what that CR
+  installs (the NEO4J_PLUGINS name, the settings, the procedure-list
+  tokens and a VerifiedDownload init container the two share).</li>
 <li>A duplicate that's mid-delete (DeletionTimestamp set) doesn't block
   its replacement — a stuck finalizer on the older CR can't lock out
-  the survivor.</li>
+  the survivor. The deleted CR's uninstall keeps what the survivor
+  installs, so the hand-over restarts nothing when the two CRs ask for
+  the same plugin.</li>
 </ul>
 <p>Action when you see <code>phase=Failed</code> with a duplicate message: delete
-the unwanted CR. The surviving CR reconciles on its next watch event
-(triggered by the deletion) and takes ownership.</p>
+the unwanted CR, or set <code>spec.enabled: false</code> on it. The other CRs with
+the same <code>clusterRef</code> and <code>spec.name</code> are reconciled when one of them is
+created, deleted or edited, so the survivor takes ownership at once.</p>
 <h2 id="examples">Examples<a class="headerlink" href="#examples" title="Anchor link to this section">&para;</a></h2>
 <h3 id="apoc-plugin-for-cluster">APOC Plugin for Cluster<a class="headerlink" href="#apoc-plugin-for-cluster" title="Anchor link to this section">&para;</a></h3>
 <p>Install APOC plugin on a Neo4jEnterpriseCluster:</p>

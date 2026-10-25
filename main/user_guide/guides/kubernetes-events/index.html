@@ -4695,7 +4695,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>PluginDuplicate</code></td>
 <td>Warning</td>
-<td>Another <code>Neo4jPlugin</code> already targets this name (only the first owner reconciles; duplicates sit in <code>Failed</code> until the conflict is resolved). Once per conflict</td>
+<td>Another enabled <code>Neo4jPlugin</code> already targets this name (an enabled CR wins over a disabled one, then the oldest; a newer enabled duplicate sits in <code>Failed</code> until the other is deleted or disabled, a disabled one is <code>Disabled</code>, never a duplicate). Once per conflict</td>
 </tr>
 <tr>
 <td><code>PluginInitContainerFailing</code></td>

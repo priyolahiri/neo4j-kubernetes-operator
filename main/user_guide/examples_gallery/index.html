@@ -4516,7 +4516,7 @@ its upstream, and whatever lag is outstanding becomes permanent data loss.</p>
 <tr>
 <td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/plugins/apoc-plugin-example.yaml"><code>apoc-plugin-example.yaml</code></a></td>
 <td>APOC with env-var-based configuration (the 5.26+ way — APOC config does not live in <code>neo4j.conf</code>)</td>
-<td><code>config.apoc.*</code> → <code>NEO4J_APOC_*</code> env vars</td>
+<td><code>config.apoc.*</code> → <code>NEO4J_apoc_*</code> env vars (case kept: <code>apoc.export.file.enabled</code> → <code>NEO4J_apoc_export_file_enabled</code>)</td>
 </tr>
 <tr>
 <td><a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/blob/main/examples/plugins/gds-plugin-example.yaml"><code>gds-plugin-example.yaml</code></a></td>
