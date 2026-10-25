@@ -18,6 +18,7 @@ package validation
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -309,8 +310,17 @@ func CloudStorageNoEffectWarnings(storage *neo4jv1beta1.StorageLocation, storage
 // BackupValidator.Validate returns only errors, so this is a separate method the
 // backup reconciler turns into events.
 func (v *BackupValidator) NoEffectWarnings(backup *neo4jv1beta1.Neo4jBackup) []string {
-	return CloudStorageNoEffectWarnings(&backup.Spec.Storage, field.NewPath("spec", "storage"),
+	warnings := CloudStorageNoEffectWarnings(&backup.Spec.Storage, field.NewPath("spec", "storage"),
 		resources.BackupServiceAccountName)
+	// A PVC backup writes its chain directory at the PVC's root (the Job
+	// mounts it at /backup and writes /backup/<chain directory>); storage.path
+	// is joined in only for a cloud bucket.
+	if st := backup.Spec.Storage; st.Type == "pvc" && st.Path != "" {
+		warnings = append(warnings, NoEffectWarning(field.NewPath("spec", "storage", "path"),
+			"a PVC backup writes its chain directory (its name, or its chainFromBackup's) at the PVC's root, "+
+				"whatever storage.path says; leave it unset, and use another PVC to keep these backups elsewhere"))
+	}
+	return warnings
 }
 
 // RestoreNoEffectWarnings reports Neo4jRestore spec fields that are set but not
@@ -321,15 +331,34 @@ func RestoreNoEffectWarnings(restore *neo4jv1beta1.Neo4jRestore) []string {
 	src := restore.Spec.Source
 
 	warnings := CloudStorageNoEffectWarnings(src.Storage, sourcePath.Child("storage"), resources.RestoreServiceAccountName)
+	warnings = append(warnings, pvcRestorePathNoEffectWarnings(src.Storage, sourcePath)...)
 	if pitr := src.PITR; pitr != nil {
 		warnings = append(warnings, CloudStorageNoEffectWarnings(pitr.LogStorage,
 			sourcePath.Child("pitr", "logStorage"), resources.RestoreServiceAccountName)...)
 		if base := pitr.BaseBackup; base != nil {
 			warnings = append(warnings, CloudStorageNoEffectWarnings(base.Storage,
 				sourcePath.Child("pitr", "baseBackup", "storage"), resources.RestoreServiceAccountName)...)
+			warnings = append(warnings, pvcRestorePathNoEffectWarnings(base.Storage,
+				sourcePath.Child("pitr", "baseBackup"))...)
 		}
 	}
 	return warnings
+}
+
+// pvcRestorePathNoEffectWarnings reports storage.path on a PVC restore source.
+// Nothing reads it: the restore Job mounts the PVC at /backup and reads
+// /backup/<backupPath>, and the seed proxy serves the PVC's root — storage.path
+// is joined in only for a cloud bucket (backup-restore.md Rule 44). The backup
+// writes a PVC chain at the PVC's root as well, so the path belongs in
+// backupPath. sourcePath is the block that holds both storage and backupPath.
+func pvcRestorePathNoEffectWarnings(storage *neo4jv1beta1.StorageLocation, sourcePath *field.Path) []string {
+	if storage == nil || storage.Type != "pvc" || storage.Path == "" {
+		return nil
+	}
+	return []string{NoEffectWarning(sourcePath.Child("storage", "path"),
+		fmt.Sprintf("a PVC source is read from the PVC's root, whatever storage.path says; put the directory in %s, "+
+			"relative to that root (for example %q)",
+			sourcePath.Child("backupPath").String(), strings.Trim(storage.Path, "/")+"/<backup directory>"))}
 }
 
 // AuraInstanceNoEffectWarnings reports AuraInstance spec fields that are set but

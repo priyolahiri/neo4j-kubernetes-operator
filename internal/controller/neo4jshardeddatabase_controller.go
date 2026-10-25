@@ -150,13 +150,15 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 
 	// Validate the sharded database configuration
 	if err := r.validateShardedDatabase(ctx, &shardedDatabase); err != nil {
-		logger.Error(err, "Validation failed")
 		// One prefix, here: the validator returns the errors alone.
 		msg := fmt.Sprintf("Validation failed: %v", err)
 		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", msg, nil)
 		if statusErr != nil {
 			logger.Error(statusErr, "Failed to update status after validation failure")
 		}
+		// Logged as the event is announced: once per cause, not as an ERROR
+		// on every requeue (knowledge ids 136, 197).
+		logRefusal(logger, failed, "Validation failed", err)
 		// Announced when the failure starts or its message changes, not on
 		// every RequeueAfter while the spec stays invalid: the persisted phase
 		// and message say whether this pass is news (knowledge rule 136).
@@ -207,11 +209,11 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	if !r.clusterSupportsPropertySharding(cluster) {
 		if cluster.Spec.PropertySharding == nil || !cluster.Spec.PropertySharding.Enabled {
 			err := fmt.Errorf("cluster %s does not support property sharding (requires Neo4j 2025.12+ and propertySharding.enabled=true)", cluster.Name)
-			logger.Error(err, "Cluster does not support property sharding")
 			failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", err.Error(), nil)
 			if statusErr != nil {
 				logger.Error(statusErr, "Failed to update status after cluster capability check")
 			}
+			logRefusal(logger, failed, "Cluster does not support property sharding", err)
 			// Announced when the failure starts, not on every RequeueAfter
 			// while the cluster stays without sharding (knowledge rule 145).
 			if failed {
@@ -291,12 +293,13 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				}
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
-			logger.Error(seedErr, "Failed to resolve seedBackupRef", "seedBackupRef", shardedDatabase.Spec.SeedBackupRef)
 			failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed",
 				fmt.Sprintf("seedBackupRef resolution failed: %v", seedErr), nil)
 			if statusErr != nil {
 				logger.Error(statusErr, "Failed to update status to Failed")
 			}
+			logRefusal(logger.WithValues("seedBackupRef", shardedDatabase.Spec.SeedBackupRef), failed,
+				"Failed to resolve seedBackupRef", seedErr)
 			// Announced when the failure starts or its message changes, not
 			// on every RequeueAfter (knowledge rule 145).
 			if failed {

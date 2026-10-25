@@ -34,11 +34,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
+// The Neo4jDatabase and Neo4jShardedDatabase validation failures were still an
+// ERROR on every requeue (60 in ten minutes on the round-7 walk) while their
+// event fired once (knowledge id 197).
 func TestReconcile_ARefusedSpecIsLoggedOnceNotAsAnError(t *testing.T) {
 	for _, tc := range validationFailedCases() {
-		if tc.name != "Neo4jEnterpriseCluster" && tc.name != "Neo4jEnterpriseStandalone" {
+		switch tc.name {
+		case "Neo4jEnterpriseCluster", "Neo4jEnterpriseStandalone", "Neo4jDatabase", "Neo4jShardedDatabase":
+		default:
 			continue
 		}
 		t.Run(tc.name, func(t *testing.T) {
@@ -54,6 +61,69 @@ func TestReconcile_ARefusedSpecIsLoggedOnceNotAsAnError(t *testing.T) {
 			assert.Empty(t, sink.errors(), "a refusal is not a controller error")
 			assert.Len(t, sink.mentioning(0, "validation failed"), 1, "logged when it is announced")
 			assert.Len(t, sink.mentioning(1, "validation failed"), 2, "and at V(1) on the passes in between")
+		})
+	}
+}
+
+// The other refusals of the database kinds that a requeue meets again: a
+// database waiting for its host's seed credentials, a sharded database whose
+// cluster has no property sharding, and one whose seedBackupRef names no
+// backup. Each was an ERROR on every pass while its event fired once.
+func TestReconcile_ADatabaseKindsLastingRefusalIsLoggedOnceNotAsAnError(t *testing.T) {
+	cases := []struct {
+		name      string
+		mentions  string
+		reconcile func(ctx context.Context) error
+	}{
+		{
+			name: "Neo4jDatabase seed credentials missing", mentions: "seed credentials",
+			reconcile: func() func(context.Context) error {
+				db := ordersDatabase("orders")
+				db.Spec.SeedURI = "s3://backups/orders.backup"
+				db.Spec.SeedCredentials = &neo4jv1beta1.SeedCredentials{SecretRef: "s3-creds"}
+				r, _ := databaseTestReconciler(t, &databaseServer{}, readyDatabaseHost(), db)
+				return func(ctx context.Context) error {
+					_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(db)})
+					return err
+				}
+			}(),
+		},
+		{
+			name: "Neo4jShardedDatabase cluster without property sharding", mentions: "does not support property sharding",
+			reconcile: func() func(context.Context) error {
+				cluster := shardingCluster()
+				cluster.Spec.PropertySharding = nil
+				sd := productsShardedDB()
+				r, _ := shardedTestReconciler(t, &shardedServer{name: "products"}, cluster, sd)
+				return func(ctx context.Context) error {
+					_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(sd)})
+					return err
+				}
+			}(),
+		},
+		{
+			name: "Neo4jShardedDatabase seedBackupRef names no backup", mentions: "seedBackupRef",
+			reconcile: func() func(context.Context) error {
+				sd := productsShardedDB()
+				sd.Spec.SeedBackupRef = "no-such-backup"
+				r, _ := shardedTestReconciler(t, &shardedServer{name: "products"}, shardingCluster(), sd)
+				return func(ctx context.Context) error {
+					_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(sd)})
+					return err
+				}
+			}(),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := newLevelCaptureSink()
+			ctx := log.IntoContext(context.Background(), logr.New(sink))
+			for range 3 {
+				require.NoError(t, tc.reconcile(ctx))
+			}
+			assert.Empty(t, sink.errors(), "a refusal or a wait is not a controller error")
+			assert.Len(t, sink.mentioning(0, tc.mentions), 1, "logged when it is announced")
+			assert.Len(t, sink.mentioning(1, tc.mentions), 2, "and at V(1) on the passes in between")
 		})
 	}
 }

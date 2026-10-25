@@ -239,7 +239,6 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 		case StatusRunning:
 			online, total, _, stErr := neo4jClient.DatabaseOnlineState(ctx, db)
 			if stErr == nil && total > 0 && online == total {
-				r.seedProgress.forget(restore, db)
 				r.markDatabaseResult(ctx, restore, db, StatusCompleted, "online")
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
@@ -255,17 +254,15 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 			// once the state is steady.
 			progress := seedingProgressMessage(online, total, stErr)
 			r.noteDatabaseProgress(ctx, restore, db, progress)
-			// Also announce it as an event. The status message records only the
-			// latest state, so it cannot distinguish "slow" from "stuck": one
-			// sample of "0/1 allocations online" looks identical either way.
-			// Event aggregation supplies what is missing — repeated identical
-			// events collapse into one object with a count and first/last
-			// timestamps, so `kubectl describe` (and the integration suite's own
-			// diagnostics dump) shows whether this database sat at 0/1 from the
-			// first poll or worked through several states. Announced when the
-			// progress changes and every seedProgressRefresh while it does not —
-			// on every poll it spent its event budget (#527) — from the progress
-			// recorder, so it never spends the restore's own.
+			// Also announce it, as the restore's progress summary. The status
+			// message records only the latest state, so it cannot tell "slow"
+			// from "stuck": one sample of "0/1 allocations online" looks the
+			// same either way. The summary says how long the database has
+			// shown this progress, and how far the restore has got, once on
+			// the first poll and then every seedProgressRefresh — one event per
+			// restore, not one per database change, so every one fits the
+			// progress recorder's budget whatever the number of databases
+			// (knowledge id 166).
 			r.seedProgress.announce(r.progressRecorder(), restore, db, progress)
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
@@ -284,6 +281,7 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 // The outcome is announced (RestoreCompleted / RestoreFailed) from the status
 // write, once: this path used to end in status alone, with no event.
 func (r *Neo4jRestoreReconciler) finishAllDatabasesRestore(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (ctrl.Result, error) {
+	r.seedProgress.forget(restore)
 	completion := metav1.Now()
 	restore.Status.CompletionTime = &completion
 	failed := 0
@@ -743,21 +741,24 @@ func (r *Neo4jRestoreReconciler) allDatabasesClient(target restoreTarget) (allDa
 	return c, nil
 }
 
-// seedProgressRefresh is how often a database's unchanged seed progress is
-// announced again. Every RestoreSeedProgress spends the progress recorder's
-// event budget (client-go: a burst of 25 per source, object and event type,
-// then one every five minutes); one every ten minutes gives back more than it
-// spends, and still moves the aggregated event's count and last timestamp,
-// which is how a stall shows (knowledge operations.md id 92), well inside the
-// API server's one-hour event TTL.
+// seedProgressRefresh is how often an all-databases restore announces its
+// progress: one RestoreSeedProgress per restore on its first seed poll, then
+// one every ten minutes while it seeds. The progress recorder's budget
+// (client-go: a burst of 25 per source, object and event type, then one every
+// five minutes) refills twice as fast as this spends it, and one message every
+// ten minutes never reaches the aggregator's ten similar events in ten
+// minutes, so every summary reaches the API server, whatever the number of
+// databases (knowledge operations.md id 166). Inside the API server's one-hour
+// event TTL.
 const seedProgressRefresh = 10 * time.Minute
 
-// seedProgressEvents remembers, per restore and database, the progress last
-// announced and when, so a database's progress is announced when it changes
-// and every seedProgressRefresh while it does not — not on every poll, which
-// the 30s requeue made 120 events an hour per seeding database. The zero value
-// is ready to use. State is in memory: an operator restart announces each
-// database's progress once more, which is fine.
+// seedProgressEvents remembers, per restore, when its last progress summary
+// went out and how long the database it is seeding has shown its current
+// progress, so a restore announces one summary every seedProgressRefresh — not
+// one event per database and state, which on a 30-database restore was more
+// than the budget allows (55 of 101 reached the API server, #573). The zero
+// value is ready to use. State is in memory: an operator restart announces the
+// next summary at once, which is fine.
 type seedProgressEvents struct {
 	mu        sync.Mutex
 	last      map[string]seedProgressNote
@@ -767,18 +768,21 @@ type seedProgressEvents struct {
 }
 
 type seedProgressNote struct {
-	progress string
-	at       time.Time
+	announced time.Time // when the last summary went out
+	database  string    // the database being seeded
+	progress  string    // its progress at the last poll
+	since     time.Time // when it first showed that progress
+	seen      time.Time // the last poll
 }
 
-// seedProgressKey names one database of one restore; the UID makes a
-// recreated restore start afresh.
-func seedProgressKey(restore *neo4jv1beta1.Neo4jRestore, database string) string {
-	return fmt.Sprintf("%s/%s/%s/%s", restore.Namespace, restore.Name, restore.UID, database)
+// seedProgressKey names one restore; the UID makes a recreated restore start
+// afresh.
+func seedProgressKey(restore *neo4jv1beta1.Neo4jRestore) string {
+	return fmt.Sprintf("%s/%s/%s", restore.Namespace, restore.Name, restore.UID)
 }
 
-// announce emits RestoreSeedProgress for database on rec, unless the same
-// progress was announced within seedProgressRefresh.
+// announce records a seed poll of database and emits the restore's progress
+// summary on rec when none went out within seedProgressRefresh.
 func (s *seedProgressEvents) announce(rec record.EventRecorder, restore *neo4jv1beta1.Neo4jRestore, database, progress string) {
 	if rec == nil {
 		return
@@ -793,32 +797,69 @@ func (s *seedProgressEvents) announce(rec record.EventRecorder, restore *neo4jv1
 		s.last = map[string]seedProgressNote{}
 	}
 	s.sweepLocked(now)
-	key := seedProgressKey(restore, database)
-	if n, ok := s.last[key]; ok && n.progress == progress && now.Sub(n.at) < seedProgressRefresh {
-		return
+	key := seedProgressKey(restore)
+	n := s.last[key]
+	if n.database != database || n.progress != progress {
+		n.database, n.progress, n.since = database, progress, now
 	}
-	rec.Event(restore, corev1.EventTypeNormal, EventReasonRestoreSeedProgress,
-		fmt.Sprintf("database %q: %s", database, progress))
-	s.last[key] = seedProgressNote{progress: progress, at: now}
+	n.seen = now
+	if n.announced.IsZero() || now.Sub(n.announced) >= seedProgressRefresh {
+		rec.Event(restore, corev1.EventTypeNormal, EventReasonRestoreSeedProgress,
+			seedProgressSummary(restore.Status.DatabaseResults, database, progress, now.Sub(n.since)))
+		n.announced = now
+	}
+	s.last[key] = n
 }
 
-// forget drops a database whose seed is over.
-func (s *seedProgressEvents) forget(restore *neo4jv1beta1.Neo4jRestore, database string) {
+// forget drops a restore whose databases are all done.
+func (s *seedProgressEvents) forget(restore *neo4jv1beta1.Neo4jRestore) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	delete(s.last, seedProgressKey(restore, database))
+	delete(s.last, seedProgressKey(restore))
 }
 
-// sweepLocked drops, at most once per seedProgressRefresh, the databases no
-// poll has announced for two refresh periods — those of a deleted restore,
-// mostly. A database still seeding is announced at least once a period.
+// seedProgressSummary is a RestoreSeedProgress message: how far the restore
+// has got, by status.databaseResults, and the database it is seeding, with its
+// progress and how long it has shown it — which tells a slow seed from a stuck
+// one.
+func seedProgressSummary(results []neo4jv1beta1.DatabaseRestoreResult, database, progress string, unchanged time.Duration) string {
+	restored, failed := 0, 0
+	for i := range results {
+		switch results[i].Phase {
+		case StatusCompleted:
+			restored++
+		case StatusFailed:
+			failed++
+		}
+	}
+	return fmt.Sprintf("%d of %d database(s) restored, %d failed; seeding %q: %s, unchanged for %s",
+		restored, len(results), failed, database, strings.TrimPrefix(progress, "seeding from backup; "),
+		roughDuration(unchanged))
+}
+
+// roughDuration says d to the minute.
+func roughDuration(d time.Duration) string {
+	minutes := int(d.Round(time.Minute) / time.Minute)
+	switch {
+	case minutes < 1:
+		return "under a minute"
+	case minutes < 60:
+		return fmt.Sprintf("%dm", minutes)
+	default:
+		return fmt.Sprintf("%dh%02dm", minutes/60, minutes%60)
+	}
+}
+
+// sweepLocked drops, at most once per seedProgressRefresh, the restores no
+// poll has seen for two refresh periods — deleted restores, mostly. A restore
+// still seeding is polled on every requeue.
 func (s *seedProgressEvents) sweepLocked(now time.Time) {
 	if now.Sub(s.lastSweep) < seedProgressRefresh {
 		return
 	}
 	s.lastSweep = now
 	for key, n := range s.last {
-		if now.Sub(n.at) > 2*seedProgressRefresh {
+		if now.Sub(n.seen) > 2*seedProgressRefresh {
 			delete(s.last, key)
 		}
 	}

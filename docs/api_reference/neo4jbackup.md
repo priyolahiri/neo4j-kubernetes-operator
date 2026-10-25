@@ -78,7 +78,7 @@ Defines where to store backups.
 |-------|------|----------|-------------|
 | `type` | `string` | ✅ | Storage type: `"s3"`, `"gcs"`, `"azure"`, `"pvc"` |
 | `bucket` | `string` | ❌ | Bucket or container name (required for cloud storage types). Restricted to `A-Z a-z 0-9 . _ / -` — the validator rejects other characters (the value is interpolated into the Job's shell command). |
-| `path` | `string` | ❌ | Path within the bucket or PVC. Same `A-Z a-z 0-9 . _ / -` charset restriction as `bucket`. Defaults to `backups` for cloud storage when empty. |
+| `path` | `string` | ❌ | Path within the bucket. Same `A-Z a-z 0-9 . _ / -` charset restriction as `bucket`. Defaults to `backups` for cloud storage when empty. Not read for a `pvc`: a PVC backup writes its chain directory at the PVC's root, and a `path` set there draws a `ValidationWarning`. |
 | `pvc` | [`*PVCSpec`](#pvcspec) | ❌ | PVC configuration (required when `type=pvc`, with `pvc.name` set) |
 | `cloud` | [`*CloudBlock`](#cloudblock) | ❌ | Cloud provider configuration including optional credentials secret. **Required for `s3` / `gcs` / `azure`**, with `cloud.provider` set to `aws` / `gcp` / `azure` respectively |
 
@@ -268,7 +268,7 @@ The `Neo4jBackupStatus` represents the observed state of the backup.
 | Phase | Meaning |
 |-------|---------|
 | `Pending` | A transient precondition isn't met yet — e.g. the `chainFromBackup` parent CR doesn't exist yet, another Job in the same chain is still running, or the sharded-backup preflight couldn't connect to the cluster. The controller requeues and retries. |
-| `Waiting` | The target cluster/standalone CR doesn't exist yet (common with `kubectl apply -f dir/` ordering) or isn't accepting work yet (a cluster still forming or without a majority; a standalone not `Ready`). A `Degraded` cluster is backed up. Transient — the controller requeues. |
+| `Waiting` | The target cluster/standalone CR doesn't exist yet (common with `kubectl apply -f dir/` ordering; one `ClusterNotFound` Warning when the wait starts) or isn't accepting work yet (a cluster still forming or without a majority; a standalone not `Ready`). A `Degraded` cluster is backed up. Transient — the controller requeues. |
 | `Scheduled` | A CronJob has been created for `spec.schedule`. **This is the steady state for scheduled backups** — they never transition to `Completed`; per-run outcomes accumulate in `status.history[]`. The `Ready` condition is `True` (reason `BackupScheduled`) in this phase. |
 | `Suspended` | `spec.suspend: true` — the CronJob is suspended and one-shot runs are paused. The `Ready` condition is `False` with reason `Suspended` (a deliberate pause, not a failure). |
 | `Running` | A one-shot backup Job is executing, or has succeeded and the operator is reading the artifact names from its Pod's log ("capturing artifact metadata"; at most 5 minutes after the Job finished, then the run is recorded with what was read). |
