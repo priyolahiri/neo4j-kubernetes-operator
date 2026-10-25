@@ -208,7 +208,7 @@ spec:
 
 **Cross-topology restore.** A backup is database-scoped, not topology-scoped — a database backed up from a **standalone** can be restored into a **cluster** (and vice-versa); the operator picks the engine from the *target*. Caveats: the target Neo4j version must be ≥ the source; the `system` database is never restored across topologies (an `allDatabases` restore skips it, although the backup captures it — carry users/roles via `options.includeMetadata` on the backup).
 
-**All-databases restore.** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, with per-database progress in `status.databaseResults` (and in events from the source `neo4j-restore-progress`: each database's `RestoreStarted`, and `RestoreSeedProgress` when its progress changes and every 10 minutes while it does not). The outcome is one `RestoreCompleted` or `RestoreFailed`, which that progress can never crowd out of the event budget. Requires `source.type=backup`. The operator restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike; set `options.replaceExisting: true` to overwrite existing databases. A standalone falls back to a single offline `neo4j-admin database restore` Job covering all user databases — with `stopCluster: true`, which scales the instance to 0 — in the cases listed under [Restore to a Standalone Instance](#restore-to-a-standalone-instance), for example a point-in-time restore.
+**All-databases restore.** `Neo4jRestore.spec.allDatabases: true` restores every user database recorded in the source backup, with per-database progress in `status.databaseResults`. Events: one `RestoreStarted` naming how many databases it restores; from the source `neo4j-restore-progress`, `RestoreSeedProgress` when a database's progress changes and every 10 minutes while it does not, and a Warning `RestoreDatabaseFailed` for each database that cannot be restored (the others carry on). The outcome is one `RestoreCompleted` or `RestoreFailed`, which that progress can never crowd out of the event budget. `status.databaseResults` is the complete record: on a restore of many databases the API server keeps only part of the progress events (client-go allows a burst of 25 per source, object and event type, then one every five minutes). Requires `source.type=backup`. The operator restores one database per reconcile pass via the online Cypher path (cloud and PVC-backed backups), on clusters and standalones alike; set `options.replaceExisting: true` to overwrite existing databases. A standalone falls back to a single offline `neo4j-admin database restore` Job covering all user databases — with `stopCluster: true`, which scales the instance to 0 — in the cases listed under [Restore to a Standalone Instance](#restore-to-a-standalone-instance), for example a point-in-time restore.
 
 **Migrating from the pre-v1.14 API** (`spec.target`, `spec.clusterRef`, `spec.databaseName`, `spec.force`): see the [Upgrade Guide](../migration_guide.md#v114-backup-restore-api-cleanup-breaking).
 
@@ -1191,6 +1191,20 @@ spec:
       size: "50Gi"
   stopCluster: true   # only for a standalone's offline cases; ignored by online restores
 ```
+
+**From a PVC**, `backupPath` is relative to the PVC's root — `storage.path` is not added, and neither is the mount path you may see in a restore Job. The restore mounts the PVC at `/backup` and adds the `/backup/` itself, so write the directory as the backup recorded it (`status.history[].backupsPath`):
+
+```yaml
+  source:
+    type: storage
+    storage:
+      type: pvc
+      pvc:
+        name: neo4j-backups
+    backupPath: nightly/neo4j-2026-10-25T01-00-00.backup   # not /backup/nightly/…
+```
+
+`backupPath: /backup/nightly` would read `/backup//backup/nightly` — `backup/nightly` on the PVC — and fail unless the PVC has a `backup` directory at its root; the restore raises a `ValidationWarning` saying so.
 
 **Best for:** Cross-cluster recovery, disaster recovery from a known directory in storage (no `Neo4jBackup` CR available in this namespace).
 

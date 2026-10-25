@@ -231,8 +231,8 @@ func (r *Neo4jRestoreReconciler) startAllDatabasesRestore(
 				r.markDatabaseResult(ctx, restore, db, StatusFailed, fmt.Sprintf("CREATE DATABASE with seedURI failed: %v", cErr))
 				return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 			}
-			r.progressRecorder().Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-				fmt.Sprintf("All-databases restore: seeding %q from %s", db, seedURI))
+			// Recorded in status.databaseResults; the restore's start is
+			// announced once, by the write that makes it Running (#573).
 			r.markDatabaseResult(ctx, restore, db, StatusRunning, "seeding from backup")
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 
@@ -573,6 +573,14 @@ func (r *Neo4jRestoreReconciler) ensureDatabaseResults(restore *neo4jv1beta1.Neo
 // durably persists status.databaseResults (refetch + RetryOnConflict — the
 // project's status-write pattern; updateRestoreStatus copies only
 // phase/message/conditions and would drop databaseResults, #227 item 4).
+//
+// It announces, from the write, what an all-databases restore says in events
+// (#573): RestoreStarted once, when the write moves the restore into Running,
+// on the restore's own recorder; and RestoreDatabaseFailed when it moves a
+// database into Failed, from the progress recorder. A database starting or
+// finishing is recorded in status.databaseResults only: one RestoreStarted per
+// database (30 for a 30-database restore) outran the progress source's event
+// budget, and 13 of 30 reached the API server.
 func (r *Neo4jRestoreReconciler) markDatabaseResult(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, db, phase, message string) {
 	for i := range restore.Status.DatabaseResults {
 		if restore.Status.DatabaseResults[i].Database == db {
@@ -586,17 +594,62 @@ func (r *Neo4jRestoreReconciler) markDatabaseResult(ctx context.Context, restore
 		}
 	}
 	results := restore.Status.DatabaseResults
-	_ = retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+	restoreEntered, databaseFailed := false, false
+	err := retry.RetryOnConflict(retry.DefaultBackoff, func() error {
+		restoreEntered, databaseFailed = false, false
 		latest := &neo4jv1beta1.Neo4jRestore{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(restore), latest); err != nil {
 			return err
 		}
+		before := ""
+		for _, res := range latest.Status.DatabaseResults {
+			if res.Database == db {
+				before = res.Phase
+			}
+		}
+		wasRunning := latest.Status.Phase == StatusRunning
 		latest.Status.DatabaseResults = results
 		if latest.Status.Phase != StatusCompleted && latest.Status.Phase != StatusFailed {
 			latest.Status.Phase = StatusRunning
 		}
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		restoreEntered = !wasRunning && latest.Status.Phase == StatusRunning
+		databaseFailed = phase == StatusFailed && before != StatusFailed
+		return nil
 	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record a database's restore result", "database", db)
+		return
+	}
+	if restoreEntered {
+		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted, allDatabasesRestoreStartedMessage(results))
+	}
+	if databaseFailed {
+		r.progressRecorder().Event(restore, corev1.EventTypeWarning, EventReasonRestoreDatabaseFailed,
+			fmt.Sprintf("All-databases restore: database %q failed: %s", db, message))
+	}
+}
+
+// allDatabasesRestoreStartedMessage is the one RestoreStarted of an
+// all-databases restore: how many databases it restores, and the first few by
+// name.
+func allDatabasesRestoreStartedMessage(results []neo4jv1beta1.DatabaseRestoreResult) string {
+	const named = 10
+	names := make([]string, 0, named)
+	for i := range results {
+		if i == named {
+			break
+		}
+		names = append(names, fmt.Sprintf("%q", results[i].Database))
+	}
+	list := strings.Join(names, ", ")
+	if len(results) > named {
+		list += fmt.Sprintf(" and %d more", len(results)-named)
+	}
+	return fmt.Sprintf("All-databases restore started: %d database(s), %s; each one's progress is in status.databaseResults",
+		len(results), list)
 }
 
 // seedingProgressMessage describes an in-progress (or failing) seed poll. Kept

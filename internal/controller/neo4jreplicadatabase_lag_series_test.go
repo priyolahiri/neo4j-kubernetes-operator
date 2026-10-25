@@ -284,7 +284,14 @@ func TestReplicaLagSeries_RemovedWhenLagCannotBeRead(t *testing.T) {
 		h.publishesFirst(30)
 
 		h.connErr = errors.New("dial tcp: connection refused")
-		require.Error(t, h.reconcile())
+		// A target that reads Ready but refuses is an outage, waited through
+		// on the fixed interval, not an error (knowledge rule 183); the series
+		// goes all the same.
+		require.NoError(t, h.reconcile())
+		assert.False(t, h.lag().found)
+
+		h.connErr = errors.New("authentication failure")
+		require.Error(t, h.reconcile(), "any other connection failure is retried with backoff")
 		assert.False(t, h.lag().found)
 
 		h.connErr = nil
@@ -309,6 +316,10 @@ func TestReplicaLagSeries_RemovedWhenLagCannotBeRead(t *testing.T) {
 
 		h.server.info = nil
 		h.server.infoErr = errors.New("bolt: connection reset by peer")
+		require.NoError(t, h.reconcile(), "the target went away mid-pass: an outage (knowledge rule 183)")
+		assert.False(t, h.lag().found)
+
+		h.server.infoErr = errors.New("Neo.DatabaseError.General.UnknownError: lookup failed")
 		require.Error(t, h.reconcile())
 		assert.False(t, h.lag().found)
 		assert.Zero(t, h.server.created,

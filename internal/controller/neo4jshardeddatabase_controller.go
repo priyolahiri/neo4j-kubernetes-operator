@@ -57,6 +57,7 @@ import (
 	"strings"
 	"time"
 
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -220,15 +221,21 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 		msg := fmt.Sprintf("waiting for cluster %s to become Ready with property sharding operational (phase: %s)", cluster.Name, cluster.Status.Phase)
 		logger.Info("Cluster not ready for property sharding yet; waiting", "cluster", cluster.Name, "phase", cluster.Status.Phase)
-		if statusErr := r.updateStatus(ctx, &shardedDatabase, "Waiting", msg, nil); statusErr != nil {
-			logger.Error(statusErr, "Failed to update status while waiting for cluster readiness")
-		}
+		// A sharded database Ready at its generation stays Ready while its
+		// cluster rolls or restarts, with ClusterNotReady=True; anything else
+		// waits in Waiting (knowledge rule 183).
+		r.waitForCluster(ctx, &shardedDatabase, ConditionReasonClusterNotReady, msg)
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
 	// Create Neo4j client for the cluster
 	neo4jClient, err := r.createNeo4jClient(ctx, cluster)
 	if err != nil {
+		if targetUnreachable(err) {
+			// The cluster reads Ready but does not answer: the rest of its
+			// outage, not a failure of this database (knowledge rule 183).
+			return r.clusterUnreachable(ctx, &shardedDatabase, err)
+		}
 		logger.Error(err, "Failed to create Neo4j client")
 		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Failed to create Neo4j client: %v", err), nil)
 		if statusErr != nil {
@@ -241,6 +248,9 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		return ctrl.Result{}, err
 	}
 	defer neo4jClient.Close()
+	// Only a cluster that answered serves this database: written after the
+	// connection, so an unreachable one keeps the time its outage began.
+	r.clusterAnswered(ctx, &shardedDatabase)
 
 	// Phase 2 seed-from-backup: if spec.seedBackupRef is set, resolve it into
 	// a concrete seedURI before building the CREATE DATABASE Cypher. Errors
@@ -344,6 +354,10 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	// Create or update sharded database
 	destructive, err := r.reconcileShardedDatabase(ctx, &shardedDatabase, neo4jClient)
 	if err != nil {
+		if targetUnreachable(err) {
+			// The cluster went away mid-pass (knowledge rule 183).
+			return r.clusterUnreachable(ctx, &shardedDatabase, err)
+		}
 		logger.Error(err, "Failed to reconcile sharded database")
 		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", fmt.Sprintf("Reconcile failed: %v", err), nil)
 		if statusErr != nil {
@@ -902,6 +916,94 @@ func (r *Neo4jShardedDatabaseReconciler) transitionStatus(ctx context.Context, s
 		return nil
 	})
 	return transitioned && err == nil, err
+}
+
+// waitForCluster records that the cluster cannot serve the sharded database —
+// reason ClusterNotReady (not Ready, or property sharding not operational) or
+// ClusterUnreachable (reads Ready, does not answer): the ClusterNotReady
+// condition, and phase Waiting unless the database is already Ready at its
+// generation, which it stays. The shards live on the cluster and do not change
+// while it rolls or restarts, and the cluster announces its own state; writing
+// Waiting over Ready made the pass that found the cluster back a transition
+// into Ready, announced as ShardedDatabaseReady on every rollout of the cluster
+// (#565; knowledge rule 183). The status is written only when it changes, and
+// the pass's copy takes it. It reports lasting when an unreachable cluster has
+// outlasted targetUnreachableGrace.
+func (r *Neo4jShardedDatabaseReconciler) waitForCluster(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, reason, msg string) (lasting bool) {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		lasting = false
+		var latest neo4jv1beta1.Neo4jShardedDatabase
+		if err := r.Get(ctx, client.ObjectKeyFromObject(shardedDB), &latest); err != nil {
+			return err
+		}
+		before := latest.Status.DeepCopy()
+		var keepsReady bool
+		lasting, keepsReady = noteTargetWait(&latest.Status.Conditions, latest.Status.Phase, latest.Generation,
+			neo4jv1beta1.PhaseReady, reason, msg, time.Now())
+		if !lasting && !keepsReady {
+			latest.Status.Phase = neo4jv1beta1.PhaseWaiting
+			latest.Status.Message = msg
+			condStatus, condReason := PhaseToConditionStatus(neo4jv1beta1.PhaseWaiting)
+			SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, msg)
+		}
+		latest.Status.ObservedGeneration = latest.Generation
+		if !apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			if err := r.Status().Update(ctx, &latest); err != nil {
+				return err
+			}
+		}
+		latest.Status.DeepCopyInto(&shardedDB.Status)
+		return nil
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record the cluster wait on Neo4jShardedDatabase")
+		return false
+	}
+	return lasting
+}
+
+// clusterUnreachable handles a cluster that reads Ready but cannot be reached:
+// waitForCluster with reason ClusterUnreachable, logged at info and retried on
+// the fixed interval, not as an error. Only an outage that outlasts
+// targetUnreachableGrace is this database's failure: Failed,
+// ClientCreationFailed, announced once (knowledge rules 172 and 183).
+func (r *Neo4jShardedDatabaseReconciler) clusterUnreachable(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase, err error) (ctrl.Result, error) {
+	if r.waitForCluster(ctx, shardedDB, ConditionReasonClusterUnreachable, targetUnreachableMessage(shardedDB.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("Failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		failed, statusErr := r.transitionStatus(ctx, shardedDB, neo4jv1beta1.PhaseFailed, msg, nil)
+		if statusErr != nil {
+			log.FromContext(ctx).Error(statusErr, "Failed to update status after a lasting outage")
+		}
+		if failed {
+			r.Recorder.Event(shardedDB, corev1.EventTypeWarning, EventReasonClientCreationFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	}
+	log.FromContext(ctx).Info("Cluster reads Ready but cannot be reached; retrying",
+		"clusterRef", shardedDB.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// clusterAnswered writes ClusterNotReady=False once a connection to the cluster
+// succeeded, when that changes the condition; the pass's copy takes it.
+func (r *Neo4jShardedDatabaseReconciler) clusterAnswered(ctx context.Context, shardedDB *neo4jv1beta1.Neo4jShardedDatabase) {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		var latest neo4jv1beta1.Neo4jShardedDatabase
+		if err := r.Get(ctx, client.ObjectKeyFromObject(shardedDB), &latest); err != nil {
+			return err
+		}
+		if !targetAnswered(&latest.Status.Conditions, latest.Generation) {
+			return nil
+		}
+		if err := r.Status().Update(ctx, &latest); err != nil {
+			return err
+		}
+		latest.Status.DeepCopyInto(&shardedDB.Status)
+		return nil
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record that the cluster answered on Neo4jShardedDatabase")
+	}
 }
 
 // recordDestructiveRestoreGeneration stamps Status.LastDestructiveRestoreGeneration

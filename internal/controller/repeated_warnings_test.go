@@ -730,7 +730,9 @@ func TestReplicaReconcile_LastingFailuresAreAnnouncedOnce(t *testing.T) {
 	})
 	t.Run("cannot connect, retried with backoff", func(t *testing.T) {
 		h := newBackupModeReplicaHarness(t, "rep-conn", "")
-		h.connErr = errors.New("dial tcp 10.0.0.1:7687: connect: connection refused")
+		// Not a refused connection: that is the target's outage, waited
+		// through without an error or an event (knowledge rule 183).
+		h.connErr = errors.New("failed to read the admin Secret: secrets \"dr-admin\" not found")
 		for range repeatPasses {
 			require.Error(t, h.reconcile())
 		}

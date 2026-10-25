@@ -196,11 +196,84 @@ func TestAllDatabasesRestore_TheOutcomeIsAnnouncedAfterALongSeed(t *testing.T) {
 
 	assert.Equal(t, 1, broadcaster.emitted[EventReasonRestoreCompleted], "the outcome is announced once")
 	assert.Equal(t, 1, broadcaster.delivered[EventReasonRestoreCompleted], "and reaches the API")
-	assert.Equal(t, databases, broadcaster.emitted[EventReasonRestoreStarted])
+	// One RestoreStarted for the restore, not one per database: 30 of them
+	// outran the progress source's budget and 13 reached the API (#573).
+	assert.Equal(t, 1, broadcaster.emitted[EventReasonRestoreStarted], "the start is announced once")
+	assert.Equal(t, 1, broadcaster.delivered[EventReasonRestoreStarted], "and reaches the API")
 	// Per database: "no allocations yet", "0/3" and "2/3"; db00 sits at 0/3
 	// for two hours and is announced again every ten minutes meanwhile.
 	assert.LessOrEqual(t, broadcaster.emitted[EventReasonRestoreSeedProgress], 3*databases+int(2*time.Hour/seedProgressRefresh),
 		"progress is announced when it changes and every %s, not on each of %d polls", seedProgressRefresh, passes)
+}
+
+// existingServer is seedingServer with some databases already present.
+type existingServer struct {
+	*seedingServer
+	exists map[string]bool
+}
+
+func (s *existingServer) DatabaseExists(_ context.Context, db string) (bool, error) {
+	return s.exists[db], nil
+}
+
+// What an all-databases restore says in events (#573): its start once, on its
+// own source; a database that cannot be restored once, as a Warning from the
+// progress source, while the others carry on; the outcome once. A database
+// starting or finishing is in status.databaseResults.
+func TestAllDatabasesRestore_AnnouncesItsStartAndEachFailedDatabaseOnce(t *testing.T) {
+	ctx := context.Background()
+	server := &existingServer{
+		seedingServer: &seedingServer{pollsToOnline: map[string]int{"a": 2, "b": 2, "c": 2}, polls: map[string]int{}},
+		exists:        map[string]bool{"b": true}, // and spec.options.replaceExisting is not set
+	}
+	snap := neo4jv1beta1.ResolvedRestoreSource{BackupRef: "all", BackupPath: "all/",
+		Storage: &neo4jv1beta1.StorageLocation{Type: "s3", Bucket: "b", Cloud: &neo4jv1beta1.CloudBlock{Provider: "aws"}}}
+	for _, db := range []string{"a", "b", "c"} {
+		snap.DatabaseArtifacts = append(snap.DatabaseArtifacts,
+			neo4jv1beta1.DatabaseArtifact{Database: db, Filename: db + "-2026-10-24T11-00-00.backup", Type: "FULL"})
+	}
+	restore := &neo4jv1beta1.Neo4jRestore{
+		ObjectMeta: metav1.ObjectMeta{Name: "r", Namespace: "ns", UID: "r-uid", Generation: 1, Finalizers: []string{RestoreFinalizer}},
+		Spec: neo4jv1beta1.Neo4jRestoreSpec{
+			InstanceRef: "c", AllDatabases: true,
+			Source: neo4jv1beta1.RestoreSource{Type: "backup", BackupRef: "all"},
+		},
+		Status: neo4jv1beta1.Neo4jRestoreStatus{ResolvedSource: &snap},
+	}
+	r := statusRestoreReconciler(t, minimalClusterForRestore("c", "ns"), restore)
+	own, progress := record.NewFakeRecorder(100), record.NewFakeRecorder(100)
+	r.Recorder, r.ProgressRecorder = own, progress
+	r.newAllDatabasesClient = func(restoreTarget) (allDatabasesRestoreClient, error) { return server, nil }
+
+	for range 20 {
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(restore)})
+		require.NoError(t, err)
+	}
+	got := &neo4jv1beta1.Neo4jRestore{}
+	require.NoError(t, r.Get(ctx, client.ObjectKeyFromObject(restore), got))
+	require.Equal(t, StatusFailed, got.Status.Phase, got.Status.Message)
+
+	ownEvents, progressEvents := drainEvents(own), drainEvents(progress)
+	started := eventsWithReason(ownEvents, EventReasonRestoreStarted)
+	require.Len(t, started, 1, "the restore's start, once: %q", ownEvents)
+	assert.Contains(t, started[0], `3 database(s), "a", "b", "c"`)
+	assert.Empty(t, eventsWithReason(progressEvents, EventReasonRestoreStarted), "no RestoreStarted per database")
+	failed := eventsWithReason(progressEvents, EventReasonRestoreDatabaseFailed)
+	require.Len(t, failed, 1, "%q", progressEvents)
+	assert.True(t, strings.HasPrefix(failed[0], corev1.EventTypeWarning+" "), failed[0])
+	assert.Contains(t, failed[0], `database "b" failed: database already exists`)
+	assert.Len(t, eventsWithReason(ownEvents, EventReasonRestoreFailed), 1, "the outcome, once")
+}
+
+func TestAllDatabasesRestoreStartedMessage(t *testing.T) {
+	var results []neo4jv1beta1.DatabaseRestoreResult
+	for i := range 12 {
+		results = append(results, neo4jv1beta1.DatabaseRestoreResult{Database: fmt.Sprintf("db%02d", i)})
+	}
+	msg := allDatabasesRestoreStartedMessage(results)
+	assert.Contains(t, msg, `12 database(s), "db00", "db01"`)
+	assert.Contains(t, msg, `"db09" and 2 more`)
+	assert.NotContains(t, msg, "db10")
 }
 
 // The throttle on its own: a change is announced at once, the same progress

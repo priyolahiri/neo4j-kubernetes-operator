@@ -420,10 +420,10 @@ func TestStartRestore_OfflineRestoreIsAnnouncedOnlyOnceItsChecksPass(t *testing.
 		_, _ = r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
 
 		started := restoreStarted(r)
-		require.Len(t, started, 2, "the offline announcement, then the Job: %q", started)
-		assert.Contains(t, started[0], `Restoring offline with neo4j-admin into standalone "sa", which is stopped`)
+		require.Len(t, started, 1, "the Job and why it is offline, in one event: %q", started)
+		assert.Contains(t, started[0], "Restore job r-restore started")
+		assert.Contains(t, started[0], `restoring offline with neo4j-admin into standalone "sa", which is stopped`)
 		assert.NotContains(t, started[0], "which stops", "the operator stops nothing under stopCluster: false")
-		assert.Contains(t, started[1], "Restore job")
 	})
 }
 

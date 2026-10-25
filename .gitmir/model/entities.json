@@ -753,7 +753,7 @@
         "id": "f-neo4jdatabase-status-phase",
         "name": "status.phase",
         "type": "string",
-        "note": "Ready; Pending (host not found or not ready, or waiting for the seed credentials Secret on the host: SeedCredsMissing, SeedCredsAutoInherited); Failed (connection, creation or data-import failure); ValidationFailed (the spec was refused; api/v1beta1 PhaseValidationFailed, a problem phase for kubectl neo4j status --problems); Error (a deletion retrying a failed DROP DATABASE, reason DeletionFailed); Unknown."
+        "note": "Ready (kept while the host restarts or does not answer, with ClusterNotReady=True; operations.md id 183); Pending (host not found, not ready or not answering, or waiting for the seed credentials Secret on the host: SeedCredsMissing, SeedCredsAutoInherited); Failed (connection, creation or data-import failure, or any other reason); ValidationFailed (the spec was refused; api/v1beta1 PhaseValidationFailed, a problem phase for kubectl neo4j status --problems); Error (a deletion retrying a failed DROP DATABASE, reason DeletionFailed). Never Unknown (databasePhaseFor; operations.md id 190)."
       },
       {
         "id": "f-neo4jdatabase-status-message",
@@ -1541,7 +1541,7 @@
         "name": "source.backupPath",
         "type": "string",
         "isNullable": true,
-        "note": "Specific backup path within storage."
+        "note": "Specific backup path within storage. On a pvc storage it is relative to the PVC's root (storage.path is not added): the restore mounts the PVC at /backup and adds the /backup/ prefix itself, so a path that starts with /backup/ draws an advisory ValidationWarning (RestorePVCPathWarnings; backup-restore.md Rule 44)."
       },
       {
         "id": "f-neo4jrestore-source-source-database",

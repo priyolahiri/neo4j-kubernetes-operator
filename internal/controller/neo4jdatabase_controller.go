@@ -187,8 +187,10 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	if !clusterReady {
-		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotReady,
-			"Referenced host is not ready")
+		// A database Ready at its generation stays Ready while its host
+		// restarts, with ClusterNotReady=True; anything else waits in Pending
+		// (knowledge rule 183).
+		r.waitForHost(ctx, database, ConditionReasonClusterNotReady, "Referenced host is not ready")
 		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 	}
 
@@ -209,6 +211,11 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	})
 
 	if err != nil {
+		if targetUnreachable(err) {
+			// The host reads Ready but does not answer yet: the rest of its
+			// restart, not a failure of this database (knowledge rule 183).
+			return r.hostUnreachable(ctx, database, err)
+		}
 		logger.Error(err, "Failed to create Neo4j client after retries")
 		r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonConnectionFailed,
 			"Failed to connect to Neo4j cluster")
@@ -219,6 +226,9 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			logger.Error(err, "Failed to close Neo4j client")
 		}
 	}()
+	// Only a host that answered serves this database: written after the
+	// connection, so an unreachable one keeps the time its outage began.
+	r.hostAnswered(ctx, database)
 
 	// Phase 2b: ensure the host (cluster OR standalone) has seed credentials
 	// projected onto its server pods when this database uses seedURI +
@@ -263,6 +273,10 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	dbCreateStart := time.Now()
 	observed, err := r.ensureDatabase(ctx, neo4jClient, database, databaseHostImageTag(cluster, standalone, isStandalone), isStandalone)
 	if err != nil {
+		if targetUnreachable(err) {
+			// The host went away mid-pass (knowledge rule 183).
+			return r.hostUnreachable(ctx, database, err)
+		}
 		duration := time.Since(dbCreateStart)
 		logger.Error(err, "Failed to ensure database", "database", database.Spec.Name, "duration", duration)
 		// Retried with backoff; the same failure is announced once (rule 145).
@@ -279,6 +293,10 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Import initial data if specified (skip if using seed URI since data comes from the seed)
 	if database.Spec.InitialData != nil && database.Spec.SeedURI == "" && database.Status.DataImported == nil {
 		if err := r.importInitialData(ctx, neo4jClient, database); err != nil {
+			if targetUnreachable(err) {
+				// Retried, as a failed import is, once the host answers.
+				return r.hostUnreachable(ctx, database, err)
+			}
 			logger.Error(err, "Failed to import initial data")
 			if r.updateDatabaseStatusObserved(ctx, database, metav1.ConditionFalse, EventReasonDataImportFailed,
 				fmt.Sprintf("Failed to import initial data: %v", err), observed) {
@@ -744,36 +762,11 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatusObserved(ctx context.Conte
 		before := latest.Status.DeepCopy()
 		changed := SetReadyCondition(&latest.Status.Conditions, latest.Generation, status, reason, message)
 
-		// Set Phase field based on condition status for API consistency
-		switch status {
-		case metav1.ConditionTrue:
-			latest.Status.Phase = "Ready"
-			// Set creation time if this is the first time the database becomes ready
-			if latest.Status.CreationTime == nil && reason == EventReasonDatabaseReady {
-				now := metav1.Now()
-				latest.Status.CreationTime = &now
-			}
-		case metav1.ConditionFalse:
-			// Set phase based on the reason for failure
-			switch reason {
-			case EventReasonValidationFailed:
-				latest.Status.Phase = neo4jv1beta1.PhaseValidationFailed
-			case EventReasonClusterNotFound, EventReasonClusterNotReady,
-				EventReasonSeedCredsMissing, EventReasonSeedCredsAutoInherited:
-				// Waiting on something the user (or the operator) puts in
-				// place; the next pass carries on (knowledge rule 145).
-				latest.Status.Phase = "Pending"
-			case EventReasonConnectionFailed, EventReasonCreationFailed, EventReasonDataImportFailed:
-				latest.Status.Phase = "Failed"
-			case EventReasonDeletionFailed:
-				// A drop the deletion retries until it succeeds or the
-				// grace period ends.
-				latest.Status.Phase = neo4jv1beta1.PhaseError
-			default:
-				latest.Status.Phase = "Unknown"
-			}
-		case metav1.ConditionUnknown:
-			latest.Status.Phase = "Unknown"
+		latest.Status.Phase = databasePhaseFor(status, reason)
+		// Set creation time if this is the first time the database becomes ready
+		if status == metav1.ConditionTrue && latest.Status.CreationTime == nil && reason == EventReasonDatabaseReady {
+			now := metav1.Now()
+			latest.Status.CreationTime = &now
 		}
 
 		// Also update the message field for quick access
@@ -796,6 +789,114 @@ func (r *Neo4jDatabaseReconciler) updateDatabaseStatusObserved(ctx context.Conte
 		return false
 	}
 	return transitioned
+}
+
+// databasePhaseFor is the phase a Neo4jDatabase reports with its Ready condition:
+// Ready; Pending for a wait the next pass carries on from by itself (the host
+// missing, not Ready or not answering, the seed credentials not on it yet —
+// knowledge rules 145 and 183); ValidationFailed for a spec the operator
+// refused; Error for a drop its deletion retries; Failed for the rest — a
+// connection, creation or data-import failure, anything Neo4j refused.
+//
+// There is no Unknown. The writer mapped a reason it had no arm for, and a
+// condition status other than True or False, to Unknown, and no caller passed
+// either; a reason added without an arm is a failure, as every reason outside
+// the waits above is. Unknown stays in the shared vocabulary
+// (api/v1beta1/phases.go) for the CLI and the Argo CD health checks: v1.21 and
+// earlier wrote it here for a host without the seed credentials Secret.
+func databasePhaseFor(status metav1.ConditionStatus, reason string) string {
+	if status == metav1.ConditionTrue {
+		return neo4jv1beta1.PhaseReady
+	}
+	switch reason {
+	case EventReasonValidationFailed:
+		return neo4jv1beta1.PhaseValidationFailed
+	case EventReasonClusterNotFound, EventReasonClusterNotReady, ConditionReasonClusterUnreachable,
+		EventReasonSeedCredsMissing, EventReasonSeedCredsAutoInherited:
+		return neo4jv1beta1.PhasePending
+	case EventReasonDeletionFailed:
+		return neo4jv1beta1.PhaseError
+	default:
+		return neo4jv1beta1.PhaseFailed
+	}
+}
+
+// waitForHost records that the database's host cannot serve it — reason
+// ClusterNotReady (the host is not Ready) or ClusterUnreachable (it reads Ready
+// but does not answer): the ClusterNotReady condition, and phase Pending unless
+// the database is already Ready at its generation, which it stays. The database
+// lives on the host and does not change while the host restarts, and the host
+// announces its own state; demoting it to Pending made the pass that found the
+// host back a transition into Ready, announced as DatabaseReady on every
+// restart (#565; knowledge rule 183). The status is written only when it
+// changes. It reports lasting when an unreachable host has outlasted
+// targetUnreachableGrace.
+func (r *Neo4jDatabaseReconciler) waitForHost(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, reason, msg string) (lasting bool) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jDatabase{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(database), latest); err != nil {
+			return err
+		}
+		before := latest.Status.DeepCopy()
+		lasting = recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message,
+			latest.Generation, reason, msg, time.Now())
+		latest.Status.ObservedGeneration = latest.Generation
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record the host wait on Neo4jDatabase")
+		return false
+	}
+	return lasting
+}
+
+// hostUnreachable handles a host that reads Ready but cannot be reached — a
+// standalone a few seconds after it reads Ready, or one a stopCluster restore
+// stopped: waitForHost with reason ClusterUnreachable, logged at info and
+// retried on the fixed interval, not as an error (which controller-runtime
+// logs at ERROR and retries within milliseconds). Only an outage that
+// outlasts targetUnreachableGrace is this database's failure: Failed,
+// ConnectionFailed, announced once (knowledge rules 172 and 183).
+func (r *Neo4jDatabaseReconciler) hostUnreachable(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, err error) (ctrl.Result, error) {
+	if r.waitForHost(ctx, database, ConditionReasonClusterUnreachable, targetUnreachableMessage(database.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("Failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonConnectionFailed, msg) {
+			r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+	}
+	log.FromContext(ctx).Info("Host reads Ready but cannot be reached; retrying",
+		"clusterRef", database.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// hostAnswered writes ClusterNotReady=False once a connection to the host
+// succeeded, when that changes the condition. The pass's own copy takes the
+// written status and resourceVersion: the data-import marker below is written
+// from that copy, and a conflict there would import the initial data again on
+// the retry.
+func (r *Neo4jDatabaseReconciler) hostAnswered(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jDatabase{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(database), latest); err != nil {
+			return err
+		}
+		if !targetAnswered(&latest.Status.Conditions, latest.Generation) {
+			return nil
+		}
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		database.ResourceVersion = latest.ResourceVersion
+		latest.Status.DeepCopyInto(&database.Status)
+		return nil
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "Failed to record that the host answered on Neo4jDatabase")
+	}
 }
 
 // SetupWithManager sets up the controller with the Manager.

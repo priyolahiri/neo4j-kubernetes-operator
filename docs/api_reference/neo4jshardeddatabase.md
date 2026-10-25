@@ -267,7 +267,7 @@ status:
 |-------|-------------|
 | `Validating` | Initial phase while the spec is validated |
 | `Creating` | Spec validated; the sharded database is being created |
-| `Waiting` | The target cluster is not yet `Ready` (or `Degraded`) with property sharding operational (reconciler requeues) |
+| `Waiting` | The target cluster is not yet `Ready` (or `Degraded`) with property sharding operational, or reads `Ready` but does not accept the connection (reconciler requeues). A sharded database that is already `Ready` stays `Ready` while its cluster rolls or restarts, with the condition `ClusterNotReady=True`; a cluster that does not answer for more than 5 minutes makes it `Failed` (`ClientCreationFailed`) |
 | `Pending` | Waiting on a `clusterRef` that names no cluster yet (one `ClusterNotFound` event), a `seedBackupRef` whose backup has no Succeeded run yet, the PVC seed proxy, or seed credentials being projected onto the cluster (reconciler requeues) |
 | `Ready` | Sharded database created and operational |
 | `Failed` | Validation, seed resolution, client creation or database creation failed |
@@ -276,7 +276,7 @@ The controller sets no other phases (for example there is no `Initializing` or `
 
 #### Conditions
 
-A single standard `Ready` condition, derived from `phase` (`Ready` → `True`; `Failed` → `False`; every other phase → `Unknown`). There are no per-shard or virtual-database condition types.
+A standard `Ready` condition, derived from `phase` (`Ready` → `True`; `Failed` → `False`; every other phase → `Unknown`), and `ClusterNotReady`: `True` (reason `ClusterNotReady`) while the cluster is not `Ready` with property sharding operational, `True` (reason `ClusterUnreachable`) while it reads `Ready` but does not accept the connection, `False` (reason `ClusterReady`) once a connection succeeded. There are no per-shard or virtual-database condition types.
 
 ### ShardStatus
 

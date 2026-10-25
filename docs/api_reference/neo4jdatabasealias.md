@@ -46,7 +46,7 @@ The target does **not** have to exist yet — the controller reports `Pending` a
 | `message` | `string` | Short human-readable explanation of `phase`. |
 | `observedGeneration` | `int64` | `metadata.generation` observed at the last successful reconcile. |
 | `observedTarget` | `string` | Database the alias actually resolves to, read back from `SHOW ALIASES FOR DATABASE`. Differs from `spec.targetDatabase` only between an out-of-band change and the next reconcile. |
-| `conditions[]` | `metav1.Condition` | `Ready`, `ClusterNotReady`. |
+| `conditions[]` | `metav1.Condition` | `Ready`, `ClusterNotReady` (reason `ClusterNotReady` while the target is not Ready, `ClusterUnreachable` while it reads Ready but does not accept the connection, `ClusterReady` once a connection succeeded). A `Ready` alias stays `Ready` while its target restarts; one not yet `Ready` waits in `Pending`. A target that does not answer for more than 5 minutes makes it `Failed` (`ConnectionFailed`). |
 
 Drift is reconciled: if the alias is re-pointed out of band, the controller issues `ALTER ALIAS ... SET DATABASE TARGET` to restore `spec.targetDatabase`.
 

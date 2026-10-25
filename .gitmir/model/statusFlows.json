@@ -520,7 +520,12 @@
       {
         "from": "Failed",
         "to": "Running",
-        "label": "spec is bumped to a new generation (or the CR is recreated); a Failed CR at the SAME generation never re-enters"
+        "label": "spec is bumped to a new generation (or the CR is recreated); a Failed CR at the SAME generation never re-enters; an earlier attempt's Job, even one still terminating, is never adopted — the attempt waits in Pending until it is gone (backup-restore.md Rule 46)"
+      },
+      {
+        "from": "Completed",
+        "to": "Running",
+        "label": "spec is bumped to a new generation; the attempt runs on a Job of its own — an earlier attempt's Job is deleted first, never adopted (backup-restore.md Rule 46)"
       }
     ]
   },
@@ -545,7 +550,7 @@
       {
         "key": "Waiting",
         "name": "Waiting",
-        "description": "The referenced cluster is not yet Ready with property sharding operational."
+        "description": "The referenced cluster is not yet Ready with property sharding operational, or reads Ready but does not accept the connection. A sharded database already Ready at its generation does not enter Waiting for that: it stays Ready with ClusterNotReady=True (operations.md id 183)."
       },
       {
         "key": "Pending",

@@ -70,7 +70,11 @@ const (
 	// the phase "may be newer than this CLI".
 	PhasePendingDependencies = "PendingDependencies"
 
-	// Set when nothing has been able to determine the state.
+	// Set when nothing has been able to determine the state. No controller of
+	// this operator sets it any more; a Neo4jDatabase did, up to v1.21, for a
+	// host without the seed credentials Secret. It stays in the vocabulary so
+	// `kubectl neo4j` and the Argo CD health checks still recognise it on an
+	// object an older operator wrote.
 	PhaseUnknown = "Unknown"
 )
 

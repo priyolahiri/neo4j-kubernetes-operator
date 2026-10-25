@@ -23,6 +23,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -35,6 +36,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
@@ -54,6 +56,10 @@ type Neo4jDatabaseAliasReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// newNeo4jClient connects Reconcile to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newNeo4jClient func(ResolvedTarget) (aliasNeo4jClient, error)
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jdatabasealiases,verbs=get;list;watch;create;update;patch;delete
@@ -120,15 +126,18 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
-		msg := fmt.Sprintf("%s is not Ready", targetRefDisplay(alias.Spec.ClusterRef))
-		r.setNamedCondition(ctx, alias, ConditionTypeClusterNotReady, metav1.ConditionTrue, ConditionReasonClusterNotReady, msg)
-		r.setStatus(ctx, alias, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, "")
+		// An alias Ready at its generation stays Ready while its target
+		// restarts (knowledge rule 183).
+		r.waitForTarget(ctx, alias, ConditionReasonClusterNotReady,
+			fmt.Sprintf("%s is not Ready", targetRefDisplay(alias.Spec.ClusterRef)))
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
-	r.setNamedCondition(ctx, alias, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connect(target)
 	if err != nil {
+		if targetUnreachable(err) {
+			return r.unreachable(ctx, alias, err, requeue)
+		}
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
 		// Retried with backoff; the same failure is announced once (knowledge
 		// rule 145).
@@ -142,6 +151,9 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
+	// Only a target that answered serves this alias: written after the
+	// connection, so an unreachable one keeps the time its outage began.
+	r.setNamedCondition(ctx, alias, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// The target database does not have to exist yet. An alias and the replica
 	// it fronts are typically applied together, and CREATE ALIAS against a
@@ -179,13 +191,14 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"Alias %q re-pointed from %q to %q", aliasName, existing.Database, alias.Spec.TargetDatabase)
 	}
 
-	if alias.Status.Phase != "Ready" {
+	// Announced from the write that moves the alias into Ready, never from
+	// this pass's copy, which may predate the last write (knowledge rules 145
+	// and 183).
+	msg := fmt.Sprintf("alias %q resolves to %q", aliasName, alias.Spec.TargetDatabase)
+	if _, entered := r.writeStatus(ctx, alias, "Ready", metav1.ConditionTrue, "AliasReady", msg, alias.Spec.TargetDatabase); entered {
 		r.Recorder.Eventf(alias, corev1.EventTypeNormal, EventReasonAliasReady,
 			"Alias %q resolves to %q", aliasName, alias.Spec.TargetDatabase)
 	}
-
-	msg := fmt.Sprintf("alias %q resolves to %q", aliasName, alias.Spec.TargetDatabase)
-	r.setStatus(ctx, alias, "Ready", metav1.ConditionTrue, "AliasReady", msg, alias.Spec.TargetDatabase)
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
@@ -248,6 +261,11 @@ func (r *Neo4jDatabaseAliasReconciler) requeueAfter() time.Duration {
 }
 
 func (r *Neo4jDatabaseAliasReconciler) fail(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, label string, err error, requeue time.Duration) (ctrl.Result, error) {
+	if targetUnreachable(err) {
+		// The target went away mid-pass: an outage, not this alias's failure
+		// (knowledge rule 183). The deletion does not come through here.
+		return r.unreachable(ctx, alias, err, requeue)
+	}
 	msg := label
 	if err != nil {
 		msg = fmt.Sprintf("%s: %v", label, err)
@@ -283,14 +301,28 @@ func (r *Neo4jDatabaseAliasReconciler) setStatus(
 	readyStatus metav1.ConditionStatus,
 	readyReason, message, observedTarget string,
 ) bool {
-	transitioned := false
+	transitioned, _ := r.writeStatus(ctx, alias, phase, readyStatus, readyReason, message, observedTarget)
+	return transitioned
+}
+
+// writeStatus is setStatus that also reports whether the write moved the
+// persisted phase into the one given (entered), the transition AliasReady
+// announces.
+func (r *Neo4jDatabaseAliasReconciler) writeStatus(
+	ctx context.Context,
+	alias *neo4jv1beta1.Neo4jDatabaseAlias,
+	phase string,
+	readyStatus metav1.ConditionStatus,
+	readyReason, message, observedTarget string,
+) (transitioned, entered bool) {
 	update := func() error {
-		transitioned = false
+		transitioned, entered = false, false
 		latest := &neo4jv1beta1.Neo4jDatabaseAlias{}
 		if err := r.Get(ctx, client.ObjectKeyFromObject(alias), latest); err != nil {
 			return err
 		}
-		changed := latest.Status.Phase != phase || latest.Status.Message != message
+		phaseMoved := latest.Status.Phase != phase
+		changed := phaseMoved || latest.Status.Message != message
 		if SetReadyCondition(&latest.Status.Conditions, latest.Generation, readyStatus, readyReason, message) {
 			changed = true
 		}
@@ -303,14 +335,85 @@ func (r *Neo4jDatabaseAliasReconciler) setStatus(
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err
 		}
-		transitioned = changed
+		transitioned, entered = changed, phaseMoved
 		return nil
 	}
 	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
 		log.FromContext(ctx).Error(err, "failed to update Neo4jDatabaseAlias status")
+		return false, false
+	}
+	return transitioned, entered
+}
+
+// waitForTarget records that the target cannot serve the alias — reason
+// ClusterNotReady (not Ready) or ClusterUnreachable (reads Ready, does not
+// answer): the ClusterNotReady condition, and phase Pending unless the alias is
+// already Ready at its generation, which it stays. The alias lives on the
+// target and does not change while the target restarts, and the target
+// announces its own state; demoting it made the pass that found the target
+// back an AliasReady (#565; knowledge rule 183). The status is written only
+// when it changes. It reports lasting when an unreachable target has outlasted
+// targetUnreachableGrace.
+func (r *Neo4jDatabaseAliasReconciler) waitForTarget(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, reason, msg string) (lasting bool) {
+	update := func() error {
+		latest := &neo4jv1beta1.Neo4jDatabaseAlias{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(alias), latest); err != nil {
+			return err
+		}
+		before := latest.Status.DeepCopy()
+		lasting = recordTargetWait(&latest.Status.Conditions, &latest.Status.Phase, &latest.Status.Message,
+			latest.Generation, reason, msg, time.Now())
+		latest.Status.ObservedGeneration = latest.Generation
+		if apiequality.Semantic.DeepEqual(*before, latest.Status) {
+			return nil
+		}
+		return r.Status().Update(ctx, latest)
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to record the target wait on Neo4jDatabaseAlias")
 		return false
 	}
-	return transitioned
+	return lasting
+}
+
+// unreachable handles a target that reads Ready but cannot be reached:
+// waitForTarget with reason ClusterUnreachable, logged at info and retried on
+// the fixed interval. Only an outage that outlasts targetUnreachableGrace is
+// this alias's failure: Failed, ConnectionFailed, announced once (knowledge
+// rules 172 and 183).
+func (r *Neo4jDatabaseAliasReconciler) unreachable(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, err error, requeue time.Duration) (ctrl.Result, error) {
+	if r.waitForTarget(ctx, alias, ConditionReasonClusterUnreachable, targetUnreachableMessage(alias.Spec.ClusterRef, err)) {
+		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
+		if r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, "") {
+			r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
+		}
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	log.FromContext(ctx).Info("Target reads Ready but cannot be reached; retrying",
+		"clusterRef", alias.Spec.ClusterRef, "error", err.Error())
+	return ctrl.Result{RequeueAfter: requeue}, nil
+}
+
+// aliasNeo4jClient is what the Neo4jDatabaseAlias reconcile asks of Neo4j.
+// *neo4jclient.Client is one.
+type aliasNeo4jClient interface {
+	GetDatabaseInfo(ctx context.Context, databaseName string) (*neo4jclient.DatabaseInfo, error)
+	ShowAlias(ctx context.Context, aliasName string) (*neo4jclient.AliasInfo, error)
+	CreateAlias(ctx context.Context, aliasName, targetDatabase string) error
+	AlterAliasTarget(ctx context.Context, aliasName, targetDatabase string) error
+	Close() error
+}
+
+// connect returns the Neo4j client Reconcile uses for the resolved target.
+func (r *Neo4jDatabaseAliasReconciler) connect(target ResolvedTarget) (aliasNeo4jClient, error) {
+	if r.newNeo4jClient != nil {
+		return r.newNeo4jClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 func (r *Neo4jDatabaseAliasReconciler) setNamedCondition(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, condType string, status metav1.ConditionStatus, reason, message string) {
