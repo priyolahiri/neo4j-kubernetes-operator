@@ -37,8 +37,8 @@ type finalizerCleanupDisposition int
 
 const (
 	// releaseFinalizer means the finalizer may be removed now: the cleanup
-	// succeeded, the target was already gone, the host's DNS no longer resolves
-	// (cluster deleted), or the bounded retry window has elapsed.
+	// succeeded, the target was already gone, or the bounded retry window has
+	// elapsed.
 	releaseFinalizer finalizerCleanupDisposition = iota
 	// retryCleanup means the failure looks transient and the grace period has
 	// not yet elapsed; the caller should requeue and keep the finalizer.
@@ -47,15 +47,21 @@ const (
 
 // classifyFinalizerCleanup decides whether a Neo4j drop/revoke performed during
 // deletion lets the finalizer be released. It is the single shared policy used
-// by every CR whose deletion runs Cypher against Neo4j (user, role,
-// rolebinding, authrule, database, composite database):
+// by the Neo4jDatabase deletion's DROP DATABASE (the other kinds whose
+// deletion runs Cypher go through deletionCleanup, knowledge rule 178):
 //
 //   - err == nil ...................... release (cleanup succeeded)
 //   - target already gone ............. release (idempotent — desired end state)
-//   - host DNS no longer resolves ..... release (Service/cluster deleted; the
-//     object went with it and the name will not come back)
 //   - transient / unknown ............. retry until finalizerDeletionGracePeriod
 //     has elapsed since deletion was requested, then release rather than wedge
+//
+// A host name that does not resolve ("no such host") is transient here, not
+// "gone". The statement reaches the server the routing table names — on a
+// cluster a pod's FQDN under the headless Service — and that record is absent
+// between a pod's deletion and its replacement, while the deployment exists.
+// Releasing on it left the database in Neo4j during a restart. Whether the
+// deployment is gone is read from its CR before this is called (knowledge
+// rule 178).
 //
 // obj is the object being deleted; its DeletionTimestamp bounds the retry
 // window. A nil DeletionTimestamp (object not actually being deleted) is
@@ -64,11 +70,12 @@ func classifyFinalizerCleanup(obj metav1.Object, err error) finalizerCleanupDisp
 	if err == nil {
 		return releaseFinalizer
 	}
-	if neo4j.IsNotFoundError(err) || neo4j.IsHostUnresolvableError(err) {
+	if neo4j.IsNotFoundError(err) {
 		return releaseFinalizer
 	}
-	// Transient connect failures, conflicting-transaction retries, and any
-	// unclassified error all get the same bounded-retry treatment: keep trying
+	// Transient connect failures, a name that does not resolve during a pod's
+	// replacement, conflicting-transaction retries, and any unclassified error
+	// all get the same bounded-retry treatment: keep trying
 	// while the grace window is open, then release so the CR can finish
 	// deleting instead of wedging forever.
 	if deletionGracePeriodExceeded(obj) {

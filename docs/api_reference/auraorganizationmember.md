@@ -37,6 +37,12 @@ Set exactly one of `providerConfigRef` or `credentialsSecretRef`.
 | `observedGeneration` | `int64` | The `.metadata.generation` last reconciled. |
 | `lastSyncedTime` | `*metav1.Time` | When the operator last recorded the membership as observed from the Aura API: written with every change to the status, and at least every 15 minutes while nothing changes — not on every poll, since each status write starts another reconcile. |
 
+## Deletion
+
+`deletionPolicy: Delete` removes the member from the organization in Aura, then releases the finalizer. `Orphan` (the default), or a member whose Aura user ID was never recorded, calls nothing: it needs no credentials and the CR is removed at once (an `AuraMemberOrphaned` event names a member who keeps their role).
+
+Removing needs the credentials and the organization. While they cannot be resolved — the credentials Secret or provider config deleted first in a namespace teardown, say — the CR waits with phase `Error`, `Ready=False`, reason `CredentialsUnavailable`, announced once. After 5 minutes it is removed anyway with a Warning `AuraMemberOrphaned`: the person keeps their organization role in Aura, so remove them in the console. Before, the finalizer was released at once and without a word.
+
 ## Example
 
 ```yaml

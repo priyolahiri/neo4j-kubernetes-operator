@@ -118,6 +118,8 @@ type fakeMemberAPI struct {
 	createInvite     bool
 	createInviteErr  error
 	deleteInvite     bool
+	deleteOrgMember  bool
+	deleteProjMember bool
 	invites          []aura.Invite
 	listInviteCalls  int
 	lastInviteReq    aura.CreateInviteRequest
@@ -130,7 +132,10 @@ func (f *fakeMemberAPI) UpdateOrgMemberRole(_ context.Context, _, userID, role s
 	f.updateCalled = true
 	return &aura.Member{UserID: userID, OrganizationRoles: []string{role}}, nil
 }
-func (f *fakeMemberAPI) DeleteOrgMember(_ context.Context, _, _ string) error { return nil }
+func (f *fakeMemberAPI) DeleteOrgMember(_ context.Context, _, _ string) error {
+	f.deleteOrgMember = true
+	return nil
+}
 func (f *fakeMemberAPI) ListProjectMembers(_ context.Context, _, _ string) ([]aura.Member, error) {
 	if f.projectMembersFn != nil {
 		return f.projectMembersFn()
@@ -147,7 +152,10 @@ func (f *fakeMemberAPI) UpdateProjectMemberRole(_ context.Context, _, _, userID,
 	f.updateCalled = true
 	return &aura.Member{UserID: userID, ProjectRoles: []string{role}}, nil
 }
-func (f *fakeMemberAPI) DeleteProjectMember(_ context.Context, _, _, _ string) error { return nil }
+func (f *fakeMemberAPI) DeleteProjectMember(_ context.Context, _, _, _ string) error {
+	f.deleteProjMember = true
+	return nil
+}
 func (f *fakeMemberAPI) CreateInvite(_ context.Context, _ string, req aura.CreateInviteRequest) (*aura.Invite, error) {
 	f.createInvite = true
 	f.lastInviteReq = req

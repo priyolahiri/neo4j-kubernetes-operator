@@ -52,6 +52,19 @@ Drift is reconciled: if the alias is re-pointed out of band, the controller issu
 
 Dropping an alias never affects the database behind it.
 
+## Deletion
+
+`deletionPolicy: Delete` runs `DROP ALIAS … FOR DATABASE`, then releases the finalizer; `Retain` only
+releases it. If the cluster or standalone CR no longer exists, the finalizer is released at once.
+
+The alias keeps routing queries (a remote alias with the credentials stored on it) until it is dropped,
+so a drop that cannot run — the target not Ready, refusing the connection, or refusing the drop — waits:
+phase `Failed`, `deletion waits to remove …` in `status.message`, one `AliasFailed` Warning, a retry
+every 30 seconds. Five minutes after the deletion was requested the finalizer is released with one
+Warning naming the alias left in Neo4j and the `DROP ALIAS` that removes it. Before, a target that was
+not Ready kept the CR in `Terminating` for ever, and a failed connection or drop released the finalizer
+at once.
+
 ## Example
 
 ```yaml

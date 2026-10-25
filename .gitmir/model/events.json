@@ -272,7 +272,7 @@
   {
     "id": "ev-deletion-failed",
     "name": "DeletionFailed",
-    "description": "DROP DATABASE failed during Neo4jDatabase finalizer cleanup. A retryable failure keeps the finalizer and is recorded in status (phase Error, Ready reason DeletionFailed, the message); the event is emitted only when that write changed the status - once per failure while the drop is retried on every pass, not on every retry (knowledge operations.md id 145). A failure that releases the finalizer (not retryable, or the five-minute grace period has passed) is announced once more as it releases.",
+    "description": "DROP DATABASE failed, or the operator could not create a client for the host, during Neo4jDatabase finalizer cleanup. The finalizer is kept and the failure recorded in status (phase Error, Ready reason DeletionFailed, the message); the event is emitted only when that write changed the status - once per failure while the drop is retried on every pass, not on every retry (operations.md id 145). Once the five-minute grace period has passed the finalizer is released with one more event naming the database left in Neo4j and the DROP DATABASE that removes it. A client that cannot be created used to release the finalizer at once (operations.md id 178). A server name that does not resolve during a restart ('no such host') is one of these retried failures, no longer a release.",
     "moduleId": "mod-database"
   },
   {
@@ -308,7 +308,7 @@
   {
     "id": "ev-alias-failed",
     "name": "AliasFailed",
-    "description": "An alias lookup, CREATE, ALTER, or DROP Cypher call failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "An alias lookup, CREATE, ALTER, or DROP Cypher call failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (operations.md id 145). On deletion: A deletion whose cleanup cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — keeps the finalizer and waits, with 'deletion waits to remove …' in status.message and this Warning once; after finalizerDeletionGracePeriod (5 minutes) the finalizer is released with one more Warning, 'Released the finalizer without removing …', naming what is left in Neo4j and the statement that removes it. Only a target CR that is gone releases at once (operations.md id 178).",
     "moduleId": "mod-database"
   },
   {
@@ -374,7 +374,7 @@
   {
     "id": "ev-replica-failed",
     "name": "ReplicaFailed",
-    "description": "A replica database lookup, create, or drop Cypher call failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "A replica database lookup, create, or drop Cypher call failed. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (operations.md id 145). On deletion (including a database type that cannot be read, which is never taken for a promoted database): A deletion whose cleanup cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — keeps the finalizer and waits, with 'deletion waits to remove …' in status.message and this Warning once; after finalizerDeletionGracePeriod (5 minutes) the finalizer is released with one more Warning, 'Released the finalizer without removing …', naming what is left in Neo4j and the statement that removes it. Only a target CR that is gone releases at once (operations.md id 178).",
     "moduleId": "mod-database"
   },
   {
@@ -548,7 +548,7 @@
   {
     "id": "ev-user-updated",
     "name": "UserUpdated",
-    "description": "Emitted when an ALTER USER clause set is applied for an existing Neo4jUser CR, or when Neo4j says the password is already the Secret's — the latter only when the status write that records the password as applied changed it, so once, not on every retry of a pass that then fails (neo4juser_controller.go; operations.md id 15).",
+    "description": "Emitted when an ALTER USER clause set is applied for an existing Neo4jUser CR, or when Neo4j says the password is already the Secret's — the latter only when the status write that records the password as applied changed it, so once, not on every retry of a pass that then fails (neo4juser_controller.go; operations.md id 15). For an already-matching password it is the only event — no PasswordRotated beside it, never both (operations.md id 15).",
     "moduleId": "mod-security"
   },
   {
@@ -566,19 +566,19 @@
   {
     "id": "ev-user-deletion-failed",
     "name": "UserDeletionFailed",
-    "description": "Emitted when DROP USER fails during Neo4jUser deletion (neo4juser_controller.go). A retryable failure is written to status (phase Failed, Ready reason UserDeletionFailed) and announced when that write changed it — once per failure, not on every retry; the drop is retried until it succeeds or finalizerDeletionGracePeriod ends, when the finalizer is released with one more Warning (knowledge operations.md id 145).",
+    "description": "Emitted when DROP USER cannot run during Neo4jUser deletion (neo4juser_controller.go): status phase Failed, Ready reason UserDeletionFailed, announced when that write changed it — once per failure, not on every retry (operations.md id 145). A deletion whose cleanup cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — keeps the finalizer and waits, with 'deletion waits to remove …' in status.message and this Warning once; after finalizerDeletionGracePeriod (5 minutes) the finalizer is released with one more Warning, 'Released the finalizer without removing …', naming what is left in Neo4j and the statement that removes it. Only a target CR that is gone releases at once (operations.md id 178).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-user-sync-failed",
     "name": "UserSyncFailed",
-    "description": "Emitted on any lookup/create/alter/role-grant failure during Neo4jUser reconciliation, moving the CR to phase Failed (neo4juser_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/create/alter/role-grant failure during Neo4jUser reconciliation, moving the CR to phase Failed (neo4juser_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A Failed user keeps its failure while its target restarts (recordTargetWait, settledAtGeneration), so the same failure met when the target is back is not announced again (#573; operations.md id 189).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-password-rotated",
     "name": "PasswordRotated",
-    "description": "Emitted when the status write right after the statement that applied the password (CREATE USER, ALTER USER … SET PASSWORD, or Neo4j's 'already the same' refusal) changed status.passwordSecretHash — once per Secret version, at a user's creation and at each change of its Secret, never from the pass's copy (passwordApplied, neo4juser_controller.go; operations.md id 15).",
+    "description": "Emitted when the status write right after the statement that applied the password (CREATE USER, ALTER USER … SET PASSWORD, or Neo4j's 'already the same' refusal) changed status.passwordSecretHash — once per Secret version, at a user's creation and at each change of its Secret, never from the pass's copy (passwordApplied, neo4juser_controller.go; operations.md id 15). Not announced when Neo4j refused the ALTER because it already held the password: that is the 'already matches' UserUpdated alone, never both (operations.md id 15).",
     "moduleId": "mod-security"
   },
   {
@@ -626,13 +626,13 @@
   {
     "id": "ev-role-deletion-failed",
     "name": "RoleDeletionFailed",
-    "description": "Emitted when DROP ROLE fails during Neo4jRole deletion (neo4jrole_controller.go). A retryable failure is written to status (phase Failed, Ready reason RoleDeletionFailed) and announced once per failure, not on every retry; after finalizerDeletionGracePeriod the finalizer is released (knowledge operations.md id 145).",
+    "description": "Emitted when DROP ROLE cannot run during Neo4jRole deletion (neo4jrole_controller.go): status phase Failed, Ready reason RoleDeletionFailed, announced once per failure, not on every retry (operations.md id 145). A deletion whose cleanup cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — keeps the finalizer and waits, with 'deletion waits to remove …' in status.message and this Warning once; after finalizerDeletionGracePeriod (5 minutes) the finalizer is released with one more Warning, 'Released the finalizer without removing …', naming what is left in Neo4j and the statement that removes it. Only a target CR that is gone releases at once (operations.md id 178).",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-role-sync-failed",
     "name": "RoleSyncFailed",
-    "description": "Emitted on any lookup/create/privilege-apply/revoke failure during Neo4jRole reconciliation, moving the CR to phase Failed (neo4jrole_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/create/privilege-apply/revoke failure during Neo4jRole reconciliation, moving the CR to phase Failed (neo4jrole_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A Failed role keeps its failure while its target restarts, so the same failure afterwards is not announced again (operations.md id 189).",
     "moduleId": "mod-security"
   },
   {
@@ -668,13 +668,13 @@
   {
     "id": "ev-binding-failed",
     "name": "BindingFailed",
-    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart — a revoke the deletion retries included (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/grant/revoke failure during Neo4jRoleBinding reconciliation or deletion (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (operations.md id 145). On deletion: A deletion whose cleanup cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — keeps the finalizer and waits, with 'deletion waits to remove …' in status.message and this Warning once; after finalizerDeletionGracePeriod (5 minutes) the finalizer is released with one more Warning, 'Released the finalizer without removing …', naming what is left in Neo4j and the statement that removes it. Only a target CR that is gone releases at once (operations.md id 178). The Warning lists the roles still granted.",
     "moduleId": "mod-security"
   },
   {
     "id": "ev-user-not-found",
     "name": "UserNotFound",
-    "description": "Emitted when a Neo4jRoleBinding's target username does not exist in Neo4j; bindings never create the user, only manage grants for externally provisioned users (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted when a Neo4jRoleBinding's target username does not exist in Neo4j; bindings never create the user, only manage grants for externally provisioned users (neo4jrolebinding_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A binding waiting for its user keeps that wait while its target restarts, so it is not announced again for the same user (operations.md id 189).",
     "moduleId": "mod-security"
   },
   {
@@ -698,7 +698,7 @@
   {
     "id": "ev-authrule-failed",
     "name": "AuthRuleFailed",
-    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation, and on a failed DROP AUTH RULE during deletion (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted on any lookup/create/grant/revoke failure during Neo4jAuthRule reconciliation, and when DROP AUTH RULE cannot run during deletion (neo4jauthrule_controller.go). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (operations.md id 145). On deletion: A deletion whose cleanup cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — keeps the finalizer and waits, with 'deletion waits to remove …' in status.message and this Warning once; after finalizerDeletionGracePeriod (5 minutes) the finalizer is released with one more Warning, 'Released the finalizer without removing …', naming what is left in Neo4j and the statement that removes it. Only a target CR that is gone releases at once (operations.md id 178).",
     "moduleId": "mod-security"
   },
   {
@@ -890,7 +890,7 @@
   {
     "id": "ev-aura-member-failed",
     "name": "AuraMemberFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
+    "description": "Emitted by fail() for CredentialsUnavailable, TargetMissing, LookupFailed, AddFailed and UpdateFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also the wait of a deletionPolicy=Delete deletion for credentials it cannot resolve (reason CredentialsUnavailable, phase Error), announced once (operations.md id 178).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -920,13 +920,13 @@
   {
     "id": "ev-aura-invite-orphaned",
     "name": "AuraInviteOrphaned",
-    "description": "Emitted when handleDeletion leaves the invite pending under deletionPolicy=Orphan.",
+    "description": "Emitted when handleDeletion leaves the invite pending: a Normal event under deletionPolicy=Orphan; a Warning when deletionPolicy=Delete could not resolve the credentials or the organization within finalizerDeletionGracePeriod, so the finalizer is released, the invite stays pending in Aura and can still be accepted (operations.md ids 157, 178).",
     "moduleId": "mod-aura-rbac"
   },
   {
     "id": "ev-aura-invite-failed",
     "name": "AuraInviteFailed",
-    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184).",
+    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156). The status message leaves Aura's per-response request ID out, so a refusal that repeats is the same status and one Warning; the Warning keeps the first failure's request ID (operations.md id 184). Also the wait of a deletionPolicy=Delete deletion for credentials it cannot resolve (reason CredentialsUnavailable, phase Error), announced once (operations.md id 178).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -1162,5 +1162,11 @@
     "name": "PluginUnknownToImage",
     "description": "Warning, once, when a Managed Neo4jPlugin is refused because the image its target runs cannot install one of its NEO4J_PLUGINS names (graphql on every supported release, n10s on CalVer from 2025.05, a custom JAR's name): the entrypoint exits on such a name. Also for a listed name whose JAR the image does not run: n10s from 5.26.22 (the neosemantics 5.26.0 JAR stops the server on Jackson) and on CalVer 2025.01–2025.04 (no JAR to download). Announced from the status write that moves the plugin into the refusal; again only for a different refusal (the target's image changed). The plugin is Failed, and what an earlier write of it left on the target is taken off (operations.md id 170).",
     "moduleId": "mod-plugins"
+  },
+  {
+    "id": "ev-aura-member-orphaned",
+    "name": "AuraMemberOrphaned",
+    "description": "Emitted when an AuraOrganizationMember or AuraProjectMember deletion leaves the person in Aura: a Normal event under deletionPolicy=Orphan; a Warning when deletionPolicy=Delete could not resolve the credentials, the organization (or, for a project member, the project) within finalizerDeletionGracePeriod, so the finalizer is released and they keep their role (operations.md ids 157, 178).",
+    "moduleId": "mod-aura-rbac"
   }
 ]

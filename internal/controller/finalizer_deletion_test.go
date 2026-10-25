@@ -51,7 +51,11 @@ func TestClassifyFinalizerCleanup(t *testing.T) {
 		{"nil error releases", objBeingDeleted(justDeleted), nil, releaseFinalizer},
 		{"not found releases", objBeingDeleted(justDeleted), errors.New("user not found"), releaseFinalizer},
 		{"database not found releases", objBeingDeleted(justDeleted), errors.New("database does not exist"), releaseFinalizer},
-		{"host gone releases immediately", objBeingDeleted(justDeleted), errors.New("dial tcp: lookup x: no such host"), releaseFinalizer},
+		// A pod's FQDN under the headless Service does not resolve between the
+		// pod's deletion and its replacement: a restart, not a deployment that
+		// is gone (knowledge rule 178).
+		{"no such host retries within grace", objBeingDeleted(justDeleted), errors.New("dial tcp: lookup orders-server-0.orders-headless.ns.svc.cluster.local: no such host"), retryCleanup},
+		{"no such host releases after grace", objBeingDeleted(pastGrace), errors.New("dial tcp: lookup x: no such host"), releaseFinalizer},
 		{"transient connect retries within grace", objBeingDeleted(justDeleted), errors.New("connection refused"), retryCleanup},
 		{"transient connect releases after grace", objBeingDeleted(pastGrace), errors.New("connection refused"), releaseFinalizer},
 		{"driver connectivity wrapped retries within grace", objBeingDeleted(justDeleted), fmt.Errorf("drop: %w", &driver.ConnectivityError{Inner: errors.New("boom")}), retryCleanup},

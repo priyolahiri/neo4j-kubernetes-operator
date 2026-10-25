@@ -18,10 +18,17 @@ package controller
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // The operator never Updates one of its custom resources: it patches what it
@@ -67,6 +74,85 @@ func addFinalizer(ctx context.Context, c client.Client, obj client.Object, final
 
 // removeFinalizer removes finalizer from obj and writes metadata.finalizers
 // alone.
+//
+// The write is a JSON patch that tests the finalizer is at the index this copy
+// has it and removes it there, not the resourceVersion lock of patchObject. A
+// deletion's copy is often older than the object: the pass wrote status first
+// (a cluster's teardown, a wait of id 178), and a status write moves the
+// resourceVersion without touching metadata.finalizers, so the locked patch
+// was a Conflict — logged at ERROR by the caller and as "Reconciler error",
+// although the retry succeeded the same second. The test keeps what the lock
+// protected: a merge patch without it would replace the whole list with this
+// copy's and drop a finalizer another writer added since, while a removal at a
+// tested index leaves every other entry. When the list moved under the copy
+// (an entry before this one removed or inserted), the test fails, the object
+// is read again and the removal retried, with backoff (knowledge rule 189).
+//
+// An object the API server no longer has is released already: a pass that
+// read it before an earlier pass released the finalizer (the cache lags the
+// deletion it allowed) finds nothing to patch. That is success, logged at
+// V(1). Returned, the NotFound was logged at ERROR, by the caller and again
+// by controller-runtime, on routine deletions of every kind (knowledge rule
+// 189, as #572 did for the cluster).
 func removeFinalizer(ctx context.Context, c client.Client, obj client.Object, finalizer string) error {
-	return patchObject(ctx, c, obj, func() { controllerutil.RemoveFinalizer(obj, finalizer) })
+	reread := false
+	err := retry.OnError(retry.DefaultBackoff, finalizerListMoved, func() error {
+		if reread {
+			if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+				return err
+			}
+		}
+		reread = true
+		i := slices.Index(obj.GetFinalizers(), finalizer)
+		if i < 0 {
+			return nil // released already
+		}
+		patch, err := finalizerRemoval(i, finalizer)
+		if err != nil {
+			return err
+		}
+		return c.Patch(ctx, obj, patch)
+	})
+	if apierrors.IsNotFound(err) {
+		log.FromContext(ctx).V(1).Info("Already deleted; its finalizer was released by an earlier pass",
+			"kind", fmt.Sprintf("%T", obj), "name", obj.GetName(), "finalizer", finalizer)
+		return nil
+	}
+	return err
+}
+
+// removeFinalizerAt is removeFinalizer for a reconciler whose release starts
+// from the request rather than a copy (the Aura kinds): it reads the object
+// at key into obj first. An object that is gone is released already.
+func removeFinalizerAt(ctx context.Context, c client.Client, key client.ObjectKey, obj client.Object, finalizer string) error {
+	if err := c.Get(ctx, key, obj); err != nil {
+		if apierrors.IsNotFound(err) {
+			log.FromContext(ctx).V(1).Info("Already deleted; its finalizer was released by an earlier pass",
+				"kind", fmt.Sprintf("%T", obj), "name", key.Name, "finalizer", finalizer)
+			return nil
+		}
+		return err
+	}
+	return removeFinalizer(ctx, c, obj, finalizer)
+}
+
+// finalizerRemoval is the JSON patch that removes finalizer from index i of
+// metadata.finalizers, if it is still there.
+func finalizerRemoval(i int, finalizer string) (client.Patch, error) {
+	path := fmt.Sprintf("/metadata/finalizers/%d", i)
+	ops, err := json.Marshal([]map[string]string{
+		{"op": "test", "path": path, "value": finalizer},
+		{"op": "remove", "path": path},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return client.RawPatch(types.JSONPatchType, ops), nil
+}
+
+// finalizerListMoved reports a removal whose test failed: the finalizer is no
+// longer at the index the copy had it. The API server answers a failed test
+// with 422 (Invalid); the fake client returns the patch library's error.
+func finalizerListMoved(err error) bool {
+	return apierrors.IsInvalid(err) || apierrors.IsConflict(err) || strings.Contains(err.Error(), "test failed")
 }

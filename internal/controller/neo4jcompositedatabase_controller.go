@@ -546,57 +546,55 @@ func aliasInNamespace(aliases []neo4jclient.AliasInfo, composite string) string 
 func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase, name string,
 ) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
-
 	if !controllerutil.ContainsFinalizer(cd, Neo4jCompositeDatabaseFinalizer) {
 		return ctrl.Result{}, nil
 	}
+	release := func() error { return removeFinalizer(ctx, r.Client, cd, Neo4jCompositeDatabaseFinalizer) }
 
 	if strings.EqualFold(cd.Spec.DeletionPolicy, "Retain") {
-		logger.Info("deletionPolicy Retain — leaving the composite in place", "composite", name)
-	} else {
-		target, err := ResolveClusterRef(ctx, r.Client, cd.Namespace, cd.Spec.ClusterRef)
-		switch {
-		case err != nil:
-			logger.Error(err, "resolve cluster ref during deletion; releasing finalizer")
-		case !target.Found || !target.IsReady():
-			// The deployment is gone or down. Blocking here would wedge the CR
-			// in Terminating forever for a database that may no longer exist.
-			logger.Info("deployment not available during deletion; releasing finalizer",
-				"clusterRef", cd.Spec.ClusterRef)
-		default:
-			nc, err := r.connectForDeletion(target)
-			if err != nil {
-				logger.Error(err, "connect during deletion; releasing finalizer")
-				break
-			}
-			defer func() { _ = nc.Close() }()
-			// CASCADE is required, not optional: a plain drop is REFUSED while
-			// constituents exist. It removes the constituent ALIASES only —
-			// their target databases are untouched.
-			if err := nc.DropCompositeDatabase(ctx, name, true); err != nil {
-				// The same bounded retry as every other kind whose deletion
-				// runs Cypher (classifyFinalizerCleanup): a drop Neo4j keeps
-				// refusing used to be retried for ever, so the CR never left
-				// Terminating (#526). Retried, and announced once per failure,
-				// until finalizerDeletionGracePeriod has passed; then the
-				// finalizer is released and the composite left for an admin.
-				if classifyFinalizerCleanup(cd, err) == retryCleanup {
-					return r.fail(ctx, cd, "drop composite database failed, will retry", err, r.requeueAfter())
-				}
-				r.Recorder.Eventf(cd, corev1.EventTypeWarning, EventReasonCompositeFailed,
-					"DROP COMPOSITE DATABASE %q failed; releasing finalizer to avoid wedging deletion: %v", name, err)
-				break
-			}
-			r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeDropped,
-				"Composite database %q dropped (constituent aliases removed; their target databases kept)", name)
-		}
+		log.FromContext(ctx).Info("deletionPolicy Retain — leaving the composite in place", "composite", name)
+		return ctrl.Result{}, release()
 	}
 
-	if err := removeFinalizer(ctx, r.Client, cd, Neo4jCompositeDatabaseFinalizer); err != nil {
+	target, err := ResolveClusterRef(ctx, r.Client, cd.Namespace, cd.Spec.ClusterRef)
+	if err != nil {
 		return ctrl.Result{}, err
 	}
-	return ctrl.Result{}, nil
+	if !target.Found {
+		// The deployment is gone, and the composite with it.
+		return ctrl.Result{}, release()
+	}
+	// A deployment that is down, refuses the connection or refuses the drop
+	// used to release the finalizer at once (or, for a refused drop, wait for
+	// ever, #526). It waits, bounded, as every other cleanup: the composite
+	// still exposes its constituents (knowledge rule 178).
+	cleanup := deletionCleanup{
+		obj: cd, recorder: r.Recorder, reason: EventReasonCompositeFailed,
+		leftBehind: fmt.Sprintf("composite database %q and its constituent aliases on %s", name,
+			targetRefDisplay(cd.Spec.ClusterRef)),
+		byHand: fmt.Sprintf("DROP COMPOSITE DATABASE `%s` CASCADE ALIASES", neo4jclient.EscapeBackticks(name)),
+		record: func(msg string) bool {
+			return r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, EventReasonCompositeFailed, msg, nil)
+		},
+		release: release, requeue: r.requeueAfter(),
+	}
+	if !target.IsReady() {
+		return cleanup.blocked(ctx, targetDownCause(cd.Spec.ClusterRef))
+	}
+	nc, err := r.connectForDeletion(target)
+	if err != nil {
+		return cleanup.blocked(ctx, connectFailedCause(cd.Spec.ClusterRef, err))
+	}
+	defer func() { _ = nc.Close() }()
+	// CASCADE is required, not optional: a plain drop is REFUSED while
+	// constituents exist. It removes the constituent ALIASES only — their
+	// target databases are untouched.
+	if err := nc.DropCompositeDatabase(ctx, name, true); err != nil {
+		return cleanup.blocked(ctx, statementFailedCause(cd.Spec.ClusterRef, "DROP COMPOSITE DATABASE", err))
+	}
+	r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeDropped,
+		"Composite database %q dropped (constituent aliases removed; their target databases kept)", name)
+	return ctrl.Result{}, release()
 }
 
 func (r *Neo4jCompositeDatabaseReconciler) requeueAfter() time.Duration {

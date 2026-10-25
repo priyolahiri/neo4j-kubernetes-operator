@@ -60,6 +60,28 @@ type Neo4jDatabaseAliasReconciler struct {
 	// newNeo4jClient connects Reconcile to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests script the server here.
 	newNeo4jClient func(ResolvedTarget) (aliasNeo4jClient, error)
+
+	// newDeletionClient connects the deletion to the resolved target; nil uses
+	// ResolvedTarget.NewClient. Tests script the server here.
+	newDeletionClient func(ResolvedTarget) (aliasDeletionClient, error)
+}
+
+// aliasDeletionClient is what the Neo4jDatabaseAlias deletion asks of Neo4j.
+// *neo4jclient.Client is one.
+type aliasDeletionClient interface {
+	DropAliasIfExists(ctx context.Context, name string) error
+	Close() error
+}
+
+func (r *Neo4jDatabaseAliasReconciler) connectForDeletion(target ResolvedTarget) (aliasDeletionClient, error) {
+	if r.newDeletionClient != nil {
+		return r.newDeletionClient(target)
+	}
+	nc, err := target.NewClient(r.Client)
+	if err != nil {
+		return nil, err
+	}
+	return nc, nil
 }
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=neo4jdatabasealiases,verbs=get;list;watch;create;update;patch;delete
@@ -212,15 +234,13 @@ func aliasTargetDiffers(live, desired string) bool {
 }
 
 func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, aliasName string) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(alias, Neo4jDatabaseAliasFinalizer) {
 		return ctrl.Result{}, nil
 	}
-
-	requeue := r.requeueAfter()
+	release := func() error { return removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer) }
 
 	if strings.EqualFold(alias.Spec.DeletionPolicy, "Retain") {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
+		return ctrl.Result{}, release()
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, alias.Namespace, alias.Spec.ClusterRef)
@@ -228,29 +248,39 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
+		// The deployment is gone, and the alias with its system database.
+		return ctrl.Result{}, release()
+	}
+	// The alias still routes queries to its target — a remote alias with the
+	// credentials stored on it — so a deletion that cannot drop it waits,
+	// bounded, as every other cleanup. A target that was not Ready made it
+	// wait for ever; a connection or a drop that failed released the
+	// finalizer at once (knowledge rule 178).
+	cleanup := deletionCleanup{
+		obj: alias, recorder: r.Recorder, reason: EventReasonAliasFailed,
+		leftBehind: fmt.Sprintf("alias %q on %s", aliasName, targetRefDisplay(alias.Spec.ClusterRef)),
+		byHand:     fmt.Sprintf("DROP ALIAS `%s` FOR DATABASE", neo4jclient.EscapeBackticks(aliasName)),
+		record: func(msg string) bool {
+			return r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonAliasFailed, msg, "")
+		},
+		release: release, requeue: r.requeueAfter(),
 	}
 	if !target.IsReady() {
-		return ctrl.Result{RequeueAfter: requeue}, nil
+		return cleanup.blocked(ctx, targetDownCause(alias.Spec.ClusterRef))
 	}
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.connectForDeletion(target)
 	if err != nil {
-		logger.Error(err, "cannot connect during alias deletion; releasing finalizer")
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
+		return cleanup.blocked(ctx, connectFailedCause(alias.Spec.ClusterRef, err))
 	}
 	defer func() { _ = nc.Close() }()
 
-	// Dropping an alias never affects the database behind it, so a failure
-	// here is low-stakes — release rather than wedge the deletion.
 	if err := nc.DropAliasIfExists(ctx, aliasName); err != nil {
-		r.Recorder.Eventf(alias, corev1.EventTypeWarning, EventReasonAliasFailed,
-			"DROP ALIAS %q failed; releasing finalizer to avoid wedging deletion: %v", aliasName, err)
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
+		return cleanup.blocked(ctx, statementFailedCause(alias.Spec.ClusterRef, "DROP ALIAS", err))
 	}
 
 	r.Recorder.Eventf(alias, corev1.EventTypeNormal, EventReasonAliasDropped, "Alias %q dropped", aliasName)
-	return ctrl.Result{}, removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer)
+	return ctrl.Result{}, release()
 }
 
 func (r *Neo4jDatabaseAliasReconciler) requeueAfter() time.Duration {

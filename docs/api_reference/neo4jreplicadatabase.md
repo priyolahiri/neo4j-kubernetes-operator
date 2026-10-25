@@ -86,6 +86,19 @@ Once the database is no longer a replica, this CR goes **inert**:
 
 Promote via [`Neo4jReplicaPromotion`](neo4jreplicapromotion.md). Adopt the promoted database with a `Neo4jDatabase` CR using `ifNotExists: true`.
 
+## Deletion
+
+`deletionPolicy: Delete` re-reads the database's type and, if it is still a replica, runs
+`DROP DATABASE`; `Retain`, a promoted database, and a database that is already gone only release the
+finalizer, as does a cluster or standalone CR that no longer exists.
+
+A replica holds the upstream's data and keeps pulling it, so a drop that cannot run — the downstream not
+Ready, refusing the connection, failing to report the type, or refusing the drop — waits: phase
+`Failed`, `deletion waits to remove …` in `status.message`, one `ReplicaFailed` Warning, a retry every
+30 seconds. A type that cannot be read is never taken for "not a replica": nothing is dropped. Five
+minutes after the deletion was requested the finalizer is released with one Warning naming the replica
+left in Neo4j and the `DROP DATABASE` that removes it.
+
 ## Example
 
 ```yaml

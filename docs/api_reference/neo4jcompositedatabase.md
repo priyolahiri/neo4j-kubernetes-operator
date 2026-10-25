@@ -116,16 +116,19 @@ they target are untouched.
 
 `deletionPolicy: Retain` leaves everything in Neo4j and releases the finalizer.
 
-If the referenced deployment is gone or not Ready at deletion time, the
-finalizer is released anyway rather than wedging the CR in `Terminating` for a
-database that may no longer exist.
+If the referenced deployment is gone at deletion time, the finalizer is
+released at once: the composite went with it.
 
-If Neo4j refuses the drop, the composite is `Failed` with the refusal in
-`status.message` and one `CompositeDatabaseFailed` Warning, and the drop is
-retried. After 5 minutes of refusals the finalizer is released, with a
-Warning saying so, and the composite is left in Neo4j for an admin to drop —
-the same bounded retry every resource whose deletion runs Cypher has. Before,
-a refused drop kept the CR in `Terminating` for ever.
+If the drop cannot run — the deployment is not Ready, refuses the
+connection, or Neo4j refuses the drop — the composite is `Failed` with
+`deletion waits to remove …` in `status.message` and one
+`CompositeDatabaseFailed` Warning, and the drop is retried. Five minutes after
+the deletion was requested the finalizer is released, with a Warning naming
+the composite left in Neo4j and the `DROP COMPOSITE DATABASE … CASCADE
+ALIASES` that removes it — the same bounded retry every resource whose
+deletion runs Cypher has (knowledge rule 178). Before, a deployment that was
+not Ready released the finalizer at once, and a refused drop kept the CR in
+`Terminating` for ever.
 
 ## Privileges do not go on the composite
 

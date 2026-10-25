@@ -308,12 +308,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	r.deletedStatefulSets.forget(standalone.Namespace, standalone.Name)
 
 	// Remove finalizer
-	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); errors.IsNotFound(err) {
-		// Gone already: a pass that read it before an earlier one released the
-		// finalizer releases it again (as for a cluster, #562 re-walk).
-		logger.V(1).Info("Standalone already deleted; its finalizer was released by an earlier pass")
-		return ctrl.Result{}, nil
-	} else if err != nil {
+	// A standalone already gone is released: removeFinalizer returns nil (as
+	// for a cluster, #562 re-walk; knowledge rule 189).
+	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); err != nil {
 		logger.Error(err, "Failed to remove finalizer")
 		return ctrl.Result{}, err
 	}

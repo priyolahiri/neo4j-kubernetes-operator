@@ -589,6 +589,20 @@ The operator creates the database if it is missing, then observes it:
 - `initialData.cypherStatements` run once after creation (recorded in `status.dataImported`)
 - Status (`state`, `servers`, `phase`) is refreshed from the live database on every reconcile
 
+### Deletion
+
+Deleting the CR runs `DROP DATABASE` on its cluster or standalone, then releases the finalizer. If the
+cluster or standalone CR no longer exists, the finalizer is released at once: its databases went with it.
+
+If the drop cannot run — the operator cannot connect (the host restarting, its Bolt port not open yet,
+stopped by a `stopCluster` restore, its admin Secret unreadable, a server's name that does not resolve
+while its pod is replaced) or Neo4j refuses the drop — the deletion waits: phase `Error`, reason
+`DeletionFailed`, the reason in `status.message`, one `DeletionFailed` Warning, and a retry every
+`RequeueAfter`. Five minutes after the deletion was requested the finalizer is released with one Warning
+naming the database still in Neo4j and the `DROP DATABASE` that removes it. Whether the cluster or
+standalone is gone is read from its CR, never from DNS. Before, a connection that failed, or a server name
+that did not resolve, released the finalizer at once and left the database, and its data, in Neo4j.
+
 ## Best Practices
 
 ### General Best Practices

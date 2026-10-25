@@ -219,7 +219,7 @@
         "kind": "delete",
         "entityId": "ent-neo4jplugin",
         "fieldName": "metadata.finalizers",
-        "description": "Releases the finalizer (a merge patch of metadata.finalizers) once the write succeeded; a target that is gone counts as uninstalled."
+        "description": "Releases the finalizer (removeFinalizer: a tested JSON-patch removal from metadata.finalizers, no resourceVersion lock; an object already gone is success, id 189) once the write succeeded; a target that is gone counts as uninstalled."
       }
     ]
   },

@@ -311,9 +311,10 @@ func (r *AuraCustomerManagedKeyReconciler) handleDeletion(
 			fmt.Sprintf("Orphaning customer-managed key %s; it stays registered in Aura", externalID))
 	}
 
-	return ctrl.Result{}, r.patchCMK(ctx, req, func(o *neo4jv1beta1.AuraCustomerManagedKey) {
-		controllerutil.RemoveFinalizer(o, AuraCMKFinalizer)
-	})
+	// One removal a stale cache or a status write just before cannot turn
+	// into a Conflict, and that an object already gone has done already
+	// (knowledge rule 189).
+	return ctrl.Result{}, removeFinalizerAt(ctx, r.Client, req.NamespacedName, &neo4jv1beta1.AuraCustomerManagedKey{}, AuraCMKFinalizer)
 }
 
 // keyName is the CMK's Aura display name (spec.name or the CR name, ≤30 chars).

@@ -403,20 +403,18 @@ func (r *Neo4jRoleReconciler) reportReady(
 }
 
 func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1beta1.Neo4jRole, roleName string) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(role, Neo4jRoleFinalizer) {
 		return ctrl.Result{}, nil
 	}
-
-	requeue := r.requeueAfter()
+	release := func() error { return removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer) }
 
 	// Built-in roles are never dropped; just release the finalizer.
 	if validation.IsBuiltInRole(roleName) {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
+		return ctrl.Result{}, release()
 	}
 
 	if strings.EqualFold(role.Spec.DeletionPolicy, "Retain") {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
+		return ctrl.Result{}, release()
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, role.Namespace, role.Spec.ClusterRef)
@@ -424,43 +422,36 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
-		// Cluster gone — release the finalizer.
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
+		// The deployment is gone, and the role with its system database.
+		return ctrl.Result{}, release()
 	}
-
+	// Anything else that keeps DROP ROLE from running waits, bounded: the
+	// role and its privileges may still be in Neo4j (knowledge rule 178).
+	cleanup := deletionCleanup{
+		obj: role, recorder: r.Recorder, reason: EventReasonRoleDeletionFailed,
+		leftBehind: fmt.Sprintf("role %q on %s", roleName, targetRefDisplay(role.Spec.ClusterRef)),
+		byHand:     fmt.Sprintf("DROP ROLE `%s`", neo4jclient.EscapeBackticks(roleName)),
+		record: func(msg string) bool {
+			return r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleDeletionFailed, msg, nil, false)
+		},
+		release: release, requeue: r.requeueAfter(),
+	}
 	if !target.IsReady() {
-		// Wait for the cluster to be ready so we can DROP cleanly.
-		return ctrl.Result{RequeueAfter: requeue}, nil
+		return cleanup.blocked(ctx, targetDownCause(role.Spec.ClusterRef))
 	}
 
 	nc, err := r.connectForDeletion(target)
 	if err != nil {
-		// If we cannot connect, surface the error but do not block deletion
-		// indefinitely.
-		logger.Error(err, "cannot connect during role deletion; releasing finalizer")
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
+		return cleanup.blocked(ctx, connectFailedCause(role.Spec.ClusterRef, err))
 	}
 	defer func() { _ = nc.Close() }()
 
 	if err := nc.DropRoleIfExists(ctx, roleName); err != nil {
-		if classifyFinalizerCleanup(role, err) == retryCleanup {
-			// Retried every RequeueAfter and on every status change of the
-			// target until the drop succeeds or the grace period ends. The
-			// failure is written to status and announced when it starts or
-			// its message changes, not on every retry (knowledge rule 145).
-			msg := fmt.Sprintf("DROP ROLE %q failed, will retry: %v", roleName, err)
-			if r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleDeletionFailed, msg, nil, false) {
-				r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonRoleDeletionFailed, msg)
-			}
-			return ctrl.Result{RequeueAfter: requeue}, nil
-		}
-		r.Recorder.Eventf(role, corev1.EventTypeWarning, EventReasonRoleDeletionFailed,
-			"DROP ROLE %q failed; releasing finalizer to avoid wedging deletion: %v", roleName, err)
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
+		return cleanup.blocked(ctx, statementFailedCause(role.Spec.ClusterRef, "DROP ROLE", err))
 	}
 
 	r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleDeleted, "Role %q dropped", roleName)
-	return ctrl.Result{}, removeFinalizer(ctx, r.Client, role, Neo4jRoleFinalizer)
+	return ctrl.Result{}, release()
 }
 
 // reportUnresolvedPrivilegeDatabases warns when spec.privileges name a
@@ -864,9 +855,10 @@ func (r *Neo4jRoleReconciler) writeStatus(
 
 // waitForTarget records that the target cannot serve the role (reason
 // ClusterNotReady or ClusterUnreachable): the ClusterNotReady condition, and
-// phase Pending unless the role is already Ready at its generation, which it
-// stays while the target restarts — so the pass that finds the target back
-// announces nothing (recordTargetWait; knowledge rule 158). The status is
+// phase Pending unless the role already has an outcome at its generation —
+// Ready, or a failure of its own — which it keeps while the target restarts,
+// so the pass that finds the target back announces nothing (recordTargetWait;
+// knowledge rules 158, 189). The status is
 // written only when it changes. It reports lasting when an unreachable target
 // has outlasted targetUnreachableGrace (id 172).
 func (r *Neo4jRoleReconciler) waitForTarget(ctx context.Context, role *neo4jv1beta1.Neo4jRole, reason, msg string) (lasting bool) {
@@ -892,8 +884,8 @@ func (r *Neo4jRoleReconciler) waitForTarget(ctx context.Context, role *neo4jv1be
 }
 
 // unreachable handles a target that reads Ready but cannot be reached, as the
-// user's does (Neo4jUserReconciler.unreachable): a role Ready at its
-// generation stays Ready, any other waits in Pending, logged at info and
+// user's does (Neo4jUserReconciler.unreachable): a role with an outcome at
+// its generation keeps it, any other waits in Pending, logged at info and
 // retried on the fixed interval; only an outage that outlasts
 // targetUnreachableGrace is announced, once (knowledge rule 172).
 func (r *Neo4jRoleReconciler) unreachable(ctx context.Context, role *neo4jv1beta1.Neo4jRole, err error, requeue time.Duration) (ctrl.Result, error) {

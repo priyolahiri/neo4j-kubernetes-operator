@@ -309,9 +309,10 @@ func (r *AuraIPFilterReconciler) handleDeletion(
 		r.Recorder.Event(f, corev1.EventTypeNormal, EventReasonAuraIPFilterOrphaned,
 			fmt.Sprintf("Orphaning IP filter %s; it stays in place in Aura", externalID))
 	}
-	return ctrl.Result{}, r.patch(ctx, req, func(o *neo4jv1beta1.AuraIPFilter) {
-		controllerutil.RemoveFinalizer(o, AuraIPFilterFinalizer)
-	})
+	// One removal a stale cache or a status write just before cannot turn
+	// into a Conflict, and that an object already gone has done already
+	// (knowledge rule 189).
+	return ctrl.Result{}, removeFinalizerAt(ctx, r.Client, req.NamespacedName, &neo4jv1beta1.AuraIPFilter{}, AuraIPFilterFinalizer)
 }
 
 // deletionTarget resolves what deleting the filter in Aura needs: the client,

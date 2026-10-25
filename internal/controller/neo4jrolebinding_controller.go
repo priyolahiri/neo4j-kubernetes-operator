@@ -286,14 +286,14 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 }
 
 func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(rb, Neo4jRoleBindingFinalizer) {
 		return ctrl.Result{}, nil
 	}
-	requeue := r.requeueAfter()
+	release := func() error { return removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer) }
 
-	if strings.EqualFold(rb.Spec.DeletionPolicy, "Retain") {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
+	// Nothing granted, nothing to revoke: no wait can leave anything behind.
+	if strings.EqualFold(rb.Spec.DeletionPolicy, "Retain") || len(rb.Status.GrantedRoles) == 0 {
+		return ctrl.Result{}, release()
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, rb.Namespace, rb.Spec.ClusterRef)
@@ -301,23 +301,43 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
+		// The deployment is gone, and the grants with its system database.
+		return ctrl.Result{}, release()
+	}
+	// Anything else that keeps the revokes from running waits, bounded: the
+	// roles may still be granted, and releasing now would leave the access the
+	// deletion was meant to revoke (knowledge rule 178).
+	cleanup := func(roles []string) deletionCleanup {
+		quoted := make([]string, 0, len(roles))
+		for _, role := range roles {
+			quoted = append(quoted, "`"+neo4jclient.EscapeBackticks(role)+"`")
+		}
+		return deletionCleanup{
+			obj: rb, recorder: r.Recorder, reason: EventReasonBindingFailed,
+			leftBehind: fmt.Sprintf("the role(s) %v granted to user %q on %s", roles, rb.Spec.Username,
+				targetRefDisplay(rb.Spec.ClusterRef)),
+			byHand: fmt.Sprintf("REVOKE ROLE %s FROM `%s`", strings.Join(quoted, ", "),
+				neo4jclient.EscapeBackticks(rb.Spec.Username)),
+			record: func(msg string) bool {
+				return r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonBindingFailed, msg, nil)
+			},
+			release: release, requeue: r.requeueAfter(),
+		}
 	}
 	if !target.IsReady() {
-		return ctrl.Result{RequeueAfter: requeue}, nil
+		return cleanup(rb.Status.GrantedRoles).blocked(ctx, targetDownCause(rb.Spec.ClusterRef))
 	}
 
 	nc, err := r.connect(target)
 	if err != nil {
-		logger.Error(err, "cannot connect during binding deletion; releasing finalizer")
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
+		return cleanup(rb.Status.GrantedRoles).blocked(ctx, connectFailedCause(rb.Spec.ClusterRef, err))
 	}
 	defer func() { _ = nc.Close() }()
 
 	// Revoke only the roles previously recorded as granted by this binding.
 	// We never touch roles we did not add — that's the whole point of
 	// non-exclusive bindings.
-	for _, role := range rb.Status.GrantedRoles {
+	for i, role := range rb.Status.GrantedRoles {
 		err := nc.RevokeRoleFromUser(ctx, role, rb.Spec.Username)
 		if err == nil {
 			continue
@@ -329,27 +349,14 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 		if isAlreadyGoneCleanup(err) {
 			continue
 		}
-		if classifyFinalizerCleanup(rb, err) == retryCleanup {
-			// Retried every RequeueAfter and on every status change of the
-			// target until the revoke succeeds or the grace period ends. The
-			// failure is written to status and announced when it starts or
-			// its message changes, not on every retry (knowledge rule 145).
-			msg := fmt.Sprintf("revoke %q from %q failed, will retry: %v", role, rb.Spec.Username, err)
-			if r.setStatus(ctx, rb, "Failed", metav1.ConditionFalse, EventReasonBindingFailed, msg, nil) {
-				r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonBindingFailed, msg)
-			}
-			return ctrl.Result{RequeueAfter: requeue}, nil
-		}
-		// Host gone or grace period exceeded: the remaining revokes would fail
-		// the same way, so release the finalizer rather than wedge deletion.
-		r.Recorder.Eventf(rb, corev1.EventTypeWarning, EventReasonBindingFailed,
-			"revoke %q from %q failed; releasing finalizer to avoid wedging deletion: %v", role, rb.Spec.Username, err)
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
+		// This role and the ones after it are still granted.
+		return cleanup(rb.Status.GrantedRoles[i:]).blocked(ctx,
+			statementFailedCause(rb.Spec.ClusterRef, fmt.Sprintf("REVOKE ROLE %q", role), err))
 	}
 	r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingDeleted,
 		"revoked %d role(s) from user %q", len(rb.Status.GrantedRoles), rb.Spec.Username)
 
-	return ctrl.Result{}, removeFinalizer(ctx, r.Client, rb, Neo4jRoleBindingFinalizer)
+	return ctrl.Result{}, release()
 }
 
 // diffRoles returns the role grants to add and revoke, and the desired roles
@@ -509,9 +516,10 @@ func (r *Neo4jRoleBindingReconciler) writeStatus(
 
 // waitForTarget records that the target cannot serve the binding (reason
 // ClusterNotReady or ClusterUnreachable): the ClusterNotReady condition, and
-// phase Pending unless the binding is already Ready at its generation, which
-// it stays while the target restarts — so the pass that finds the target back
-// announces nothing (recordTargetWait; knowledge rule 158). The status is
+// phase Pending unless the binding already has an outcome at its generation —
+// Ready, a failure, or UserNotFound — which it keeps while the target
+// restarts, so the pass that finds the target back announces nothing
+// (recordTargetWait; knowledge rules 158, 189). The status is
 // written only when it changes. It reports lasting when an unreachable target
 // has outlasted targetUnreachableGrace (id 172).
 func (r *Neo4jRoleBindingReconciler) waitForTarget(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, reason, msg string) (lasting bool) {
@@ -537,8 +545,8 @@ func (r *Neo4jRoleBindingReconciler) waitForTarget(ctx context.Context, rb *neo4
 }
 
 // unreachable handles a target that reads Ready but cannot be reached, as the
-// user's does (Neo4jUserReconciler.unreachable): a binding Ready at its
-// generation stays Ready, any other waits in Pending, logged at info and
+// user's does (Neo4jUserReconciler.unreachable): a binding with an outcome at
+// its generation keeps it, any other waits in Pending, logged at info and
 // retried on the fixed interval; only an outage that outlasts
 // targetUnreachableGrace is announced, once (knowledge rule 172).
 func (r *Neo4jRoleBindingReconciler) unreachable(ctx context.Context, rb *neo4jv1beta1.Neo4jRoleBinding, err error, requeue time.Duration) (ctrl.Result, error) {
