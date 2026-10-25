@@ -4757,7 +4757,7 @@
 <td><code>path</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Path within the bucket or PVC. Same <code>A-Z a-z 0-9 . _ / -</code> charset restriction as <code>bucket</code>. Defaults to <code>backups</code> for cloud storage when empty.</td>
+<td>Path within the bucket. Same <code>A-Z a-z 0-9 . _ / -</code> charset restriction as <code>bucket</code>. Defaults to <code>backups</code> for cloud storage when empty. Not read for a <code>pvc</code>: a PVC backup writes its chain directory at the PVC's root, and a <code>path</code> set there draws a <code>ValidationWarning</code>.</td>
 </tr>
 <tr>
 <td><code>pvc</code></td>
@@ -5248,7 +5248,7 @@
 </tr>
 <tr>
 <td><code>Waiting</code></td>
-<td>The target cluster/standalone CR doesn't exist yet (common with <code>kubectl apply -f dir/</code> ordering) or isn't accepting work yet (a cluster still forming or without a majority; a standalone not <code>Ready</code>). A <code>Degraded</code> cluster is backed up. Transient — the controller requeues.</td>
+<td>The target cluster/standalone CR doesn't exist yet (common with <code>kubectl apply -f dir/</code> ordering; one <code>ClusterNotFound</code> Warning when the wait starts) or isn't accepting work yet (a cluster still forming or without a majority; a standalone not <code>Ready</code>). A <code>Degraded</code> cluster is backed up. Transient — the controller requeues.</td>
 </tr>
 <tr>
 <td><code>Scheduled</code></td>

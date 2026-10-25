@@ -4561,7 +4561,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RestoreSeedProgress</code></td>
 <td>Normal</td>
-<td>The progress of one database's seed in an all-databases restore (allocations online, or the last poll's error). Emitted when it changes and every 10 minutes while it does not; the API server aggregates the repeats into a count with first/last timestamps, which shows whether a seed is progressing or stuck. From the source <code>neo4j-restore-progress</code>, which has an event budget of its own (client-go: a burst of 25 per source, object and type, then one every five minutes), so a long seed cannot crowd out the restore's <code>RestoreCompleted</code> or <code>RestoreFailed</code>. The per-database record is <code>status.databaseResults</code></td>
+<td>An all-databases restore's progress summary: how many databases are restored and failed, and the database being seeded with its progress (allocations online, or the last poll's error) and how long it has shown it — <code>3 of 30 database(s) restored, 0 failed; seeding "db03": 0/3 allocations online, unchanged for 40m</code> is a stall. One on the restore's first seed poll, then one every 10 minutes while it seeds: one per restore, not one per database change, so every one reaches the API server whatever the number of databases. From the source <code>neo4j-restore-progress</code>, which has an event budget of its own (client-go: a burst of 25 per source, object and type, then one every five minutes), so the progress cannot crowd out the restore's <code>RestoreCompleted</code> or <code>RestoreFailed</code>. The per-database record is <code>status.databaseResults</code></td>
 </tr>
 <tr>
 <td><code>RestoreShardedDatabasesNotCovered</code></td>
@@ -4638,7 +4638,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>ClusterNotFound</code></td>
 <td>Warning</td>
-<td>Referenced cluster or standalone not found; the database waits in phase <code>Pending</code> and carries on once it exists. Once per wait. A missing deployment is never a validation failure. Also emitted, with the same wait, by <code>Neo4jShardedDatabase</code> (for a cluster), <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jReplicaDatabase</code> and <code>Neo4jPlugin</code> (phase <code>Pending</code>, then installed once its target exists)</td>
+<td>Referenced cluster or standalone not found; the database waits in phase <code>Pending</code> and carries on once it exists. Once per wait. A missing deployment is never a validation failure. Also emitted, with the same wait, by <code>Neo4jShardedDatabase</code> (for a cluster), <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jReplicaDatabase</code> and <code>Neo4jPlugin</code> (phase <code>Pending</code>, then installed once its target exists), <code>Neo4jRestore</code> (phase <code>Pending</code>) and <code>Neo4jBackup</code> (phase <code>Waiting</code>, as a backup waits for a target that is not Ready) — the backup and the restore say "Waiting for target to appear: …". A restore that has already <code>Completed</code> or <code>Failed</code> at its generation is not reopened by its target going away</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>

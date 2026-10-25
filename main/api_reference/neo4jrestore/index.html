@@ -4913,7 +4913,7 @@
 <td><code>backupPath</code></td>
 <td><code>string</code></td>
 <td>conditional</td>
-<td>Specific backup path within the storage location. <strong>Required (non-empty) when <code>type="storage"</code></strong> — the controller fails the restore otherwise; for cluster targets it must be the exact <code>.backup</code> file. On a standalone it may be the directory or the exact <code>.backup</code> file; restoring under a different name from a cloud directory needs the exact file. Not used for <code>type="backup"</code> (resolved from the <code>Neo4jBackup</code>). <strong>On a <code>pvc</code> storage it is relative to the PVC's root</strong> (<code>storage.path</code> is not added): write <code>bk1</code> or <code>bk1/neo4j-2026-10-25T01-00-00.backup</code>, never the mount path. The restore mounts the PVC at <code>/backup</code> (the Job; the seed proxy serves the same root) and adds the <code>/backup/</code> itself, so <code>backupPath: /backup/bk1</code> reads <code>/backup//backup/bk1</code> — <code>backup/bk1</code> on the PVC — and fails unless the PVC has a <code>backup</code> directory at its root. A path that starts with <code>/backup/</code> draws a <code>ValidationWarning</code> saying so. A PVC backup records its directory in this form, in the <code>Neo4jBackup</code>'s <code>status.history[].backupsPath</code>.</td>
+<td>Specific backup path within the storage location. <strong>Required (non-empty) when <code>type="storage"</code></strong> — the controller fails the restore otherwise; for cluster targets it must be the exact <code>.backup</code> file. On a standalone it may be the directory or the exact <code>.backup</code> file; restoring under a different name from a cloud directory needs the exact file. Not used for <code>type="backup"</code> (resolved from the <code>Neo4jBackup</code>). <strong>On a <code>pvc</code> storage it is relative to the PVC's root</strong> (<code>storage.path</code> is not added): write <code>bk1</code> or <code>bk1/neo4j-2026-10-25T01-00-00.backup</code>, never the mount path. The restore mounts the PVC at <code>/backup</code> (the Job; the seed proxy serves the same root) and adds the <code>/backup/</code> itself, so <code>backupPath: /backup/bk1</code> reads <code>/backup//backup/bk1</code> — <code>backup/bk1</code> on the PVC — and fails unless the PVC has a <code>backup</code> directory at its root. A path that starts with <code>/backup/</code> draws a <code>ValidationWarning</code> saying so, and so does a <code>storage.path</code> on a PVC source, which nothing reads. A PVC backup records its directory in this form, in the <code>Neo4jBackup</code>'s <code>status.history[].backupsPath</code>.</td>
 </tr>
 <tr>
 <td><code>sourceDatabase</code></td>
@@ -5286,7 +5286,7 @@
 <td><code>path</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Path within the storage location</td>
+<td>Path within the bucket. Not read for a <code>pvc</code> source, which is read from the PVC's root (<code>ValidationWarning</code> when set)</td>
 </tr>
 <tr>
 <td><code>cloud</code></td>
@@ -5613,7 +5613,7 @@
 <tbody>
 <tr>
 <td><code>Pending</code></td>
-<td>A transient precondition isn't met yet — the target cluster/standalone CR doesn't exist yet, the referenced backup has no Succeeded run, or (online restores) the target's server pods lack the seed credentials or endpoint, or the seed-credentials rollout / seed proxy is still in progress. The controller requeues and retries automatically.</td>
+<td>A transient precondition isn't met yet — the target cluster/standalone CR doesn't exist yet (one <code>ClusterNotFound</code> Warning when the wait starts; a restore already <code>Completed</code> or <code>Failed</code> at its generation stays so when its target goes away), the referenced backup has no Succeeded run, or (online restores) the target's server pods lack the seed credentials or endpoint, or the seed-credentials rollout / seed proxy is still in progress. The controller requeues and retries automatically.</td>
 </tr>
 <tr>
 <td><code>Running</code></td>

@@ -4479,7 +4479,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Database lifecycle</td>
-<td><code>Neo4jDatabase</code> Ready; <code>SHOW DATABASES</code> shows it <code>online</code>. One named with two characters (<code>w3</code>) is in phase <code>ValidationFailed</code>, naming Neo4j's 3–63 rule, and nothing reaches the server</td>
+<td><code>Neo4jDatabase</code> Ready; <code>SHOW DATABASES</code> shows it <code>online</code>. One named with two characters (<code>w3</code>) is in phase <code>ValidationFailed</code>, naming Neo4j's 3–63 rule, and nothing reaches the server; over ten minutes the operator log has <strong>one</strong> info line "Database validation failed" for it and no ERROR (rule 197). A <code>Neo4jBackup</code> and a <code>Neo4jRestore</code> naming an <code>instanceRef</code> that does not exist yet: one <code>ClusterNotFound</code> Warning each ("Waiting for target to appear"), the backup <code>Waiting</code>, the restore <code>Pending</code>; create the target and both carry on (rule 198). A <code>Neo4jBackup</code> with <code>storage.path</code> on a PVC, and a restore with <code>source.storage.path</code> on a PVC, each draw one <code>ValidationWarning</code> that the path has no effect (rule 102)</td>
 </tr>
 <tr>
 <td>Users / Roles / RoleBinding</td>
@@ -4563,7 +4563,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>All-databases restore (standalone)</td>
-<td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>options.replaceExisting: true</code>); confirm both round-trip online, one database per pass, with no Job and no restart, <code>status.databaseResults</code> all <code>Completed</code> (<code>system</code> excluded) and <code>status.completionTime</code> set (#288, rule 108). Events: <strong>one</strong> <code>RestoreStarted</code> naming the databases, none per database; <code>RestoreSeedProgress</code> from the source <code>neo4j-restore-progress</code>; one <code>RestoreCompleted</code>. Repeat without <code>replaceExisting</code>: each existing database is <code>Failed</code> in <code>status.databaseResults</code> with one <code>RestoreDatabaseFailed</code> Warning (source <code>neo4j-restore-progress</code>), and the restore ends with one <code>RestoreFailed</code> (rule 166)</td>
+<td>two user DBs → <code>Neo4jBackup</code> <code>allDatabases: true</code> → mutate both → <code>Neo4jRestore</code> <code>allDatabases: true</code> (<code>options.replaceExisting: true</code>); confirm both round-trip online, one database per pass, with no Job and no restart, <code>status.databaseResults</code> all <code>Completed</code> (<code>system</code> excluded) and <code>status.completionTime</code> set (#288, rule 108). Events: <strong>one</strong> <code>RestoreStarted</code> naming the databases, none per database; <code>RestoreSeedProgress</code> from the source <code>neo4j-restore-progress</code> as one summary per restore ("N of M database(s) restored, … unchanged for …") on the first seed poll and every 10 minutes, none per database change; one <code>RestoreCompleted</code>. Repeat without <code>replaceExisting</code>: each existing database is <code>Failed</code> in <code>status.databaseResults</code> with one <code>RestoreDatabaseFailed</code> Warning (source <code>neo4j-restore-progress</code>), and the restore ends with one <code>RestoreFailed</code> (rule 166)</td>
 </tr>
 <tr>
 <td>Standalone recommended labels</td>
