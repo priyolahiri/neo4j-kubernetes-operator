@@ -140,8 +140,12 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(cd.Spec.ClusterRef))
-		r.setStatus(ctx, cd, neo4jv1beta1.PhasePending, metav1.ConditionFalse,
-			EventReasonClusterNotFound, msg, nil)
+		// A wait, announced once: when it starts, not on every pass until the
+		// deployment exists (operations.md ids 145 and 182).
+		if r.setStatus(ctx, cd, neo4jv1beta1.PhasePending, metav1.ConditionFalse,
+			EventReasonClusterNotFound, msg, nil) {
+			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {

@@ -188,7 +188,7 @@
   {
     "id": "ev-cluster-not-found",
     "name": "ClusterNotFound",
-    "description": "The CR's clusterRef did not resolve to a Neo4jEnterpriseCluster (or, for a Neo4jDatabase, a Neo4jEnterpriseStandalone) in the namespace. The Neo4jDatabase or Neo4jShardedDatabase waits in phase Pending and carries on once it exists (a Neo4jShardedDatabase was Failed before). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "The CR's clusterRef did not resolve to a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (a Neo4jShardedDatabase: a cluster) in the namespace. The resource waits in phase Pending and carries on once it exists: Neo4jDatabase, Neo4jShardedDatabase, Neo4jUser, Neo4jRole, Neo4jRoleBinding, Neo4jAuthRule, Neo4jCompositeDatabase, Neo4jDatabaseAlias, Neo4jReplicaDatabase. A missing deployment is never a validation failure (operations.md id 182). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per wait, not on every retry, nor after an operator restart (id 145).",
     "moduleId": "mod-database"
   },
   {

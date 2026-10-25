@@ -411,7 +411,9 @@
       "internal/validation/cluster_validator.go",
       "internal/validation/upgrade_validator.go",
       "internal/validation/shardeddatabase_validator.go",
-      "internal/validation/storage_validator.go"
+      "internal/validation/storage_validator.go",
+      "internal/validation/deployment_ref.go",
+      "internal/validation/database_validator.go"
     ]
   },
   {

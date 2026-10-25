@@ -162,7 +162,11 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(user.Spec.ClusterRef))
-		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, "")
+		// A wait, announced once: when it starts, not on every pass until the
+		// deployment exists (operations.md ids 145 and 182).
+		if r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, "") {
+			r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {

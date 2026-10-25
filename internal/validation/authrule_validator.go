@@ -45,6 +45,10 @@ func NewAuthRuleValidator(c client.Client) *AuthRuleValidator {
 type AuthRuleValidationResult struct {
 	Errors   field.ErrorList
 	Warnings []string
+	// TargetPending is set when spec.clusterRef names no deployment yet: a
+	// wait the reconciler handles (Pending, one ClusterNotFound event), never
+	// an error (operations.md id 182).
+	TargetPending string
 }
 
 // authRuleNamePattern enforces the same identifier shape as the CRD: ASCII
@@ -184,8 +188,8 @@ func (v *AuthRuleValidator) validateClusterRef(ctx context.Context, rule *neo4jv
 			fmt.Sprintf("could not verify clusterRef %q: %v", rule.Spec.ClusterRef, err))
 		return
 	}
-	result.Errors = append(result.Errors, field.NotFound(path,
-		fmt.Sprintf("no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone named %q in namespace %q", rule.Spec.ClusterRef, rule.Namespace)))
+	// Not there yet: the reconciler waits for it (operations.md id 182).
+	result.TargetPending = DeploymentPending(path, rule.Spec.ClusterRef, rule.Namespace)
 }
 
 // containsBoundedKeyword reports whether s contains kw bounded by a non-word

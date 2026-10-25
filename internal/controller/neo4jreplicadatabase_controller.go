@@ -173,8 +173,12 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 	if !target.Found {
 		withdrawReplicaLag(replica)
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(replica.Spec.ClusterRef))
-		r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
-			EventReasonClusterNotFound, msg, nil)
+		// A wait, announced once: when it starts, not on every pass until the
+		// deployment exists (operations.md ids 145 and 182).
+		if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
+			EventReasonClusterNotFound, msg, nil) {
+			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {

@@ -131,6 +131,7 @@ When `enforcePrivileges: false`, step 3's revoke pass is skipped — adds still 
 | Update | Privilege diff + apply |
 | Delete (`Delete` policy, custom role) | `DROP ROLE name IF EXISTS`, then remove finalizer |
 | Delete (built-in or `Retain`) | Remove finalizer only |
+| Cluster not found | `spec.clusterRef` names no cluster or standalone yet: phase `Pending`, Ready reason `ClusterNotFound`, one `ClusterNotFound` Warning; it carries on once the deployment exists, so it can be applied with its cluster in any order. Not a validation failure |
 | Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition. A `Ready` role stays `Ready` (a target restart announces nothing); any other waits in `Pending`. So does a target that reads `Ready` but refuses the connection (`ClusterUnreachable`, logged at info), for up to 5 minutes |
 | Drop refused | Recorded in status (phase `Failed`, reason `RoleDeletionFailed`) and announced once; the drop is retried for up to 5 minutes, then the finalizer is released and the role is left for an admin to drop |
 

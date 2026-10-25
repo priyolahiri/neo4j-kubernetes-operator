@@ -58,6 +58,8 @@ Before applying a `Neo4jAuthRule`:
 | `ClusterNotReady` | Cluster has not reached its `Ready` phase (reason `ClusterNotReady`), or reads `Ready` but refuses the connection (reason `ClusterUnreachable`; a `ConnectionFailed` failure only after 5 minutes). A rule that is `Ready` keeps phase `Ready` meanwhile (a restart); any other waits in `Pending`. |
 | `PendingDependencies` | One or more `grantedRoles` do not yet exist. |
 
+A `clusterRef` that names no cluster or standalone yet is a wait, not a validation failure: phase `Pending`, Ready reason `ClusterNotFound`, one `ClusterNotFound` Warning, and the rule is applied once the deployment exists.
+
 ## Cypher condition syntax
 
 Conditions are arbitrary Cypher expressions that resolve to a boolean. The most useful primitive is:

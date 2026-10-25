@@ -112,7 +112,11 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(alias.Spec.ClusterRef))
-		r.setStatus(ctx, alias, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, "")
+		// A wait, announced once: when it starts, not on every pass until the
+		// deployment exists (operations.md ids 145 and 182).
+		if r.setStatus(ctx, alias, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, "") {
+			r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {

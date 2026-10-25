@@ -51,6 +51,10 @@ type UserValidationResult struct {
 	// documented apply-order-is-irrelevant convergence — rather than
 	// Failed, mirroring how missing roles are handled (#259).
 	Pending []string
+	// TargetPending is set when spec.clusterRef names no deployment yet: a
+	// wait the reconciler handles (Pending, one ClusterNotFound event), never
+	// an error (operations.md id 182).
+	TargetPending string
 }
 
 // neo4jUsernamePattern enforces Neo4j's username rules: ASCII letter
@@ -260,8 +264,8 @@ func (v *UserValidator) validateClusterRef(ctx context.Context, user *neo4jv1bet
 			fmt.Sprintf("could not verify clusterRef %q: %v", user.Spec.ClusterRef, err))
 		return
 	}
-	result.Errors = append(result.Errors, field.NotFound(clusterRefPath,
-		fmt.Sprintf("no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone named %q in namespace %q", user.Spec.ClusterRef, user.Namespace)))
+	// Not there yet: the reconciler waits for it (operations.md id 182).
+	result.TargetPending = DeploymentPending(clusterRefPath, user.Spec.ClusterRef, user.Namespace)
 }
 
 func validateUsername(name string, path *field.Path) field.ErrorList {

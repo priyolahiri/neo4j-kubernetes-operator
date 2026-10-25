@@ -572,10 +572,11 @@
     "name": "Reconcile Neo4jDatabase",
     "serverUnitId": "su-neo4jdatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec inline, resolves the target host, checks readiness, projects seed credentials if needed, and ensures the database exists. A host that is missing, or that lacks the seed credentials Secret, is phase Pending; ClusterNotFound, SeedCredsMissing, CreationFailed and DataImportFailed are emitted only when the status write that records them changed something (knowledge operations.md id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.ifNotExists and spec.wait: false into true (operations.md id 150).",
+    "description": "Main reconcile loop: validates the spec inline, resolves the target host, checks readiness, projects seed credentials if needed, and ensures the database exists. A host that is missing, or that lacks the seed credentials Secret, is phase Pending; ClusterNotFound, SeedCredsMissing, CreationFailed and DataImportFailed are emitted only when the status write that records them changed something (knowledge operations.md id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.ifNotExists and spec.wait: false into true (operations.md id 150). A host that does not exist yet is reached as the ClusterNotFound wait (Pending, one Warning): the DatabaseValidator reports it as TargetPending, not as an error (operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
+      "sf-validate-database",
       "sf-create-database",
       "sf-drop-database",
       "sf-import-initial-data",
@@ -682,7 +683,7 @@
     "name": "Reconcile Neo4jDatabaseAlias",
     "serverUnitId": "su-neo4jdatabasealias",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec inline, resolves clusterRef, waits for the target database to exist, then compares the live alias (if any) against spec.targetDatabase. Database and alias names are matched ignoring case, as Neo4j stores them lower-cased (knowledge operations.md id 146). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150).",
+    "description": "Main reconcile loop: validates the spec inline, resolves clusterRef, waits for the target database to exist, then compares the live alias (if any) against spec.targetDatabase. Database and alias names are matched ignoring case, as Neo4j stores them lower-cased (knowledge operations.md id 146). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). A clusterRef that names no cluster or standalone yet is phase Pending, Ready reason ClusterNotFound, with one ClusterNotFound Warning from the status write that enters the wait; the object carries on once the deployment exists (the requeue, or its creation enqueuing dependents). The validator no longer refuses the missing deployment first (knowledge operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -696,7 +697,8 @@
       "ev-validation-failed",
       "ev-connection-failed",
       "ev-alias-ready",
-      "ev-alias-failed"
+      "ev-alias-failed",
+      "ev-cluster-not-found"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-database"
@@ -859,7 +861,7 @@
     "name": "Reconcile Neo4jReplicaDatabase",
     "serverUnitId": "su-neo4jreplicadatabase",
     "operation": "business_action",
-    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type (GetDatabaseInfo, which matches the name ignoring case) before dispatching on source.mode to create (backup or network), reporting, or terminally marking it promoted. While the database is still a replica it publishes the lag SHOW DATABASES reports (a transaction count) as neo4j_operator_replica_lag_transactions{namespace,cluster_name,replica,database,k8s_cluster}, and removes that series whenever it cannot vouch for it: when the CR is deleted, found gone, or promoted, when the database has vanished from the server, and when the downstream cluster is missing, not Ready or too old for replicas, the Neo4j client cannot connect, the database lookup fails, or the spec fails validation. The next successful observation sets the gauge again. The Neo4j client is obtained through an injectable factory (replicaNeo4jClient) so these branches are testable without a Bolt server. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150).",
+    "description": "Main reconcile loop: validates the spec, resolves clusterRef, checks the version gate for cross-cluster replicas, then OBSERVES the live database's type (GetDatabaseInfo, which matches the name ignoring case) before dispatching on source.mode to create (backup or network), reporting, or terminally marking it promoted. While the database is still a replica it publishes the lag SHOW DATABASES reports (a transaction count) as neo4j_operator_replica_lag_transactions{namespace,cluster_name,replica,database,k8s_cluster}, and removes that series whenever it cannot vouch for it: when the CR is deleted, found gone, or promoted, when the database has vanished from the server, and when the downstream cluster is missing, not Ready or too old for replicas, the Neo4j client cannot connect, the database lookup fails, or the spec fails validation. The next successful observation sets the gauge again. The Neo4j client is obtained through an injectable factory (replicaNeo4jClient) so these branches are testable without a Bolt server. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). A clusterRef that names no cluster or standalone yet is phase Pending, Ready reason ClusterNotFound, with one ClusterNotFound Warning from the status write that enters the wait; the object carries on once the deployment exists (the requeue, or its creation enqueuing dependents). The validator no longer refuses the missing deployment first (knowledge operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -876,7 +878,8 @@
       "ev-validation-failed",
       "ev-replica-version-too-old",
       "ev-connection-failed",
-      "ev-replica-failed"
+      "ev-replica-failed",
+      "ev-cluster-not-found"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-database"
@@ -1205,7 +1208,7 @@
     "name": "Reconcile Neo4jUser",
     "serverUnitId": "su-neo4juser",
     "operation": "business_action",
-    "description": "Drives a Neo4jUser to its desired state each loop: validates the spec (routing a not-yet-applied password Secret to Pending, not Failed), resolves the clusterRef target, creates or ALTERs the Neo4j user over Bolt (the home database compared with SHOW USERS ignoring case), diffs granted vs. desired roles and issues GRANT/REVOKE ROLE, then records RolesSynced/PasswordSynced conditions and the Ready phase. A desired role counts as existing when it is built in, granted, a Neo4jRole CR or listed by SHOW ROLES (a role created in Neo4j directly), so such a role is granted (missingRoles; operations.md id 17). While the target is not Ready a Ready user stays Ready with ClusterNotReady=True (waitForTarget), and UserReady is announced from the write that enters Ready (operations.md id 158). A retried DROP USER on deletion is written to status and announced once (id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). CR names in spec.roles that resolve to another Neo4j role name are recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when that mapping appears or changes (operations.md id 136). Its Neo4j calls go through the userNeo4jClient seam, which tests script. A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172). The password's change token is recorded by a status write right after the statement that applied it (passwordApplied), which announces PasswordRotated, so a pass a failing grant stops does not send the same ALTER again (operations.md id 15).",
+    "description": "Drives a Neo4jUser to its desired state each loop: validates the spec (routing a not-yet-applied password Secret to Pending, not Failed), resolves the clusterRef target, creates or ALTERs the Neo4j user over Bolt (the home database compared with SHOW USERS ignoring case), diffs granted vs. desired roles and issues GRANT/REVOKE ROLE, then records RolesSynced/PasswordSynced conditions and the Ready phase. A desired role counts as existing when it is built in, granted, a Neo4jRole CR or listed by SHOW ROLES (a role created in Neo4j directly), so such a role is granted (missingRoles; operations.md id 17). While the target is not Ready a Ready user stays Ready with ClusterNotReady=True (waitForTarget), and UserReady is announced from the write that enters Ready (operations.md id 158). A retried DROP USER on deletion is written to status and announced once (id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). CR names in spec.roles that resolve to another Neo4j role name are recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when that mapping appears or changes (operations.md id 136). Its Neo4j calls go through the userNeo4jClient seam, which tests script. A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172). The password's change token is recorded by a status write right after the statement that applied it (passwordApplied), which announces PasswordRotated, so a pass a failing grant stops does not send the same ALTER again (operations.md id 15). A clusterRef that names no cluster or standalone yet is phase Pending, Ready reason ClusterNotFound, with one ClusterNotFound Warning from the status write that enters the wait; the object carries on once the deployment exists (the requeue, or its creation enqueuing dependents). The validator no longer refuses the missing deployment first (knowledge operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1227,7 +1230,8 @@
       "ev-roles-granted",
       "ev-roles-revoked",
       "ev-roles-resolved",
-      "ev-role-pending"
+      "ev-role-pending",
+      "ev-cluster-not-found"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-security"
@@ -1237,7 +1241,7 @@
     "name": "Reconcile Neo4jRole",
     "serverUnitId": "su-neo4jrole",
     "operation": "business_action",
-    "description": "Drives a Neo4jRole to its desired state each loop: validates the spec, creates the role if absent (refusing built-ins without adoptBuiltin), normalises spec.privileges to Neo4j's stored rendering (sf-normalise-role-privileges) and diffs that against live SHOW ROLE PRIVILEGES AS COMMANDS output, applies missing GRANT/DENY statements verbatim, and derives REVOKE statements textually for privileges no longer desired (never revoking immutable ones). Before applying, it resolves each missing grant's database names against SHOW DATABASES and aliases (case-insensitively) and skips grants naming a database that does not exist, reporting them via PrivilegesResolve=False instead of failing the reconcile; they apply once the database exists. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforcePrivileges: false into true, so privileges added outside the spec were revoked (operations.md id 150). While the target is not Ready a Ready role stays Ready with ClusterNotReady=True (waitForTarget), and RoleReady is announced from the write that enters Ready (reportReady; operations.md id 158). A missing built-in role, and a learn-mode status write the API server will not keep, are retried on the fixed interval, not left unrequeued or to error backoff (operations.md id 95). A retried DROP ROLE on deletion is written to status and announced once (id 145). Database names in its warnings are de-duplicated ignoring case (distinctPrivilegeTargets; id 146). A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172).",
+    "description": "Drives a Neo4jRole to its desired state each loop: validates the spec, creates the role if absent (refusing built-ins without adoptBuiltin), normalises spec.privileges to Neo4j's stored rendering (sf-normalise-role-privileges) and diffs that against live SHOW ROLE PRIVILEGES AS COMMANDS output, applies missing GRANT/DENY statements verbatim, and derives REVOKE statements textually for privileges no longer desired (never revoking immutable ones). Before applying, it resolves each missing grant's database names against SHOW DATABASES and aliases (case-insensitively) and skips grants naming a database that does not exist, reporting them via PrivilegesResolve=False instead of failing the reconcile; they apply once the database exists. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforcePrivileges: false into true, so privileges added outside the spec were revoked (operations.md id 150). While the target is not Ready a Ready role stays Ready with ClusterNotReady=True (waitForTarget), and RoleReady is announced from the write that enters Ready (reportReady; operations.md id 158). A missing built-in role, and a learn-mode status write the API server will not keep, are retried on the fixed interval, not left unrequeued or to error backoff (operations.md id 95). A retried DROP ROLE on deletion is written to status and announced once (id 145). Database names in its warnings are de-duplicated ignoring case (distinctPrivilegeTargets; id 146). A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172). A clusterRef that names no cluster or standalone yet is phase Pending, Ready reason ClusterNotFound, with one ClusterNotFound Warning from the status write that enters the wait; the object carries on once the deployment exists (the requeue, or its creation enqueuing dependents). The validator no longer refuses the missing deployment first (knowledge operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1258,7 +1262,8 @@
       "ev-role-sync-failed",
       "ev-privileges-applied",
       "ev-privileges-drift-kept",
-      "ev-privilege-unknown-database"
+      "ev-privilege-unknown-database",
+      "ev-cluster-not-found"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-security"
@@ -1284,7 +1289,7 @@
     "name": "Reconcile Neo4jRoleBinding",
     "serverUnitId": "su-neo4jrolebinding",
     "operation": "business_action",
-    "description": "Drives a Neo4jRoleBinding to its desired state each loop: verifies the target Neo4j user already exists (bindings never create/drop users), resolves Neo4jRole CR names to Neo4j role names, and diffs/grants/revokes role membership — non-exclusive by default, but always revoking roles this binding previously granted that were removed from spec.roles. A role created in Neo4j directly (SHOW ROLES) counts as existing and is granted (missingRoles; operations.md id 17). While the target is not Ready a Ready binding stays Ready with ClusterNotReady=True, and BindingCreated / BindingUpdated are announced from the write that records the change (operations.md id 158). A retried revoke on deletion is written to status and announced once (id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). The resolved CR-name mapping is recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when it appears or changes (operations.md id 136). Its Neo4j calls go through the roleBindingNeo4jClient seam, which tests script. A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172).",
+    "description": "Drives a Neo4jRoleBinding to its desired state each loop: verifies the target Neo4j user already exists (bindings never create/drop users), resolves Neo4jRole CR names to Neo4j role names, and diffs/grants/revokes role membership — non-exclusive by default, but always revoking roles this binding previously granted that were removed from spec.roles. A role created in Neo4j directly (SHOW ROLES) counts as existing and is granted (missingRoles; operations.md id 17). While the target is not Ready a Ready binding stays Ready with ClusterNotReady=True, and BindingCreated / BindingUpdated are announced from the write that records the change (operations.md id 158). A retried revoke on deletion is written to status and announced once (id 145). The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it (operations.md id 150). The resolved CR-name mapping is recorded in the RoleNamesResolved condition (reportResolvedRoles), and RolesResolved is emitted only when it appears or changes (operations.md id 136). Its Neo4j calls go through the roleBindingNeo4jClient seam, which tests script. A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172). A clusterRef that names no cluster or standalone yet is phase Pending, Ready reason ClusterNotFound, with one ClusterNotFound Warning from the status write that enters the wait; the object carries on once the deployment exists (the requeue, or its creation enqueuing dependents). The validator no longer refuses the missing deployment first (knowledge operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1301,7 +1306,8 @@
       "ev-roles-granted",
       "ev-roles-revoked",
       "ev-roles-resolved",
-      "ev-role-pending"
+      "ev-role-pending",
+      "ev-cluster-not-found"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-security"
@@ -1311,7 +1317,7 @@
     "name": "Reconcile Neo4jAuthRule",
     "serverUnitId": "su-neo4jauthrule",
     "operation": "business_action",
-    "description": "Drives a Neo4jAuthRule to its desired state each loop: gates on the cluster running Neo4j 2026.03+ and configuring an OIDC authorization provider, then CREATE OR REPLACEs the rule's condition/enabled flag (which clears prior grants) and re-grants the desired role set via GRANT/REVOKE ROLES ... TO/FROM AUTH RULE. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforceRoles: false into true (operations.md id 150). While the target is not Ready a Ready rule stays Ready with ClusterNotReady=True (operations.md id 158), and a retried DROP AUTH RULE on deletion is written to status and announced once (id 145). A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172).",
+    "description": "Drives a Neo4jAuthRule to its desired state each loop: gates on the cluster running Neo4j 2026.03+ and configuring an OIDC authorization provider, then CREATE OR REPLACEs the rule's condition/enabled flag (which clears prior grants) and re-grants the desired role set via GRANT/REVOKE ROLES ... TO/FROM AUTH RULE. The finalizer is added and released as a merge patch of metadata.finalizers, never an Update, which sent the whole object back as the Go types encode it and turned spec.enforceRoles: false into true (operations.md id 150). While the target is not Ready a Ready rule stays Ready with ClusterNotReady=True (operations.md id 158), and a retried DROP AUTH RULE on deletion is written to status and announced once (id 145). A connection failure to a target that reads Ready but cannot be reached — at connect or mid-pass — is the rest of the target's outage: the same wait with reason ClusterUnreachable, logged at info, retried on the fixed interval without an error, reported as ConnectionFailed only after 5 minutes (unreachable; operations.md id 172). A clusterRef that names no cluster or standalone yet is phase Pending, Ready reason ClusterNotFound, with one ClusterNotFound Warning from the status write that enters the wait; the object carries on once the deployment exists (the requeue, or its creation enqueuing dependents). The validator no longer refuses the missing deployment first (knowledge operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -1330,7 +1336,8 @@
       "ev-oidc-provider-not-configured",
       "ev-roles-granted",
       "ev-roles-revoked",
-      "ev-role-pending"
+      "ev-role-pending",
+      "ev-cluster-not-found"
     ],
     "subscribesEventIds": [],
     "moduleId": "mod-security"
@@ -1522,7 +1529,7 @@
     "name": "Validate Neo4jUser spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "UserValidator.Validate enforces the Neo4j username shape/length, requires at least one auth provider (passwordSecretRef or externalAuth), rejects the reserved 'system' username and the 'native' externalAuth provider, WARNS (without rejecting) when the username is the default bootstrap admin 'neo4j' because managing it rewrites the credential the operator itself authenticates with, and reports a not-yet-applied password Secret as a transient Pending gap rather than a Failed error (internal/validation/user_validator.go).",
+    "description": "UserValidator.Validate enforces the Neo4j username shape/length, requires at least one auth provider (passwordSecretRef or externalAuth), rejects the reserved 'system' username and the 'native' externalAuth provider, WARNS (without rejecting) when the username is the default bootstrap admin 'neo4j' because managing it rewrites the credential the operator itself authenticates with, and reports a not-yet-applied password Secret as a transient Pending gap rather than a Failed error (internal/validation/user_validator.go). A clusterRef that names no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone yet is TargetPending (validation.DeploymentPending), never an error, and every other rule still runs; a read that fails otherwise is a warning (internal/validation/deployment_ref.go; operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1535,7 +1542,7 @@
     "name": "Validate Neo4jRole spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "RoleValidator.Validate enforces the Neo4j role-name pattern, requires spec.adoptBuiltin=true to manage a built-in role name, requires every spec.privileges entry to start with GRANT/DENY and end with `TO <this role>`, and rejects property-based-access-control privileges that target a Neo4jShardedDatabase (internal/validation/role_validator.go).",
+    "description": "RoleValidator.Validate enforces the Neo4j role-name pattern, requires spec.adoptBuiltin=true to manage a built-in role name, requires every spec.privileges entry to start with GRANT/DENY and end with `TO <this role>`, and rejects property-based-access-control privileges that target a Neo4jShardedDatabase (internal/validation/role_validator.go). A clusterRef that names no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone yet is TargetPending (validation.DeploymentPending), never an error, and every other rule still runs; a read that fails otherwise is a warning (internal/validation/deployment_ref.go; operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1548,7 +1555,7 @@
     "name": "Validate Neo4jRoleBinding spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "RoleBindingValidator.Validate enforces the shared username shape check, requires spec.roles to be non-empty with no blank entries, and warns (never errors) when PUBLIC is listed since it is implicit and always ignored (internal/validation/rolebinding_validator.go).",
+    "description": "RoleBindingValidator.Validate enforces the shared username shape check, requires spec.roles to be non-empty with no blank entries, and warns (never errors) when PUBLIC is listed since it is implicit and always ignored (internal/validation/rolebinding_validator.go). A clusterRef that names no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone yet is TargetPending (validation.DeploymentPending), never an error, and every other rule still runs; a read that fails otherwise is a warning (internal/validation/deployment_ref.go; operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -1561,7 +1568,7 @@
     "name": "Validate Neo4jAuthRule spec",
     "serverUnitId": "su-validation",
     "operation": "business_action",
-    "description": "AuthRuleValidator.Validate enforces the auth-rule name pattern, requires spec.condition to be a pure expression free of DDL keywords (CREATE/DROP/ALTER/GRANT/DENY/REVOKE/SHOW/RENAME/semicolon) to block Cypher injection, and requires at least one entry in spec.grantedRoles (internal/validation/authrule_validator.go).",
+    "description": "AuthRuleValidator.Validate enforces the auth-rule name pattern, requires spec.condition to be a pure expression free of DDL keywords (CREATE/DROP/ALTER/GRANT/DENY/REVOKE/SHOW/RENAME/semicolon) to block Cypher injection, and requires at least one entry in spec.grantedRoles (internal/validation/authrule_validator.go). A clusterRef that names no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone yet is TargetPending (validation.DeploymentPending), never an error, and every other rule still runs; a read that fails otherwise is a warning (internal/validation/deployment_ref.go; operations.md id 182).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -2131,7 +2138,7 @@
     "name": "CLI Validate",
     "serverUnitId": "su-kubectl-neo4j",
     "operation": "read",
-    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. A Neo4jEnterpriseCluster runs the same ApplyDefaults and ValidateWithWarnings the operator runs on every pass, the defaults applied only to the copy it validates (a tls block without a mode is held to the cert-manager rules, as the API server stores it, and an authorization provider list is judged as written; operations.md id 150); a Neo4jEnterpriseStandalone runs the operator's StandaloneValidator.Validate (no defaults of the operator's own). Before any kind's validator runs, every default its CRD declares is applied to the document, as the API server stores it (withSchemaDefaults over the CRDs embedded from config/crd/bases, with the API server's structural defaulting; operations.md id 150): a standalone's tls: {} is judged as cert-manager and needs an issuerRef, a bool the CRD defaults to true reads true. For both, offline it drops any status in the manifest and its summary says the image-tag rule needs --connect; with --connect it copies in the live deployment's status, so a downgrade below the version it runs is refused (status.version, and for a tag without a patch status.runningVersion and status.upgradeStatus.resolvedTargetVersion, operations.md id 153), and one it cannot read is a warning. Each validator reports every error it finds, Neo4jShardedDatabase's included: its errors keep their own field paths, a clusterRef that names no cluster yet is Pending (as the operator waits for it), and a cluster it cannot read is a warning that the rules needing it were not checked (operations.md ids 144, 145). Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names. With --connect a Neo4jBackup's spec.shardedDatabase is resolved through ResolveBackupShardedDatabase, the function the backup controller's sharded preflight calls: a name that is no Neo4jShardedDatabase CR (naming the CR when it is that CR's logical name) or a CR on another cluster is an error, as the operator fails the backup for it (operations.md id 116). A Neo4jPlugin is held to the names the Neo4j entrypoint installs (operations.md id 170): with --connect its target is resolved as the plugin controller resolves it (PluginTargetImageTag: cluster first, then standalone) and a Managed plugin's NEO4J_PLUGINS name the target's image does not list is the operator's own error (ManagedPluginImageErrors); with no target, or one it cannot read, it says so and applies the offline rule. Offline it warns about a name no supported release installs and about n10s, which runs in Managed mode on 5.26.0–5.26.21 only (ManagedPluginNameWarnings), and its summary says the image check needs --connect; the compatibility-matrix warning is left out for a Managed name no supported image installs, which printed a second warning for graphql (managedNameUnknownToEveryImage).",
+    "description": "Runs the operator's own validators (internal/validation) over manifest files before they are applied, offline for the 21 validators that never touch the client and connected for the cross-reference ones. A Neo4jEnterpriseCluster runs the same ApplyDefaults and ValidateWithWarnings the operator runs on every pass, the defaults applied only to the copy it validates (a tls block without a mode is held to the cert-manager rules, as the API server stores it, and an authorization provider list is judged as written; operations.md id 150); a Neo4jEnterpriseStandalone runs the operator's StandaloneValidator.Validate (no defaults of the operator's own). Before any kind's validator runs, every default its CRD declares is applied to the document, as the API server stores it (withSchemaDefaults over the CRDs embedded from config/crd/bases, with the API server's structural defaulting; operations.md id 150): a standalone's tls: {} is judged as cert-manager and needs an issuerRef, a bool the CRD defaults to true reads true. For both, offline it drops any status in the manifest and its summary says the image-tag rule needs --connect; with --connect it copies in the live deployment's status, so a downgrade below the version it runs is refused (status.version, and for a tag without a patch status.runningVersion and status.upgradeStatus.resolvedTargetVersion, operations.md id 153), and one it cannot read is a warning. Each validator reports every error it finds, Neo4jShardedDatabase's included: its errors keep their own field paths, a clusterRef that names no cluster yet is Pending (as the operator waits for it), and a cluster it cannot read is a warning that the rules needing it were not checked (operations.md ids 144, 145). Distinguishes errors, warnings and Pending, prints the ruleset version it carries, and warns on skew against the operator running in the cluster. It also reports every key a kind has no field for, with its full path, by walking the document against the type's json tags, descending into lists of objects and reporting the item index (spec.topology.serverRoles[0].modeContraint) — open maps (spec.config, driverSettings), metadata and status are skipped, since their keys are data rather than field names. With --connect a Neo4jBackup's spec.shardedDatabase is resolved through ResolveBackupShardedDatabase, the function the backup controller's sharded preflight calls: a name that is no Neo4jShardedDatabase CR (naming the CR when it is that CR's logical name) or a CR on another cluster is an error, as the operator fails the backup for it (operations.md id 116). A Neo4jPlugin is held to the names the Neo4j entrypoint installs (operations.md id 170): with --connect its target is resolved as the plugin controller resolves it (PluginTargetImageTag: cluster first, then standalone) and a Managed plugin's NEO4J_PLUGINS name the target's image does not list is the operator's own error (ManagedPluginImageErrors); with no target, or one it cannot read, it says so and applies the offline rule. Offline it warns about a name no supported release installs and about n10s, which runs in Managed mode on 5.26.0–5.26.21 only (ManagedPluginNameWarnings), and its summary says the image check needs --connect; the compatibility-matrix warning is left out for a Managed name no supported image installs, which printed a second warning for graphql (managedNameUnknownToEveryImage). Connected, a deployment that does not exist yet is pending on every kind that names one (the five validators' TargetPending, the sharded database's Pending, and deploymentRefFindings for the alias, composite, replica, backup instanceRef and plugin), never an error (id 182). A cluster's or standalone's spec.storage.className is compared with the data volumes it has, found as the operator's storage pass finds them, and gives the operator's advisory warning before the apply (id 102). The version-skew warning compares with the operator that runs: a Deployment with available replicas, of several on different releases the one whose pod holds its leader-election Lease, and says it cannot tell otherwise (id 188).",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [
@@ -2140,7 +2147,8 @@
       "sf-validate-standalone",
       "sf-resolve-backup-sharded-database",
       "sf-validate-sharded-database",
-      "sf-plugin-refuse-unknown-name"
+      "sf-plugin-refuse-unknown-name",
+      "sf-validate-database"
     ],
     "emitsEventIds": [],
     "subscribesEventIds": [],
@@ -2372,7 +2380,7 @@
     "name": "Warn On An Unapplied StorageClass",
     "serverUnitId": "su-storage-expansion",
     "operation": "business_action",
-    "description": "recordStorageClassChange, on every storage pass of a cluster and a standalone: lists the data PVCs and, while spec.storage.className names a StorageClass some of them do not use, raises an advisory ValidationWarning naming each volume and its class (validation.StorageClassChangeWarning). A volume keeps the class it was created with and the StatefulSet's claim template cannot change, so an edit of className reaches no existing volume. An empty className (the cluster default) and a deployment without volumes say nothing; the warning is recorded in its own advisoryWarnings scope, apart from the validator's ValidationWarning set (internal/controller/storage_class_change.go; operations.md id 102).",
+    "description": "recordStorageClassChange, on every storage pass of a cluster and a standalone: lists the data PVCs and, while spec.storage.className names a StorageClass some of them do not use, raises an advisory ValidationWarning naming each volume and its class (validation.StorageClassChangeWarning). A volume keeps the class it was created with and the StatefulSet's claim template cannot change, so an edit of className reaches no existing volume. An empty className (the cluster default) and a deployment without volumes say nothing; the warning is recorded in its own advisoryWarnings scope, apart from the validator's ValidationWarning set (internal/controller/storage_class_change.go; operations.md id 102). The volumes are found by ClusterDataVolumeClasses / StandaloneDataVolumeClasses, which `kubectl neo4j validate --connect` calls too.",
     "readsFieldIds": [],
     "writesFieldIds": [],
     "callsFunctionIds": [],
@@ -2560,5 +2568,18 @@
     "emitsEventIds": [],
     "subscribesEventIds": [],
     "moduleId": "mod-cluster"
+  },
+  {
+    "id": "sf-validate-database",
+    "name": "Validate Neo4jDatabase spec",
+    "serverUnitId": "su-validation",
+    "operation": "business_action",
+    "description": "DatabaseValidator.Validate: the name rules, the no-effect warnings, then the host named by spec.clusterRef (cluster, else standalone) for the rules that need it — topology against its servers, the Cypher language and seed restoreUntil against its image. A host that does not exist yet is TargetPending, never an error, and the rules of the spec alone still run (seed URI, options, conflicts; a topology held to non-negative counts); before #566 it was a spec.clusterRef error that returned at once (internal/validation/database_validator.go; operations.md id 182).",
+    "readsFieldIds": [],
+    "writesFieldIds": [],
+    "callsFunctionIds": [],
+    "emitsEventIds": [],
+    "subscribesEventIds": [],
+    "moduleId": "mod-platform"
   }
 ]

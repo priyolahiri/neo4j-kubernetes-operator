@@ -158,7 +158,11 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("clusterRef %q not found", rule.Spec.ClusterRef)
-		r.setStatus(ctx, rule, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, nil)
+		// A wait, announced once: when it starts, not on every pass until the
+		// deployment exists (operations.md ids 145 and 182).
+		if r.setStatus(ctx, rule, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, nil) {
+			r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {

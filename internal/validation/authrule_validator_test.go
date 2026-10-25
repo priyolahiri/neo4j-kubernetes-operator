@@ -163,14 +163,12 @@ func TestAuthRuleValidator_ClusterRefMissing(t *testing.T) {
 		},
 	}
 	res := v.Validate(context.Background(), rule)
-	found := false
-	for _, e := range res.Errors {
-		if strings.Contains(e.Error(), "missing") {
-			found = true
-		}
+	// A deployment not there yet is a wait, not an error (operations.md id 182).
+	if len(res.Errors) != 0 {
+		t.Fatalf("a missing clusterRef must not be an error, got %v", res.Errors)
 	}
-	if !found {
-		t.Fatalf("expected an error about the missing clusterRef, got %v", res.Errors)
+	if !strings.Contains(res.TargetPending, `"missing"`) {
+		t.Fatalf("expected the missing clusterRef as pending, got %q", res.TargetPending)
 	}
 }
 

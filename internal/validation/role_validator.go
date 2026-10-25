@@ -46,6 +46,10 @@ func NewRoleValidator(c client.Client) *RoleValidator {
 type RoleValidationResult struct {
 	Errors   field.ErrorList
 	Warnings []string
+	// TargetPending is set when spec.clusterRef names no deployment yet: a
+	// wait the reconciler handles (Pending, one ClusterNotFound event), never
+	// an error (operations.md id 182).
+	TargetPending string
 }
 
 // neo4jRoleNamePattern enforces Neo4j's role-name rules: ASCII letter
@@ -175,8 +179,8 @@ func (v *RoleValidator) validateClusterRef(ctx context.Context, role *neo4jv1bet
 			fmt.Sprintf("could not verify clusterRef %q: %v", role.Spec.ClusterRef, err))
 		return
 	}
-	result.Errors = append(result.Errors, field.NotFound(clusterRefPath,
-		fmt.Sprintf("no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone named %q in namespace %q", role.Spec.ClusterRef, role.Namespace)))
+	// Not there yet: the reconciler waits for it (operations.md id 182).
+	result.TargetPending = DeploymentPending(clusterRefPath, role.Spec.ClusterRef, role.Namespace)
 }
 
 // validatePBACSharded rejects privileges that combine a `FOR pattern WHERE …`
