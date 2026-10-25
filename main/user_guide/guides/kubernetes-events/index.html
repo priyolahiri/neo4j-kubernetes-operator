@@ -4695,7 +4695,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>PluginUnknownToImage</code></td>
 <td>Warning</td>
-<td>A <code>Managed</code> plugin's <code>NEO4J_PLUGINS</code> name — its own or a dependency's — is not one the image of its target installs (<code>graphql</code> on every supported release, <code>n10s</code> on CalVer from 2025.05, a custom JAR's name): the entrypoint would exit on it. Phase <code>Failed</code>, nothing written, and what an earlier operator wrote of it taken off the target. Once, and again only when the refusal changes (the target's image did)</td>
+<td>A <code>Managed</code> plugin's <code>NEO4J_PLUGINS</code> name — its own or a dependency's — is not one the image of its target installs (<code>graphql</code> on every supported release, <code>n10s</code> on CalVer from 2025.05, a custom JAR's name): the entrypoint would exit on it. Also a name whose JAR the image does not run: <code>n10s</code> from 5.26.22 (the neosemantics 5.26.0 JAR stops the server on Jackson) and on CalVer 2025.01 – 2025.04 (no JAR to download). Phase <code>Failed</code>, nothing written, and what an earlier operator wrote of it taken off the target. Once, and again only when the refusal changes (the target's image did)</td>
 </tr>
 <tr>
 <td><code>PluginDisabled</code></td>
