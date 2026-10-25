@@ -798,10 +798,12 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 				Namespace: namespace.Name,
 			}, currentPlugin)
 			Expect(err).NotTo(HaveOccurred())
-			// The plugin waits for a functional StatefulSet first and, once the
-			// cluster has one, until it is Ready with every server available;
-			// which of the two this read catches depends on timing.
+			// The plugin waits for the cluster's StatefulSet to be created (rule
+			// 177), then for it to be functional and, once it is, until the
+			// cluster is Ready with every server available; which of the three
+			// this read catches depends on timing.
 			Expect(currentPlugin.Status.Message).To(SatisfyAny(
+				Equal("Waiting for StatefulSet "+clusterName+"-server of Neo4jEnterpriseCluster "+clusterName+" to be created"),
 				MatchRegexp(`^Waiting for cluster `+clusterName+` to be functional$`),
 				HavePrefix("Waiting until Neo4jEnterpriseCluster "+clusterName+" is Ready with every server available"),
 			))
