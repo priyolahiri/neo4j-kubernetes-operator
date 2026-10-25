@@ -270,12 +270,12 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 
 	nc, err := r.connectForDeletion(target)
 	if err != nil {
-		return cleanup.blocked(ctx, connectFailedCause(alias.Spec.ClusterRef, err))
+		return cleanup.failed(ctx, connectFailedCause(alias.Spec.ClusterRef, err), err)
 	}
 	defer func() { _ = nc.Close() }()
 
 	if err := nc.DropAliasIfExists(ctx, aliasName); err != nil {
-		return cleanup.blocked(ctx, statementFailedCause(alias.Spec.ClusterRef, "DROP ALIAS", err))
+		return cleanup.failed(ctx, statementFailedCause(alias.Spec.ClusterRef, "DROP ALIAS", err), err)
 	}
 
 	r.Recorder.Eventf(alias, corev1.EventTypeNormal, EventReasonAliasDropped, "Alias %q dropped", aliasName)

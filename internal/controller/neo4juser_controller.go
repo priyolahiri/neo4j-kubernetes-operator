@@ -68,6 +68,10 @@ type Neo4jUserReconciler struct {
 	// newNeo4jClient connects to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests script the server here.
 	newNeo4jClient func(ResolvedTarget) (userNeo4jClient, error)
+
+	// transients is the quiet retry of a statement Neo4j asks to be
+	// retried (transient_retry.go).
+	transients transientStreaks
 }
 
 // userNeo4jClient is what the Neo4jUser reconciler asks of Neo4j.
@@ -426,12 +430,12 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 
 	nc, err := r.connect(target)
 	if err != nil {
-		return cleanup.blocked(ctx, connectFailedCause(user.Spec.ClusterRef, err))
+		return cleanup.failed(ctx, connectFailedCause(user.Spec.ClusterRef, err), err)
 	}
 	defer func() { _ = nc.Close() }()
 
 	if err := nc.DropUserIfExists(ctx, username); err != nil {
-		return cleanup.blocked(ctx, statementFailedCause(user.Spec.ClusterRef, "DROP USER", err))
+		return cleanup.failed(ctx, statementFailedCause(user.Spec.ClusterRef, "DROP USER", err), err)
 	}
 	r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserDeleted, "User %q dropped", username)
 	return ctrl.Result{}, release()
@@ -613,6 +617,12 @@ func (r *Neo4jUserReconciler) fail(ctx context.Context, user *neo4jv1beta1.Neo4j
 		// The target went away mid-pass: an outage, not this user's failure
 		// (knowledge rule 172).
 		return r.unreachable(ctx, user, err, requeue)
+	}
+	// A transient Neo4j asks to be retried — a deadlock with another write,
+	// a leader switch — is retried quietly while it lasts no longer than
+	// such errors do (knowledge rule 164).
+	if r.transients.quiet(ctx, user, label, err) {
+		return ctrl.Result{RequeueAfter: transientRetry}, nil
 	}
 	msg := label
 	if err != nil {

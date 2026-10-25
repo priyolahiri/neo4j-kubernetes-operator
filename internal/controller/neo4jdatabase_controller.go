@@ -407,7 +407,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 		// database. Releasing the finalizer here ("assume the database is
 		// already gone") left it, and its data, in Neo4j. The deletion waits,
 		// bounded, as every other cleanup (knowledge rule 178).
-		return cleanup.blocked(ctx, connectFailedCause(database.Spec.ClusterRef, err))
+		return cleanup.failed(ctx, connectFailedCause(database.Spec.ClusterRef, err), err)
 	}
 	defer func() {
 		if err := neo4jClient.Close(); err != nil {
@@ -417,6 +417,12 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 
 	// Drop database
 	if err := neo4jClient.DropDatabase(ctx, database.Spec.Name); err != nil {
+		// A transient Neo4j asks to be retried (a deadlock with another
+		// drop, a leader switch) is retried quietly within the grace period
+		// (rules 164, 178).
+		if cleanup.retryTransient(ctx, err) {
+			return ctrl.Result{RequeueAfter: transientRetry}, nil
+		}
 		// Retried and reported below; a routine outage is not an ERROR (rule
 		// 164).
 		logger.Info("Failed to drop database", "error", err.Error())

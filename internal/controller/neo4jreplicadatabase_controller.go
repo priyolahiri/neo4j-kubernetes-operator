@@ -532,7 +532,7 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 
 	nc, err := r.neo4jClientFor(target)
 	if err != nil {
-		return cleanup.blocked(ctx, connectFailedCause(replica.Spec.ClusterRef, err))
+		return cleanup.failed(ctx, connectFailedCause(replica.Spec.ClusterRef, err), err)
 	}
 	defer func() { _ = nc.Close() }()
 
@@ -542,7 +542,7 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 	// type is unknown, so nothing is dropped and the deletion waits.
 	info, err := nc.GetDatabaseInfo(ctx, dbName)
 	if err != nil {
-		return cleanup.blocked(ctx, statementFailedCause(replica.Spec.ClusterRef, "reading the database's type", err))
+		return cleanup.failed(ctx, statementFailedCause(replica.Spec.ClusterRef, "reading the database's type", err), err)
 	}
 	if info == nil {
 		return releaseOnly()
@@ -555,7 +555,7 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 	}
 
 	if err := nc.DropDatabase(ctx, dbName); err != nil {
-		return cleanup.blocked(ctx, statementFailedCause(replica.Spec.ClusterRef, "DROP DATABASE", err))
+		return cleanup.failed(ctx, statementFailedCause(replica.Spec.ClusterRef, "DROP DATABASE", err), err)
 	}
 
 	r.Recorder.Eventf(replica, corev1.EventTypeNormal, EventReasonReplicaDropped,

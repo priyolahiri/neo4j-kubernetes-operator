@@ -90,6 +90,31 @@ func statementFailedCause(clusterRef, statement string, err error) string {
 	return fmt.Sprintf("%s failed: %v", statement, err)
 }
 
+// failed is blocked for a cleanup err stopped, with cause naming it. A
+// transient Neo4j asks to be retried is retried quietly within the grace
+// period — logged at info, nothing on status, no event, since the retry
+// usually succeeds (rule 164) — and is the wait's release Warning only if it
+// lasts past it. A deadlock between the DROPs of a bulk delete raised a
+// RoleDeletionFailed Warning before the retry succeeded (round-8 walk).
+func (d deletionCleanup) failed(ctx context.Context, cause string, err error) (ctrl.Result, error) {
+	if d.retryTransient(ctx, err) {
+		return ctrl.Result{RequeueAfter: transientRetry}, nil
+	}
+	return d.blocked(ctx, cause)
+}
+
+// retryTransient reports whether err is failed's quiet retry — the caller
+// requeues after transientRetry — for a deletion that reports other failures
+// its own way (the Neo4jDatabase's DROP).
+func (d deletionCleanup) retryTransient(ctx context.Context, err error) bool {
+	if !statementTransient(err) || deletionGracePeriodExceeded(d.obj) {
+		return false
+	}
+	log.FromContext(ctx).Info("Neo4j asked for the cleanup to be retried; retrying",
+		"leftBehind", d.leftBehind, "error", err.Error())
+	return true
+}
+
 // deletionDeadline is when a deletion that cannot finish stops waiting
 // (finalizerDeletionGracePeriod after it was requested).
 func deletionDeadline(obj client.Object) time.Time {

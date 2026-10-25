@@ -582,14 +582,14 @@ func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 	}
 	nc, err := r.connectForDeletion(target)
 	if err != nil {
-		return cleanup.blocked(ctx, connectFailedCause(cd.Spec.ClusterRef, err))
+		return cleanup.failed(ctx, connectFailedCause(cd.Spec.ClusterRef, err), err)
 	}
 	defer func() { _ = nc.Close() }()
 	// CASCADE is required, not optional: a plain drop is REFUSED while
 	// constituents exist. It removes the constituent ALIASES only — their
 	// target databases are untouched.
 	if err := nc.DropCompositeDatabase(ctx, name, true); err != nil {
-		return cleanup.blocked(ctx, statementFailedCause(cd.Spec.ClusterRef, "DROP COMPOSITE DATABASE", err))
+		return cleanup.failed(ctx, statementFailedCause(cd.Spec.ClusterRef, "DROP COMPOSITE DATABASE", err), err)
 	}
 	r.Recorder.Eventf(cd, corev1.EventTypeNormal, EventReasonCompositeDropped,
 		"Composite database %q dropped (constituent aliases removed; their target databases kept)", name)

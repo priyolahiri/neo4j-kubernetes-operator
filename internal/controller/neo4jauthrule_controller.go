@@ -85,6 +85,10 @@ type Neo4jAuthRuleReconciler struct {
 	// connectTarget connects the reconcile to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests make the connection fail here.
 	connectTarget func(ResolvedTarget) (*neo4j.Client, error)
+
+	// transients is the quiet retry of a statement Neo4j asks to be
+	// retried (transient_retry.go).
+	transients transientStreaks
 }
 
 // authRuleDeletionClient is what the Neo4jAuthRule deletion asks of Neo4j.
@@ -382,12 +386,12 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 
 	nc, err := r.connectForDeletion(target)
 	if err != nil {
-		return cleanup.blocked(ctx, connectFailedCause(rule.Spec.ClusterRef, err))
+		return cleanup.failed(ctx, connectFailedCause(rule.Spec.ClusterRef, err), err)
 	}
 	defer func() { _ = nc.Close() }()
 
 	if err := nc.DropAuthRuleIfExists(ctx, ruleName); err != nil {
-		return cleanup.blocked(ctx, statementFailedCause(rule.Spec.ClusterRef, "DROP AUTH RULE", err))
+		return cleanup.failed(ctx, statementFailedCause(rule.Spec.ClusterRef, "DROP AUTH RULE", err), err)
 	}
 	r.Recorder.Eventf(rule, corev1.EventTypeNormal, EventReasonAuthRuleDeleted, "auth rule %q dropped", ruleName)
 
@@ -490,6 +494,12 @@ func (r *Neo4jAuthRuleReconciler) fail(ctx context.Context, rule *neo4jv1beta1.N
 		// The target went away mid-pass: an outage, not this rule's failure
 		// (knowledge rule 172).
 		return r.unreachable(ctx, rule, err, requeue)
+	}
+	// A transient Neo4j asks to be retried — a deadlock with another write,
+	// a leader switch — is retried quietly while it lasts no longer than
+	// such errors do (knowledge rule 164).
+	if r.transients.quiet(ctx, rule, label, err) {
+		return ctrl.Result{RequeueAfter: transientRetry}, nil
 	}
 	msg := label
 	if err != nil {

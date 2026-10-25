@@ -71,6 +71,10 @@ type Neo4jRoleBindingReconciler struct {
 	// newNeo4jClient connects to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests script the server here.
 	newNeo4jClient func(ResolvedTarget) (roleBindingNeo4jClient, error)
+
+	// transients is the quiet retry of a statement Neo4j asks to be
+	// retried (transient_retry.go).
+	transients transientStreaks
 }
 
 // roleBindingNeo4jClient is what the Neo4jRoleBinding reconciler asks of
@@ -329,7 +333,7 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 
 	nc, err := r.connect(target)
 	if err != nil {
-		return cleanup(rb.Status.GrantedRoles).blocked(ctx, connectFailedCause(rb.Spec.ClusterRef, err))
+		return cleanup(rb.Status.GrantedRoles).failed(ctx, connectFailedCause(rb.Spec.ClusterRef, err), err)
 	}
 	defer func() { _ = nc.Close() }()
 
@@ -349,8 +353,8 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 			continue
 		}
 		// This role and the ones after it are still granted.
-		return cleanup(rb.Status.GrantedRoles[i:]).blocked(ctx,
-			statementFailedCause(rb.Spec.ClusterRef, fmt.Sprintf("REVOKE ROLE %q", role), err))
+		return cleanup(rb.Status.GrantedRoles[i:]).failed(ctx,
+			statementFailedCause(rb.Spec.ClusterRef, fmt.Sprintf("REVOKE ROLE %q", role), err), err)
 	}
 	r.Recorder.Eventf(rb, corev1.EventTypeNormal, EventReasonBindingDeleted,
 		"revoked %d role(s) from user %q", len(rb.Status.GrantedRoles), rb.Spec.Username)
@@ -428,6 +432,12 @@ func (r *Neo4jRoleBindingReconciler) fail(ctx context.Context, rb *neo4jv1beta1.
 		// The target went away mid-pass: an outage, not this binding's
 		// failure (knowledge rule 172).
 		return r.unreachable(ctx, rb, err, requeue)
+	}
+	// A transient Neo4j asks to be retried — a deadlock with another write,
+	// a leader switch — is retried quietly while it lasts no longer than
+	// such errors do (knowledge rule 164).
+	if r.transients.quiet(ctx, rb, label, err) {
+		return ctrl.Result{RequeueAfter: transientRetry}, nil
 	}
 	msg := label
 	if err != nil {
