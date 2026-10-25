@@ -3940,6 +3940,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#writing-a-cr-in-a-spec-patch-never-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a CR in a spec: patch, never Update
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -5098,6 +5109,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#writing-a-cr-in-a-spec-patch-never-update" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Writing a CR in a spec: patch, never Update
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -6096,20 +6118,19 @@ sidecar. Tests verify the Job spawned by a <code>Neo4jBackup</code> CR:</p>
 </span><span id="__span-13-2"><a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a><span class="w">    </span><span class="c1">// Critical: Clean up resources immediately to prevent CI resource exhaustion</span>
 </span><span id="__span-13-3"><a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">cluster</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="kc">nil</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-13-4"><a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a><span class="w">        </span><span class="nx">By</span><span class="p">(</span><span class="s">"Cleaning up cluster resource"</span><span class="p">)</span>
-</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">        </span><span class="c1">// Remove finalizers first</span>
+</span><span id="__span-13-5"><a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="w">        </span><span class="c1">// Remove finalizers first: a merge patch, never an Update</span>
 </span><span id="__span-13-6"><a id="__codelineno-13-6" name="__codelineno-13-6" href="#__codelineno-13-6"></a><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="nb">len</span><span class="p">(</span><span class="nx">cluster</span><span class="p">.</span><span class="nx">GetFinalizers</span><span class="p">())</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">0</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">            </span><span class="nx">cluster</span><span class="p">.</span><span class="nx">SetFinalizers</span><span class="p">([]</span><span class="kt">string</span><span class="p">{})</span>
-</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">            </span><span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cluster</span><span class="p">)</span>
-</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">        </span><span class="p">}</span>
-</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">        </span><span class="c1">// Delete the resource</span>
-</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">        </span><span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Delete</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cluster</span><span class="p">)</span>
-</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="w">        </span><span class="nx">cluster</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">nil</span>
-</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="w">    </span><span class="c1">// Clean up any remaining resources in namespace</span>
-</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">testNamespace</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">""</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">        </span><span class="nx">cleanupCustomResourcesInNamespace</span><span class="p">(</span><span class="nx">testNamespace</span><span class="p">)</span>
-</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-13-18"><a id="__codelineno-13-18" name="__codelineno-13-18" href="#__codelineno-13-18"></a><span class="p">})</span>
+</span><span id="__span-13-7"><a id="__codelineno-13-7" name="__codelineno-13-7" href="#__codelineno-13-7"></a><span class="w">            </span><span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">releaseFinalizers</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cluster</span><span class="p">)</span>
+</span><span id="__span-13-8"><a id="__codelineno-13-8" name="__codelineno-13-8" href="#__codelineno-13-8"></a><span class="w">        </span><span class="p">}</span>
+</span><span id="__span-13-9"><a id="__codelineno-13-9" name="__codelineno-13-9" href="#__codelineno-13-9"></a><span class="w">        </span><span class="c1">// Delete the resource</span>
+</span><span id="__span-13-10"><a id="__codelineno-13-10" name="__codelineno-13-10" href="#__codelineno-13-10"></a><span class="w">        </span><span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Delete</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cluster</span><span class="p">)</span>
+</span><span id="__span-13-11"><a id="__codelineno-13-11" name="__codelineno-13-11" href="#__codelineno-13-11"></a><span class="w">        </span><span class="nx">cluster</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="kc">nil</span>
+</span><span id="__span-13-12"><a id="__codelineno-13-12" name="__codelineno-13-12" href="#__codelineno-13-12"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-13-13"><a id="__codelineno-13-13" name="__codelineno-13-13" href="#__codelineno-13-13"></a><span class="w">    </span><span class="c1">// Clean up any remaining resources in namespace</span>
+</span><span id="__span-13-14"><a id="__codelineno-13-14" name="__codelineno-13-14" href="#__codelineno-13-14"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="nx">testNamespace</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="s">""</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-13-15"><a id="__codelineno-13-15" name="__codelineno-13-15" href="#__codelineno-13-15"></a><span class="w">        </span><span class="nx">cleanupCustomResourcesInNamespace</span><span class="p">(</span><span class="nx">testNamespace</span><span class="p">)</span>
+</span><span id="__span-13-16"><a id="__codelineno-13-16" name="__codelineno-13-16" href="#__codelineno-13-16"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-13-17"><a id="__codelineno-13-17" name="__codelineno-13-17" href="#__codelineno-13-17"></a><span class="p">})</span>
 </span></code></pre></div>
 <p><strong>Why This Pattern Is Critical:</strong></p>
 <ul>
@@ -6123,7 +6144,8 @@ sidecar. Tests verify the Job spawned by a <code>Neo4jBackup</code> CR:</p>
 ❌ <strong>Inline cleanup only</strong> - Won't execute if test panics or fails
 ❌ <strong>Missing namespace cleanup</strong> - Leaves behind ConfigMaps, Services, etc.
 ❌ <strong>Not removing finalizers</strong> - Resources stay in Terminating state
-❌ <strong>Relying on test suite cleanup</strong> - Not sufficient for resource-intensive tests</p>
+❌ <strong>Relying on test suite cleanup</strong> - Not sufficient for resource-intensive tests
+❌ <strong>Updating a CR</strong> - A whole-object <code>Update</code> of one of the operator's CRs (see below)</p>
 <h4 id="2-handle-all-resource-types">2. Handle All Resource Types<a class="headerlink" href="#2-handle-all-resource-types" title="Anchor link to this section">&para;</a></h4>
 <p>Clean up all resources that might have finalizers:</p>
 <div class="language-go highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1">// Neo4j resources</span>
@@ -6152,9 +6174,53 @@ sidecar. Tests verify the Job spawned by a <code>Neo4jBackup</code> CR:</p>
 </span><span id="__span-16-2"><a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="nx">cleanupCustomResourcesInNamespace</span><span class="p">(</span><span class="nx">namespace</span><span class="p">)</span>
 </span><span id="__span-16-3"><a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
 </span><span id="__span-16-4"><a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="c1">// Remove a resource's finalizers by hand (as in the AfterEach pattern above)</span>
-</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="nx">resource</span><span class="p">.</span><span class="nx">SetFinalizers</span><span class="p">([]</span><span class="kt">string</span><span class="p">{})</span>
-</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a><span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">k8sClient</span><span class="p">.</span><span class="nx">Update</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">resource</span><span class="p">)</span>
+</span><span id="__span-16-5"><a id="__codelineno-16-5" name="__codelineno-16-5" href="#__codelineno-16-5"></a><span class="nx">_</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">releaseFinalizers</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">resource</span><span class="p">)</span>
+</span><span id="__span-16-6"><a id="__codelineno-16-6" name="__codelineno-16-6" href="#__codelineno-16-6"></a>
+</span><span id="__span-16-7"><a id="__codelineno-16-7" name="__codelineno-16-7" href="#__codelineno-16-7"></a><span class="c1">// Change a CR: a merge patch of what the spec changes</span>
+</span><span id="__span-16-8"><a id="__codelineno-16-8" name="__codelineno-16-8" href="#__codelineno-16-8"></a><span class="nx">Expect</span><span class="p">(</span><span class="nx">patchCR</span><span class="p">(</span><span class="nx">ctx</span><span class="p">,</span><span class="w"> </span><span class="nx">cluster</span><span class="p">,</span><span class="w"> </span><span class="kd">func</span><span class="p">()</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="nx">cluster</span><span class="p">.</span><span class="nx">Spec</span><span class="p">.</span><span class="nx">Image</span><span class="p">.</span><span class="nx">Tag</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nx">targetTag</span><span class="w"> </span><span class="p">})).</span><span class="nx">To</span><span class="p">(</span><span class="nx">Succeed</span><span class="p">())</span>
 </span></code></pre></div>
+<h3 id="writing-a-cr-in-a-spec-patch-never-update">Writing a CR in a spec: patch, never Update<a class="headerlink" href="#writing-a-cr-in-a-spec-patch-never-update" title="Anchor link to this section">&para;</a></h3>
+<p>A spec writes one of the operator's CRs as the operator does (knowledge
+<code>operations.md</code> ids 150 and 205): a merge patch of what it changes. A
+whole-object <code>Update</code> sends the object as the Go types encode it, and the
+API server then stores a different spec: a <code>false</code> the CRD defaults to
+<code>true</code> (<code>monitoring.enabled</code>, a role's <code>enforcePrivileges</code>, a plugin's
+<code>enabled</code>) is left out and comes back <code>true</code>.</p>
+<table>
+<thead>
+<tr>
+<th>Where</th>
+<th>Change a field</th>
+<th>Remove the finalizers</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>test/integration/</code></td>
+<td><code>patchCR(ctx, obj, mutate)</code></td>
+<td><code>releaseFinalizers(ctx, obj)</code></td>
+</tr>
+<tr>
+<td><code>internal/controller/</code> Ginkgo suite (<code>package controller_test</code>)</td>
+<td><code>patchCR(ctx, obj, mutate)</code></td>
+<td><code>releaseFinalizers(ctx, obj)</code></td>
+</tr>
+<tr>
+<td><code>internal/controller/</code> unit tests (<code>package controller</code>)</td>
+<td><code>patchObject(ctx, c, obj, mutate)</code></td>
+<td><code>removeFinalizer(ctx, c, obj, name)</code></td>
+</tr>
+</tbody>
+</table>
+<p>A merge patch from Go cannot set such a field to <code>false</code> either: the <code>false</code>
+is left out of the patch too, as a removal, and the API server defaults it
+again. A spec that needs the <code>false</code> writes it as JSON
+(<code>patchJSON(ctx, obj, `{"spec":{"monitoring":{"enabled":false}}}`)</code>), or
+creates the object from JSON. The fake client applies no CRD defaults, so a
+unit test against it does not see either trap; write it the same way anyway.</p>
+<p><code>make check-test-cr-updates</code> (part of <code>make check-knowledge</code>, advisory)
+reports a whole-object <code>Update</code> of an operator CR in any test package. A call
+that must <code>Update</code> on purpose takes a <code>// cr-update-ok: &lt;reason&gt;</code> comment.</p>
 <h2 id="testing-best-practices">Testing Best Practices<a class="headerlink" href="#testing-best-practices" title="Anchor link to this section">&para;</a></h2>
 <h3 id="resource-naming-patterns">Resource Naming Patterns<a class="headerlink" href="#resource-naming-patterns" title="Anchor link to this section">&para;</a></h3>
 <p>Test resources should use predictable naming:</p>

@@ -3904,10 +3904,14 @@ advisory, and the generic gates that apply to every change.</p>
 <li><strong>Blocking</strong> — <code>make check-drift</code> (generated artifacts), the <code>unit-tests</code> job
   and the <code>go-lint</code> job (<code>ci.yml</code> describes it as a merge gate) reject a violating
   change mechanically; there is no arguing past review.</li>
-<li><strong>Advisory</strong> — <code>make check-invariants</code> and <code>make check-knowledge-drift</code> (run by
-  the agent skills and a non-blocking <code>Invariant Guards</code> CI job) surface a
+<li><strong>Advisory</strong> — <code>make check-invariants</code>, <code>make check-knowledge-drift</code> and
+  <code>make check-test-cr-updates</code> (all three are <code>make check-knowledge</code>, run by the
+  agent skills and a non-blocking <code>Invariant Guards</code> CI job) surface a
   violation without gating merge. A flag there means you have broken the product
-  contract, not tripped a lint nit. Fix the change, never the guard.</li>
+  contract, not tripped a lint nit. Fix the change, never the guard.
+  <code>check-test-cr-updates</code> flags a test that writes one of the operator's CRs
+  with a whole-object <code>Update</code>: specs patch what they change, as the operator
+  does (<a href="../../knowledge/operations/"><code>operations.md</code></a> id 205).</li>
 </ul>
 <p>INV-3 additionally has <strong>runtime</strong> teeth (<code>internal/validation/image_validator.go</code>
 rejects <code>-community</code>, pinned by <code>image_validator_test.go</code>); INV-4 is

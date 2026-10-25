@@ -3934,10 +3934,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#make-check-invariants-make-check-knowledge-drift-make-check-knowledge" class="md-nav__link">
+  <a href="#make-check-invariants-make-check-knowledge-drift-make-check-test-cr-updates-make-check-knowledge" class="md-nav__link">
     <span class="md-ellipsis">
       
-        make check-invariants, make check-knowledge-drift, make check-knowledge
+        make check-invariants, make check-knowledge-drift, make check-test-cr-updates, make check-knowledge
       
     </span>
   </a>
@@ -5937,10 +5937,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#make-check-invariants-make-check-knowledge-drift-make-check-knowledge" class="md-nav__link">
+  <a href="#make-check-invariants-make-check-knowledge-drift-make-check-test-cr-updates-make-check-knowledge" class="md-nav__link">
     <span class="md-ellipsis">
       
-        make check-invariants, make check-knowledge-drift, make check-knowledge
+        make check-invariants, make check-knowledge-drift, make check-test-cr-updates, make check-knowledge
       
     </span>
   </a>
@@ -7619,8 +7619,8 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <h3 id="make-check-release-notes-links"><code>make check-release-notes-links</code><a class="headerlink" href="#make-check-release-notes-links" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Description</strong>: Verify every docs link in <code>.github/release-notes-template.md</code> points at the release's own docs version (<code>__DOCS_VERSION__</code>, which <code>release.yml</code> replaces with <code>vX.Y</code>), and that <code>release.yml</code> and <code>pages-docs.yml</code> derive that version the same way (<code>scripts/check-release-notes-links.sh</code>). The docs site has no unversioned pages, so a link without the version is a 404.
 <strong>Usage</strong>: <code>make check-release-notes-links</code></p>
-<h3 id="make-check-invariants-make-check-knowledge-drift-make-check-knowledge"><code>make check-invariants</code>, <code>make check-knowledge-drift</code>, <code>make check-knowledge</code><a class="headerlink" href="#make-check-invariants-make-check-knowledge-drift-make-check-knowledge" title="Anchor link to this section">&para;</a></h3>
-<p><strong>Description</strong>: The advisory LLM-readiness guards. <code>check-invariants</code> runs <code>scripts/check-invariants.sh</code> (the five hard invariants — webhooks, Kind-only, Enterprise images, V2_ONLY, server-based architecture); <code>check-knowledge-drift</code> runs <code>scripts/check-knowledge-drift.sh</code> (every test, path and <code>Neo4j*</code> identifier cited in <code>docs/knowledge/</code> must still exist); <code>check-knowledge</code> runs both.
+<h3 id="make-check-invariants-make-check-knowledge-drift-make-check-test-cr-updates-make-check-knowledge"><code>make check-invariants</code>, <code>make check-knowledge-drift</code>, <code>make check-test-cr-updates</code>, <code>make check-knowledge</code><a class="headerlink" href="#make-check-invariants-make-check-knowledge-drift-make-check-test-cr-updates-make-check-knowledge" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Description</strong>: The advisory LLM-readiness guards. <code>check-invariants</code> runs <code>scripts/check-invariants.sh</code> (the five hard invariants — webhooks, Kind-only, Enterprise images, V2_ONLY, server-based architecture); <code>check-knowledge-drift</code> runs <code>scripts/check-knowledge-drift.sh</code> (every test, path and <code>Neo4j*</code> identifier cited in <code>docs/knowledge/</code> must still exist); <code>check-test-cr-updates</code> runs <code>scripts/check-test-cr-updates</code> (no test writes one of the operator's CRs with a whole-object <code>Update</code>; specs patch what they change, knowledge <code>operations.md</code> id 205); <code>check-knowledge</code> runs all three.
 <strong>Usage</strong>: <code>make check-knowledge</code>
 <strong>Notes</strong>: advisory — the <code>Invariant Guards (advisory)</code> CI job runs them with <code>continue-on-error</code>, so they never block merge. See <a href="../AGENT-GUARDRAILS/">Agent guardrails</a>.</p>
 <h3 id="make-helm-lint-make-helm-template-make-helm-package"><code>make helm-lint</code>, <code>make helm-template</code>, <code>make helm-package</code><a class="headerlink" href="#make-helm-lint-make-helm-template-make-helm-package" title="Anchor link to this section">&para;</a></h3>
