@@ -4394,7 +4394,7 @@
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td>Cluster has not reached its <code>Ready</code> phase.</td>
+<td>Cluster has not reached its <code>Ready</code> phase. A rule that is <code>Ready</code> keeps phase <code>Ready</code> meanwhile (a restart); any other waits in <code>Pending</code>.</td>
 </tr>
 <tr>
 <td><code>PendingDependencies</code></td>
@@ -4486,7 +4486,7 @@
 <ul>
 <li><strong>Create</strong>: the controller adds the <code>neo4j.com/authrule-finalizer</code>, runs <code>CREATE OR REPLACE AUTH RULE</code>, then grants <code>spec.grantedRoles</code>.</li>
 <li><strong>Update</strong>: edits to <code>spec</code> trigger drift reconciliation as described above.</li>
-<li><strong>Delete (<code>Drop</code>, default)</strong>: <code>DROP AUTH RULE … IF EXISTS</code> on the cluster, finalizer released. If the cluster is gone or downgraded below 2026.03, the finalizer is released without remote action.</li>
+<li><strong>Delete (<code>Drop</code>, default)</strong>: <code>DROP AUTH RULE … IF EXISTS</code> on the cluster, finalizer released. If the cluster is gone or downgraded below 2026.03, the finalizer is released without remote action. A failed drop is recorded in status (phase <code>Failed</code>, reason <code>AuthRuleFailed</code>), announced once, and retried for up to 5 minutes before the finalizer is released anyway.</li>
 <li><strong>Delete (<code>Retain</code>)</strong>: finalizer released; rule left in Neo4j.</li>
 </ul>
 <h2 id="limitations">Limitations<a class="headerlink" href="#limitations" title="Anchor link to this section">&para;</a></h2>

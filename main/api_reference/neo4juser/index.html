@@ -4304,7 +4304,7 @@
 <tr>
 <td><code>roles</code></td>
 <td><code>[]string</code></td>
-<td>Role names to grant. Mix built-ins (<code>reader</code>, <code>editor</code>, <code>publisher</code>, <code>architect</code>, <code>admin</code>) and custom role names from <code>Neo4jRole</code> CRs. <code>PUBLIC</code> is implicit and need not be listed.</td>
+<td>Role names to grant. Mix built-ins (<code>reader</code>, <code>editor</code>, <code>publisher</code>, <code>architect</code>, <code>admin</code>), custom role names from <code>Neo4jRole</code> CRs, and roles created in Neo4j directly (<code>CREATE ROLE</code> by an admin or another tool; the operator finds them with <code>SHOW ROLES</code>). Role names are case-sensitive. <code>PUBLIC</code> is implicit and need not be listed.</td>
 </tr>
 <tr>
 <td><code>externalAuth</code></td>
@@ -4422,8 +4422,8 @@
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>UserReady</code>, <code>RolesPending</code>, <code>SecretPending</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>UserSyncFailed</code>, <code>ValidationFailed</code></td>
-<td>True when user exists, password and roles are in sync. <code>SecretPending</code> (phase <code>Pending</code>) means the password Secret does not exist yet.</td>
+<td><code>UserReady</code>, <code>RolesPending</code>, <code>SecretPending</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>UserSyncFailed</code>, <code>UserDeletionFailed</code>, <code>ValidationFailed</code></td>
+<td>True when user exists, password and roles are in sync. <code>SecretPending</code> (phase <code>Pending</code>) means the password Secret does not exist yet. A user that is <code>Ready</code> stays <code>Ready</code> while its target is not (a restart); <code>ClusterNotReady</code> here means the user was not yet <code>Ready</code> at its generation when the target went away. <code>UserDeletionFailed</code> (phase <code>Failed</code>): the deletion's <code>DROP USER</code> failed and is retried.</td>
 </tr>
 <tr>
 <td><code>RolesSynced</code></td>
@@ -4438,7 +4438,7 @@
 <tr>
 <td><code>PendingDependencies</code></td>
 <td><code>RolesPending</code>, <code>AllDependenciesPresent</code></td>
-<td>True when one or more <code>spec.roles</code> reference a custom role that does not yet exist.</td>
+<td>True when one or more <code>spec.roles</code> name a role that exists nowhere yet: not a built-in, not a <code>Neo4jRole</code>, not in <code>SHOW ROLES</code>.</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
@@ -4487,7 +4487,7 @@
 </tr>
 <tr>
 <td>Delete (<code>Delete</code> policy)</td>
-<td><code>DROP USER name IF EXISTS</code>, then remove finalizer</td>
+<td><code>DROP USER name IF EXISTS</code>, then remove finalizer. A failed drop is recorded in status (phase <code>Failed</code>, reason <code>UserDeletionFailed</code>), announced once, and retried for up to 5 minutes before the finalizer is released anyway</td>
 </tr>
 <tr>
 <td>Delete (<code>Retain</code> policy)</td>
@@ -4495,11 +4495,11 @@
 </tr>
 <tr>
 <td>Cluster not Ready</td>
-<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition</td>
+<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition. A <code>Ready</code> user stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code></td>
 </tr>
 <tr>
 <td>Missing custom role</td>
-<td>Skip the grant for that role; set <code>PendingDependencies</code> condition; reconcile triggers when the role lands (the user controller watches <code>Neo4jRole</code>)</td>
+<td>Skip the grant for that role; set <code>PendingDependencies</code> condition; reconcile triggers when a <code>Neo4jRole</code> lands (the user controller watches <code>Neo4jRole</code>), and every 30s for a role created in Neo4j directly</td>
 </tr>
 </tbody>
 </table>

@@ -4282,7 +4282,7 @@
 <tr>
 <td><code>Ready</code></td>
 <td><code>BindingReady</code>, <code>RolesPending</code>, <code>UserNotFound</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>BindingFailed</code>, <code>ValidationFailed</code></td>
-<td>True when the user exists and all desired roles are granted.</td>
+<td>True when the user exists and all desired roles are granted. A binding that is <code>Ready</code> stays <code>Ready</code> while its target is not (a restart); <code>ClusterNotReady</code> here means it was not yet <code>Ready</code> at its generation when the target went away. <code>BindingFailed</code> during deletion (phase <code>Failed</code>): a revoke failed and is retried.</td>
 </tr>
 <tr>
 <td><code>RolesSynced</code></td>
@@ -4292,7 +4292,7 @@
 <tr>
 <td><code>PendingDependencies</code></td>
 <td><code>RolesPending</code>, <code>AllDependenciesPresent</code></td>
-<td>True when one or more <code>.spec.roles</code> correspond to a Neo4jRole CR that does not yet exist.</td>
+<td>True when one or more <code>.spec.roles</code> name a role that exists nowhere yet: not a built-in, not a <code>Neo4jRole</code>, not in <code>SHOW ROLES</code>.</td>
 </tr>
 <tr>
 <td><code>UserNotFound</code></td>
@@ -4341,7 +4341,7 @@
 </tr>
 <tr>
 <td>Delete (<code>Revoke</code> policy)</td>
-<td><code>REVOKE ROLE r FROM username</code> for each role in <code>status.grantedRoles</code>, then remove finalizer</td>
+<td><code>REVOKE ROLE r FROM username</code> for each role in <code>status.grantedRoles</code>, then remove finalizer. A failed revoke is recorded in status (phase <code>Failed</code>, reason <code>BindingFailed</code>), announced once, and retried for up to 5 minutes before the finalizer is released anyway</td>
 </tr>
 <tr>
 <td>Delete (<code>Retain</code> policy)</td>
@@ -4353,11 +4353,11 @@
 </tr>
 <tr>
 <td>Cluster not Ready</td>
-<td>No-op; <code>ClusterNotReady</code> condition; reconcile every 30s</td>
+<td>No-op; <code>ClusterNotReady</code> condition; reconcile every 30s. A <code>Ready</code> binding stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code></td>
 </tr>
 <tr>
 <td>Missing custom role</td>
-<td>Skip the grant for that role; <code>PendingDependencies</code> condition; the binding controller watches <code>Neo4jRole</code> and re-reconciles when the role lands</td>
+<td>Skip the grant for that role; <code>PendingDependencies</code> condition; the binding controller watches <code>Neo4jRole</code> and re-reconciles when one lands, and every 30s for a role created in Neo4j directly</td>
 </tr>
 </tbody>
 </table>

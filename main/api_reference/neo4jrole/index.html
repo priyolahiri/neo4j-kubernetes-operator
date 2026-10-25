@@ -4390,8 +4390,8 @@
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>RoleReady</code>, <code>RoleSyncFailed</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
-<td>True when role exists and privileges are reconciled.</td>
+<td><code>RoleReady</code>, <code>RoleSyncFailed</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>RoleDeletionFailed</code>, <code>ValidationFailed</code></td>
+<td>True when role exists and privileges are reconciled. A role that is <code>Ready</code> stays <code>Ready</code> while its target is not (a restart); <code>ClusterNotReady</code> here means the role was not yet <code>Ready</code> at its generation when the target went away. <code>RoleDeletionFailed</code> (phase <code>Failed</code>): the deletion's <code>DROP ROLE</code> failed and is retried.</td>
 </tr>
 <tr>
 <td><code>PrivilegesSynced</code></td>
@@ -4482,7 +4482,7 @@ remove the rule — a name is a spelling, not ownership.</p>
 <p>The controller treats <code>spec.privileges</code> as the source of truth and reconciles drift on every loop:</p>
 <ol>
 <li><strong>Read live</strong>: <code>SHOW ROLE &lt;name&gt; PRIVILEGES AS COMMANDS YIELD command, immutable</code>.</li>
-<li><strong>Normalise</strong> the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. By default (<strong>learn mode</strong>) each statement's stored rows are learned from the operator's own grant to the role and kept in <code>status.privilegeRenderings</code>; rows it cannot attribute are kept in <code>status.unattributedPrivileges</code> and never revoked. With <code>--privilege-normalisation=probe</code>, each statement is instead granted once to a short-lived <code>operator_privilege_probe_&lt;random&gt;</code> role and read back, cached per server version and alias layout. Either way, a statement that names a missing database falls back to textual canonicalisation. Both sides are then canonicalised:</li>
+<li><strong>Normalise</strong> the desired side to Neo4j's stored form. Neo4j expands lists, singularises plurals, fills in default segments, renames some verbs, lower-cases database names and resolves aliases, so spec text rarely equals the stored row. By default (<strong>learn mode</strong>) each statement's stored rows are learned from the operator's own grant to the role and kept in <code>status.privilegeRenderings</code>; rows it cannot attribute are kept in <code>status.unattributedPrivileges</code> and never revoked. With <code>--privilege-normalisation=probe</code>, each statement is instead granted once to a short-lived <code>operator_privilege_probe_&lt;random&gt;</code> role and read back, cached per server version and alias layout. Either way, a statement that names a missing database falls back to textual canonicalisation. In learn mode, a statement whose grant added no row (another statement had already granted it) is attributed when its own text is a stored row, comparing the database names it names ignoring case, as Neo4j stores them lower-cased. Both sides are then canonicalised:</li>
 <li>Whitespace runs collapsed to a single space (outside quoted strings).</li>
 <li>Reserved keywords upper-cased (<code>grant</code> → <code>GRANT</code>, <code>database</code> → <code>DATABASE</code>, etc.).</li>
 <li>Trailing semicolons stripped.</li>
@@ -4523,11 +4523,11 @@ remove the rule — a name is a spelling, not ownership.</p>
 </tr>
 <tr>
 <td>Cluster not Ready</td>
-<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition</td>
+<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition. A <code>Ready</code> role stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code></td>
 </tr>
 <tr>
-<td>Drop refused (role still in use)</td>
-<td>Reconcile fails with the Neo4j error; remove the role from each <code>Neo4jUser.spec.roles</code> first</td>
+<td>Drop refused</td>
+<td>Recorded in status (phase <code>Failed</code>, reason <code>RoleDeletionFailed</code>) and announced once; the drop is retried for up to 5 minutes, then the finalizer is released and the role is left for an admin to drop</td>
 </tr>
 </tbody>
 </table>
@@ -4618,7 +4618,7 @@ remove the rule — a name is a spelling, not ownership.</p>
 <p><strong><code>validation failed: ... privilege statement must end with TO &lt;role&gt;</code></strong>: every privilege must name the role being defined. Update the statement to end with <code>TO &lt;spec.name&gt;</code>.</p>
 <p><strong><code>cannot revoke immutable privilege ...</code></strong>: the controller cannot revoke <code>GRANT IMMUTABLE</code> privileges while auth is enabled. Either include them in <code>spec.privileges</code> (so they're no longer drift) or set <code>enforcePrivileges: false</code>.</p>
 <p><strong><code>drop role failed: role X is assigned to user Y</code></strong>: Neo4j refuses to drop a role still in use. Remove the role from each <code>Neo4jUser.spec.roles</code> first; once the operator has revoked the role from all users, deletion succeeds.</p>
-<p><strong><code>Pending</code> phase, <code>ClusterNotReady=True</code></strong>: the referenced <code>Neo4jEnterpriseCluster</code>/<code>Neo4jEnterpriseStandalone</code> is not yet <code>Ready</code>. The role controller will reconcile automatically when the cluster transitions.</p>
+<p><strong><code>Pending</code> phase, <code>ClusterNotReady=True</code></strong>: the referenced <code>Neo4jEnterpriseCluster</code>/<code>Neo4jEnterpriseStandalone</code> is not yet <code>Ready</code>. The role controller will reconcile automatically when the cluster transitions. A role that was already <code>Ready</code> keeps phase <code>Ready</code> with <code>ClusterNotReady=True</code> while its target restarts.</p>
 <h2 id="see-also">See also<a class="headerlink" href="#see-also" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li><a href="../../user_guide/user_role_management/">User &amp; Role Management Guide</a></li>

@@ -4483,7 +4483,11 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Users / Roles / RoleBinding</td>
-<td><code>Neo4jUser</code>/<code>Role</code>/<code>RoleBinding</code> Ready; <code>SHOW USERS</code>/<code>SHOW ROLES</code>. <strong>Reference at least one role by its hyphenated CR <code>metadata.name</code></strong> (not <code>spec.name</code>) and confirm the grant lands (no <code>RolesPending</code>) and a <code>RolesResolved</code> event fires.</td>
+<td><code>Neo4jUser</code>/<code>Role</code>/<code>RoleBinding</code> Ready; <code>SHOW USERS</code>/<code>SHOW ROLES</code>. <strong>Reference at least one role by its hyphenated CR <code>metadata.name</code></strong> (not <code>spec.name</code>) and confirm the grant lands (no <code>RolesPending</code>) and a <code>RolesResolved</code> event fires. Also <code>CREATE ROLE auditor</code> in cypher-shell and list <code>auditor</code> in a user's and a binding's <code>spec.roles</code> with no <code>Neo4jRole</code> for it: granted within 30 seconds, no <code>RolePending</code> (#526)</td>
+</tr>
+<tr>
+<td>A standalone restart is not a transition of its users (rule 158)</td>
+<td>With the user, role and binding <code>Ready</code>, delete the standalone's pod three times, waiting for <code>Ready</code> each time: each stays phase <code>Ready</code> throughout, with <code>ClusterNotReady=True</code> while the pod is down, and <code>kubectl get events --field-selector reason=UserReady</code> (likewise <code>RoleReady</code>, <code>BindingCreated</code>) still counts <strong>one</strong> (#553). A drop Neo4j refuses (a connection that fails releases the finalizer at once, by design): a <code>Neo4jUser</code> for <code>neo4j</code> itself, its <code>passwordSecretRef</code> holding the admin password, <code>Ready</code>, then deleted — Neo4j refuses to drop the user the operator is signed in as, so the user is <code>Failed</code> (reason <code>UserDeletionFailed</code>) with <strong>one</strong> Warning over the retries, keeps its finalizer, and about 5 minutes after the delete is gone with one "releasing finalizer" Warning, <code>neo4j</code> still in <code>SHOW USERS</code> (#549)</td>
 </tr>
 <tr>
 <td><strong>Upgrade from the previous release</strong> (run FIRST, before building from <code>main</code>)</td>
@@ -4495,7 +4499,7 @@ back to 1 replica.</p>
 </tr>
 <tr>
 <td>Learn mode (default)</td>
-<td><code>status.privilegeRenderings</code> lists each statement with the rows Neo4j stored (as <code>SHOW</code> shows them, backticks included); <code>SHOW ROLES</code> has <strong>no</strong> <code>operator_privilege_probe_*</code> roles at any point; restart the operator pod → zero new <code>PrivilegesApplied</code> (the state survived in status)</td>
+<td><code>status.privilegeRenderings</code> lists each statement with the rows Neo4j stored (as <code>SHOW</code> shows them, backticks included); <code>SHOW ROLES</code> has <strong>no</strong> <code>operator_privilege_probe_*</code> roles at any point; restart the operator pod → zero new <code>PrivilegesApplied</code> (the state survived in status). A role with <code>GRANT ACCESS ON DATABASES topodb, other</code> followed by <code>GRANT ACCESS ON DATABASE TOPODB</code> (both databases existing first): no statement <code>ambiguous</code>, <code>PrivilegesSynced=True</code>, and a foreign <code>GRANT WRITE ON GRAPH topodb</code> to the role is revoked within 30 seconds (#551)</td>
 </tr>
 <tr>
 <td>Probe mode</td>

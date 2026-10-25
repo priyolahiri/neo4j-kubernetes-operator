@@ -1522,6 +1522,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Lifecycle and ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#target-restarts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target restarts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4437,6 +4454,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Lifecycle and ordering">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#target-restarts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target restarts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4618,6 +4652,11 @@ and is how a user is permitted to query through the composite at all.</p>
 <li>Set status conditions <code>Ready=True</code>, <code>RolesSynced=True</code>, <code>PasswordSynced=True</code> on the user; <code>Ready=True</code>, <code>PrivilegesSynced=True</code> on the role.</li>
 </ol>
 <p>If the role does not yet exist when the user is reconciled, the user enters <code>PendingDependencies</code> and waits — when the role lands, the user reconciles automatically.</p>
+<p><code>spec.roles</code> also takes a role that was created in Neo4j directly — by an
+admin's <code>CREATE ROLE</code>, or by a tool other than the operator — with no
+<code>Neo4jRole</code> for it: the operator finds it with <code>SHOW ROLES</code> and grants it. Role
+names are case-sensitive. (Before this was fixed, such a role was reported as
+missing for ever and never granted.)</p>
 <h2 id="common-patterns">Common patterns<a class="headerlink" href="#common-patterns" title="Anchor link to this section">&para;</a></h2>
 <h3 id="built-in-roles-no-neo4jrole-needed">Built-in roles (no Neo4jRole needed)<a class="headerlink" href="#built-in-roles-no-neo4jrole-needed" title="Anchor link to this section">&para;</a></h3>
 <p>The six Neo4j built-ins (<code>reader</code>, <code>editor</code>, <code>publisher</code>, <code>architect</code>, <code>admin</code>, <code>PUBLIC</code>) always exist. Bind to them directly without a <code>Neo4jRole</code>:</p>
@@ -4819,6 +4858,20 @@ with unattributed rows, remove the unwanted ones by hand: when an unattributed
 row goes away, learn mode re-learns, and the next grant attributes whatever the
 spec still needs. Deleting and recreating the <code>Neo4jRole</code> also works — the role
 starts empty, so everything is attributed.</p>
+<p>Two statements can grant the same row — <code>ACCESS ON DATABASES topodb, other</code> and
+<code>ACCESS ON DATABASE TOPODB</code> — so the second one's grant adds nothing. Such a
+statement is attributed when its own text is the stored row, with the database
+names compared ignoring case, as Neo4j stores them lower-cased. (Before this
+was fixed, a statement that named a database in capitals stayed unattributed,
+and while it did, learn mode revoked no out-of-band row on the role at all.
+Such a role settles on the first reconcile after the upgrade, without a grant;
+an out-of-band row it took in meanwhile stays in
+<code>status.unattributedPrivileges</code> until you remove it by hand.)</p>
+<p>One case learn mode cannot tell apart: a privilege someone else grants to the
+role in the instant between the two reads around one of the operator's grants
+is learned as that statement's. It is kept, not revoked. Remove it by hand and
+learn mode re-learns the statement without it; granted again later, it is
+out-of-band and revoked as usual. Probe mode does not have this window.</p>
 <p>When an alias is retargeted, a privilege granted through it stays on the
 <strong>old</strong> target — as it does in Neo4j itself — and gains the new one. Revoke the
 old target's row by hand if it should go.</p>
@@ -4849,7 +4902,8 @@ declare. <code>helm upgrade</code> does <strong>not</strong> update CRDs. If you
 operator without them, every <code>Neo4jRole</code> goes to <code>Failed</code> with a message
 telling you to apply the chart's <code>crds/</code> directory. No privilege is
 removed while it is <code>Failed</code>, but spec changes are not applied until the
-CRDs are upgraded.</p>
+CRDs are upgraded. The role retries every 30 seconds, so it recovers
+within half a minute of the CRDs being applied.</p>
 </div>
 <h4 id="probe-mode">Probe mode<a class="headerlink" href="#probe-mode" title="Anchor link to this section">&para;</a></h4>
 <p><code>--privilege-normalisation=probe</code> attributes every row exactly, including on
@@ -4945,11 +4999,11 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>PendingDependencies</code></td>
-<td>One or more <code>spec.roles</code> reference custom roles that don't yet exist</td>
+<td>One or more <code>spec.roles</code> reference custom roles that don't yet exist (no <code>Neo4jRole</code>, not in <code>SHOW ROLES</code>)</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority). A user already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
 </tr>
 <tr>
 <td><code>RoleNamesResolved</code></td>
@@ -4980,7 +5034,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority). A role already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
 </tr>
 </tbody>
 </table>
@@ -5007,11 +5061,11 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>PendingDependencies</code></td>
-<td>One or more <code>spec.roles</code> reference a custom role that doesn't exist yet</td>
+<td>One or more <code>spec.roles</code> reference a custom role that doesn't exist yet (no <code>Neo4jRole</code>, not in <code>SHOW ROLES</code>)</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, or has lost its majority)</td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority). A binding already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
 </tr>
 <tr>
 <td><code>RoleNamesResolved</code></td>
@@ -5051,7 +5105,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>kubectl delete</code></td>
-<td>Finalizer-protected: controller drops user/role first (unless <code>deletionPolicy: Retain</code>)</td>
+<td>Finalizer-protected: controller drops user/role first (unless <code>deletionPolicy: Retain</code>). A drop that fails is recorded in status (phase <code>Failed</code>) and announced once, retried, and given up after 5 minutes — the finalizer is released and the object left in Neo4j for an admin</td>
 </tr>
 <tr>
 <td>Cluster neither Ready nor Degraded</td>
@@ -5064,6 +5118,17 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tbody>
 </table>
 <p>The user controller watches <code>Neo4jRole</code> resources and re-reconciles bound users when a role is created or updated. You don't need to apply CRs in any particular order — the operator converges.</p>
+<h3 id="target-restarts">Target restarts<a class="headerlink" href="#target-restarts" title="Anchor link to this section">&para;</a></h3>
+<p>A <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code> or <code>Neo4jAuthRule</code> that is
+<code>Ready</code> stays <code>Ready</code> while its cluster or standalone is not — a restart, a
+rolling upgrade, a lost majority. <code>ClusterNotReady=True</code> says it is waiting.
+What these objects describe lives in the target's <code>system</code> database and does
+not change while the target is down, and the target reports its own state, so
+the pass that finds the target back is not a transition: no <code>UserReady</code>,
+<code>RoleReady</code> or <code>BindingCreated</code> event is announced for it. (Before, each
+restart of a standalone made every user on it <code>Pending</code> and then announced
+<code>UserReady</code> again.) An object that was not yet <code>Ready</code> — new, failed, or with
+a spec change not yet applied — waits in <code>Pending</code> as before.</p>
 <h2 id="cluster-vs-namespace-scope">Cluster vs namespace scope<a class="headerlink" href="#cluster-vs-namespace-scope" title="Anchor link to this section">&para;</a></h2>
 <p>All three CRDs are <strong>namespace-scoped</strong> with same-namespace <code>clusterRef</code> only. This matches the existing pattern of <code>Neo4jDatabase</code>, <code>Neo4jBackup</code>, <code>Neo4jPlugin</code>. It means:</p>
 <ul>
@@ -5090,7 +5155,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <p>The team can now manage users and roles for the cluster in their namespace, but cannot modify the cluster's infrastructure spec.</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <p><strong>Symptom</strong>: <code>PendingDependencies</code> condition stuck on a <code>Neo4jUser</code>.</p>
-<p>Check that the referenced custom role's <code>Neo4jRole</code> CR exists in the same namespace and points at the same <code>clusterRef</code>. Built-in role names are case-sensitive (<code>reader</code>, not <code>Reader</code>).</p>
+<p>Check that the referenced custom role's <code>Neo4jRole</code> CR exists in the same namespace and points at the same <code>clusterRef</code>, or that <code>SHOW ROLES</code> on the cluster lists the role (one created in Neo4j directly is granted without a <code>Neo4jRole</code>, within 30 seconds of its creation). Role names are case-sensitive (<code>reader</code>, not <code>Reader</code>).</p>
 <p><strong>Symptom</strong>: Password updates not picked up.</p>
 <p>Confirm the Secret's <code>data.&lt;key&gt;</code> (default <code>password</code>) actually changed; <code>kubectl describe</code> the user and look for the <code>PasswordRotated</code> event. The controller detects rotation from the Secret being written (its <code>resourceVersion</code>), not from the password value — if <code>kubectl apply</code> reports the Secret <code>unchanged</code>, nothing was written and there is nothing to rotate. Any write to the Secret, even a label edit, re-applies the password once; that is harmless.</p>
 <p><strong>Symptom</strong>: <code>validation failed: ... privilege statement must end with TO &lt;role&gt;</code>.</p>

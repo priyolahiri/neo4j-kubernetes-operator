@@ -4862,7 +4862,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UserReady</code></td>
 <td>Normal</td>
-<td>User exists and its roles are in sync</td>
+<td>User exists and its roles are in sync. When the user becomes <code>Ready</code> — first, or back from a failure of its own — not on a restart of its target: a <code>Ready</code> user stays <code>Ready</code> (with <code>ClusterNotReady=True</code>) while the target is down</td>
 </tr>
 <tr>
 <td><code>UserDeleted</code></td>
@@ -4872,7 +4872,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UserDeletionFailed</code></td>
 <td>Warning</td>
-<td><code>DROP USER</code> failed; retried, and the finalizer is released if it keeps failing so deletion is not wedged</td>
+<td><code>DROP USER</code> failed; the user is <code>Failed</code> with the error in <code>status.message</code>, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes so deletion is not wedged. Once per failure, not on every retry</td>
 </tr>
 <tr>
 <td><code>UserSyncFailed</code></td>
@@ -4897,7 +4897,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RolePending</code></td>
 <td>Warning</td>
-<td>Waiting for referenced roles to exist; names them (sorted), as the <code>PendingDependencies</code> condition does. Once per wait, and again when the set of missing roles changes. Emitted by <code>Neo4jUser</code>, <code>Neo4jRoleBinding</code> and <code>Neo4jAuthRule</code></td>
+<td>Waiting for referenced roles to exist — not built in, not a <code>Neo4jRole</code>, not in <code>SHOW ROLES</code>; names them (sorted), as the <code>PendingDependencies</code> condition does. Once per wait, and again when the set of missing roles changes. Emitted by <code>Neo4jUser</code>, <code>Neo4jRoleBinding</code> and <code>Neo4jAuthRule</code></td>
 </tr>
 <tr>
 <td><code>RoleCreated</code></td>
@@ -4907,7 +4907,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RoleReady</code></td>
 <td>Normal</td>
-<td>Role exists and its privileges are in sync</td>
+<td>Role exists and its privileges are in sync. When the role becomes <code>Ready</code>, not on a restart of its target</td>
 </tr>
 <tr>
 <td><code>RoleDeleted</code></td>
@@ -4917,7 +4917,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RoleDeletionFailed</code></td>
 <td>Warning</td>
-<td><code>DROP ROLE</code> failed; retried, finalizer released if it keeps failing</td>
+<td><code>DROP ROLE</code> failed; the role is <code>Failed</code> with the error in <code>status.message</code>, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes. Once per failure, not on every retry</td>
 </tr>
 <tr>
 <td><code>RoleSyncFailed</code></td>
@@ -4947,12 +4947,12 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>BindingCreated</code> / <code>BindingUpdated</code> / <code>BindingDeleted</code></td>
 <td>Normal</td>
-<td><code>Neo4jRoleBinding</code> granted its roles, changed the granted set, or revoked its roles on deletion</td>
+<td><code>Neo4jRoleBinding</code> granted its roles, changed the granted set, or revoked its roles on deletion. <code>BindingCreated</code> is not repeated on a restart of the target</td>
 </tr>
 <tr>
 <td><code>BindingFailed</code></td>
 <td>Warning</td>
-<td>A role binding grant or revoke failed. Once per failure</td>
+<td>A role binding grant or revoke failed (on deletion: retried, and the finalizer is released if it keeps failing for 5 minutes). Once per failure</td>
 </tr>
 <tr>
 <td><code>UserNotFound</code></td>
@@ -4979,7 +4979,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuthRuleFailed</code></td>
 <td>Warning</td>
-<td>Creating, updating or dropping the auth rule failed. Once per failure</td>
+<td>Creating, updating or dropping the auth rule failed (a failed drop on deletion is retried, and the finalizer released if it keeps failing for 5 minutes). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuthRuleVersionTooOld</code></td>
@@ -5094,7 +5094,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>CompositeDatabaseFailed</code></td>
 <td>Warning</td>
-<td>Reconciling the composite database failed. Once per failure</td>
+<td>Reconciling the composite database failed. Once per failure. On deletion, a drop Neo4j refuses is retried for 5 minutes, then a second <code>CompositeDatabaseFailed</code> says the finalizer is released and the composite left in Neo4j</td>
 </tr>
 <tr>
 <td><code>CompositeDatabaseDropped</code></td>

@@ -4278,6 +4278,12 @@ they target are untouched.</p>
 <p>If the referenced deployment is gone or not Ready at deletion time, the
 finalizer is released anyway rather than wedging the CR in <code>Terminating</code> for a
 database that may no longer exist.</p>
+<p>If Neo4j refuses the drop, the composite is <code>Failed</code> with the refusal in
+<code>status.message</code> and one <code>CompositeDatabaseFailed</code> Warning, and the drop is
+retried. After 5 minutes of refusals the finalizer is released, with a
+Warning saying so, and the composite is left in Neo4j for an admin to drop —
+the same bounded retry every resource whose deletion runs Cypher has. Before,
+a refused drop kept the CR in <code>Terminating</code> for ever.</p>
 <h2 id="privileges-do-not-go-on-the-composite">Privileges do not go on the composite<a class="headerlink" href="#privileges-do-not-go-on-the-composite" title="Anchor link to this section">&para;</a></h2>
 <p>This is the most common mistake, and Neo4j does not warn about it:</p>
 <div class="language-cypher highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="err">--</span><span class="w"> </span><span class="n">accepted</span><span class="p">,</span><span class="w"> </span><span class="n">persisted</span><span class="p">,</span><span class="w"> </span><span class="n">and</span><span class="w"> </span><span class="n">does</span><span class="w"> </span><span class="n">NOTHING</span>
