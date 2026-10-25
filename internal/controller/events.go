@@ -174,8 +174,10 @@ const (
 	// CR in the same namespace targets the same clusterRef with the same
 	// spec.name. The reconciler refuses to install when this would cause
 	// two reconcilers to race on the same /plugins directory + the same
-	// NEO4J_PLUGINS env value; the older CR (by creationTimestamp) wins
-	// and the newer one is marked Failed.
+	// NEO4J_PLUGINS env value; an enabled CR wins over a disabled one, then
+	// the older (by creationTimestamp), and a newer enabled one is marked
+	// Failed. A disabled CR is never marked a duplicate (operations.md id
+	// 195).
 	EventReasonPluginDuplicate = "PluginDuplicate"
 	// EventReasonPluginMissing is emitted on a Ready Neo4jPlugin whose target
 	// StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS

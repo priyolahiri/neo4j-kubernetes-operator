@@ -122,6 +122,13 @@ func (r *Neo4jPluginReconciler) pluginOwnedEnvNames(plugin *neo4jv1beta1.Neo4jPl
 // they write nothing). A disabled or refused plugin needs nothing on the
 // target, so nothing is kept for it; what it still records there is kept by
 // its record (envOwnedElsewhere) until its own pass takes it away.
+//
+// One duplicate is listed: when plugin is disabled or being deleted, the CR
+// that installs the same spec.name in its place (pluginSuccessor). Its removal
+// then takes away only what plugin alone wrote — never the NEO4J_PLUGINS name,
+// variables, list tokens or init container that CR installs too — so neither
+// the removal of a disabled duplicate nor the deletion of one restarts the
+// servers without the plugin the enabled CR keeps there (operations.md id 195).
 func (r *Neo4jPluginReconciler) otherPlugins(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) ([]neo4jv1beta1.Neo4jPlugin, error) {
 	list := &neo4jv1beta1.Neo4jPluginList{}
 	if err := r.List(ctx, list, client.InNamespace(plugin.Namespace)); err != nil {
@@ -134,6 +141,9 @@ func (r *Neo4jPluginReconciler) otherPlugins(ctx context.Context, plugin *neo4jv
 			continue
 		}
 		out = append(out, other)
+	}
+	if successor := pluginSuccessor(list.Items, plugin, deployment); successor != nil {
+		out = append(out, *successor)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
@@ -192,7 +202,7 @@ func (r *Neo4jPluginReconciler) envOwnedElsewhere(sts *appsv1.StatefulSet, plugi
 // owned elsewhere (envOwnedElsewhere), or a shared list. The same holds for
 // NEO4J_PLUGINS names.
 //
-// installPluginViaEnvironment writes what it produces; missingFromTarget,
+// writePluginToTarget writes what it produces; missingFromTarget,
 // installChangesTarget and selfRepair compare against it, so none of them can
 // disagree about what the plugin's write changes.
 func (r *Neo4jPluginReconciler) applyPlugin(ctx context.Context, sts *appsv1.StatefulSet, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) ([]string, error) {
@@ -624,7 +634,9 @@ func (r *Neo4jPluginReconciler) writeRemoval(ctx context.Context, plugin *neo4jv
 //     plugin of the target installs, and fleet-management while the target's
 //     spec.auraFleetManagement installs it;
 //   - its VerifiedDownload init container, its auth volume, and the shared CA
-//     volume once nothing mounts it (withoutPluginInitContainer);
+//     volume once nothing mounts it (withoutPluginInitContainer), unless a
+//     VerifiedDownload duplicate installs the plugin in its place
+//     (successorDownloads);
 //   - its records.
 //
 // The uninstall of a deleted plugin and the removal of a disabled one
@@ -665,9 +677,26 @@ func (r *Neo4jPluginReconciler) withoutPlugin(ctx context.Context, sts *appsv1.S
 			}
 		}
 	}
-	withoutPluginInitContainer(&sts.Spec.Template, plugin)
+	// The init container and its volumes are named after spec.name: a
+	// duplicate that installs the plugin in VerifiedDownload mode in this
+	// one's place (pluginSuccessor) writes the same ones, and keeps them.
+	if !successorDownloads(plugin, others) {
+		withoutPluginInitContainer(&sts.Spec.Template, plugin)
+	}
 	delete(sts.Annotations, key)
 	delete(sts.Annotations, entriesKey)
+}
+
+// successorDownloads reports whether others holds a duplicate of plugin (same
+// spec.name — only its successor is ever listed, otherPlugins) that installs
+// in VerifiedDownload mode.
+func successorDownloads(plugin *neo4jv1beta1.Neo4jPlugin, others []neo4jv1beta1.Neo4jPlugin) bool {
+	for i := range others {
+		if others[i].Spec.Name == plugin.Spec.Name && isVerifiedDownloadInstallMode(&others[i]) {
+			return true
+		}
+	}
+	return false
 }
 
 // pluginListTokens returns, by setting, the tokens the plugin put in the

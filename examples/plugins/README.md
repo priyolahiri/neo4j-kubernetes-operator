@@ -54,7 +54,9 @@ spec:
   source:
     type: official
   config:
-    # These settings become environment variables (NEO4J_APOC_*)
+    # These settings become environment variables named as the Neo4j image
+    # reads them: NEO4J_ + the key, '_' doubled, '.' -> '_', case kept
+    # (apoc.export.file.enabled -> NEO4J_apoc_export_file_enabled)
     # APOC configuration is not supported in neo4j.conf in Neo4j 5.26+
     apoc.export.file.enabled: "true"
     apoc.import.file.enabled: "true"
@@ -256,10 +258,10 @@ kubectl describe neo4jplugin <plugin-name>
 kubectl get statefulset <cluster-name>-server -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_PLUGINS")].value}'
 
 # Check APOC environment variables
-kubectl get statefulset <cluster-name>-server -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_APOC_EXPORT_FILE_ENABLED")].value}'
+kubectl get statefulset <cluster-name>-server -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_apoc_export_file_enabled")].value}'
 
 # Check GDS security settings
-kubectl get statefulset <cluster-name>-server -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_DBMS_SECURITY_PROCEDURES_UNRESTRICTED")].value}'
+kubectl get statefulset <cluster-name>-server -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="NEO4J_dbms_security_procedures_unrestricted")].value}'
 ```
 
 ## Supported Plugins

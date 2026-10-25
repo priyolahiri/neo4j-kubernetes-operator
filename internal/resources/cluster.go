@@ -108,23 +108,15 @@ const (
 	// TLS modes
 	CertManagerMode = "cert-manager"
 
-	// Default non-root UID/GID for Neo4j containers
-	// operatorVersionEnv is the environment variable that holds the operator version
+	// operatorVersionEnv is the environment variable that holds the operator
+	// version: the default tag of the MCP server image (mcpImageTag).
 	operatorVersionEnv = "OPERATOR_VERSION"
 )
 
-// Pod hardening defaults live in security_context.go as the single source
-// of truth. The two wrappers below keep the CR-override semantics that
-// only the cluster CR exposes.
-
-// OperatorUDCPackagingValue returns the value for the NEO4J_UDC_PACKAGING
-// environment variable. It reads OPERATOR_VERSION and returns "k8s-<version>",
-// or "k8s-development" if unset.
-//
-// CURRENTLY UNUSED, and deliberately kept. The variable is meant to be exactly
+// NEO4J_UDC_PACKAGING is not set on the servers. It is meant to be exactly
 // that — an environment variable, which the server reads to attribute the
-// deployment in its telemetry. It is not a neo4j.conf setting and was never
-// meant to become one.
+// deployment in its telemetry ("k8s-<operator version>"). It is not a
+// neo4j.conf setting and was never meant to become one.
 //
 // The Neo4j Docker entrypoint makes it one anyway. It converts every NEO4J_
 // variable outside its own control-variable allowlist into a setting:
@@ -148,9 +140,26 @@ const (
 // validation would cost every user startup detection of typo'd and deprecated
 // settings.
 //
-// The fix belongs in the Neo4j image — one more entry in not_configs. Restore
-// the two call sites (the cluster pod spec and the standalone's buildEnvVars)
-// once an image carrying it is the anchor, and delete this note.
+// The fix belongs in the Neo4j image — one more entry in not_configs. The
+// helper that built the value, OperatorUDCPackagingValue, was never called and
+// was removed with the other dead code in #560; once an image carrying the fix
+// is the CI anchor, set the variable again on the cluster pod spec and in the
+// standalone's buildEnvVars, and delete this note.
+
+// clusterStrictPeerValidationEnabled mirrors controller-side
+// isStrictPeerValidationEnabled but for the resources package, where we
+// cannot import the controller package (would be a circular dependency).
+// Both must stay in sync — they read the same field with the same default.
+func clusterStrictPeerValidationEnabled(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	if cluster == nil || cluster.Spec.TLS == nil || cluster.Spec.TLS.Mode != CertManagerMode {
+		return false
+	}
+	if cluster.Spec.TLS.StrictPeerValidation == nil {
+		return true
+	}
+	return *cluster.Spec.TLS.StrictPeerValidation
+}
+
 // buildClusterSSLPolicyTrustConfig emits the trust-anchor and client-auth
 // lines of dbms.ssl.policy.cluster.*, gated on
 // cluster.Spec.TLS.StrictPeerValidation. Default-true; explicit false opts
@@ -170,21 +179,6 @@ const (
 //     only, since it does not offer security." Kept as an opt-out for
 //     installations whose external issuer does not populate ca.crt in
 //     the cert-manager Secret.
-//
-// clusterStrictPeerValidationEnabled mirrors controller-side
-// isStrictPeerValidationEnabled but for the resources package, where we
-// cannot import the controller package (would be a circular dependency).
-// Both must stay in sync — they read the same field with the same default.
-func clusterStrictPeerValidationEnabled(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
-	if cluster == nil || cluster.Spec.TLS == nil || cluster.Spec.TLS.Mode != CertManagerMode {
-		return false
-	}
-	if cluster.Spec.TLS.StrictPeerValidation == nil {
-		return true
-	}
-	return *cluster.Spec.TLS.StrictPeerValidation
-}
-
 func buildClusterSSLPolicyTrustConfig(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	strict := clusterStrictPeerValidationEnabled(cluster)
 	if strict {
@@ -200,6 +194,10 @@ dbms.ssl.policy.cluster.trust_all=true
 dbms.ssl.policy.cluster.client_auth=NONE
 `
 }
+
+// Pod hardening defaults live in security_context.go as the single source
+// of truth. The two wrappers below keep the CR-override semantics that
+// only the cluster CR exposes.
 
 func podSecurityContextForCluster(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.PodSecurityContext {
 	if cluster.Spec.SecurityContext != nil && cluster.Spec.SecurityContext.PodSecurityContext != nil {
@@ -492,7 +490,6 @@ func BuildInternalsServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseClu
 	}
 }
 
-// BuildClientServiceForEnterprise creates a service for client connections
 // ApplyExternalDNSAnnotation sets the external-dns hostname annotation
 // from spec.service.dnsName when it is set. A user-supplied annotation
 // (via spec.service.annotations or directly on the Ingress) wins — we
@@ -510,6 +507,7 @@ func ApplyExternalDNSAnnotation(annotations map[string]string, svc *neo4jv1beta1
 	annotations[ExternalDNSHostnameAnnotation] = svc.DNSName
 }
 
+// BuildClientServiceForEnterprise creates a service for client connections
 func BuildClientServiceForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Service {
 	serviceType := corev1.ServiceTypeClusterIP
 	if cluster.Spec.Service != nil && cluster.Spec.Service.Type != "" {
@@ -1089,8 +1087,6 @@ func StandalonePodSelector(standaloneName string) map[string]string {
 	return map[string]string{"app": standaloneName}
 }
 
-// PVCSelectorByInstance returns labels that match every PVC of a given
-// Enterprise or Standalone instance. Must stay in sync with GetLabelsForPVC.
 // BackupJobSelector returns labels that match the Jobs, CronJobs and Pods a
 // Neo4jBackup owns. Must stay in sync with backupLabels in
 // internal/controller/neo4jbackup_controller.go, which builds on it; the
@@ -1107,6 +1103,8 @@ func BackupJobSelector(backupName string) map[string]string {
 	}
 }
 
+// PVCSelectorByInstance returns labels that match every PVC of a given
+// Enterprise or Standalone instance. Must stay in sync with GetLabelsForPVC.
 func PVCSelectorByInstance(instanceName string) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/name":     "neo4j",
@@ -2020,8 +2018,9 @@ func MergeConfListValues(a, b string) string { return unionCSV(a, b) }
 //     never dropped (it has no later occurrence).
 //   - Additive list keys (additiveConfKeys): MERGE the union of all occurrences'
 //     tokens, so the operator's allowlist isn't lost to a user override.
-//   - server.jvm.additional / dbms.jvm.additional: left untouched — Neo4j
-//     intentionally accepts repeated occurrences and concatenates them.
+//   - Repeatable keys (repeatableConfKey: server.jvm.additional, and its 4.x
+//     name): left untouched — Neo4j accepts repeated occurrences and
+//     concatenates them.
 //
 // Comment and blank lines are preserved in place.
 func DedupeNeo4jConf(conf string) string {
@@ -2037,7 +2036,7 @@ func DedupeNeo4jConf(conf string) string {
 			return "", "", false
 		}
 		k := strings.TrimSpace(t[:eq])
-		if k == "server.jvm.additional" || k == "dbms.jvm.additional" {
+		if repeatableConfKey(k) {
 			return "", "", false // repeatable — never dedupe
 		}
 		return k, strings.TrimSpace(t[eq+1:]), true
@@ -2086,6 +2085,19 @@ func DedupeNeo4jConf(conf string) string {
 	return strings.Join(out, "\n")
 }
 
+// sanitizeConfValue strips newline and carriage-return characters from a
+// neo4j.conf value. Defense-in-depth: validators reject control characters in
+// user config on admission (ConfigValueHasControlChars), but stripping at the
+// render sink guarantees a single value can never forge an extra config line
+// even if a validation gap is introduced. neo4j.conf values are single-line by
+// definition, so this never alters a legitimate value.
+func sanitizeConfValue(v string) string {
+	if !strings.ContainsAny(v, "\n\r") {
+		return v
+	}
+	return strings.NewReplacer("\n", "", "\r", "").Replace(v)
+}
+
 // UpsertNeo4jConfSettings merges externally-provided settings (e.g. a
 // Neo4jPlugin's required security settings) into an already-rendered neo4j.conf
 // WITHOUT creating duplicate keys — CalVer Neo4j refuses to start on a duplicate
@@ -2100,19 +2112,6 @@ func DedupeNeo4jConf(conf string) string {
 //     never clobbered (matching the plugin path's "add if not present" intent).
 //
 // Keys are processed in sorted order for deterministic output.
-// sanitizeConfValue strips newline and carriage-return characters from a
-// neo4j.conf value. Defense-in-depth: validators reject control characters in
-// user config on admission (ConfigValueHasControlChars), but stripping at the
-// render sink guarantees a single value can never forge an extra config line
-// even if a validation gap is introduced. neo4j.conf values are single-line by
-// definition, so this never alters a legitimate value.
-func sanitizeConfValue(v string) string {
-	if !strings.ContainsAny(v, "\n\r") {
-		return v
-	}
-	return strings.NewReplacer("\n", "", "\r", "").Replace(v)
-}
-
 func UpsertNeo4jConfSettings(conf string, settings map[string]string) string {
 	if len(settings) == 0 {
 		return conf
@@ -2131,7 +2130,7 @@ func UpsertNeo4jConfSettings(conf string, settings map[string]string) string {
 			continue
 		}
 		k := strings.TrimSpace(t[:eq])
-		if k == "server.jvm.additional" || k == "dbms.jvm.additional" {
+		if repeatableConfKey(k) {
 			continue // repeatable — leave untouched
 		}
 		keyIdx[k] = i
@@ -2163,9 +2162,20 @@ func UpsertNeo4jConfSettings(conf string, settings map[string]string) string {
 	return strings.Join(lines, "\n")
 }
 
+// repeatableConfKey reports whether a neo4j.conf key may be declared on
+// several lines, each adding a value: server.jvm.additional, one line per JVM
+// argument. dbms.jvm.additional is its 4.x name, which the operator never
+// writes and the docs never use; Neo4j still reads it on 5.26 and CalVer,
+// migrating it to server.jvm.additional (SettingMigrators.Neo4j5_0SettingMigrator
+// in neo4j-configuration, 5.26.32 and 2026.09.0), so a conf that still carries
+// it is not deduplicated either.
+func repeatableConfKey(key string) bool {
+	return key == "server.jvm.additional" || key == "dbms.jvm.additional"
+}
+
 // Neo4jConfSettings parses a rendered neo4j.conf into a key→value map. Comment
-// and blank lines are skipped, as are the repeatable jvm.additional keys (which
-// have no single value). It is the read-side counterpart to
+// and blank lines are skipped, as are the repeatable keys (repeatableConfKey,
+// which have no single value). It is the read-side counterpart to
 // UpsertNeo4jConfSettings / DedupeNeo4jConf and is used to track which setting
 // keys the operator owns (so removals propagate) while leaving foreign keys —
 // e.g. a Neo4jPlugin's contributions to a standalone's ConfigMap — untouched.
@@ -2181,7 +2191,7 @@ func Neo4jConfSettings(conf string) map[string]string {
 			continue
 		}
 		k := strings.TrimSpace(t[:eq])
-		if k == "server.jvm.additional" || k == "dbms.jvm.additional" {
+		if repeatableConfKey(k) {
 			continue // repeatable — not a single-valued setting
 		}
 		out[k] = strings.TrimSpace(t[eq+1:])

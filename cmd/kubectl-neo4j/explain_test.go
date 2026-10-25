@@ -191,6 +191,20 @@ func TestEveryPhaseConstantHasGuidance(t *testing.T) {
 	}
 }
 
+// No current operator writes Unknown: a Neo4jDatabase did, up to v1.21, for a
+// target without the seed credentials Secret (operations.md id 190). explain
+// called it a connectivity problem and sent the reader to
+// status.diagnostics.collectionError, a cluster's field the database does not
+// have.
+func TestExplainTerm_UnknownSaysOnlyOlderOperatorsWriteIt(t *testing.T) {
+	out := captureExplain(t, func(f *os.File) bool { return explainTerm(neo4jv1beta1.PhaseUnknown, f) })
+
+	assert.Contains(t, out, "Only operators up to v1.21 write it")
+	assert.Contains(t, out, "seed credentials Secret")
+	assert.Contains(t, out, "A later operator never writes Unknown")
+	assert.NotContains(t, out, "collectionError")
+}
+
 // A condition's REASON is the most specific thing a status carries and the
 // least guessable. explain read type, status and message and dropped the
 // reason, so the one token worth looking up was the one it could not explain.

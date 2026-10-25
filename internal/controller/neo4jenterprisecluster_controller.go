@@ -1722,7 +1722,7 @@ func mergeEnvVars(current, desired []corev1.EnvVar, previousOwned map[string]str
 //
 // The subset (rather than strict equality) on the desired side is intentional.
 // The Neo4jPlugin controller (and reconcileAuraFleetManagement) live-patches
-// the StatefulSet to add env vars (NEO4J_PLUGINS, NEO4J_APOC_*, fleet token
+// the StatefulSet to add env vars (NEO4J_PLUGINS, NEO4J_apoc_*, fleet token
 // vars) that are not part of the cluster controller's desired template. A
 // strict count check would make those additions look like a "significant
 // change", causing the cluster controller to overwrite the StatefulSet on

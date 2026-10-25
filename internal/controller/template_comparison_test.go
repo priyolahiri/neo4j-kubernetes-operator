@@ -330,7 +330,7 @@ func TestEnvVarsEqual(t *testing.T) {
 
 	t.Run("current has extra env vars added by plugin controller — should still be equal", func(t *testing.T) {
 		// This is the core scenario: plugin controller added NEO4J_PLUGINS and
-		// NEO4J_APOC_* env vars; desired template does not contain them.
+		// NEO4J_apoc_* env vars; desired template does not contain them.
 		// envVarsEqual must return true so the cluster controller does NOT overwrite.
 		desired := []corev1.EnvVar{
 			{Name: "NEO4J_AUTH", Value: "neo4j/admin"},
@@ -340,7 +340,7 @@ func TestEnvVarsEqual(t *testing.T) {
 			{Name: "NEO4J_AUTH", Value: "neo4j/admin"},
 			{Name: "NEO4J_EDITION", Value: "enterprise"},
 			{Name: "NEO4J_PLUGINS", Value: `["apoc","fleet-management"]`},
-			{Name: "NEO4J_APOC_EXPORT_FILE_ENABLED", Value: "true"},
+			{Name: "NEO4J_apoc_export_file_enabled", Value: "true"},
 		}
 		assert.True(t, reconciler.envVarsEqual(current, desired, nil),
 			"extra plugin env vars in current must not trigger a 'not equal' result")
@@ -433,11 +433,11 @@ func TestEnvVarsEqual(t *testing.T) {
 		}
 		current := []corev1.EnvVar{
 			{Name: "NEO4J_AUTH", Value: "neo4j/admin"},
-			{Name: "NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST", Value: "apoc.*"},
+			{Name: "NEO4J_dbms_security_procedures_allowlist", Value: "apoc.*"},
 		}
 		previousOwned := map[string]struct{}{
 			"NEO4J_AUTH": {},
-			"NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST": {},
+			"NEO4J_dbms_security_procedures_allowlist": {},
 		}
 		assert.False(t, reconciler.envVarsEqual(current, desired, previousOwned),
 			"a previously-owned env var that is no longer in desired but still in current must be flagged as needing change")
@@ -445,7 +445,7 @@ func TestEnvVarsEqual(t *testing.T) {
 
 	t.Run("foreign env var stays untouched even when removal is needed elsewhere", func(t *testing.T) {
 		// Plugin controller adds NEO4J_PLUGINS (foreign — never in previousOwned).
-		// User also removed NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST from spec.config
+		// User also removed NEO4J_dbms_security_procedures_allowlist from spec.config
 		// (was previously-owned, now removed). envVarsEqual should still flag the
 		// removal, but the merge step is what ensures NEO4J_PLUGINS survives.
 		desired := []corev1.EnvVar{
@@ -453,12 +453,12 @@ func TestEnvVarsEqual(t *testing.T) {
 		}
 		current := []corev1.EnvVar{
 			{Name: "NEO4J_AUTH", Value: "neo4j/admin"},
-			{Name: "NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST", Value: "apoc.*"},
+			{Name: "NEO4J_dbms_security_procedures_allowlist", Value: "apoc.*"},
 			{Name: "NEO4J_PLUGINS", Value: `["apoc"]`}, // foreign
 		}
 		previousOwned := map[string]struct{}{
 			"NEO4J_AUTH": {},
-			"NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST": {},
+			"NEO4J_dbms_security_procedures_allowlist": {},
 		}
 		assert.False(t, reconciler.envVarsEqual(current, desired, previousOwned),
 			"removal must be flagged even when foreign env vars are also present")
@@ -491,7 +491,7 @@ func TestEnvVarsEqual(t *testing.T) {
 		}
 		previousOwned := map[string]struct{}{
 			"NEO4J_AUTH": {},
-			"NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST": {}, // already cleaned up
+			"NEO4J_dbms_security_procedures_allowlist": {}, // already cleaned up
 		}
 		assert.True(t, reconciler.envVarsEqual(current, desired, previousOwned),
 			"a removal that was already applied must not trigger a re-change")
@@ -504,14 +504,14 @@ func TestMergeEnvVars(t *testing.T) {
 	t.Run("removes previously-owned vars no longer in desired", func(t *testing.T) {
 		current := []corev1.EnvVar{
 			{Name: "NEO4J_AUTH", Value: "neo4j/admin"},
-			{Name: "NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST", Value: "apoc.*"},
+			{Name: "NEO4J_dbms_security_procedures_allowlist", Value: "apoc.*"},
 		}
 		desired := []corev1.EnvVar{
 			{Name: "NEO4J_AUTH", Value: "neo4j/admin"},
 		}
 		previousOwned := map[string]struct{}{
 			"NEO4J_AUTH": {},
-			"NEO4J_DBMS_SECURITY_PROCEDURES_ALLOWLIST": {},
+			"NEO4J_dbms_security_procedures_allowlist": {},
 		}
 		merged := mergeEnvVars(current, desired, previousOwned)
 		names := envVarNames(merged)
@@ -523,7 +523,7 @@ func TestMergeEnvVars(t *testing.T) {
 		current := []corev1.EnvVar{
 			{Name: "NEO4J_AUTH", Value: "neo4j/admin"},
 			{Name: "NEO4J_PLUGINS", Value: `["apoc","fleet-management"]`},
-			{Name: "NEO4J_APOC_EXPORT_FILE_ENABLED", Value: "true"},
+			{Name: "NEO4J_apoc_export_file_enabled", Value: "true"},
 		}
 		desired := []corev1.EnvVar{
 			{Name: "NEO4J_AUTH", Value: "neo4j/newpassword"},
@@ -534,7 +534,7 @@ func TestMergeEnvVars(t *testing.T) {
 		merged := mergeEnvVars(current, desired, previousOwned)
 		names := envVarNames(merged)
 		assert.ElementsMatch(t,
-			[]string{"NEO4J_AUTH", "NEO4J_PLUGINS", "NEO4J_APOC_EXPORT_FILE_ENABLED"},
+			[]string{"NEO4J_AUTH", "NEO4J_PLUGINS", "NEO4J_apoc_export_file_enabled"},
 			names,
 			"foreign env vars must survive a merge that updates owned vars")
 		// NEO4J_AUTH must reflect the desired (new) value, not the current (old) one.
@@ -656,7 +656,7 @@ func TestIsTemplateChangeSignificant_PluginAddedEnvVars(t *testing.T) {
 	current := desired.DeepCopy()
 	current.Spec.Containers[0].Env = append(current.Spec.Containers[0].Env,
 		corev1.EnvVar{Name: "NEO4J_PLUGINS", Value: `["apoc","fleet-management"]`},
-		corev1.EnvVar{Name: "NEO4J_APOC_EXPORT_FILE_ENABLED", Value: "true"},
+		corev1.EnvVar{Name: "NEO4J_apoc_export_file_enabled", Value: "true"},
 	)
 
 	// Simulate the controller having already applied & stamped this desired

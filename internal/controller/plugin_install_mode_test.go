@@ -56,6 +56,15 @@ func newPluginTestReconciler(t *testing.T, objs ...runtime.Object) *Neo4jPluginR
 	}
 }
 
+// installPluginViaEnvironment is writePluginToTarget, the plugin's write to its
+// target that Reconcile makes, without the StatefulSet generation it returns:
+// for the tests that look only at what the write leaves on the StatefulSet. A
+// test helper, not part of the controller (it was, called only by tests).
+func (r *Neo4jPluginReconciler) installPluginViaEnvironment(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) error {
+	_, err := r.writePluginToTarget(ctx, plugin, deployment)
+	return err
+}
+
 // pluginTestSTS returns a minimal cluster StatefulSet shaped like what the
 // cluster controller emits — name "<cluster>-server", a single "neo4j"
 // container, no pre-existing NEO4J_PLUGINS env var — with its template rolled

@@ -109,7 +109,7 @@ func TestCreateOrUpdateResource_ConflictRetryKeepsTheDesiredSpec(t *testing.T) {
 				// The plugin's second patch lands between the cluster
 				// controller's read and its write: the write conflicts.
 				racePending = false
-				pluginPatch(cl, "NEO4J_APOC_EXPORT_FILE_ENABLED", "true")
+				pluginPatch(cl, "NEO4J_apoc_export_file_enabled", "true")
 			}
 			defaulted(obj)
 			return cl.Update(ctx, obj, opts...)
@@ -140,6 +140,6 @@ func TestCreateOrUpdateResource_ConflictRetryKeepsTheDesiredSpec(t *testing.T) {
 		env[e.Name] = e.Value
 	}
 	assert.Equal(t, `["apoc"]`, env["NEO4J_PLUGINS"])
-	assert.Equal(t, "true", env["NEO4J_APOC_EXPORT_FILE_ENABLED"])
+	assert.Equal(t, "true", env["NEO4J_apoc_export_file_enabled"])
 	assert.Equal(t, "neo4j/x", env["NEO4J_AUTH"])
 }

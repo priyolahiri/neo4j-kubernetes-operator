@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -50,6 +51,11 @@ import (
 //     PluginDisabled event, announced from the status write that makes it
 //     Disabled (id 136). A plugin with nothing on its target is Disabled at
 //     once.
+//
+// A disabled plugin is never a duplicate that waits (checkForDuplicatePlugin):
+// when an enabled Neo4jPlugin installs the same spec.name on the target, the
+// removal leaves what that CR installs, and the Disabled message names it
+// (pluginSuccessor, operations.md id 195).
 //
 // Setting spec.enabled back to true installs the plugin again: the next pass
 // finds it neither settled nor part way through an install of its generation.
@@ -133,8 +139,22 @@ func (r *Neo4jPluginReconciler) reconcileDisabled(ctx context.Context, plugin *n
 		}
 	}
 
-	r.reportDisabled(ctx, plugin, fmt.Sprintf("Plugin disabled (spec.enabled: false): not on the servers of %s", targetName(deployment)))
+	r.reportDisabled(ctx, plugin, r.disabledMessage(ctx, plugin, deployment))
 	return ctrl.Result{}, nil
+}
+
+// disabledMessage is the message of a disabled plugin whose removal is done:
+// not on the servers, or, when an enabled duplicate installs the same plugin
+// in its place (pluginSuccessor, operations.md id 195), on them by that CR.
+func (r *Neo4jPluginReconciler) disabledMessage(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) string {
+	list := &neo4jv1beta1.Neo4jPluginList{}
+	if err := r.List(ctx, list, client.InNamespace(plugin.Namespace)); err != nil {
+		log.FromContext(ctx).Error(err, "Cannot tell whether another Neo4jPlugin installs the disabled plugin")
+	} else if successor := pluginSuccessor(list.Items, plugin, deployment); successor != nil {
+		return fmt.Sprintf("Plugin disabled (spec.enabled: false): Neo4jPlugin %q installs %q on %s in its place",
+			successor.Name, plugin.Spec.Name, targetName(deployment))
+	}
+	return fmt.Sprintf("Plugin disabled (spec.enabled: false): not on the servers of %s", targetName(deployment))
 }
 
 // reportDisabled writes phase Disabled with message, and announces it once,

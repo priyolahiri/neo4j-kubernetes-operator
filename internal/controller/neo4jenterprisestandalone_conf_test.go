@@ -45,9 +45,9 @@ func TestStandaloneCreateConfigMap_DedupesQueryLogKeys(t *testing.T) {
 
 // duplicateConfKeys returns any neo4j.conf key that is declared more than once.
 // CalVer Neo4j (2025.x+) treats a repeated key as fatal ("<key> declared
-// multiple times") and refuses to start. server.jvm.additional /
-// dbms.jvm.additional are legitimately repeatable (one line per JVM arg) and so
-// are excluded.
+// multiple times") and refuses to start. server.jvm.additional is
+// legitimately repeatable (one line per JVM arg) and so is excluded, with its
+// 4.x name, as resources.repeatableConfKey does.
 func duplicateConfKeys(conf string) []string {
 	counts := map[string]int{}
 	for _, line := range strings.Split(conf, "\n") {

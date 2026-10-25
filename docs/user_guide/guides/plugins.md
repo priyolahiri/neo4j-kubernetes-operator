@@ -287,7 +287,7 @@ Note that every pod restart re-runs the init container and re-downloads the JAR 
 
 ### Duplicate-CR protection (all modes)
 
-Two `Neo4jPlugin` CRs in the same namespace targeting the same `clusterRef` with the same plugin `name` would race on the same `/plugins` directory and `NEO4J_PLUGINS` value. The reconciler refuses the duplicate: the **oldest CR wins**, the newer one is set to `status.phase: Failed` with a message naming the older CR, and a `PluginDuplicate` Warning event is emitted. Delete the unwanted CR; the survivor takes over on its next watch event.
+Two `Neo4jPlugin` CRs in the same namespace targeting the same `clusterRef` with the same plugin `name` would race on the same `/plugins` directory and `NEO4J_PLUGINS` value. The reconciler refuses the duplicate: an **enabled CR wins over a disabled one**, then the **oldest CR wins**; a newer enabled one is set to `status.phase: Failed` with a message naming the older CR, and a `PluginDuplicate` Warning event is emitted. A disabled duplicate (`spec.enabled: false`) is never held back and never holds one back: it is `Disabled`, its message names the CR that installs the plugin in its place, and neither it nor its deletion takes the plugin off the servers. Delete the unwanted CR, or disable it; the other CRs with the same `clusterRef` and `name` are reconciled at once, and the survivor takes over without a restart when it asks for the same plugin.
 
 ## Plugin configuration
 
@@ -378,7 +378,7 @@ kubectl exec <pod-name> -c neo4j -- \
 | `PluginInitContainerFailing` | Warning / Normal | A `VerifiedDownload` plugin writes a fix of its own failing download to a target that is not `Ready` (Warning, once), or deletes a standalone's pod stuck in that download (Normal) |
 | `PluginSettingsFailing` | Warning / Normal | The plugin writes a change of its settings — or its removal, disabled or refused — to a target that is not `Ready`, because every server that is down keeps failing while running them (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal) |
 | `PluginUnknownToImage` | Warning | A `Managed` plugin's `NEO4J_PLUGINS` name, its own or a dependency's, is not one the image of its target installs (`graphql` anywhere, `n10s` on CalVer, a custom JAR's name), or one whose JAR that image does not run (`n10s` from 5.26.22): phase `Failed`, nothing written, and what an earlier operator wrote taken off. Emitted once, and again only for a different refusal (the target's image changed) |
-| `PluginDuplicate` | Warning | Another CR already owns this `(clusterRef, name)` pair — delete one |
+| `PluginDuplicate` | Warning | Another enabled CR already owns this `(clusterRef, name)` pair — delete one, or set `spec.enabled: false` on one |
 | `ValidationFailed` | Warning | Spec rejected by the validator (hard error, no requeue) |
 | `ValidationWarning` | Warning | Advisory compatibility note, or a set field that nothing reads — does not block install |
 

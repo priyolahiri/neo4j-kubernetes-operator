@@ -118,8 +118,10 @@ Environment variables for the Neo4j container.
 
 ```yaml
 env:
-  - name: NEO4J_dbms_jvm_additional
-    value: "-XX:+UseG1GC"
+  # server.jvm.additional: the image appends it to the JVM arguments
+  # neo4j.conf already sets.
+  - name: NEO4J_server_jvm_additional
+    value: "-XX:+ExitOnOutOfMemoryError"
   # Note: NEO4J_ACCEPT_LICENSE_AGREEMENT and NEO4J_AUTH are operator-managed and
   # ignored here — set spec.acceptLicenseAgreement and spec.auth instead.
   # Use the Neo4jPlugin CRD for plugin management instead of NEO4J_PLUGINS.
