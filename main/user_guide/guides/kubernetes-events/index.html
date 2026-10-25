@@ -4690,7 +4690,12 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>PluginSettingsFailing</code></td>
 <td>Warning / Normal</td>
-<td>The plugin writes a change of the settings every down server keeps failing with — a key removed, or the plugin disabled — to a target that is not <code>Ready</code> (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal)</td>
+<td>The plugin writes a change of the settings every down server keeps failing with — a key removed, the plugin disabled, or the plugin refused (a <code>NEO4J_PLUGINS</code> name the image does not install) — to a target that is not <code>Ready</code> (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal)</td>
+</tr>
+<tr>
+<td><code>PluginUnknownToImage</code></td>
+<td>Warning</td>
+<td>A <code>Managed</code> plugin's <code>NEO4J_PLUGINS</code> name — its own or a dependency's — is not one the image of its target installs (<code>graphql</code> on every supported release, <code>n10s</code> on CalVer from 2025.05, a custom JAR's name): the entrypoint would exit on it. Phase <code>Failed</code>, nothing written, and what an earlier operator wrote of it taken off the target. Once, and again only when the refusal changes (the target's image did)</td>
 </tr>
 <tr>
 <td><code>PluginDisabled</code></td>

@@ -947,6 +947,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Overview: choosing an install mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#which-plugins-managed-installs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which plugins Managed installs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4051,6 +4068,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Overview: choosing an install mode">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#which-plugins-managed-installs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which plugins Managed installs
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -4312,10 +4346,10 @@
 
 
 <h1 id="plugin-management">Plugin Management<a class="headerlink" href="#plugin-management" title="Anchor link to this section">&para;</a></h1>
-<p>Install and manage Neo4j plugins (APOC, Graph Data Science, Bloom, GenAI, N10s, GraphQL, and custom JARs) declaratively via the <code>Neo4jPlugin</code> CRD. Works against both <code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code> — the controller auto-detects the target from <code>spec.clusterRef</code>.</p>
+<p>Install and manage Neo4j plugins (APOC, Graph Data Science, Bloom, GenAI, N10s on 5.26, and custom JARs) declaratively via the <code>Neo4jPlugin</code> CRD. Works against both <code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code> — the controller auto-detects the target from <code>spec.clusterRef</code>.</p>
 <p>This guide is task-oriented. For the full field reference, see the <a href="../../../api_reference/neo4jplugin/">Neo4jPlugin API Reference</a>.</p>
 <h2 id="overview-choosing-an-install-mode">Overview: choosing an install mode<a class="headerlink" href="#overview-choosing-an-install-mode" title="Anchor link to this section">&para;</a></h2>
-<p>The Neo4j Enterprise Docker entrypoint resolves the <code>NEO4J_PLUGINS</code> environment variable at pod startup. <strong>Plugins the image ships are copied, not downloaded</strong>: APOC core from <code>/var/lib/neo4j/labs/</code>, and GenAI, Graph Data Science and Fleet Management from <code>/var/lib/neo4j/products/</code> (the Operations Manual lists them as pre-installed; Bloom too, on CalVer) — no internet needed. The entrypoint downloads one of these only when the image does not have it. <strong>Every other plugin</strong> (<code>apoc-extended</code>, <code>n10s</code>) is <strong>downloaded from the internet on every pod start</strong> when installed this way.</p>
+<p>The Neo4j Enterprise Docker entrypoint resolves the <code>NEO4J_PLUGINS</code> environment variable at pod startup. <strong>Plugins the image ships are copied, not downloaded</strong>: APOC core from <code>/var/lib/neo4j/labs/</code>, and GenAI, Graph Data Science and Fleet Management from <code>/var/lib/neo4j/products/</code> (the Operations Manual lists them as pre-installed; Bloom too, on CalVer) — no internet needed. The entrypoint downloads one of these only when the image does not have it. <strong>The other plugins it knows</strong> (<code>apoc-extended</code>, and <code>n10s</code> on 5.26) are <strong>downloaded from the internet on every pod start</strong> when installed this way. <strong>Any other name it refuses</strong>: see <a href="#which-plugins-managed-installs">Which plugins <code>Managed</code> installs</a>.</p>
 <p><code>spec.installMode</code> controls how the JAR reaches the pod:</p>
 <table>
 <thead>
@@ -4330,7 +4364,7 @@
 <tbody>
 <tr>
 <td><code>Managed</code> (default)</td>
-<td>Operator adds the plugin to <code>NEO4J_PLUGINS</code>; the Neo4j entrypoint installs it at pod start</td>
+<td>Operator adds the plugin to <code>NEO4J_PLUGINS</code>; the Neo4j entrypoint installs it at pod start — only <a href="#which-plugins-managed-installs">a name its image lists</a></td>
 <td>Only for plugins the image does not ship (APOC core, GenAI, GDS and Fleet Management are copied from the image)</td>
 <td>Pinned by the image for a plugin it ships; otherwise no — a restart can pull a different artifact</td>
 <td>Plugins the image ships, anywhere; others in dev/test where re-download on restart is acceptable</td>
@@ -4352,35 +4386,93 @@
 </tbody>
 </table>
 <p>Regardless of mode, the operator always writes the plugin's required configuration (security allowlists, unrestricted procedures, plugin settings) and triggers a rolling restart of the target StatefulSet to apply changes.</p>
+<h3 id="which-plugins-managed-installs">Which plugins <code>Managed</code> installs<a class="headerlink" href="#which-plugins-managed-installs" title="Anchor link to this section">&para;</a></h3>
+<p>The entrypoint looks every <code>NEO4J_PLUGINS</code> name up in the image's <code>/startup/neo4j-plugins.json</code> and <strong>exits on a name it does not list</strong> (<code>"graphql" is not a known Neo4j plugin</code>), so the server never starts. The lists per release, read from <a href="https://github.com/neo4j/docker-neo4j">neo4j/docker-neo4j</a> at every release tag and checked on the images (2026-10-24):</p>
+<table>
+<thead>
+<tr>
+<th>Neo4j image</th>
+<th>Names <code>NEO4J_PLUGINS</code> may hold</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5.26.0 – 5.26.10</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>genai</code>, <code>graph-data-science</code>, <code>n10s</code></td>
+</tr>
+<tr>
+<td>5.26.11 and later (also <code>5.26-enterprise</code>)</td>
+<td>the above and <code>fleet-management</code></td>
+</tr>
+<tr>
+<td>2025.01 – 2025.04</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>genai</code>, <code>graph-data-science</code>, <code>n10s</code></td>
+</tr>
+<tr>
+<td>2025.05 – 2025.07</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>genai</code>, <code>graph-data-science</code> (no <code>n10s</code>)</td>
+</tr>
+<tr>
+<td>2025.08 and later</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>fleet-management</code>, <code>genai</code>, <code>graph-data-science</code></td>
+</tr>
+</tbody>
+</table>
+<p><code>spec.name</code> and a dependency's <code>name</code> may also use the aliases <code>gds</code> (<code>graph-data-science</code>) and <code>neosemantics</code> (<code>n10s</code>). So <strong><code>n10s</code> is a <code>Managed</code> plugin on 5.26 only</strong> (and on CalVer before 2025.05), and <strong><code>graphql</code> is one on no supported release</strong>: it left the list before 5.26.0. A floating tag (<code>5.26-enterprise</code>, <code>2026.08-enterprise</code>) is judged as the newest patch of its line, and a CalVer newer than the operator release by the newest list the operator knows.</p>
+<p><strong>The operator refuses such a name before it reaches a server.</strong> A <code>Managed</code> plugin whose name, or a dependency's, the image of its target does not list — judged by the cluster's or standalone's <code>spec.image.tag</code> — goes <code>Failed</code>, with one <code>PluginUnknownToImage</code> Warning:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>spec.name: Invalid value: "graphql": not a plugin the neo4j:2026.08.1-enterprise image can install: its entrypoint installs only apoc, apoc-extended, bloom, fleet-management, genai and graph-data-science from NEO4J_PLUGINS and exits on any other name, so the server would not start; install its JAR with installMode: VerifiedDownload (source.url + source.checksum) instead
+</span></code></pre></div>
+<p>Nothing is written to the target. The plugin is looked at again every 30 seconds, because the target's image can change. <code>kubectl neo4j validate --connect</code> reports the same error; offline, without the target's image, it warns about a name no supported release installs.</p>
+<p><strong>Servers that already crash-loop on such a name recover.</strong> Operators up to v1.22.x wrote these names. A refused plugin takes what it wrote off its target, in the one write that <a href="#plugin-configuration">disabling a plugin</a> makes: its <code>NEO4J_PLUGINS</code> names, its settings and its records. The names are those it recorded and, as for every plugin an earlier operator installed, which has no record, its own and its dependencies' as the entrypoint knows them. Another plugin's names stay. When every server that is down keeps failing on the name, the write goes at once, with one <code>PluginSettingsFailing</code> Warning, and the restart replaces the failing servers first. Otherwise it waits until the target is <code>Ready</code> with every server available. The same happens when a target moves to an image that no longer lists the name, such as a 5.26 cluster with <code>n10s</code> upgraded to CalVer.</p>
+<p><strong>Install any other JAR with <code>VerifiedDownload</code>.</strong> It never touches <code>NEO4J_PLUGINS</code>, so the entrypoint's list does not apply; see <a href="#installmode-verifieddownload"><code>installMode: VerifiedDownload</code></a>. For <strong>N10s (neosemantics) on CalVer</strong>, its GitHub releases carry CalVer-numbered JARs. <a href="https://github.com/neo4j-labs/neosemantics/releases/tag/2025.06.1"><code>2025.06.1</code></a> is built against Neo4j 2025.06, so check that a release supports the version you run before you install it:</p>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">n10s</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span><span class="w">          </span><span class="c1"># a CalVer cluster</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">n10s</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2025.06.1"</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">  </span><span class="nt">installMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VerifiedDownload</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/neo4j-labs/neosemantics/releases/download/2025.06.1/neosemantics-2025.06.1.jar</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="c1"># the digest GitHub lists for that asset; pin the JAR you reviewed</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sha256:4c461087e08405c7cb472ecfefc043e9e8ed93628ed74988e4fda1f1bac54b3e</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="c1"># n10s procedures need unrestricted access; a list key adds to the shared list</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="nt">dbms.security.procedures.unrestricted</span><span class="p">:</span><span class="w"> </span><span class="s">"n10s.*"</span>
+</span></code></pre></div>
+<p><strong>GraphQL</strong> has no server plugin for any supported release: the old <code>neo4j-graphql</code> server extension stopped at Neo4j 3.5 (its last release, 3.5.21.5, is from 2020). The <a href="https://neo4j.com/docs/graphql/current/">Neo4j GraphQL Library</a> that replaced it is a JavaScript library: you run it in your own GraphQL server, which sends Cypher to Neo4j over a driver like any other client. Nothing is installed in the database, and no <code>Neo4jPlugin</code> is involved.</p>
 <blockquote>
 <p><strong>Multi-controller coexistence</strong>: the plugin controller merges plugin names into <code>NEO4J_PLUGINS</code> additively — it never overwrites entries added by other controllers (e.g. the Aura Fleet Management reconciler). Installing APOC via <code>Neo4jPlugin</code> alongside <code>spec.auraFleetManagement</code> on the cluster yields <code>["apoc","fleet-management"]</code>, and neither entry is removed on subsequent reconciles. Fleet Management itself is managed via the cluster/standalone CRD, not via <code>Neo4jPlugin</code>.</p>
 </blockquote>
 <h2 id="quick-starts">Quick starts<a class="headerlink" href="#quick-starts" title="Anchor link to this section">&para;</a></h2>
 <h3 id="apoc-works-offline">APOC (works offline)<a class="headerlink" href="#apoc-works-offline" title="Anchor link to this section">&para;</a></h3>
 <p>APOC core is pre-bundled in the Neo4j Enterprise image, so this works with no internet egress:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc-plugin</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span><span class="w">        </span><span class="c1"># Neo4jEnterpriseCluster OR Neo4jEnterpriseStandalone</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"5.26.0"</span><span class="w">             </span><span class="c1"># match your Neo4j version</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">official</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a><span class="w">    </span><span class="c1"># APOC settings become NEO4J_apoc_* environment variables (see "Plugin configuration")</span>
-</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="w">    </span><span class="nt">apoc.export.file.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">    </span><span class="nt">apoc.import.file.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="nt">apoc.load.json.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
-</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
-</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.load.*"</span>
-</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.export.*"</span>
-</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.import.*"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc-plugin</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span><span class="w">        </span><span class="c1"># Neo4jEnterpriseCluster OR Neo4jEnterpriseStandalone</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"5.26.0"</span><span class="w">             </span><span class="c1"># match your Neo4j version</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">official</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="c1"># APOC settings become NEO4J_apoc_* environment variables (see "Plugin configuration")</span>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="nt">apoc.export.file.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="nt">apoc.import.file.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="nt">apoc.load.json.enabled</span><span class="p">:</span><span class="w"> </span><span class="s">"true"</span>
+</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
+</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.load.*"</span>
+</span><span id="__span-2-19"><a id="__codelineno-2-19" name="__codelineno-2-19" href="#__codelineno-2-19"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.export.*"</span>
+</span><span id="__span-2-20"><a id="__codelineno-2-20" name="__codelineno-2-20" href="#__codelineno-2-20"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"apoc.import.*"</span>
 </span></code></pre></div>
 <p>Wait for <code>status.phase: Ready</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jplugin<span class="w"> </span>apoc-plugin<span class="w"> </span>-w
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>neo4jplugin<span class="w"> </span>apoc-plugin<span class="w"> </span>-w
 </span></code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title"><code>allowedProcedures</code> is an allowlist, not a grant</p>
@@ -4394,42 +4486,42 @@ you use, or <code>apoc.*</code> for all of APOC; omit <code>security</code> to k
 defaults.</p>
 </div>
 <h3 id="graph-data-science-gds">Graph Data Science (GDS)<a class="headerlink" href="#graph-data-science-gds" title="Anchor link to this section">&para;</a></h3>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gds-plugin</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">graph-data-science</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2.10.0"</span>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">community</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a><span class="w">    </span><span class="c1"># GDS Enterprise license (optional). Mount the license file at</span>
-</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a><span class="w">    </span><span class="c1"># /licenses/gds.license via the cluster/standalone spec.extraVolumes +</span>
-</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="w">    </span><span class="c1"># spec.extraVolumeMounts (e.g. from a Secret).</span>
-</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="w">    </span><span class="nt">gds.enterprise.license_file</span><span class="p">:</span><span class="w"> </span><span class="s">"/licenses/gds.license"</span>
-</span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
-</span><span id="__span-2-17"><a id="__codelineno-2-17" name="__codelineno-2-17" href="#__codelineno-2-17"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
-</span><span id="__span-2-18"><a id="__codelineno-2-18" name="__codelineno-2-18" href="#__codelineno-2-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"gds.*"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">gds-plugin</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">graph-data-science</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2.10.0"</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">community</span>
+</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">    </span><span class="c1"># GDS Enterprise license (optional). Mount the license file at</span>
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">    </span><span class="c1"># /licenses/gds.license via the cluster/standalone spec.extraVolumes +</span>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">    </span><span class="c1"># spec.extraVolumeMounts (e.g. from a Secret).</span>
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="nt">gds.enterprise.license_file</span><span class="p">:</span><span class="w"> </span><span class="s">"/licenses/gds.license"</span>
+</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
+</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"gds.*"</span>
 </span></code></pre></div>
 <p>The operator automatically adds the security configuration GDS needs: <code>dbms.security.procedures.unrestricted=gds.*,apoc.load.*</code>. With <code>Managed</code> mode the Neo4j entrypoint copies the GDS JAR the image ships in <code>products/</code> (and downloads it only from an image without one) — for a GDS version other than the image's, use <code>PreBaked</code> or <code>VerifiedDownload</code> (see <a href="#supply-chain-security">Supply-chain security</a>).</p>
 <h3 id="bloom-commercial-license-required">Bloom (commercial license required)<a class="headerlink" href="#bloom-commercial-license-required" title="Anchor link to this section">&para;</a></h3>
 <p>Bloom needs a commercial license. Mount the license file via the cluster/standalone CR's <code>spec.extraVolumes</code> + <code>spec.extraVolumeMounts</code> (e.g. from a Secret), then:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bloom-plugin</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bloom</span>
-</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2.15.0"</span>
-</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">official</span>
-</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a><span class="w">    </span><span class="nt">dbms.bloom.license_file</span><span class="p">:</span><span class="w"> </span><span class="s">"/licenses/bloom.license"</span>
-</span><span id="__span-3-13"><a id="__codelineno-3-13" name="__codelineno-3-13" href="#__codelineno-3-13"></a><span class="w">    </span><span class="c1"># Optional: restrict Bloom access to specific roles</span>
-</span><span id="__span-3-14"><a id="__codelineno-3-14" name="__codelineno-3-14" href="#__codelineno-3-14"></a><span class="w">    </span><span class="nt">dbms.bloom.authorization_role</span><span class="p">:</span><span class="w"> </span><span class="s">"admin,architect"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bloom-plugin</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">bloom</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2.15.0"</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">official</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="nt">dbms.bloom.license_file</span><span class="p">:</span><span class="w"> </span><span class="s">"/licenses/bloom.license"</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">    </span><span class="c1"># Optional: restrict Bloom access to specific roles</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="nt">dbms.bloom.authorization_role</span><span class="p">:</span><span class="w"> </span><span class="s">"admin,architect"</span>
 </span></code></pre></div>
 <p>Bloom's required settings are applied automatically — no manual security configuration needed:</p>
 <ul>
@@ -4440,7 +4532,7 @@ defaults.</p>
 <p>After the rolling restart, Bloom is served at <code>http(s)://&lt;neo4j-host&gt;:&lt;http-port&gt;/bloom/</code>.</p>
 <p>More examples (GenAI, standalone targets, multi-plugin setups): <a href="https://github.com/priyolahiri/neo4j-kubernetes-operator/tree/main/examples/plugins">examples/plugins/</a>.</p>
 <h2 id="custom-and-url-plugins">Custom and URL plugins<a class="headerlink" href="#custom-and-url-plugins" title="Anchor link to this section">&para;</a></h2>
-<p>For plugins not in Neo4j's official/community catalogs, use <code>source.type: url</code> (direct download) or <code>source.type: custom</code> (private registry). Two rules are enforced — the https rule (and the <code>VerifiedDownload</code> gates below) also as CRD CEL validation, so <code>kubectl apply</code> of a violating CR is usually rejected by the apiserver before the operator sees it; the controller-side validator enforces them again (and the checksum rule), and a CR that reaches it goes to <code>status.phase: Invalid</code> and stops reconciling until you fix the spec:</p>
+<p>For plugins not in Neo4j's official/community catalogs, use <code>source.type: url</code> (direct download) or <code>source.type: custom</code> (private registry) with <code>installMode: VerifiedDownload</code>. In the default <code>Managed</code> mode the operator writes only the plugin's name to <code>NEO4J_PLUGINS</code> and never reads <code>source.url</code>, and a name the image does not list is <a href="#which-plugins-managed-installs">refused</a>. Two rules are enforced — the https rule (and the <code>VerifiedDownload</code> gates below) also as CRD CEL validation, so <code>kubectl apply</code> of a violating CR is usually rejected by the apiserver before the operator sees it; the controller-side validator enforces them again (and the checksum rule), and a CR that reaches it goes to <code>status.phase: Invalid</code> and stops reconciling until you fix the spec:</p>
 <h3 id="1-the-url-must-be-https">1. The URL must be <code>https://</code><a class="headerlink" href="#1-the-url-must-be-https" title="Anchor link to this section">&para;</a></h3>
 <p><code>http://</code>, <code>file://</code>, and every other scheme is rejected. Plugin JARs are fetched over the network, and a non-https scheme has no transport integrity — a network attacker could swap the JAR in transit. If you host plugins internally, serve them from an https endpoint (an in-cluster mirror with a cert-manager certificate works).</p>
 <h3 id="2-a-checksum-is-required">2. A checksum is required<a class="headerlink" href="#2-a-checksum-is-required" title="Anchor link to this section">&para;</a></h3>
@@ -4450,25 +4542,26 @@ defaults.</p>
 <li><code>sha512:</code> followed by exactly 128 hex characters.</li>
 </ul>
 <p>SHA1, MD5, and unprefixed hex are rejected — supply-chain protection demands a collision-resistant hash, and verification tooling should never have to guess the algorithm. Compute one locally:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>my-plugin-2.0.0.jar
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="c1"># abcd1234...  my-plugin-2.0.0.jar</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="c1"># → checksum: "sha256:abcd1234..."</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>shasum<span class="w"> </span>-a<span class="w"> </span><span class="m">256</span><span class="w"> </span>my-plugin-2.0.0.jar
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="c1"># abcd1234...  my-plugin-2.0.0.jar</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="c1"># → checksum: "sha256:abcd1234..."</span>
 </span></code></pre></div>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url-plugin</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-custom-plugin</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2.0.0"</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"https://artifacts.example.com/plugins/my-plugin-2.0.0.jar"</span>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="s">"sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url-plugin</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-custom-plugin</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2.0.0"</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="nt">installMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VerifiedDownload</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
+</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"https://artifacts.example.com/plugins/my-plugin-2.0.0.jar"</span>
+</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="s">"sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"</span>
 </span></code></pre></div>
 <blockquote>
-<p><strong>Important — when is the checksum enforced?</strong> In the default <code>Managed</code> mode the upstream Neo4j Docker entrypoint does <strong>not</strong> verify this checksum at download time. The operator records it (and surfaces it on the StatefulSet) for audit and out-of-band verification. If you need enforcement at the moment of download, use <code>installMode: VerifiedDownload</code> (below) or pin the artifact with <code>PreBaked</code>.</p>
+<p><strong>Important — <code>source</code> needs <code>VerifiedDownload</code>.</strong> Its init container downloads <code>source.url</code> and checks the JAR against <code>source.checksum</code> before Neo4j starts (<a href="#installmode-verifieddownload">below</a>). In the default <code>Managed</code> mode neither field is used: the entrypoint installs by name, from its own list, and the operator refuses a custom name. <code>PreBaked</code> pins the artifact in your image instead.</p>
 </blockquote>
 <h3 id="private-endpoints-authsecret">Private endpoints (<code>authSecret</code>)<a class="headerlink" href="#private-endpoints-authsecret" title="Anchor link to this section">&para;</a></h3>
 <p>For authenticated mirrors or registries, reference a Secret via <code>source.authSecret</code>. With <code>VerifiedDownload</code>, the Secret should carry either a <code>token</code> key (sent as <code>Authorization: Bearer &lt;token&gt;</code>) or a <code>header</code> key (used verbatim as the full <code>Authorization:</code> header value). Custom registries additionally support <code>source.registry</code> with its own <code>authSecret</code> and TLS configuration — see the <a href="../../../api_reference/neo4jplugin/#pluginregistry">API reference</a>.</p>
@@ -4476,8 +4569,8 @@ defaults.</p>
 <p>For a security reviewer, the question is: <em>what artifact runs in the pod, and who verified it?</em> The three modes answer it differently.</p>
 <h3 id="installmode-prebaked-recommended-for-production"><code>installMode: PreBaked</code> (recommended for production)<a class="headerlink" href="#installmode-prebaked-recommended-for-production" title="Anchor link to this section">&para;</a></h3>
 <p>Build a custom image with the JAR copied in, reference it from the cluster/standalone CR's image spec, and set <code>installMode: PreBaked</code> on the <code>Neo4jPlugin</code>:</p>
-<div class="language-dockerfile highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">FROM</span><span class="w"> </span><span class="s">neo4j:2025.01.0-enterprise</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">COPY</span><span class="w"> </span>graph-data-science-2.13.0.jar<span class="w"> </span>/var/lib/neo4j/plugins/
+<div class="language-dockerfile highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">FROM</span><span class="w"> </span><span class="s">neo4j:2025.01.0-enterprise</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="k">COPY</span><span class="w"> </span>graph-data-science-2.13.0.jar<span class="w"> </span>/var/lib/neo4j/plugins/
 </span></code></pre></div>
 <p>The operator does <strong>not</strong> touch <code>NEO4J_PLUGINS</code> — no runtime fetch ever happens — but still writes the plugin's required configuration. You keep the declarative CRD UX while the artifact is pinned, signed, and scannable through your normal image pipeline. This is also the only fully offline option for plugins the Neo4j image does not ship.</p>
 <h3 id="installmode-verifieddownload"><code>installMode: VerifiedDownload</code><a class="headerlink" href="#installmode-verifieddownload" title="Anchor link to this section">&para;</a></h3>
@@ -4489,20 +4582,20 @@ defaults.</p>
 <li><strong>On mismatch</strong>: the init container exits non-zero and the pod stays <code>Pending</code>. <code>kubectl describe pod</code> shows the failure on the init container's <code>state.terminated.message</code>. Fix the URL or checksum; the next pod spawn re-runs the verification.</li>
 <li><strong>Kept across the cluster's own changes</strong>: the cluster controller keeps init containers and volumes it did not render, so an image upgrade or any other template change of the cluster leaves the plugin's init container and its <code>plugin-auth-&lt;name&gt;</code> / <code>plugin-ca</code> volumes in place. If something removes them anyway (a StatefulSet recreated by a storage expansion, a hand edit), a <code>Ready</code> plugin puts them back with a <code>PluginMissing</code> event. Earlier operator versions dropped the init container at the cluster's next pass, so the servers ran without the JAR while the plugin stayed <code>Ready</code>; after upgrading, such a plugin restores it — which restarts the servers once.</li>
 </ul>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc-verified</span>
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span><span class="w">          </span><span class="c1"># running 2026.08.1</span>
-</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc</span>
-</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2026.08.1"</span>
-</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="w">  </span><span class="nt">installMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VerifiedDownload</span>
-</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-7-11"><a id="__codelineno-7-11" name="__codelineno-7-11" href="#__codelineno-7-11"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
-</span><span id="__span-7-12"><a id="__codelineno-7-12" name="__codelineno-7-12" href="#__codelineno-7-12"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/neo4j/apoc/releases/download/2026.08.1/apoc-2026.08.1-core.jar</span>
-</span><span id="__span-7-13"><a id="__codelineno-7-13" name="__codelineno-7-13" href="#__codelineno-7-13"></a><span class="w">    </span><span class="c1"># sha256sum of that file; pin the digest of the exact JAR you reviewed</span>
-</span><span id="__span-7-14"><a id="__codelineno-7-14" name="__codelineno-7-14" href="#__codelineno-7-14"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sha256:8607c873df867aa1b3b8c9926d55262d09088d2cccd62b53a35f43cdc22f8433</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
+</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
+</span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="nt">metadata</span><span class="p">:</span>
+</span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc-verified</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="nt">spec</span><span class="p">:</span>
+</span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span><span class="w">          </span><span class="c1"># running 2026.08.1</span>
+</span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">apoc</span>
+</span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2026.08.1"</span>
+</span><span id="__span-9-9"><a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">  </span><span class="nt">installMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VerifiedDownload</span>
+</span><span id="__span-9-10"><a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-9-11"><a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
+</span><span id="__span-9-12"><a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">https://github.com/neo4j/apoc/releases/download/2026.08.1/apoc-2026.08.1-core.jar</span>
+</span><span id="__span-9-13"><a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a><span class="w">    </span><span class="c1"># sha256sum of that file; pin the digest of the exact JAR you reviewed</span>
+</span><span id="__span-9-14"><a id="__codelineno-9-14" name="__codelineno-9-14" href="#__codelineno-9-14"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">sha256:8607c873df867aa1b3b8c9926d55262d09088d2cccd62b53a35f43cdc22f8433</span>
 </span></code></pre></div>
 <p>The validator enforces additional gates for this mode:</p>
 <ul>
@@ -4514,9 +4607,9 @@ defaults.</p>
 <p>The CAs the downloader trusts follow that list. When you add, remove or replace a Secret in <code>spec.trustedCASecrets</code>, the cluster (or standalone) first restarts its servers for its own truststore. Meanwhile the plugin is <code>Waiting</code> ("… updating the plugin's trusted CAs restarts every server", one <code>PluginInstallDeferred</code> event). Once the target is <code>Ready</code> with every server available and done rolling, the plugin updates its <code>plugin-ca</code> volume to the new list — phase <code>Installing</code> while the restart rolls, no <code>PluginMissing</code> event — which restarts the servers once more. The plugin is <code>Ready</code> again when that restart has reached every server. Reordering the list changes nothing. A Secret you delete as soon as it leaves the list does not stop a restarting server: the volume's projections are optional, and with no certificate left in <code>/etc/plugin-ca</code> the downloader uses its default CAs (the JAR is still checked against <code>spec.source.checksum</code>). The one exception is the first list change after upgrading the operator: a volume an earlier version wrote still requires its Secrets, so delete a removed CA's Secret only once the plugin is <code>Ready</code> again.</p>
 <p><strong>When the download keeps a server from starting</strong>: if the plugin's init container fails on a server (wrong checksum, unreachable URL, a CA the mirror needs is missing), that server stays in <code>Init:CrashLoopBackOff</code>, the cluster stays <code>Forming</code>, and the plugin stays <code>Installing</code> with a message naming the pod and the init container's exit code. Fix the plugin's <code>source</code> or the target's <code>spec.trustedCASecrets</code>: the plugin writes that fix even though its target is not <code>Ready</code>, with one <code>PluginInitContainerFailing</code> Warning. It does so only when every server that is down is failing in this plugin's init container, those are the highest-numbered servers, and Neo4j reports no other server unavailable; then the restart replaces the broken servers first. If any other server is down, the fix waits like any install. On a standalone the plugin also deletes the stuck pod once the fix is written, because its StatefulSet does not replace a pod that is not ready.</p>
 <p><strong>Air-gapped clusters</strong>: the init container image defaults to <code>curlimages/curl:8.5.0</code>, pulled from a public registry. Point it at an internal mirror via the operator Helm chart value:</p>
-<div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="c1"># values.yaml for the neo4j-operator chart</span>
-</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">pluginInitContainer</span><span class="p">:</span>
-</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">  </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">registry.internal.example.com/mirror/curlimages/curl:8.5.0</span>
+<div class="language-yaml highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="c1"># values.yaml for the neo4j-operator chart</span>
+</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="nt">pluginInitContainer</span><span class="p">:</span>
+</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">  </span><span class="nt">image</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">registry.internal.example.com/mirror/curlimages/curl:8.5.0</span>
 </span></code></pre></div>
 <p>Note that every pod restart re-runs the init container and re-downloads the JAR (≈ 30 MB for GDS) — budget bandwidth accordingly.</p>
 <h3 id="duplicate-cr-protection-all-modes">Duplicate-CR protection (all modes)<a class="headerlink" href="#duplicate-cr-protection-all-modes" title="Anchor link to this section">&para;</a></h3>
@@ -4584,22 +4677,22 @@ defaults.</p>
 </tbody>
 </table>
 <p>Compatibility-matrix notes (unknown plugin name, version below the recorded minimum) are <strong>advisory only</strong> — they surface as <code>ValidationWarning</code> events and never block installation. So does a field the schema accepts but nothing reads (<code>spec.resources</code>, <code>spec.source.registry</code> and its <code>tls</code>, <code>spec.security.securityPolicy</code>): the event reads <code>spec.&lt;path&gt; is accepted but has no effect today: &lt;what to do instead&gt;</code>.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jplugin<span class="w"> </span>&lt;name&gt;<span class="w">          </span><span class="c1"># status.message + events</span>
-</span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.name<span class="o">=</span>&lt;name&gt;
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>describe<span class="w"> </span>neo4jplugin<span class="w"> </span>&lt;name&gt;<span class="w">          </span><span class="c1"># status.message + events</span>
+</span><span id="__span-11-2"><a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a>kubectl<span class="w"> </span>get<span class="w"> </span>events<span class="w"> </span>--field-selector<span class="w"> </span>involvedObject.name<span class="o">=</span>&lt;name&gt;
 </span></code></pre></div>
 <h3 id="verifying-the-plugin-landed">Verifying the plugin landed<a class="headerlink" href="#verifying-the-plugin-landed" title="Anchor link to this section">&para;</a></h3>
 <p>For <strong>clusters</strong>, check the <code>{cluster-name}-server</code> StatefulSet's environment variables:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>statefulset<span class="w"> </span>my-cluster-server<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-10-2"><a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.template.spec.containers[?(@.name=="neo4j")].env}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
-</span><span id="__span-10-3"><a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="c1"># Expect NEO4J_PLUGINS to include your plugin, plus NEO4J_* config vars</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>statefulset<span class="w"> </span>my-cluster-server<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.spec.template.spec.containers[?(@.name=="neo4j")].env}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>jq<span class="w"> </span>.
+</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="c1"># Expect NEO4J_PLUGINS to include your plugin, plus NEO4J_* config vars</span>
 </span></code></pre></div>
 <p>For <strong>standalone</strong>, check the StatefulSet (named after the standalone CR) the same way, and the <code>{standalone-name}-config</code> ConfigMap for <code>neo4j.conf</code>-level plugin settings (security allowlists etc.):</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>configmap<span class="w"> </span>my-standalone-config<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.data.neo4j\.conf}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>&lt;plugin&gt;
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-13-1"><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>kubectl<span class="w"> </span>get<span class="w"> </span>configmap<span class="w"> </span>my-standalone-config<span class="w"> </span>-o<span class="w"> </span><span class="nv">jsonpath</span><span class="o">=</span><span class="s1">'{.data.neo4j\.conf}'</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span>&lt;plugin&gt;
 </span></code></pre></div>
 <p>Then confirm Neo4j actually loaded the procedures:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>&lt;pod-name&gt;<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="w">  </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-12-3"><a id="__codelineno-12-3" name="__codelineno-12-3" href="#__codelineno-12-3"></a><span class="w">  </span><span class="s2">"SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN name LIMIT 5"</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>kubectl<span class="w"> </span><span class="nb">exec</span><span class="w"> </span>&lt;pod-name&gt;<span class="w"> </span>-c<span class="w"> </span>neo4j<span class="w"> </span>--<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">  </span>cypher-shell<span class="w"> </span>-u<span class="w"> </span>neo4j<span class="w"> </span>-p<span class="w"> </span>&lt;password&gt;<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-14-3"><a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">  </span><span class="s2">"SHOW PROCEDURES YIELD name WHERE name STARTS WITH 'apoc' RETURN name LIMIT 5"</span>
 </span></code></pre></div>
 <h3 id="events-to-look-for">Events to look for<a class="headerlink" href="#events-to-look-for" title="Anchor link to this section">&para;</a></h3>
 <table>
@@ -4649,7 +4742,12 @@ defaults.</p>
 <tr>
 <td><code>PluginSettingsFailing</code></td>
 <td>Warning / Normal</td>
-<td>The plugin writes a change of its settings to a target that is not <code>Ready</code>, because every server that is down keeps failing while running them (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal)</td>
+<td>The plugin writes a change of its settings — or its removal, disabled or refused — to a target that is not <code>Ready</code>, because every server that is down keeps failing while running them (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal)</td>
+</tr>
+<tr>
+<td><code>PluginUnknownToImage</code></td>
+<td>Warning</td>
+<td>A <code>Managed</code> plugin's <code>NEO4J_PLUGINS</code> name, its own or a dependency's, is not one the image of its target installs (<code>graphql</code> anywhere, <code>n10s</code> on CalVer, a custom JAR's name): phase <code>Failed</code>, nothing written, and what an earlier operator wrote taken off. Emitted once, and again only for a different refusal (the target's image changed)</td>
 </tr>
 <tr>
 <td><code>PluginDuplicate</code></td>
@@ -4676,6 +4774,7 @@ defaults.</p>
 <li><strong>VerifiedDownload pod stuck <code>Pending</code></strong>: checksum mismatch or unreachable URL — <code>kubectl describe pod</code> and read the init container's termination message.</li>
 <li><strong>Servers crash-loop after a plugin install, <code>Installing</code> "… cannot start: c-server-2 (container neo4j exited with code 1)"</strong>: Neo4j refused to start, typically on a <code>spec.config</code> key it does not know — <code>kubectl logs &lt;pod&gt; -c neo4j --previous</code> names the setting. Remove the key from the plugin: the plugin writes the removal even though the cluster is not <code>Ready</code> (see <a href="#plugin-configuration">Plugin configuration</a>).</li>
 <li><strong>Plugin loads but procedures fail as unknown</strong>: look for the <code>ProceduresHidden</code> condition (<code>kubectl describe neo4jplugin &lt;name&gt;</code>) — another plugin's, or your own, <code>allowedProcedures</code> set the shared allowlist without this plugin's namespace (see <a href="#plugin-configuration">Plugin configuration</a>). Otherwise check <code>spec.security.allowedProcedures</code> and whether the plugin needs unrestricted procedures; for license-bound plugins (Bloom, GDS Enterprise) verify the license file is mounted (<code>kubectl exec &lt;pod&gt; -c neo4j -- ls /licenses/</code>).</li>
+<li><strong><code>Failed</code> with "not a plugin the neo4j:<tag> image can install"</strong>: the plugin is <code>Managed</code>, and the image of its target cannot install the name (see <a href="#which-plugins-managed-installs">Which plugins <code>Managed</code> installs</a>). Switch the plugin to <code>installMode: VerifiedDownload</code> with the JAR's <code>source.url</code> and <code>source.checksum</code>, or use a name the image lists; the plugin installs on its next look, within 30 seconds. If the servers were crash-looping on the name (<code>"graphql" is not a known Neo4j plugin</code> in <code>kubectl logs &lt;pod&gt; -c neo4j --previous</code>), the operator has taken it off already.</li>
 <li><strong><code>status.phase: Disabled</code></strong>: the plugin has <code>spec.enabled: false</code> and is off its target's servers, as asked. Set <code>spec.enabled: true</code> to install it again.</li>
 </ul>
 <p>More general debugging recipes: <a href="../troubleshooting/">Troubleshooting Guide</a>.</p>

@@ -2811,6 +2811,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#names-the-entrypoint-installs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Names the entrypoint installs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#disabling-a-plugin" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2983,10 +2994,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#installmode-managed-with-a-checksum-when-you-must-download" class="md-nav__link">
+  <a href="#a-checksum-for-sourcetype-url-and-custom" class="md-nav__link">
     <span class="md-ellipsis">
       
-        installMode: Managed with a checksum (when you must download)
+        A checksum for source.type: url and custom
       
     </span>
   </a>
@@ -3222,21 +3233,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#official-repository" class="md-nav__link">
+  <a href="#official-and-community" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Official Repository
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#community-repository" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Community Repository
+        Official and Community
       
     </span>
   </a>
@@ -4611,6 +4611,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#names-the-entrypoint-installs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Names the entrypoint installs
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#disabling-a-plugin" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4783,10 +4794,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#installmode-managed-with-a-checksum-when-you-must-download" class="md-nav__link">
+  <a href="#a-checksum-for-sourcetype-url-and-custom" class="md-nav__link">
     <span class="md-ellipsis">
       
-        installMode: Managed with a checksum (when you must download)
+        A checksum for source.type: url and custom
       
     </span>
   </a>
@@ -5022,21 +5033,10 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#official-repository" class="md-nav__link">
+  <a href="#official-and-community" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Official Repository
-      
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#community-repository" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Community Repository
+        Official and Community
       
     </span>
   </a>
@@ -5297,7 +5297,7 @@
 <li><strong>Kind</strong>: <code>Neo4jPlugin</code></li>
 <li><strong>Target Deployments</strong>: Both <code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code></li>
 <li><strong>Installation Method</strong>: Neo4j's <code>NEO4J_PLUGINS</code> environment variable approach</li>
-<li><strong>Supported Plugins</strong>: APOC, Graph Data Science, Bloom, GraphQL, GenAI, N10s, and custom plugins</li>
+<li><strong>Supported Plugins</strong>: APOC, APOC Extended, Graph Data Science, Bloom, GenAI and, on 5.26, N10s by name (<code>installMode: Managed</code>, <a href="#names-the-entrypoint-installs">the names each image's entrypoint installs</a>); any other JAR with <code>installMode: VerifiedDownload</code> or <code>PreBaked</code></li>
 <li><strong>Note</strong>: Fleet Management is managed via <code>spec.auraFleetManagement</code> on the cluster/standalone CRD, not via <code>Neo4jPlugin</code>. Both coexist without conflict.</li>
 <li><strong>Automatic Configuration</strong>: Plugin-specific settings and security policies</li>
 </ul>
@@ -5360,6 +5360,39 @@
 <p>On a cluster, each shared procedure list (<code>dbms.security.procedures.unrestricted</code>, <code>…allowlist</code>, <code>…denylist</code>, <code>dbms.security.http_auth_allowlist</code>, <code>server.unmanaged_extension_classes</code>) is exactly what the cluster's enabled plugins put there — their <code>spec.security</code>, their automatic settings, and the list keys of their <code>spec.config</code> — written with a plugin's write. A token a plugin no longer asks for goes, and a list key in <code>spec.config</code> adds to the list rather than replacing it. On a standalone the lists are in its <code>neo4j.conf</code>, where its controller unions its own <code>spec.config</code> with its plugins' settings.</p>
 <p>Deleting the <code>Neo4jPlugin</code> — or setting <code>spec.enabled: false</code> — takes off the StatefulSet, in one write, everything the plugin wrote: its variables, its tokens in the procedure lists (not those another plugin needs), its <code>NEO4J_PLUGINS</code> names (those it recorded, and in Managed mode its own and its dependencies'; not those another plugin of the target installs, nor <code>fleet-management</code> while <code>spec.auraFleetManagement</code> installs it, nor anything when <code>NEO4J_PLUGINS</code> comes from the cluster's own <code>spec.env</code>), a <code>VerifiedDownload</code> plugin's init container and volumes, and its records.</p>
 <p>A plugin installed by an operator older than v1.22.0 has no record of its variables, and one older than this release none of its <code>NEO4J_PLUGINS</code> names: its first reconcile records what it sets now (a metadata write, no restart) and removes nothing. What a removal left behind before the upgrade stays until removed by hand.</p>
+<h3 id="names-the-entrypoint-installs">Names the entrypoint installs<a class="headerlink" href="#names-the-entrypoint-installs" title="Anchor link to this section">&para;</a></h3>
+<p>In <code>Managed</code> mode the plugin's name and its dependencies' go into <code>NEO4J_PLUGINS</code>, after the aliases <code>gds</code> (<code>graph-data-science</code>) and <code>neosemantics</code> (<code>n10s</code>). The Neo4j Docker entrypoint looks each name up in the image's <code>/startup/neo4j-plugins.json</code> and exits on one it does not list, so the server does not start. The lists, read from <code>neo4j/docker-neo4j</code> at every release tag and checked on the images (2026-10-24):</p>
+<table>
+<thead>
+<tr>
+<th>Neo4j image</th>
+<th>Names <code>NEO4J_PLUGINS</code> may hold</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>5.26.0 – 5.26.10</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>genai</code>, <code>graph-data-science</code>, <code>n10s</code></td>
+</tr>
+<tr>
+<td>5.26.11 and later (also <code>5.26-enterprise</code>)</td>
+<td>the above and <code>fleet-management</code></td>
+</tr>
+<tr>
+<td>2025.01 – 2025.04</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>genai</code>, <code>graph-data-science</code>, <code>n10s</code></td>
+</tr>
+<tr>
+<td>2025.05 – 2025.07</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>genai</code>, <code>graph-data-science</code></td>
+</tr>
+<tr>
+<td>2025.08 and later</td>
+<td><code>apoc</code>, <code>apoc-extended</code>, <code>bloom</code>, <code>fleet-management</code>, <code>genai</code>, <code>graph-data-science</code></td>
+</tr>
+</tbody>
+</table>
+<p>The operator judges a <code>Managed</code> plugin by the image tag of its target (<code>spec.image.tag</code>; a tag without a patch as its line's newest patch, a CalVer newer than the operator by the newest list it knows). A name the image does not list — <code>graphql</code> on any supported release, <code>n10s</code> on CalVer from 2025.05, a custom JAR's name — is refused: phase <code>Failed</code> with <code>spec.name: Invalid value: "&lt;name&gt;": not a plugin the neo4j:&lt;tag&gt; image can install: …; install its JAR with installMode: VerifiedDownload (source.url + source.checksum) instead</code> (or <code>spec.dependencies[i].name</code>), one <code>PluginUnknownToImage</code> Warning, nothing written, and another look every 30 seconds. What an earlier operator wrote of it — its <code>NEO4J_PLUGINS</code> names (those it recorded; without a record, its own and its dependencies' as the entrypoint knows them), its settings and records — is taken off in the write a disabled plugin's removal makes, gated the same way: at once, with one <code>PluginSettingsFailing</code> Warning, when every server that is down keeps failing on it, otherwise once the target is <code>Ready</code> with every server available. <code>VerifiedDownload</code> and <code>PreBaked</code> never touch <code>NEO4J_PLUGINS</code>, so any JAR installs that way; a disabled plugin is not judged. <code>kubectl neo4j validate --connect</code> applies the same rule; offline it warns about a name no supported release installs.</p>
 <h3 id="disabling-a-plugin">Disabling a plugin<a class="headerlink" href="#disabling-a-plugin" title="Anchor link to this section">&para;</a></h3>
 <p><code>spec.enabled: false</code> keeps the plugin off its target's servers and keeps the CR. An installed plugin is removed in the one write described above, phase <code>Installing</code> ("Removing the plugin … (spec.enabled: false)") while the servers restart without it, then <code>Disabled</code>, with one <code>PluginDisabled</code> event; a plugin created disabled is <code>Disabled</code> at once and writes nothing. Like an install, the removal waits (<code>Waiting</code>, one <code>PluginInstallDeferred</code> event, "… removing the disabled plugin restarts every server") until the target is <code>Ready</code> with every server available — except when every server that is down keeps failing in what the plugin set (its <code>VerifiedDownload</code> init container, or a setting Neo4j refuses): then it is written at once, with one <code>PluginInitContainerFailing</code> or <code>PluginSettingsFailing</code> Warning, and the restart replaces the failing servers first. Setting <code>spec.enabled: true</code> again installs the plugin again (one rolling restart). On a standalone with settings in its <code>neo4j.conf</code> (an allowlist, say), those leave with the standalone's own restart first and the plugin's write restarts it once more, as on install.</p>
 <h2 id="api-version">API Version<a class="headerlink" href="#api-version" title="Anchor link to this section">&para;</a></h2>
@@ -5387,7 +5420,7 @@
 <td><code>name</code></td>
 <td><code>string</code></td>
 <td>✅</td>
-<td>Plugin name (e.g., "apoc", "graph-data-science")</td>
+<td>Plugin name (e.g., "apoc", "graph-data-science"). In <code>Managed</code> mode it must be a name the target's image installs — see <a href="#names-the-entrypoint-installs">Names the entrypoint installs</a></td>
 </tr>
 <tr>
 <td><code>version</code></td>
@@ -5747,9 +5780,10 @@ copied to <code>/plugins/</code>: <strong>APOC core</strong> from <code>labs/</c
 <strong>GenAI</strong>, <strong>Graph Data Science</strong> and <strong>Fleet Management</strong> (the Operations
 Manual lists them as pre-installed; Bloom too, on CalVer). The entrypoint
 copies one of these from the image when it is there and downloads it only
-when it is not. <strong>Every other plugin</strong> (<code>apoc-extended</code>, <code>n10s</code>) is
-<strong>downloaded from the internet on every pod start</strong>, which has three
-production consequences:</p>
+when it is not. <strong>The other plugins it knows</strong> (<code>apoc-extended</code>, and
+<code>n10s</code> on 5.26) are <strong>downloaded from the internet on every pod start</strong>,
+which has three production consequences (a name it does not know is
+refused, see <a href="#names-the-entrypoint-installs">Names the entrypoint installs</a>):</p>
 <ul>
 <li><strong>Non-reproducibility</strong> — a restart can pull a different artifact than
   the one originally validated.</li>
@@ -5770,10 +5804,9 @@ CRD UX and a pinned, signed, scannable artifact.</p>
 <div class="language-dockerfile highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">FROM</span><span class="w"> </span><span class="s">neo4j:2025.01.0-enterprise</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">COPY</span><span class="w"> </span>graph-data-science-2.13.0.jar<span class="w"> </span>/var/lib/neo4j/plugins/
 </span></code></pre></div>
-<h3 id="installmode-managed-with-a-checksum-when-you-must-download"><code>installMode: Managed</code> with a checksum (when you must download)<a class="headerlink" href="#installmode-managed-with-a-checksum-when-you-must-download" title="Anchor link to this section">&para;</a></h3>
-<p>When the JAR must be fetched at runtime, the validator requires a
-<code>source.checksum</code> for any <code>source.type: url</code> or <code>source.type: custom</code>.
-The checksum format is enforced:</p>
+<h3 id="a-checksum-for-sourcetype-url-and-custom">A checksum for <code>source.type: url</code> and <code>custom</code><a class="headerlink" href="#a-checksum-for-sourcetype-url-and-custom" title="Anchor link to this section">&para;</a></h3>
+<p>The validator requires a <code>source.checksum</code> for any <code>source.type: url</code>
+or <code>source.type: custom</code>. The checksum format is enforced:</p>
 <ul>
 <li><code>sha256:</code> followed by exactly 64 hex characters, <strong>or</strong></li>
 <li><code>sha512:</code> followed by exactly 128 hex characters.</li>
@@ -5781,11 +5814,13 @@ The checksum format is enforced:</p>
 <p>SHA1, MD5, and unprefixed hex are rejected. SHA1/MD5 because they are
 not collision-resistant; unprefixed hex because verification tooling
 should never have to guess the algorithm.</p>
-<p><strong>Honest limitation</strong>: the upstream Neo4j Docker entrypoint does <strong>not</strong>
-consume <code>source.checksum</code> at download time. The operator records the
-field for audit and exposes it on the StatefulSet, but enforcement at
-the moment of download requires either (a) pinning to PreBaked or (b)
-the VerifiedDownload mode described next.</p>
+<p><strong><code>source.url</code> and <code>source.checksum</code> are used by <code>VerifiedDownload</code>
+only.</strong> In <code>Managed</code> mode the operator writes the plugin's name to
+<code>NEO4J_PLUGINS</code> and the entrypoint installs from its own list by name;
+it never reads <code>source</code>, and a name it does not list is refused
+(<a href="#names-the-entrypoint-installs">Names the entrypoint installs</a>). A
+JAR fetched from a URL at runtime takes the VerifiedDownload mode
+described next, which checks it before Neo4j starts.</p>
 <h3 id="installmode-verifieddownload-verified-download-via-init-container"><code>installMode: VerifiedDownload</code> (verified download via init container)<a class="headerlink" href="#installmode-verifieddownload-verified-download-via-init-container" title="Anchor link to this section">&para;</a></h3>
 <p>When <code>installMode: VerifiedDownload</code> is set, the operator injects an init
 container into the target StatefulSet's pod template. The init container
@@ -6020,7 +6055,7 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-7-22"><a id="__codelineno-7-22" name="__codelineno-7-22" href="#__codelineno-7-22"></a><span class="w">    </span><span class="nt">sandbox</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <h3 id="url-plugin-example">URL Plugin Example<a class="headerlink" href="#url-plugin-example" title="Anchor link to this section">&para;</a></h3>
-<p>Install a plugin directly from a URL:</p>
+<p>Install a plugin directly from a URL (<code>VerifiedDownload</code>: in <code>Managed</code> mode the URL is not read, and the name is refused):</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
 </span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="nt">metadata</span><span class="p">:</span>
@@ -6029,15 +6064,17 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">direct-download-plugin</span>
 </span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"2.0.0"</span>
-</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">  </span><span class="c1"># Direct URL source with checksum verification</span>
-</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
-</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"https://example.com/plugins/my-plugin-2.0.0.jar"</span>
-</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="s">"sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"</span>
+</span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">  </span><span class="nt">installMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VerifiedDownload</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>
+</span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">  </span><span class="c1"># Direct URL source with checksum verification</span>
+</span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
+</span><span id="__span-8-14"><a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"https://example.com/plugins/my-plugin-2.0.0.jar"</span>
+</span><span id="__span-8-15"><a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="s">"sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"</span>
 </span></code></pre></div>
 <h2 id="supported-plugins">Supported Plugins<a class="headerlink" href="#supported-plugins" title="Anchor link to this section">&para;</a></h2>
 <h3 id="official-neo4j-plugins">Official Neo4j Plugins<a class="headerlink" href="#official-neo4j-plugins" title="Anchor link to this section">&para;</a></h3>
+<p>The names below are the ones <code>Managed</code> mode installs; which of them a release lists is in <a href="#names-the-entrypoint-installs">Names the entrypoint installs</a>. Neo4j Streams is not a plugin of any supported release, and GraphQL has none either: the <a href="https://neo4j.com/docs/graphql/current/">Neo4j GraphQL Library</a> is a JavaScript library you run in your own GraphQL server, a client of the database (the old <code>neo4j-graphql</code> server extension stopped at Neo4j 3.5).</p>
 <table>
 <thead>
 <tr>
@@ -6069,20 +6106,6 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <td>Advanced graph algorithms</td>
 <td>Neo4j Config + Security</td>
 <td>✅ Auto-configured</td>
-</tr>
-<tr>
-<td><strong>Neo4j Streams</strong></td>
-<td><code>streams</code></td>
-<td>Kafka/Pulsar integration</td>
-<td>Neo4j Config</td>
-<td>❌ Manual setup</td>
-</tr>
-<tr>
-<td><strong>GraphQL</strong></td>
-<td><code>graphql</code></td>
-<td>GraphQL endpoint</td>
-<td>Neo4j Config</td>
-<td>❌ Manual setup</td>
 </tr>
 </tbody>
 </table>
@@ -6206,13 +6229,13 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <tr>
 <td><strong>Neo Semantics (N10s)</strong></td>
 <td><code>n10s</code></td>
-<td>RDF/ontology support</td>
+<td>RDF/ontology support. <code>Managed</code> on 5.26 (and CalVer before 2025.05) only; on CalVer install its JAR with <code>VerifiedDownload</code> (see the <a href="../../user_guide/guides/plugins/#which-plugins-managed-installs">plugins guide</a>)</td>
 <td>Neo4j Config</td>
 </tr>
 <tr>
 <td><strong>Custom Plugins</strong></td>
-<td><code>custom</code></td>
-<td>User-defined plugins</td>
+<td>any</td>
+<td>User-defined plugins, with <code>VerifiedDownload</code> or <code>PreBaked</code> — a custom name is refused in <code>Managed</code> mode</td>
 <td>Flexible</td>
 </tr>
 </tbody>
@@ -6253,31 +6276,19 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 <li><strong>Waiting</strong>: When the plugin has something to write to its StatefulSet, which restarts every server: waiting for the target to answer, or for it to be <code>Ready</code> with every server available: not while a cluster has a server down (<code>Degraded</code> condition <code>True</code>, or phase <code>Degraded</code>), nor while it is forming, rolling its servers or upgrading. A <code>PluginInstallDeferred</code> event (or, for a <code>Ready</code> plugin that lost something, a <code>PluginMissing</code> one) marks the start of the wait; the plugin checks again every 30 seconds</li>
 <li><strong>Installing</strong>: Plugin installation in progress — including while the servers restart to take it (a pass waiting for that restart asks Neo4j nothing, so a standalone restarting its one pod does not turn the plugin <code>Waiting</code>), while a disabled plugin is removed (<code>spec.enabled: false</code>), while a <code>Ready</code> plugin restores what was removed from its target (<code>PluginMissing</code> event), and while a <code>VerifiedDownload</code> plugin brings its trusted CAs in line with the target's changed <code>spec.trustedCASecrets</code> ("Updating the plugin's trusted CAs: …"). While its roll is stuck, the message names the pods that cannot start ("…; cannot start: c-server-2 (container neo4j exited with code 1)")</li>
 <li><strong>Ready</strong>: Plugin successfully installed and active. Re-checked whenever the target StatefulSet's pod template changes: if something removed what the plugin set (its <code>NEO4J_PLUGINS</code> entry, a variable it sets, a <code>VerifiedDownload</code> init container or volume), the plugin goes back to <code>Installing</code> and restores it — or <code>Waiting</code>, while the target is not <code>Ready</code> with every server available; if nothing is missing, the check writes nothing and the phase stays <code>Ready</code>, whatever state the target is in</li>
-<li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, and when the cluster's own spec sets a variable the plugin would have to change). A failed install is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
+<li><strong>Failed</strong>: Plugin installation failed (also set on the newer of two duplicate <code>Neo4jPlugin</code> CRs, when the cluster's own spec sets a variable the plugin would have to change, and on a <code>Managed</code> plugin whose name the target's image cannot install — <a href="#names-the-entrypoint-installs">Names the entrypoint installs</a>; one <code>PluginUnknownToImage</code> Warning). A failed install is retried every 30 seconds; its <code>PluginInstallFailed</code> Warning is emitted once, not on each retry</li>
 <li><strong>Invalid</strong>: The spec failed validation (for example an unsupported <code>securityPolicy</code>, a missing <code>source.url</code>/<code>checksum</code>, or a non-https URL); the controller does not requeue until the CR is edited</li>
 <li><strong>Disabled</strong>: <code>spec.enabled: false</code>, and nothing of the plugin is on its target's servers (its removal written and rolled out, or nothing there to remove). One <code>PluginDisabled</code> event. Not a fault: the <code>Ready</code> condition is <code>False</code> with reason <code>Disabled</code></li>
 </ul>
 <h3 id="shared-procedure-allowlist">Shared procedure allowlist<a class="headerlink" href="#shared-procedure-allowlist" title="Anchor link to this section">&para;</a></h3>
 <p><code>dbms.security.procedures.allowlist</code> is one server-wide list. Once any plugin of a target sets it (<code>spec.security.allowedProcedures</code>, or the key in <code>spec.config</code>) — or the target's own <code>spec.config</code> does — Neo4j loads only the procedures and functions it matches, and every other plugin's are not loaded at all: calls to them fail as unknown. Installing the GenAI example (<code>genai.*</code>, <code>ai.*</code>) beside an APOC plugin with no <code>security</code> block hides APOC that way. The operator does not widen the list for you — it is a security boundary someone set — but a plugin whose procedures the effective list loads none of carries the condition <code>ProceduresHidden</code> (<code>True</code>, reason <code>NotInAllowlist</code>), naming the list, where it is set and who sets it, with one <code>PluginProceduresHidden</code> Warning when it appears or changes. The plugin stays <code>Ready</code> (its JAR is on the servers). Add the plugin's namespace (<code>apoc.*</code>, …) to <code>allowedProcedures</code> of this plugin or of the one that sets the list; the condition goes when the list loads it again. Plugins the operator knows are judged (APOC, APOC Extended, GDS, Bloom, GenAI, N10s, Fleet Management); a custom plugin is not.</p>
 <h2 id="supported-plugin-sources">Supported Plugin Sources<a class="headerlink" href="#supported-plugin-sources" title="Anchor link to this section">&para;</a></h2>
-<h3 id="official-repository">Official Repository<a class="headerlink" href="#official-repository" title="Anchor link to this section">&para;</a></h3>
-<p>Neo4j's official plugin repository (recommended for production):</p>
-<ul>
-<li>APOC (Awesome Procedures On Cypher)</li>
-<li>Neo4j Streams</li>
-<li>Neo4j GraphQL</li>
-</ul>
-<h3 id="community-repository">Community Repository<a class="headerlink" href="#community-repository" title="Anchor link to this section">&para;</a></h3>
-<p>Community-maintained plugins:</p>
-<ul>
-<li>Graph Data Science (GDS)</li>
-<li>Additional APOC extensions</li>
-<li>Third-party plugins</li>
-</ul>
+<h3 id="official-and-community">Official and Community<a class="headerlink" href="#official-and-community" title="Anchor link to this section">&para;</a></h3>
+<p><code>source.type: official</code> and <code>community</code> say only that the Neo4j entrypoint installs the plugin by name in <code>Managed</code> mode: from the image when it ships the JAR (APOC core, GDS, GenAI, Fleet Management, and Bloom on CalVer), otherwise from the plugin's published versions list (APOC Extended, and N10s on 5.26). Neither type changes what the operator writes. Which names a release installs: <a href="#names-the-entrypoint-installs">Names the entrypoint installs</a>.</p>
 <h3 id="custom-registry">Custom Registry<a class="headerlink" href="#custom-registry" title="Anchor link to this section">&para;</a></h3>
-<p>Private plugin registries with authentication support.</p>
+<p>Private plugin registries with authentication support, with <code>installMode: VerifiedDownload</code> (<code>source.url</code> + <code>checksum</code>, <code>authSecret</code>).</p>
 <h3 id="direct-url">Direct URL<a class="headerlink" href="#direct-url" title="Anchor link to this section">&para;</a></h3>
-<p>Direct download from URLs with checksum verification.</p>
+<p>Direct download from URLs with checksum verification, with <code>installMode: VerifiedDownload</code>.</p>
 <h2 id="installation-workflow">Installation Workflow<a class="headerlink" href="#installation-workflow" title="Anchor link to this section">&para;</a></h2>
 <p>The <code>Neo4jPlugin</code> controller follows this comprehensive workflow:</p>
 <h3 id="phase-1-validation-and-discovery">Phase 1: Validation and Discovery<a class="headerlink" href="#phase-1-validation-and-discovery" title="Anchor link to this section">&para;</a></h3>
@@ -6360,13 +6371,13 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-17-2"><a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="c1"># Result: Combined environment variables</span>
 </span><span id="__span-17-3"><a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="nt">env</span><span class="p">:</span>
 </span><span id="__span-17-4"><a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_PLUGINS</span>
-</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'["apoc",</span><span class="nv"> </span><span class="s">"graph-data-science",</span><span class="nv"> </span><span class="s">"streams"]'</span>
+</span><span id="__span-17-5"><a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'["apoc",</span><span class="nv"> </span><span class="s">"graph-data-science",</span><span class="nv"> </span><span class="s">"bloom"]'</span>
 </span><span id="__span-17-6"><a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_apoc_export_file_enabled</span>
 </span><span id="__span-17-7"><a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'true'</span>
 </span><span id="__span-17-8"><a id="__codelineno-17-8" name="__codelineno-17-8" href="#__codelineno-17-8"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_gds_enterprise_license__file</span>
 </span><span id="__span-17-9"><a id="__codelineno-17-9" name="__codelineno-17-9" href="#__codelineno-17-9"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'/licenses/gds.license'</span>
-</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_streams_sink_topic_cypher_nodes</span>
-</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'CREATE</span><span class="nv"> </span><span class="s">(n:Node</span><span class="nv"> </span><span class="s">{id:</span><span class="nv"> </span><span class="s">event.id})'</span>
+</span><span id="__span-17-10"><a id="__codelineno-17-10" name="__codelineno-17-10" href="#__codelineno-17-10"></a><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_dbms_bloom_license__file</span>
+</span><span id="__span-17-11"><a id="__codelineno-17-11" name="__codelineno-17-11" href="#__codelineno-17-11"></a><span class="w">  </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">'/licenses/bloom.license'</span>
 </span></code></pre></div></p>
 <h2 id="advanced-plugin-configurations">Advanced Plugin Configurations<a class="headerlink" href="#advanced-plugin-configurations" title="Anchor link to this section">&para;</a></h2>
 <h3 id="custom-plugin-from-url">Custom Plugin from URL<a class="headerlink" href="#custom-plugin-from-url" title="Anchor link to this section">&para;</a></h3>
@@ -6378,25 +6389,28 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-18-6"><a id="__codelineno-18-6" name="__codelineno-18-6" href="#__codelineno-18-6"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-cluster</span>
 </span><span id="__span-18-7"><a id="__codelineno-18-7" name="__codelineno-18-7" href="#__codelineno-18-7"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">my-custom-plugin</span>
 </span><span id="__span-18-8"><a id="__codelineno-18-8" name="__codelineno-18-8" href="#__codelineno-18-8"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"1.0.0"</span>
-</span><span id="__span-18-9"><a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a>
-</span><span id="__span-18-10"><a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">  </span><span class="c1"># Custom plugin source</span>
-</span><span id="__span-18-11"><a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
-</span><span id="__span-18-12"><a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
-</span><span id="__span-18-13"><a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"https://my-registry.example.com/plugins/my-plugin-1.0.0.jar"</span>
-</span><span id="__span-18-14"><a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="s">"sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"</span>
-</span><span id="__span-18-15"><a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="w">    </span><span class="nt">authSecret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom-registry-credentials</span><span class="w">   </span><span class="c1"># only used with installMode: VerifiedDownload</span>
-</span><span id="__span-18-16"><a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a>
-</span><span id="__span-18-17"><a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="w">  </span><span class="c1"># Custom configuration</span>
-</span><span id="__span-18-18"><a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-18-19"><a id="__codelineno-18-19" name="__codelineno-18-19" href="#__codelineno-18-19"></a><span class="w">    </span><span class="s">"custom.plugin.setting1"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"value1"</span>
-</span><span id="__span-18-20"><a id="__codelineno-18-20" name="__codelineno-18-20" href="#__codelineno-18-20"></a><span class="w">    </span><span class="s">"custom.plugin.setting2"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"value2"</span>
-</span><span id="__span-18-21"><a id="__codelineno-18-21" name="__codelineno-18-21" href="#__codelineno-18-21"></a>
-</span><span id="__span-18-22"><a id="__codelineno-18-22" name="__codelineno-18-22" href="#__codelineno-18-22"></a><span class="w">  </span><span class="c1"># Security restrictions</span>
-</span><span id="__span-18-23"><a id="__codelineno-18-23" name="__codelineno-18-23" href="#__codelineno-18-23"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
-</span><span id="__span-18-24"><a id="__codelineno-18-24" name="__codelineno-18-24" href="#__codelineno-18-24"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
-</span><span id="__span-18-25"><a id="__codelineno-18-25" name="__codelineno-18-25" href="#__codelineno-18-25"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"custom.*"</span>
-</span><span id="__span-18-26"><a id="__codelineno-18-26" name="__codelineno-18-26" href="#__codelineno-18-26"></a><span class="w">    </span><span class="nt">securityPolicy</span><span class="p">:</span><span class="w"> </span><span class="s">"strict"</span><span class="w">   </span><span class="c1"># strict | moderate | permissive (validated only)</span>
-</span><span id="__span-18-27"><a id="__codelineno-18-27" name="__codelineno-18-27" href="#__codelineno-18-27"></a><span class="w">    </span><span class="nt">sandbox</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
+</span><span id="__span-18-9"><a id="__codelineno-18-9" name="__codelineno-18-9" href="#__codelineno-18-9"></a><span class="w">  </span><span class="c1"># A custom JAR: in Managed mode the name would be refused (the</span>
+</span><span id="__span-18-10"><a id="__codelineno-18-10" name="__codelineno-18-10" href="#__codelineno-18-10"></a><span class="w">  </span><span class="c1"># entrypoint does not know it) and the URL never read</span>
+</span><span id="__span-18-11"><a id="__codelineno-18-11" name="__codelineno-18-11" href="#__codelineno-18-11"></a><span class="w">  </span><span class="nt">installMode</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">VerifiedDownload</span>
+</span><span id="__span-18-12"><a id="__codelineno-18-12" name="__codelineno-18-12" href="#__codelineno-18-12"></a>
+</span><span id="__span-18-13"><a id="__codelineno-18-13" name="__codelineno-18-13" href="#__codelineno-18-13"></a><span class="w">  </span><span class="c1"># Custom plugin source</span>
+</span><span id="__span-18-14"><a id="__codelineno-18-14" name="__codelineno-18-14" href="#__codelineno-18-14"></a><span class="w">  </span><span class="nt">source</span><span class="p">:</span>
+</span><span id="__span-18-15"><a id="__codelineno-18-15" name="__codelineno-18-15" href="#__codelineno-18-15"></a><span class="w">    </span><span class="nt">type</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">url</span>
+</span><span id="__span-18-16"><a id="__codelineno-18-16" name="__codelineno-18-16" href="#__codelineno-18-16"></a><span class="w">    </span><span class="nt">url</span><span class="p">:</span><span class="w"> </span><span class="s">"https://my-registry.example.com/plugins/my-plugin-1.0.0.jar"</span>
+</span><span id="__span-18-17"><a id="__codelineno-18-17" name="__codelineno-18-17" href="#__codelineno-18-17"></a><span class="w">    </span><span class="nt">checksum</span><span class="p">:</span><span class="w"> </span><span class="s">"sha256:abcd1234567890abcd1234567890abcd1234567890abcd1234567890abcd1234"</span>
+</span><span id="__span-18-18"><a id="__codelineno-18-18" name="__codelineno-18-18" href="#__codelineno-18-18"></a><span class="w">    </span><span class="nt">authSecret</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">custom-registry-credentials</span>
+</span><span id="__span-18-19"><a id="__codelineno-18-19" name="__codelineno-18-19" href="#__codelineno-18-19"></a>
+</span><span id="__span-18-20"><a id="__codelineno-18-20" name="__codelineno-18-20" href="#__codelineno-18-20"></a><span class="w">  </span><span class="c1"># Custom configuration</span>
+</span><span id="__span-18-21"><a id="__codelineno-18-21" name="__codelineno-18-21" href="#__codelineno-18-21"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
+</span><span id="__span-18-22"><a id="__codelineno-18-22" name="__codelineno-18-22" href="#__codelineno-18-22"></a><span class="w">    </span><span class="s">"custom.plugin.setting1"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"value1"</span>
+</span><span id="__span-18-23"><a id="__codelineno-18-23" name="__codelineno-18-23" href="#__codelineno-18-23"></a><span class="w">    </span><span class="s">"custom.plugin.setting2"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"value2"</span>
+</span><span id="__span-18-24"><a id="__codelineno-18-24" name="__codelineno-18-24" href="#__codelineno-18-24"></a>
+</span><span id="__span-18-25"><a id="__codelineno-18-25" name="__codelineno-18-25" href="#__codelineno-18-25"></a><span class="w">  </span><span class="c1"># Security restrictions</span>
+</span><span id="__span-18-26"><a id="__codelineno-18-26" name="__codelineno-18-26" href="#__codelineno-18-26"></a><span class="w">  </span><span class="nt">security</span><span class="p">:</span>
+</span><span id="__span-18-27"><a id="__codelineno-18-27" name="__codelineno-18-27" href="#__codelineno-18-27"></a><span class="w">    </span><span class="nt">allowedProcedures</span><span class="p">:</span>
+</span><span id="__span-18-28"><a id="__codelineno-18-28" name="__codelineno-18-28" href="#__codelineno-18-28"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="s">"custom.*"</span>
+</span><span id="__span-18-29"><a id="__codelineno-18-29" name="__codelineno-18-29" href="#__codelineno-18-29"></a><span class="w">    </span><span class="nt">securityPolicy</span><span class="p">:</span><span class="w"> </span><span class="s">"strict"</span><span class="w">   </span><span class="c1"># strict | moderate | permissive (validated only)</span>
+</span><span id="__span-18-30"><a id="__codelineno-18-30" name="__codelineno-18-30" href="#__codelineno-18-30"></a><span class="w">    </span><span class="nt">sandbox</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span>
 </span></code></pre></div>
 <h3 id="plugin-from-a-private-mirror-verifieddownload">Plugin from a Private Mirror (VerifiedDownload)<a class="headerlink" href="#plugin-from-a-private-mirror-verifieddownload" title="Anchor link to this section">&para;</a></h3>
 <p>Authenticated mirrors use <code>source.authSecret</code> with <code>installMode: VerifiedDownload</code>; the Secret carries a <code>token</code> key (sent as <code>Authorization: Bearer &lt;token&gt;</code>) or a <code>header</code> key. Trust for an internal CA comes from the cluster's <code>spec.trustedCASecrets</code>.</p>
@@ -6502,23 +6516,8 @@ the unwanted CR. The surviving CR reconciles on its next watch event
 </span><span id="__span-21-37"><a id="__codelineno-21-37" name="__codelineno-21-37" href="#__codelineno-21-37"></a><span class="w">    </span><span class="nt">memoryLimit</span><span class="p">:</span><span class="w"> </span><span class="s">"8Gi"</span>
 </span><span id="__span-21-38"><a id="__codelineno-21-38" name="__codelineno-21-38" href="#__codelineno-21-38"></a><span class="w">    </span><span class="nt">cpuLimit</span><span class="p">:</span><span class="w"> </span><span class="s">"4"</span>
 </span><span id="__span-21-39"><a id="__codelineno-21-39" name="__codelineno-21-39" href="#__codelineno-21-39"></a><span class="w">    </span><span class="nt">threadPoolSize</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">16</span>
-</span><span id="__span-21-40"><a id="__codelineno-21-40" name="__codelineno-21-40" href="#__codelineno-21-40"></a>
-</span><span id="__span-21-41"><a id="__codelineno-21-41" name="__codelineno-21-41" href="#__codelineno-21-41"></a><span class="nn">---</span>
-</span><span id="__span-21-42"><a id="__codelineno-21-42" name="__codelineno-21-42" href="#__codelineno-21-42"></a><span class="c1"># Neo4j Streams for Real-time Data</span>
-</span><span id="__span-21-43"><a id="__codelineno-21-43" name="__codelineno-21-43" href="#__codelineno-21-43"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
-</span><span id="__span-21-44"><a id="__codelineno-21-44" name="__codelineno-21-44" href="#__codelineno-21-44"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">Neo4jPlugin</span>
-</span><span id="__span-21-45"><a id="__codelineno-21-45" name="__codelineno-21-45" href="#__codelineno-21-45"></a><span class="nt">metadata</span><span class="p">:</span>
-</span><span id="__span-21-46"><a id="__codelineno-21-46" name="__codelineno-21-46" href="#__codelineno-21-46"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-streams</span>
-</span><span id="__span-21-47"><a id="__codelineno-21-47" name="__codelineno-21-47" href="#__codelineno-21-47"></a><span class="nt">spec</span><span class="p">:</span>
-</span><span id="__span-21-48"><a id="__codelineno-21-48" name="__codelineno-21-48" href="#__codelineno-21-48"></a><span class="w">  </span><span class="nt">clusterRef</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">analytics-cluster</span>
-</span><span id="__span-21-49"><a id="__codelineno-21-49" name="__codelineno-21-49" href="#__codelineno-21-49"></a><span class="w">  </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">streams</span>
-</span><span id="__span-21-50"><a id="__codelineno-21-50" name="__codelineno-21-50" href="#__codelineno-21-50"></a><span class="w">  </span><span class="nt">version</span><span class="p">:</span><span class="w"> </span><span class="s">"5.26.0"</span>
-</span><span id="__span-21-51"><a id="__codelineno-21-51" name="__codelineno-21-51" href="#__codelineno-21-51"></a><span class="w">  </span><span class="nt">config</span><span class="p">:</span>
-</span><span id="__span-21-52"><a id="__codelineno-21-52" name="__codelineno-21-52" href="#__codelineno-21-52"></a><span class="w">    </span><span class="s">"streams.sink.enabled"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"true"</span>
-</span><span id="__span-21-53"><a id="__codelineno-21-53" name="__codelineno-21-53" href="#__codelineno-21-53"></a><span class="w">    </span><span class="s">"streams.sink.topic.nodes"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"graph-nodes"</span>
-</span><span id="__span-21-54"><a id="__codelineno-21-54" name="__codelineno-21-54" href="#__codelineno-21-54"></a><span class="w">    </span><span class="s">"streams.sink.topic.relationships"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"graph-relationships"</span>
-</span><span id="__span-21-55"><a id="__codelineno-21-55" name="__codelineno-21-55" href="#__codelineno-21-55"></a><span class="w">    </span><span class="s">"kafka.bootstrap.servers"</span><span class="p p-Indicator">:</span><span class="w"> </span><span class="s">"kafka.analytics.svc.cluster.local:9092"</span>
 </span></code></pre></div>
+<p>(Neo4j Streams is not a plugin of 5.26 or CalVer: the entrypoint does not know <code>streams</code>, and the operator refuses it.)</p>
 <h2 id="troubleshooting">Troubleshooting<a class="headerlink" href="#troubleshooting" title="Anchor link to this section">&para;</a></h2>
 <h3 id="common-issues-and-solutions">Common Issues and Solutions<a class="headerlink" href="#common-issues-and-solutions" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Plugin Not Loading</strong>:
