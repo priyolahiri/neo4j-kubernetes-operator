@@ -4091,7 +4091,9 @@
 <p>Dropping an alias never affects the database behind it.</p>
 <h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h2>
 <p><code>deletionPolicy: Delete</code> runs <code>DROP ALIAS … FOR DATABASE</code>, then releases the finalizer; <code>Retain</code> only
-releases it. If the cluster or standalone CR no longer exists, the finalizer is released at once.</p>
+releases it. If the cluster or standalone CR no longer exists, or is being deleted with its volumes
+(<code>storage.retentionPolicy: Delete</code>, the default), the finalizer is released at once; if its volumes
+were kept (<code>Retain</code>), the deletion waits, as below, for a deployment created again from them.</p>
 <p>The alias keeps routing queries (a remote alias with the credentials stored on it) until it is dropped,
 so a drop that cannot run — the target not Ready, refusing the connection, or refusing the drop — waits:
 phase <code>Failed</code>, <code>deletion waits to remove …</code> in <code>status.message</code>, one <code>AliasFailed</code> Warning, a retry

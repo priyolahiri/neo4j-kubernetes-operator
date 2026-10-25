@@ -5637,7 +5637,10 @@
 </ul>
 <h3 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h3>
 <p>Deleting the CR runs <code>DROP DATABASE</code> on its cluster or standalone, then releases the finalizer. If the
-cluster or standalone CR no longer exists, the finalizer is released at once: its databases went with it.</p>
+cluster or standalone CR no longer exists, or is being deleted with its volumes (<code>storage.retentionPolicy:
+Delete</code>, the default), the finalizer is released at once: its databases go with them. A host that keeps
+its volumes (<code>Retain</code>) still takes the drop while it is being deleted, and once its CR is gone the
+deletion waits, as below, for a deployment created again from them.</p>
 <p>If the drop cannot run — the operator cannot connect (the host restarting, its Bolt port not open yet,
 stopped by a <code>stopCluster</code> restore, its admin Secret unreadable, a server's name that does not resolve
 while its pod is replaced) or Neo4j refuses the drop — the deletion waits: phase <code>Error</code>, reason

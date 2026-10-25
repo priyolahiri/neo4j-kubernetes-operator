@@ -4902,7 +4902,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UserDeletionFailed</code></td>
 <td>Warning</td>
-<td><code>DROP USER</code> could not run; the user is <code>Failed</code> and the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure, not on every retry</td>
+<td><code>DROP USER</code> could not run; the user is <code>Failed</code> and the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone, or is being deleted with its volumes (<code>storage.retentionPolicy: Delete</code>, the default), releases at once; one gone with its volumes kept waits, bounded, for a deployment created again from them). Once per failure, not on every retry</td>
 </tr>
 <tr>
 <td><code>UserSyncFailed</code></td>
@@ -4947,7 +4947,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RoleDeletionFailed</code></td>
 <td>Warning</td>
-<td><code>DROP ROLE</code> could not run; the role is <code>Failed</code> and the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure, not on every retry</td>
+<td><code>DROP ROLE</code> could not run; the role is <code>Failed</code> and the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone, or is being deleted with its volumes (<code>storage.retentionPolicy: Delete</code>, the default), releases at once; one gone with its volumes kept waits, bounded, for a deployment created again from them). Once per failure, not on every retry</td>
 </tr>
 <tr>
 <td><code>RoleSyncFailed</code></td>
@@ -4982,7 +4982,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>BindingFailed</code></td>
 <td>Warning</td>
-<td>A role binding grant or revoke failed. On deletion the revokes are retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once); the roles still granted are listed. Once per failure</td>
+<td>A role binding grant or revoke failed. On deletion the revokes are retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone, or is being deleted with its volumes (<code>storage.retentionPolicy: Delete</code>, the default), releases at once; one gone with its volumes kept waits, bounded, for a deployment created again from them); the roles still granted are listed. Once per failure</td>
 </tr>
 <tr>
 <td><code>UserNotFound</code></td>
@@ -5009,7 +5009,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuthRuleFailed</code></td>
 <td>Warning</td>
-<td>Creating, updating or dropping the auth rule failed. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure</td>
+<td>Creating, updating or dropping the auth rule failed. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone, or is being deleted with its volumes (<code>storage.retentionPolicy: Delete</code>, the default), releases at once; one gone with its volumes kept waits, bounded, for a deployment created again from them). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuthRuleVersionTooOld</code></td>
@@ -5051,7 +5051,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>ReplicaFailed</code></td>
 <td>Warning</td>
-<td>Creating the replica, or dropping it on deletion, failed. On deletion the drop is retried, and a database type that cannot be read is never taken for a promoted database; A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure</td>
+<td>Creating the replica, or dropping it on deletion, failed. On deletion the drop is retried, and a database type that cannot be read is never taken for a promoted database; A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone, or is being deleted with its volumes (<code>storage.retentionPolicy: Delete</code>, the default), releases at once; one gone with its volumes kept waits, bounded, for a deployment created again from them). Once per failure</td>
 </tr>
 <tr>
 <td><code>ReplicaObjectStoreEnvMissing</code></td>
@@ -5124,7 +5124,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>CompositeDatabaseFailed</code></td>
 <td>Warning</td>
-<td>Reconciling the composite database failed. Once per failure. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once)</td>
+<td>Reconciling the composite database failed. Once per failure. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone, or is being deleted with its volumes (<code>storage.retentionPolicy: Delete</code>, the default), releases at once; one gone with its volumes kept waits, bounded, for a deployment created again from them)</td>
 </tr>
 <tr>
 <td><code>CompositeDatabaseDropped</code></td>
@@ -5174,7 +5174,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AliasFailed</code></td>
 <td>Warning</td>
-<td>Reconciling or dropping the alias failed. Once per failure. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once)</td>
+<td>Reconciling or dropping the alias failed. Once per failure. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with <code>deletion waits to remove …</code> in <code>status.message</code>; five minutes after the deletion was requested the finalizer is released with a second event, <code>Released the finalizer without removing …</code>, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone, or is being deleted with its volumes (<code>storage.retentionPolicy: Delete</code>, the default), releases at once; one gone with its volumes kept waits, bounded, for a deployment created again from them)</td>
 </tr>
 </tbody>
 </table>

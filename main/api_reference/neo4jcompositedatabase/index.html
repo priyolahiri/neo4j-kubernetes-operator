@@ -4276,7 +4276,11 @@ constituents exist. It removes the constituent <strong>aliases</strong> only —
 they target are untouched.</p>
 <p><code>deletionPolicy: Retain</code> leaves everything in Neo4j and releases the finalizer.</p>
 <p>If the referenced deployment is gone at deletion time, the finalizer is
-released at once: the composite went with it.</p>
+released at once: the composite went with it — unless its volumes were kept
+(<code>storage.retentionPolicy: Retain</code>): then the deletion waits, as below, for a
+deployment created again from them. A deployment being deleted with its
+volumes (<code>Delete</code>, the default) releases at once too; one being deleted that
+keeps them still takes the drop while it serves.</p>
 <p>If the drop cannot run — the deployment is not Ready, refuses the
 connection, or Neo4j refuses the drop — the composite is <code>Failed</code> with
 <code>deletion waits to remove …</code> in <code>status.message</code> and one
