@@ -79,7 +79,11 @@ func (v *PluginValidator) Validate(plugin *neo4jv1beta1.Neo4jPlugin) *PluginVali
 	// operator installs arbitrary (incl. URL-sourced) plugins and is
 	// forward-compatible across Neo4j versions, so an unknown/older entry is
 	// a warning, never a hard reject.
-	if plugin.Spec.Name != "" && plugin.Spec.Version != "" {
+	// Not for a Managed plugin whose name no supported image installs: the
+	// entrypoint check says more (ManagedPluginNameWarnings offline, the
+	// operator's refusal against the target's image), and `kubectl neo4j
+	// validate` printed both, the vague one first (v1.22.0 re-walk, graphql).
+	if plugin.Spec.Name != "" && plugin.Spec.Version != "" && !managedNameUnknownToEveryImage(plugin) {
 		if msg := v.pluginCompatibilityWarning(plugin.Spec.Name, plugin.Spec.Version); msg != "" {
 			result.Warnings = append(result.Warnings, msg)
 		}

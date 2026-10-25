@@ -1004,7 +1004,7 @@
   {
     "id": "ev-plugin-missing",
     "name": "PluginMissing",
-    "description": "Warning on a Ready Neo4jPlugin whose target StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS entry, a variable it sets, a VerifiedDownload init container or one of its volumes, or, on a standalone, a leftover env copy of its neo4j.conf settings is still there). The plugin goes back to Installing and restores it, which restarts the servers; while the target is not Ready with every server available, the event says so and the plugin is Waiting until it is.",
+    "description": "Warning on a Ready Neo4jPlugin whose target StatefulSet no longer carries what the plugin set (its NEO4J_PLUGINS entry, a variable it sets, a VerifiedDownload init container or one of its volumes, or, on a standalone, a leftover env copy of its neo4j.conf settings is still there). The plugin goes back to Installing and restores it, which restarts the servers; while the target is not Ready with every server available, the event says so and the plugin is Waiting until it is. A StatefulSet that does not exist is not drift and raises nothing (operations.md id 177).",
     "moduleId": "mod-plugins"
   },
   {
@@ -1118,7 +1118,7 @@
   {
     "id": "ev-plugin-unknown-to-image",
     "name": "PluginUnknownToImage",
-    "description": "Warning, once, when a Managed Neo4jPlugin is refused because the image its target runs cannot install one of its NEO4J_PLUGINS names (graphql on every supported release, n10s on CalVer from 2025.05, a custom JAR's name): the entrypoint exits on such a name. Announced from the status write that moves the plugin into the refusal; again only for a different refusal (the target's image changed). The plugin is Failed, and what an earlier write of it left on the target is taken off (operations.md id 170).",
+    "description": "Warning, once, when a Managed Neo4jPlugin is refused because the image its target runs cannot install one of its NEO4J_PLUGINS names (graphql on every supported release, n10s on CalVer from 2025.05, a custom JAR's name): the entrypoint exits on such a name. Also for a listed name whose JAR the image does not run: n10s from 5.26.22 (the neosemantics 5.26.0 JAR stops the server on Jackson) and on CalVer 2025.01–2025.04 (no JAR to download). Announced from the status write that moves the plugin into the refusal; again only for a different refusal (the target's image changed). The plugin is Failed, and what an earlier write of it left on the target is taken off (operations.md id 170).",
     "moduleId": "mod-plugins"
   }
 ]

@@ -94,8 +94,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "neo4j-graph-algorithms",
-					Version:    "3.5.0",
-					Enabled:    true,
+					// PreBaked: a Managed name no image installs is the entrypoint
+					// check's to report (TestPluginValidator_AManagedNameNoImageInstallsHasNoMatrixWarning).
+					InstallMode: "PreBaked",
+					Version:     "3.5.0",
+					Enabled:     true,
 				},
 			},
 			expectError:  false, // deprecation is advisory: warning, not error
@@ -111,8 +114,11 @@ func TestPluginValidator_Validate(t *testing.T) {
 				Spec: neo4jv1beta1.Neo4jPluginSpec{
 					ClusterRef: "test-cluster",
 					Name:       "unknown-plugin",
-					Version:    "1.0.0",
-					Enabled:    true,
+					// PreBaked: a Managed name no image installs is the entrypoint
+					// check's to report (TestPluginValidator_AManagedNameNoImageInstallsHasNoMatrixWarning).
+					InstallMode: "PreBaked",
+					Version:     "1.0.0",
+					Enabled:     true,
 				},
 			},
 			expectError:  false, // unknown plugins are advisory: warning, not error
@@ -517,6 +523,31 @@ func TestPluginValidator_pluginCompatibilityWarning(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The defect (v1.22.0 re-walk): `kubectl neo4j validate` offline warned twice
+// about a Managed graphql plugin — the compatibility matrix's vague "not in the
+// operator's known compatibility matrix" beside the entrypoint check's "not a
+// plugin any supported Neo4j image can install". A name the entrypoint check
+// speaks for gets no matrix warning; the same name in PreBaked or
+// VerifiedDownload mode, which never reaches NEO4J_PLUGINS, still does.
+func TestPluginValidator_AManagedNameNoImageInstallsHasNoMatrixWarning(t *testing.T) {
+	plugin := func(name, mode string) *neo4jv1beta1.Neo4jPlugin {
+		return &neo4jv1beta1.Neo4jPlugin{Spec: neo4jv1beta1.Neo4jPluginSpec{
+			ClusterRef: "c", Name: name, Version: "1.0.0", Enabled: true, InstallMode: mode,
+		}}
+	}
+	for _, name := range []string{"graphql", "acme-procs"} {
+		if w := NewPluginValidator().Validate(plugin(name, "")).Warnings; len(w) != 0 {
+			t.Errorf("%s, Managed: no matrix warning expected, got %v", name, w)
+		}
+		if w := ManagedPluginNameWarnings(plugin(name, "")); len(w) != 1 {
+			t.Errorf("%s, Managed: one entrypoint warning expected, got %v", name, w)
+		}
+		if w := NewPluginValidator().Validate(plugin(name, "PreBaked")).Warnings; len(w) != 1 {
+			t.Errorf("%s, PreBaked: the matrix warning expected, got %v", name, w)
+		}
 	}
 }
 

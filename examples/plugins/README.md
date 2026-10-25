@@ -272,7 +272,7 @@ kubectl get statefulset <cluster-name>-server -o jsonpath='{.spec.template.spec.
 - **graph-data-science** (gds): Graph algorithms and machine learning
 - **bloom**: Graph visualization and exploration
 - **genai**: Generative AI integrations (OpenAI, Vertex AI, etc.)
-- **n10s** (neosemantics): RDF and semantic web support — by name on 5.26 only; on CalVer install its JAR with `installMode: VerifiedDownload`
+- **n10s** (neosemantics): RDF and semantic web support — by name on 5.26.0 – 5.26.21 only (later 5.26 releases stop on the jackson-annotations the neosemantics 5.26.0 JAR bundles); on CalVer install its JAR with `installMode: VerifiedDownload`
 
 These are the names `installMode: Managed` puts in `NEO4J_PLUGINS`, and the Neo4j entrypoint exits on a name its image does not list, so the operator refuses one against the target's image tag (phase `Failed`, a `PluginUnknownToImage` event). Install any other JAR with `installMode: VerifiedDownload` (`source.url` + `source.checksum`). There is no GraphQL server plugin for 5.26 or CalVer: the Neo4j GraphQL Library is a JavaScript library you run in your own GraphQL server. See [Which plugins `Managed` installs](../../docs/user_guide/guides/plugins.md#which-plugins-managed-installs).
 
