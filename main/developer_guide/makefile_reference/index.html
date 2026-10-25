@@ -8066,7 +8066,7 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 <strong>Dependencies</strong>: <code>check-prereqs</code>
 <strong>Cluster Name</strong>: <code>neo4j-operator-dev</code></p>
 <h4 id="make-dev-down"><code>make dev-down</code><a class="headerlink" href="#make-dev-down" title="Anchor link to this section">&para;</a></h4>
-<p><strong>Description</strong>: Tear down the complete dev environment (delegates to <code>dev-destroy</code>: runs <code>hack/cleanup-dev.sh</code> and deletes the <code>neo4j-operator-dev</code> cluster).
+<p><strong>Description</strong>: Tear down the complete dev environment (delegates to <code>dev-destroy</code>: deletes the <code>neo4j-operator-dev</code> cluster, and with it every Kubernetes resource of the dev environment). It asks nothing; local files are left alone — <code>make dev-cleanup</code> removes build artifacts.
 <strong>Usage</strong>: <code>make dev-down</code></p>
 <h3 id="cluster-management">Cluster Management<a class="headerlink" href="#cluster-management" title="Anchor link to this section">&para;</a></h3>
 <h4 id="make-dev-cluster"><code>make dev-cluster</code><a class="headerlink" href="#make-dev-cluster" title="Anchor link to this section">&para;</a></h4>
@@ -8122,13 +8122,12 @@ Chains: <code>manifests</code> → <code>generate</code> → <code>sync-kustomiz
 </span><span id="__span-40-4"><a id="__codelineno-40-4" name="__codelineno-40-4" href="#__codelineno-40-4"></a><span class="c1"># Useful for resetting state</span>
 </span></code></pre></div></p>
 <h4 id="make-dev-destroy"><code>make dev-destroy</code><a class="headerlink" href="#make-dev-destroy" title="Anchor link to this section">&para;</a></h4>
-<p><strong>Description</strong>: Complete development environment destruction
+<p><strong>Description</strong>: Delete the development cluster, without prompting. Deleting the Kind cluster removes every Kubernetes resource the dev environment has; local files (<code>bin/</code>, <code>tmp/</code>, <code>dist/</code>) are left alone. It used to run <code>hack/cleanup-dev.sh</code> first, which asked for confirmation on a terminal: its resource pass acts on the current kubectl context, which need not be the dev cluster, and its file pass removes <code>bin/</code>, tools and envtest assets included. That script is <code>make dev-cleanup</code>.
 <strong>Usage</strong>: <code>make dev-destroy</code>
 <strong>Example</strong>:
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-41-1"><a id="__codelineno-41-1" name="__codelineno-41-1" href="#__codelineno-41-1"></a>make<span class="w"> </span>dev-destroy
-</span><span id="__span-41-2"><a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a><span class="c1"># Removes all development artifacts</span>
-</span><span id="__span-41-3"><a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a><span class="c1"># Deletes development cluster</span>
-</span><span id="__span-41-4"><a id="__codelineno-41-4" name="__codelineno-41-4" href="#__codelineno-41-4"></a><span class="c1"># Complete cleanup</span>
+</span><span id="__span-41-2"><a id="__codelineno-41-2" name="__codelineno-41-2" href="#__codelineno-41-2"></a><span class="c1"># Deletes the neo4j-operator-dev Kind cluster</span>
+</span><span id="__span-41-3"><a id="__codelineno-41-3" name="__codelineno-41-3" href="#__codelineno-41-3"></a><span class="c1"># Leaves bin/, tmp/ and dist/ alone (make dev-cleanup removes them, and asks)</span>
 </span></code></pre></div></p>
 <h3 id="operator-management">Operator Management<a class="headerlink" href="#operator-management" title="Anchor link to this section">&para;</a></h3>
 <h4 id="make-operator-setup"><code>make operator-setup</code><a class="headerlink" href="#make-operator-setup" title="Anchor link to this section">&para;</a></h4>

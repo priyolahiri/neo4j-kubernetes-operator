@@ -5221,7 +5221,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 </tr>
 <tr>
 <td><code>Pending</code></td>
-<td>Waiting on a <code>seedBackupRef</code> whose backup has no Succeeded run yet, on the PVC seed proxy, or on seed credentials being projected onto the cluster (reconciler requeues)</td>
+<td>Waiting on a <code>clusterRef</code> that names no cluster yet (one <code>ClusterNotFound</code> event), a <code>seedBackupRef</code> whose backup has no Succeeded run yet, the PVC seed proxy, or seed credentials being projected onto the cluster (reconciler requeues)</td>
 </tr>
 <tr>
 <td><code>Ready</code></td>
@@ -5334,7 +5334,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 </ul>
 <h3 id="neo4jshardeddatabase-validation">Neo4jShardedDatabase Validation<a class="headerlink" href="#neo4jshardeddatabase-validation" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li><code>clusterRef</code> must reference existing Neo4jEnterpriseCluster with property sharding enabled</li>
+<li><code>clusterRef</code> must reference a Neo4jEnterpriseCluster with property sharding enabled. A cluster that does not exist yet is not an error: the database waits in <code>Pending</code> and is created once the cluster is there. Every other rule is checked whether or not the cluster can be read, and every error is reported at once</li>
 <li><code>name</code> is at most 63 characters, contains only letters, digits, <code>_</code> and <code>-</code>, and must not be <code>system</code> or <code>neo4j</code></li>
 <li><code>defaultCypherLanguage</code> must be "25"</li>
 <li><code>propertyShards</code> must be 1-1000</li>

@@ -1476,6 +1476,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#which-warning-events-are-marked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which Warning events are marked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#containers-that-finished-and-were-not-restarted" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3861,6 +3872,17 @@
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
+  <a href="#which-warning-events-are-marked" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Which Warning events are marked
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#containers-that-finished-and-were-not-restarted" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4001,26 +4023,38 @@
 </tr>
 <tr>
 <td>Operator warnings</td>
-<td>the three most recent <code>Warning</code> events on the resource</td>
+<td>the three most recent <code>Warning</code> events on the resource that still describe its current state (see below)</td>
 </tr>
 </tbody>
 </table>
 <p>That last-but-one row is worth calling out. A resource with <strong>no status at all</strong> has no other signal — nothing is broken, the CR simply sits there. That is what you see when the operator is not running, has no RBAC for the kind, or is namespace-scoped and not watching this namespace.</p>
+<h3 id="which-warning-events-are-marked">Which Warning events are marked<a class="headerlink" href="#which-warning-events-are-marked" title="Anchor link to this section">&para;</a></h3>
+<p>An event lives for an hour, and most outlive what they report: a <code>ClusterQuorumLost</code> stays listed long after the cluster is <code>Ready</code> again. A <code>Warning</code> is marked <code>⚠</code> only while it describes the state the resource is in now:</p>
+<ul>
+<li>it was last seen at or after the resource's <code>Ready</code> condition last changed — it was raised in the current state, or in the same reconcile pass that entered it; or</li>
+<li>it is an advisory the operator announces again every 30 minutes for as long as it applies — <code>ValidationWarning</code> (a field that has no effect, a <code>spec.storage.className</code> the volumes do not use, …), <code>TopologyWarning</code>, <code>RouteAPINotFound</code>, <code>MCPApocMissing</code> and the like — and was seen within that time.</li>
+</ul>
+<p>Older ones are not listed; one line counts them and says where to read them:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>Neo4jEnterpriseCluster/prod — Ready · 3/3 pods ready
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>  nothing to report below the resource level
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  (1 earlier Warning event(s), from before its Ready condition last changed 35m ago; kubectl describe Neo4jEnterpriseCluster prod lists them)
+</span></code></pre></div>
+<p>They are not findings: <code>--quiet</code> leaves such a resource out, and they never change the exit code. A resource that has no <code>Ready</code> condition gives no way to tell its states apart, so every recent <code>Warning</code> on it is marked.</p>
 <p>The pod and PVC checks apply to <code>Neo4jEnterpriseCluster</code> and <code>Neo4jEnterpriseStandalone</code>; the Job checks apply to <code>Neo4jBackup</code>. Every other kind gets only the Warning-events and no-status checks.</p>
 <h3 id="containers-that-finished-and-were-not-restarted">Containers that finished and were not restarted<a class="headerlink" href="#containers-that-finished-and-were-not-restarted" title="Anchor link to this section">&para;</a></h3>
 <p>Backup Job pods run with <code>restartPolicy: Never</code>. When one of them is OOM-killed or exits non-zero, nothing restarts it, so its <code>lastState</code> stays empty and the failure lives only in the container's <em>current</em> <code>state.terminated</code>. <code>diagnose</code> reads that state too: it names the container, the reason and the exit code, and points at the log of the run that died. Nothing restarted, so that is plain <code>kubectl logs &lt;pod&gt; -c &lt;container&gt;</code> — <code>--previous</code> is only for a container that has been restarted.</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>$ kubectl neo4j diagnose Neo4jBackup/nightly -n neo4j
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>Neo4jBackup/nightly — Failed · 1 job(s): 0 succeeded, 1 failed
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>  ✗ job nightly-1 — failed (4 pod failure(s))
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>      BackoffLimitExceeded: Job has reached the specified backoff limit
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>      → Read the Job's pod log for neo4j-admin's own error: kubectl logs
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>        job/nightly-1. A permission error names the ServiceAccount; a path
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>        error names the bucket.
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>  ✗ container backup in nightly-1-x7k2p — was OOMKilled (exit 137)
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>      → Raise spec.options.resources.limits.memory on the Neo4jBackup (unset,
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>        the limit is 2Gi). neo4j-admin needs headroom above the largest store
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>        file during compaction. The log of the run that was killed: kubectl
-</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>        logs nightly-1-x7k2p -c backup
+<div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>$ kubectl neo4j diagnose Neo4jBackup/nightly -n neo4j
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>Neo4jBackup/nightly — Failed · 1 job(s): 0 succeeded, 1 failed
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>  ✗ job nightly-1 — failed (4 pod failure(s))
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>      BackoffLimitExceeded: Job has reached the specified backoff limit
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>      → Read the Job's pod log for neo4j-admin's own error: kubectl logs
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>        job/nightly-1. A permission error names the ServiceAccount; a path
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        error names the bucket.
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>  ✗ container backup in nightly-1-x7k2p — was OOMKilled (exit 137)
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>      → Raise spec.options.resources.limits.memory on the Neo4jBackup (unset,
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a>        the limit is 2Gi). neo4j-admin needs headroom above the largest store
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>        file during compaction. The log of the run that was killed: kubectl
+</span><span id="__span-3-12"><a id="__codelineno-3-12" name="__codelineno-3-12" href="#__codelineno-3-12"></a>        logs nightly-1-x7k2p -c backup
 </span></code></pre></div>
 <p>An OOM-killed backup is pointed at the <code>Neo4jBackup</code>'s own <code>spec.options.resources</code>, not the cluster's <code>spec.resources</code>: the backup Job's memory is sized there.</p>
 <p>Two rules keep this from crying wolf:</p>

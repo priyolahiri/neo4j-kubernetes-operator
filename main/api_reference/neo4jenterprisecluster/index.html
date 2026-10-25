@@ -6189,7 +6189,7 @@ cluster reaches <code>Ready</code> — see <a href="../neo4jrestore/"><code>Neo4
 <tr>
 <td><code>className</code></td>
 <td><code>string</code></td>
-<td>Storage class for the data PVCs. <strong>Optional</strong> — if omitted, the PVCs inherit the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a <code>StorageClassNotFound</code> event and <code>Failed</code> status) rather than leaving server pods <code>Pending</code>. Immutable after creation.</td>
+<td>Storage class for the data PVCs. <strong>Optional</strong> — if omitted, the PVCs inherit the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a <code>StorageClassNotFound</code> event and <code>Failed</code> status) rather than leaving server pods <code>Pending</code>. Immutable after creation: a volume keeps the StorageClass it was created with, and so does the StatefulSet's claim template, so a later edit changes nothing, and while it names a class the data volumes do not use the cluster raises a <code>ValidationWarning</code> naming each volume and its class.</td>
 </tr>
 <tr>
 <td><code>size</code></td>
@@ -8052,22 +8052,22 @@ for details.</p>
 <tr>
 <td><code>upgradeTimeout</code></td>
 <td><code>string</code></td>
-<td>Budget for staging and for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: <code>"30m"</code>). A Go duration above zero (<code>30m</code>, <code>1h30m</code>, <code>90s</code>); one that does not parse, or is zero or less, is refused</td>
+<td>Budget for staging and for each Rolling step: the restarted server ready, rejoined and its databases caught up (default: <code>"30m"</code>). A Go duration above zero (<code>30m</code>, <code>1h30m</code>, <code>90s</code>); one that does not parse, or is zero or less, is refused. A standalone's upgrade has no such step: there a value other than the default raises a <code>ValidationWarning</code></td>
 </tr>
 <tr>
 <td><code>postUpgradeHealthCheck</code></td>
 <td><code>bool</code></td>
-<td>Enable health validation after upgrade (default: <code>true</code>)</td>
+<td>Enable health validation after upgrade (default: <code>true</code>). A standalone runs no check after its upgrade, whatever the value</td>
 </tr>
 <tr>
 <td><code>healthCheckTimeout</code></td>
 <td><code>string</code></td>
-<td>Timeout for post-upgrade version verification (default: <code>"5m"</code>). A Go duration above zero; one that does not parse, or is zero or less, is refused</td>
+<td>Timeout for post-upgrade version verification (default: <code>"5m"</code>). A Go duration above zero; one that does not parse, or is zero or less, is refused. A standalone runs no such check: there a value other than the default raises a <code>ValidationWarning</code></td>
 </tr>
 <tr>
 <td><code>stabilizationTimeout</code></td>
 <td><code>string</code></td>
-<td>Wait time for cluster stabilization (default: <code>"3m"</code>). A Go duration above zero; one that does not parse, or is zero or less, is refused</td>
+<td>Wait time for cluster stabilization (default: <code>"3m"</code>). A Go duration above zero; one that does not parse, or is zero or less, is refused. A standalone has no such wait: there a value other than the default raises a <code>ValidationWarning</code></td>
 </tr>
 <tr>
 <td><code>autoPauseOnFailure</code></td>

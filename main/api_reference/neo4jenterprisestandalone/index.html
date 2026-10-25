@@ -5676,7 +5676,7 @@ license on your behalf — you must hold your own valid Neo4j Enterprise license
 <tr>
 <td><code>className</code></td>
 <td><code>string</code></td>
-<td>Storage class for the data PVC. <strong>Optional</strong> — if omitted, the PVC inherits the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a <code>StorageClassNotFound</code> event and <code>Failed</code> status) rather than leaving the pod <code>Pending</code>. Immutable after creation.</td>
+<td>Storage class for the data PVC. <strong>Optional</strong> — if omitted, the PVC inherits the cluster's default StorageClass. When set, the named class must exist: the operator reports an explicit error (a <code>StorageClassNotFound</code> event and <code>Failed</code> status) rather than leaving the pod <code>Pending</code>. Immutable after creation: a volume keeps the StorageClass it was created with, and so does the StatefulSet's claim template, so a later edit changes nothing, and while it names a class the data volume does not use the standalone raises a <code>ValidationWarning</code> naming the volume and its class.</td>
 </tr>
 <tr>
 <td><code>size</code></td>
@@ -5827,6 +5827,7 @@ For the full type definition — including the optional <code>provision</code> b
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">  </span><span class="nt">autoPauseOnFailure</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">true</span><span class="w">       </span><span class="c1"># Block upgrade if health check fails</span>
 </span></code></pre></div>
 <p>With either strategy the StatefulSet deletes the standalone's pod and creates it again on the new image. <code>Recreate</code> used to give the StatefulSet the <code>OnDelete</code> strategy, under which a new image, a configuration change or a plugin never reached the running server, while <code>status.version</code> already named the new tag.</p>
+<p>Only <code>strategy</code>, <code>preUpgradeHealthCheck</code> and <code>autoPauseOnFailure</code> act on a standalone. The rest bound or check steps of a cluster's rolling upgrade that a standalone's upgrade does not have: <code>upgradeTimeout</code>, <code>healthCheckTimeout</code> and <code>stabilizationTimeout</code> raise a <code>ValidationWarning</code> when set to anything but their defaults, and so does <code>maxUnavailableDuringUpgrade</code> other than <code>1</code>. <code>postUpgradeHealthCheck</code> raises none: no check runs after a standalone's upgrade, whatever its value.</p>
 <p>For the full type definition see <a href="../neo4jenterprisecluster/#upgradestrategyspec"><code>UpgradeStrategySpec</code></a>.</p>
 <h4 id="plugin-management">Plugin management<a class="headerlink" href="#plugin-management" title="Anchor link to this section">&para;</a></h4>
 <p>There is <strong>no</strong> <code>spec.plugins</code> field on <code>Neo4jEnterpriseStandalone</code>. Use

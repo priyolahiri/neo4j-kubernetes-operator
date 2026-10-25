@@ -4173,11 +4173,10 @@ edition backstop, by deliberate choice (see INV-3).</p>
   with <code>replicas</code> equal to <code>spec.topology.servers</code>, and no <code>primary</code>/<code>secondary</code> in its
   name. <code>TestListDiscoveryConfiguration</code> (<code>internal/resources/cluster_startup_test.go</code>)
   additionally asserts the pod FQDNs <code>{cluster}-server-N</code> that the discovery endpoints
-  use. Beware <code>TestBuildStatefulSetForEnterprise_WithFeatures</code> (<code>cluster_test.go</code>) and its
-  <code>…_ParallelManagement</code> sibling: they drive the <strong>Deprecated</strong> plural builder
-  <code>BuildServerStatefulSetsForEnterprise</code> (N one-replica StatefulSets), so they do NOT
-  prove this invariant — <code>internal/resources/CLAUDE.md</code> tells you not to use that
-  builder. The shape is also exercised end to end by the integration specs in
+  use. <code>TestBuildStatefulSetForEnterprise_WithFeatures</code> (<code>cluster_test.go</code>) and its
+  <code>…_ParallelManagement</code> sibling drove a plural builder that made N one-replica
+  StatefulSets — the banned shape — until it was removed as dead code (#533); they now
+  drive <code>BuildServerStatefulSetForEnterprise</code> and assert its name and replicas too. The shape is also exercised end to end by the integration specs in
   <code>test/integration/multi_node_cluster_test.go</code> (extended: fetches <code>{cluster}-server</code>
   and asserts <code>replicas</code>) and <code>plugin_test.go</code> (core). The removed-backup half is guard-checked —
   <code>scripts/check-invariants.sh</code> greps for <code>BuildBackupStatefulSet</code>, a

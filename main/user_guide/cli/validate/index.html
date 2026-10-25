@@ -1480,10 +1480,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#the-operators-defaults-are-applied-first" class="md-nav__link">
+  <a href="#the-defaults-are-applied-first" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The operator's defaults are applied first
+        The defaults are applied first
       
     </span>
   </a>
@@ -4048,10 +4048,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#the-operators-defaults-are-applied-first" class="md-nav__link">
+  <a href="#the-defaults-are-applied-first" class="md-nav__link">
     <span class="md-ellipsis">
       
-        The operator's defaults are applied first
+        The defaults are applied first
       
     </span>
   </a>
@@ -4304,10 +4304,10 @@
 <h3 id="required-permissions">Required permissions<a class="headerlink" href="#required-permissions" title="Anchor link to this section">&para;</a></h3>
 <p><code>--connect</code> reads only. It needs <code>get</code> on <code>Neo4jEnterpriseCluster</code> (for a cluster manifest, the running cluster's status; for the other kinds, their <code>clusterRef</code>), <code>Neo4jEnterpriseStandalone</code> (likewise, for a standalone manifest the running standalone's status), <code>Neo4jRole</code> and <code>Secret</code> in the namespaces you are validating (plus <code>list</code> on <code>Neo4jUser</code> when validating a <code>Neo4jRoleBinding</code>, <code>get</code> on <code>Neo4jShardedDatabase</code> when validating a <code>Neo4jRole</code>, and <code>get</code> and <code>list</code> on <code>Neo4jShardedDatabase</code> when validating a <code>Neo4jBackup</code> with <code>spec.shardedDatabase</code>), plus <code>list</code> on <code>Deployment</code> for the version check (which degrades silently without it). It never writes anything.</p>
 <h3 id="one-run-lists-every-error">One run lists every error<a class="headerlink" href="#one-run-lists-every-error" title="Anchor link to this section">&para;</a></h3>
-<p>A validator reports every error it finds, not just the first: an invalid image does not hide a bad <code>spec.config</code> key or storage size behind it, so you can fix the whole list before you re-run. The one exception is <code>Neo4jShardedDatabase</code>: when its <code>clusterRef</code> cannot be read, that is the error it reports, and its other rules wait until the cluster can be read.</p>
+<p>A validator reports every error it finds, not just the first: an invalid image does not hide a bad <code>spec.config</code> key or storage size behind it, so you can fix the whole list before you re-run. That holds for <code>Neo4jShardedDatabase</code> too: every rule on its spec runs whether or not its cluster can be read, and each error names its own field. A <code>clusterRef</code> that names no cluster yet is pending, as it is for the operator (the database waits in <code>Pending</code>); one the command cannot read is a warning that the rules needing the cluster (property sharding enabled, room for the shards) were not checked.</p>
 <p>A clean run covers the rules that ran. Offline, the ones that compare a manifest with what already runs did not, and the summary names them (see <a href="#what-gets-checked-and-what-doesnt">above</a>).</p>
-<h3 id="the-operators-defaults-are-applied-first">The operator's defaults are applied first<a class="headerlink" href="#the-operators-defaults-are-applied-first" title="Anchor link to this section">&para;</a></h3>
-<p>The operator fills in a few fields a cluster manifest may leave out before it validates one — <code>spec.tls.mode: disabled</code>, <code>native</code> authentication and authorization providers, a <code>ClusterIP</code> Service, <code>spec.storage.retentionPolicy: Delete</code>, <code>spec.image.pullPolicy: IfNotPresent</code> — and <code>validate</code> does the same, so a manifest is judged as the operator will judge it. The defaults go only into the copy that is validated: nothing is printed or written back, and a finding names a field you wrote, or one that is missing. A standalone gets no defaults from the operator, so none from <code>validate</code> either.</p>
+<h3 id="the-defaults-are-applied-first">The defaults are applied first<a class="headerlink" href="#the-defaults-are-applied-first" title="Anchor link to this section">&para;</a></h3>
+<p>The operator never sees your manifest as written: the API server stores it with every default its CRD declares, and the operator validates what is stored. <code>validate</code> applies the same defaults, for every kind, from the CRDs built into the binary: a standalone's <code>tls: {}</code> is judged as <code>mode: cert-manager</code>, which then needs an <code>issuerRef</code>, as the operator will say; an <code>upgradeStrategy</code> that names only a <code>strategy</code> gets its timeouts; a <code>Neo4jRole</code> without <code>enforcePrivileges</code> is judged as <code>true</code>. For a cluster the operator then fills in a few fields of its own (Neo4j's <code>native</code> authentication provider, TLS disabled with no <code>tls</code> block, a <code>ClusterIP</code> Service with no <code>service</code> block), and <code>validate</code> does the same. A value you wrote is never replaced. The defaults go only into the copy that is validated: nothing is printed or written back, and a finding names a field you wrote, or one that is missing.</p>
 <h3 id="version-skew">Version skew<a class="headerlink" href="#version-skew" title="Anchor link to this section">&para;</a></h3>
 <p>The output always names the ruleset it used:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>validated against operator rules v1.17.0
