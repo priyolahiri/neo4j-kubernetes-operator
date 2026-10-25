@@ -4056,7 +4056,7 @@
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td><code>Ready=True</code> once an access token was successfully obtained with the referenced credentials (reason <code>CredentialsValidated</code>).</td>
+<td><code>Ready=True</code> once an access token was successfully obtained with the referenced credentials (reason <code>CredentialsValidated</code>), <code>False</code> with reason <code>CredentialsInvalid</code> when not. The operator validates the credentials again every 10 minutes — a token exchange and one <code>ListInstances</code> call, against the credential's rate limit that every Aura CR using the config shares.</td>
 </tr>
 <tr>
 <td><code>observedGeneration</code></td>

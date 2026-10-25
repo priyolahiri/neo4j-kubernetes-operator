@@ -4297,8 +4297,9 @@
 <ul>
 <li>A Neo4j Aura account with Fleet Management enabled.</li>
 <li>A registration token from the Aura console wizard (see <a href="#generate-a-token">Generate a token</a>) — <strong>or</strong> Aura API credentials, and let the operator mint the token itself (see <a href="#operator-managed-onboarding-mint-the-token-automatically">Operator-managed onboarding</a>).</li>
-<li>Neo4j Enterprise 5.26+ or 2025.x+. All supported enterprise images bundle the fleet-management plugin.</li>
+<li>Neo4j Enterprise <strong>5.26.11 or a later 5.26, or 2025.08.0 or later</strong> (a floating <code>5.26-enterprise</code> or <code>2026.08-enterprise</code> tag is fine). The operator installs the plugin by adding <code>fleet-management</code> to <code>NEO4J_PLUGINS</code>, and the image's entrypoint knows that name only from those releases: on 5.26.0 – 5.26.10 and 2025.01 – 2025.07 it exits on it and the servers do not start. The operator refuses <code>spec.auraFleetManagement.enabled: true</code> on those images (<code>ValidationFailed</code>, naming these releases) — see <a href="../guides/plugins/#which-plugins-managed-installs">which plugins each release installs</a>.</li>
 </ul>
+<p>A deployment that already enabled it on such an image — whose restarted servers are failing on it — is refused from the first pass of the upgraded operator, and the operator writes nothing to it until the spec changes: its StatefulSet stays as it was. Move <code>spec.image.tag</code> to a release that installs the plugin and the servers roll onto it. Or remove <code>spec.auraFleetManagement</code>, then take <code>fleet-management</code> out of the StatefulSet's <code>NEO4J_PLUGINS</code> by hand: the operator only ever adds it.</p>
 <h2 id="generate-a-token">Generate a token<a class="headerlink" href="#generate-a-token" title="Anchor link to this section">&para;</a></h2>
 <p>In the Aura console:</p>
 <ol>

@@ -4764,7 +4764,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraFleetManagementPluginPatchFailed</code></td>
 <td>Warning</td>
-<td>Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin</td>
+<td>Failed to patch the fleet-management plugin onto the StatefulSet. Raised when the failure starts or its message changes, not on every pass while it lasts; announced again if it comes back after a patch went through. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin</td>
 </tr>
 <tr>
 <td><code>AuraFleetDeploymentCreated</code></td>
@@ -5174,7 +5174,7 @@ is met on many passes. It is announced once:</p>
 </tbody>
 </table>
 <h3 id="aura-orchestration">Aura Orchestration<a class="headerlink" href="#aura-orchestration" title="Anchor link to this section">&para;</a></h3>
-<p>Emitted by the Aura CRDs (<code>AuraProviderConfig</code>, <code>AuraInstance</code>, <code>AuraSnapshot</code>, <code>AuraRestore</code>, <code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>, <code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code>, <code>AuraOrganizationMember</code>, <code>AuraProjectMember</code>, <code>AuraInvite</code>). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The <code>…Ready</code> events and <code>AuraCredentialsValidated</code> are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call.</p>
+<p>Emitted by the Aura CRDs (<code>AuraProviderConfig</code>, <code>AuraInstance</code>, <code>AuraSnapshot</code>, <code>AuraRestore</code>, <code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>, <code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code>, <code>AuraOrganizationMember</code>, <code>AuraProjectMember</code>, <code>AuraInvite</code>). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The <code>…Ready</code> events and <code>AuraCredentialsValidated</code> are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call. A failure that repeats is one Warning however often it is retried: Aura gives every response its own request ID, which the Warning carries (quote it to Aura support) and the status message leaves out, so the same refusal reads the same on every retry.</p>
 <table>
 <thead>
 <tr>
@@ -5203,6 +5203,11 @@ is met on many passes. It is announced once:</p>
 <td><code>AuraSnapshotCreated</code></td>
 <td>Normal</td>
 <td>Aura snapshot requested</td>
+</tr>
+<tr>
+<td><code>AuraSnapshotFailed</code></td>
+<td>Warning</td>
+<td>Requesting or reading the snapshot failed with an error Aura will not clear on a retry (phase <code>Error</code>, reason <code>CreateFailed</code> or <code>ObserveFailed</code>). Once per failure; the operator keeps retrying. A busy instance (<code>snapshot-not-allowed</code>, HTTP 409) and a 429, 5xx or network failure are retried without it</td>
 </tr>
 <tr>
 <td><code>AuraRestoreStarted</code>, <code>AuraRestoreCompleted</code></td>

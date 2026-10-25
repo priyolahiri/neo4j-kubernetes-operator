@@ -6912,7 +6912,7 @@ covers the path).</p>
 </tbody>
 </table>
 <h3 id="aurafleetmanagementspec">AuraFleetManagementSpec<a class="headerlink" href="#aurafleetmanagementspec" title="Anchor link to this section">&para;</a></h3>
-<p>Enables integration with <a href="https://neo4j.com/docs/aura/fleet-management/">Neo4j Aura Fleet Management</a> for monitoring this cluster from the Aura console. The fleet-management plugin is pre-bundled in all Neo4j Enterprise images (no internet access required).</p>
+<p>Enables integration with <a href="https://neo4j.com/docs/aura/fleet-management/">Neo4j Aura Fleet Management</a> for monitoring this cluster from the Aura console. The fleet-management plugin is pre-bundled in the Neo4j Enterprise images (no internet access required) that list it for <code>NEO4J_PLUGINS</code>: <strong>5.26.11 or a later 5.26, and 2025.08.0 or later</strong>. On an earlier image the entrypoint exits on the name and the servers do not start, so <code>enabled: true</code> is refused there (<code>ValidationFailed</code>).</p>
 <table>
 <thead>
 <tr>
