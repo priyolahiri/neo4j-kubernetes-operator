@@ -253,10 +253,15 @@ func (r *Neo4jPluginReconciler) replaceStuckPods(ctx context.Context, plugin *ne
 			log.FromContext(ctx).Error(err, "Cannot delete the pod that cannot start", "pod", pod.Name)
 			continue
 		}
+		// No revision is named: the StatefulSet controller creates the pod
+		// from its update revision at that moment, which a write landing
+		// meanwhile (the standalone's own conf stamp, say) has moved on — the
+		// v1.22.0 re-walk's event named s3-67976f4469 and the pod came up on
+		// s3-77d8b4ffc.
 		r.Recorder.Eventf(plugin, corev1.EventTypeNormal, reason,
-			"Deleted pod %s of %s (%s) so that StatefulSet %s creates it again from revision %s: "+
+			"Deleted pod %s of %s (%s) so that StatefulSet %s creates it again from its current template: "+
 				"an OrderedReady StatefulSet does not replace a pod that is not Ready",
-			pod.Name, targetName(deployment), why, sts.Name, sts.Status.UpdateRevision)
+			pod.Name, targetName(deployment), why, sts.Name)
 	}
 	return waiting
 }

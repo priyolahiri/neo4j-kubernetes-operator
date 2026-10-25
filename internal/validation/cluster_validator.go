@@ -342,6 +342,10 @@ func (v *ClusterValidator) ValidateCreateWithWarnings(ctx context.Context, clust
 func (v *ClusterValidator) ValidateWithWarnings(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ClusterValidationResult {
 	result := v.ValidateCreateWithWarnings(ctx, cluster)
 	result.Errors = append(result.Errors, v.validateAgainstRunning(cluster)...)
+	// An image change a Managed plugin of the cluster cannot follow is refused
+	// before the roll (operations.md id 187).
+	result.Errors = append(result.Errors, ManagedPluginsImageChangeErrors(ctx, v.client,
+		cluster.Namespace, cluster.Name, false, cluster.Status.Version, cluster.Spec.Image.Tag)...)
 	return result
 }
 

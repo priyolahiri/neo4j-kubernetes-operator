@@ -212,6 +212,7 @@ var validators = map[string]kindValidator{
 			default:
 				// The operator's own refusal, word for word.
 				errs = append(errs, validation.ManagedPluginImageErrors(&obj, tag)...)
+				warnings = append(warnings, validation.ManagedPluginBuiltInWarnings(&obj, tag)...)
 			}
 			return errs, warnings, pending, nil
 		},

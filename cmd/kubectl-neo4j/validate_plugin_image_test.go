@@ -129,3 +129,24 @@ func TestValidate_Offline_WarnsAboutAPluginNoImageInstalls(t *testing.T) {
 	assert.Contains(t, string(printed),
 		"run with --connect to also check a Managed Neo4jPlugin's NEO4J_PLUGINS names against the image its target runs")
 }
+
+// Fleet Manager is built into Neo4j from 2026.03 (operations.md id 192): a
+// Managed fleet-management plugin installs nothing there. Connected, against
+// such a target, validate says so, as a warning; against 5.26.32 it says
+// nothing; offline it says when it applies.
+func TestValidate_AFleetManagementPluginOnABuiltInImage(t *testing.T) {
+	results, err := validateSource(writeManifest(t, pluginManifest("fleet-management")), testClient(t, targetCluster("2026.08.1-enterprise")), "")
+	require.NoError(t, err)
+	assert.Equal(t, 0, results[0].errorCount(), "%s", findingsText(results[0]))
+	require.Equal(t, 1, results[0].warningCount(), "%s", findingsText(results[0]))
+	assert.Contains(t, findingsText(results[0]), "Fleet Manager is built into neo4j:2026.08.1-enterprise")
+
+	results, err = validateSource(writeManifest(t, pluginManifest("fleet-management")), testClient(t, targetCluster("5.26.32-enterprise")), "")
+	require.NoError(t, err)
+	assert.Empty(t, results[0].findings, "%s", findingsText(results[0]))
+
+	results, err = validateSource(writeManifest(t, pluginManifest("fleet-management")), nil, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, results[0].warningCount(), "%s", findingsText(results[0]))
+	assert.Contains(t, findingsText(results[0]), "on Neo4j 2026.03 and later Fleet Manager is built in")
+}

@@ -684,7 +684,10 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 			}
 			Expect(k8sClient.Create(ctx, plugin)).Should(Succeed())
 
-			By("Verifying plugin status shows Failed")
+			// A plugin whose target does not exist yet waits for it in Pending
+			// (one ClusterNotFound Warning, pinned by the unit tests) and installs
+			// once it is created (rule 177); it is not Failed.
+			By("Verifying plugin status shows Pending")
 			Eventually(func() string {
 				currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 				err := k8sClient.Get(ctx, types.NamespacedName{
@@ -695,16 +698,16 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 					return ""
 				}
 				return currentPlugin.Status.Phase
-			}, clusterTimeout, interval).Should(Equal("Failed"))
+			}, timeout, interval).Should(Equal("Pending"))
 
-			By("Verifying error message mentions deployment not found")
+			By("Verifying the message says the target was not found")
 			currentPlugin := &neo4jv1beta1.Neo4jPlugin{}
 			err := k8sClient.Get(ctx, types.NamespacedName{
 				Name:      "orphan-plugin",
 				Namespace: namespace.Name,
 			}, currentPlugin)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(currentPlugin.Status.Message).To(ContainSubstring("not found"))
+			Expect(currentPlugin.Status.Message).To(HavePrefix(`Waiting for its target: clusterRef "non-existent-deployment" not found`))
 
 			By("Cleaning up")
 			Expect(k8sClient.Delete(ctx, plugin)).Should(Succeed())

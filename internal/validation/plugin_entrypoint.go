@@ -64,7 +64,15 @@ type entrypointPluginList struct {
 //     2025-05-20);
 //   - graphql is on no supported release: it left the 5.x list (with
 //     graph-algorithms) in docker-neo4j #508 (2024-08-28), before 5.26.0, and the
-//     CalVer list never had it.
+//     CalVer list never had it;
+//   - fleet-management stays on the CalVer list from 2026.03, but Fleet Manager
+//     is built in from that release ("the plugin is no longer supported",
+//     Operations Manual configuration/plugins.adoc, dev): products/ holds no
+//     JAR and the table no versions URL, so the entrypoint wgets "null", says
+//     "ERROR: could not query null …" and starts the server without it (images
+//     2026.08.1 and 2026.09.0, read 2026-10-25). The name stays here, since the
+//     entrypoint does not exit on it; FleetManagementBuiltIn says where the
+//     operator adds it nowhere (operations.md id 192).
 //
 // A release newer than the last one read (2026.10.1) is judged by the newest
 // list of its line, an assumption: a later image may install a plugin this
@@ -135,6 +143,50 @@ func brokenEntrypointPlugin(name string, v *VersionInfo) *entrypointBrokenPlugin
 	}
 	return found
 }
+
+// fleetManagementBuiltInFrom is the first release with Fleet Manager built in.
+const fleetManagementBuiltInFrom = "2026.03.0"
+
+// FleetManagementBuiltIn reports whether the Neo4j image tagged tag has Fleet
+// Manager built in — CalVer 2026.03 and later: "Starting with Neo4j 2026.03,
+// Fleet Manager is built-in and enabled by default, therefore, the plugin is
+// no longer supported" (Operations Manual, configuration/plugins.adoc, dev,
+// read 2026-10-25), with its procedures (fleetManagement.status,
+// fleetManagement.registerToken, …) among the built-in ones. The operator
+// then adds fleet-management to NEO4J_PLUGINS nowhere: the image's
+// entrypoint cannot install it (entrypointPluginLists). A tag without a patch
+// is its line's newest patch, as elsewhere; a tag that names no version is not
+// judged (false).
+func FleetManagementBuiltIn(tag string) bool {
+	v := parseTagVersion(tag)
+	if v == nil || v.Major < 2025 {
+		return false
+	}
+	key, from := versionKey(v), versionKey(parseTagVersion(fleetManagementBuiltInFrom))
+	return slices.Compare(from[:], key[:]) <= 0
+}
+
+// ManagedPluginBuiltInWarnings says, for a Managed fleet-management plugin on
+// the image tagged tag, that Fleet Manager is built into it and the plugin
+// installs nothing there; nil otherwise.
+func ManagedPluginBuiltInWarnings(plugin *neo4jv1beta1.Neo4jPlugin, tag string) []string {
+	if !FleetManagementBuiltIn(tag) {
+		return nil
+	}
+	var out []string
+	for _, e := range managedPluginEntries(plugin) {
+		if e.name == fleetManagementName {
+			out = append(out, fmt.Sprintf(
+				"%s %q: Fleet Manager is built into neo4j:%s, so in installMode Managed this plugin installs nothing there "+
+					"(NEO4J_PLUGINS does not list it); Aura Fleet Management needs no Neo4jPlugin — set spec.auraFleetManagement "+
+					"on the cluster or standalone", e.path, e.value, tag))
+		}
+	}
+	return out
+}
+
+// fleetManagementName is the entrypoint's name of the Fleet Management plugin.
+const fleetManagementName = "fleet-management"
 
 // EntrypointPluginName is the name the entrypoint knows a plugin by in
 // NEO4J_PLUGINS, for a Neo4jPlugin's spec.name or a dependency's name: the
@@ -315,6 +367,13 @@ func ManagedPluginNameWarnings(plugin *neo4jv1beta1.Neo4jPlugin) []string {
 	all := anySupportedPluginNames()
 	var out []string
 	for _, e := range managedPluginEntries(plugin) {
+		if e.name == fleetManagementName {
+			out = append(out, fmt.Sprintf(
+				"%s %q: on Neo4j 2026.03 and later Fleet Manager is built in, and in installMode Managed this plugin installs "+
+					"nothing there; Aura Fleet Management needs no Neo4jPlugin — set spec.auraFleetManagement on the cluster or standalone",
+				e.path, e.value))
+			continue
+		}
 		if e.name == "n10s" {
 			// Installed by name on 5.26.0 to 5.26.21 only (entrypointBrokenPlugins).
 			out = append(out, fmt.Sprintf(

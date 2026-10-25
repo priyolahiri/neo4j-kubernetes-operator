@@ -6,6 +6,7 @@ import (
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
 // Plugin-derived neo4j.conf settings, factored into one place so the standalone
@@ -86,15 +87,19 @@ func specSecuritySettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 	return settings
 }
 
-// pluginListSettings returns, by setting, the plugin's tokens in the shared
-// procedure and extension lists (resources.IsAdditiveConfKey): from its
+// pluginListSettings returns, by setting, the plugin's tokens in a cluster's
+// shared procedure and extension lists (resources.IsAdditiveConfKey): from its
 // security settings — the automatic ones, each replaced by what spec.security
 // asks for, as pluginSecuritySettings has them — and from the lists its
-// spec.config sets, unioned with those.
+// spec.config sets, unioned with those. The fleet-management plugin's
+// automatic allowlist entry is not among them: alone, an allowlist of
+// fleetManagement.* loads nothing else, so the servers' startup script adds it
+// only to an allowlist something else sets, while NEO4J_PLUGINS installs
+// fleet-management (operations.md id 192). Its unrestricted entry stays.
 func pluginListSettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 	out := make(map[string]string)
 	for k, v := range automaticPluginSecuritySettings(plugin.Spec.Name) {
-		if resources.IsAdditiveConfKey(k) {
+		if resources.IsAdditiveConfKey(k) && !fleetAutomaticAllowlist(plugin, k) {
 			out[k] = v
 		}
 	}
@@ -109,6 +114,12 @@ func pluginListSettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 		}
 	}
 	return out
+}
+
+// fleetAutomaticAllowlist reports whether key is the allowlist entry the
+// fleet-management plugin's automatic settings carry.
+func fleetAutomaticAllowlist(plugin *neo4jv1beta1.Neo4jPlugin, key string) bool {
+	return key == resources.AllowlistSetting && validation.EntrypointPluginName(plugin.Spec.Name) == resources.FleetManagementPlugin
 }
 
 // pluginConfSettings returns the neo4j.conf settings derived from a single
@@ -140,6 +151,13 @@ func pluginConfSettings(plugin *neo4jv1beta1.Neo4jPlugin) map[string]string {
 // Plugins are sorted by name so the result is stable between reconciles (no
 // ConfigMap churn).
 func unionPluginConfSettings(plugins []neo4jv1beta1.Neo4jPlugin, targetRef, imageTag string) map[string]string {
+	return unionPluginConf(plugins, targetRef, imageTag, true)
+}
+
+// unionPluginConf is unionPluginConfSettings, with the fleet-management
+// plugin's automatic allowlist entry left out when fleetAllowlist is false
+// (standaloneFleetAllowlist).
+func unionPluginConf(plugins []neo4jv1beta1.Neo4jPlugin, targetRef, imageTag string, fleetAllowlist bool) map[string]string {
 	sorted := make([]*neo4jv1beta1.Neo4jPlugin, 0, len(plugins))
 	for i := range plugins {
 		p := &plugins[i]
@@ -151,7 +169,13 @@ func unionPluginConfSettings(plugins []neo4jv1beta1.Neo4jPlugin, targetRef, imag
 
 	out := make(map[string]string)
 	for _, p := range sorted {
+		own := specSecuritySettings(p)
 		for k, v := range pluginConfSettings(p) {
+			if _, asked := own[k]; !fleetAllowlist && !asked && fleetAutomaticAllowlist(p, k) {
+				if _, inConfig := p.Spec.Config[k]; !inConfig {
+					continue
+				}
+			}
 			if existing, ok := out[k]; ok && resources.IsAdditiveConfKey(k) {
 				out[k] = resources.MergeConfListValues(existing, v)
 			} else {

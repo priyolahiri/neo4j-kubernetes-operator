@@ -300,12 +300,11 @@ func (v *PluginValidator) validatePluginSource(source *neo4jv1beta1.PluginSource
 		))
 	}
 
-	// Supply-chain: transport integrity. The JAR is fetched over the network
-	// (Neo4j entrypoint or the VerifiedDownload init container) and the
-	// recorded checksum is not enforced at download time on the entrypoint
-	// path (see below), so cleartext http would leave a network attacker free
-	// to swap the JAR. Only https is accepted — file:/ftp:/etc. give no
-	// transport integrity either and the downloaders don't support them.
+	// Supply-chain: transport integrity. source.url is fetched over the network
+	// by the VerifiedDownload init container, which checks the checksum (see
+	// below); https keeps a network attacker from swapping the JAR or the
+	// download from being read. Only https is accepted — file:/ftp:/etc. give
+	// no transport integrity either and the downloader does not support them.
 	if (source.Type == "custom" || source.Type == "url") && source.URL != "" {
 		parsed, err := url.Parse(source.URL)
 		switch {
@@ -334,11 +333,16 @@ func (v *PluginValidator) validatePluginSource(source *neo4jv1beta1.PluginSource
 	// MUST commit to a checksum. Both "url" and "custom" reach an outside
 	// endpoint; "official" and "community" resolve via the Neo4j Docker
 	// entrypoint's curated manifest and don't accept a user-supplied URL.
-	// Note: today the Neo4j entrypoint does not verify this checksum at
-	// download time — it is recorded by the operator and surfaced as a
-	// StatefulSet annotation so users (and audit tooling) can verify
-	// out-of-band, or so a future init-container verifier can enforce.
-	// See docs/user_guide/plugin_supply_chain.md for the model.
+	// The checksum is enforced in installMode VerifiedDownload only: its init
+	// container downloads source.url and refuses a JAR that does not match it
+	// before Neo4j starts (resources.BuildPluginVerifiedDownloadInitContainer).
+	// In Managed mode the operator does not use source at all — the entrypoint
+	// installs by name, from its own list — and nothing records the checksum
+	// (this comment used to say it was surfaced as a StatefulSet annotation; no
+	// code ever wrote one). PreBaked takes the JAR from the image. Requiring it
+	// for every url and custom source keeps a source verifiable whichever mode
+	// it is used in. See the Supply-chain section of
+	// docs/api_reference/neo4jplugin.md for the model.
 	if (source.Type == "url" || source.Type == "custom") && source.Checksum == "" {
 		allErrs = append(allErrs, field.Required(
 			sourcePath.Child("checksum"),

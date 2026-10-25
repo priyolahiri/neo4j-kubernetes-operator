@@ -46,6 +46,7 @@ import (
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
 // pluginEnvVarsAnnotationPrefix starts the key of every plugin's record on its
@@ -213,7 +214,17 @@ func (r *Neo4jPluginReconciler) applyPlugin(ctx context.Context, sts *appsv1.Sta
 	removed := withoutEnvNames(&sts.Spec.Template, stale, r.envOwnedElsewhere(sts, plugin, deployment, others))
 	setPluginEnvRecord(sts, key, want)
 	if deployment.Type != "standalone" {
+		before := fleetOnlyAllowlist(&sts.Spec.Template)
 		setClusterPluginLists(&sts.Spec.Template, pluginListSettings(plugin), others, targetOwnedEnvNames(sts))
+		// The fleet-management plugin's allowlist of fleetManagement.* alone,
+		// which an earlier operator wrote, is taken off with a write of its own:
+		// it loaded nothing else (id 192). Another list nobody asks for any more
+		// waits for the plugin's next write, as before (id 173).
+		if before && validation.EntrypointPluginName(plugin.Spec.Name) == resources.FleetManagementPlugin {
+			if _, still := findEnvVar(neo4jContainer(&sts.Spec.Template.Spec), allowlistEnvName()); !still {
+				removed = append(removed, allowlistEnvName())
+			}
+		}
 	}
 	removed = append(removed, r.applyPluginEntries(ctx, sts, plugin, deployment, others)...)
 	sort.Strings(removed)
@@ -300,6 +311,38 @@ func setClusterPluginLists(template *corev1.PodTemplateSpec, own map[string]stri
 		}
 	}
 	container.Env = env
+}
+
+// allowlistEnvName is the variable that sets dbms.security.procedures.allowlist.
+func allowlistEnvName() string {
+	return resources.Neo4jSettingEnvVarName(resources.AllowlistSetting)
+}
+
+// fleetOnlyAllowlist reports whether the template's neo4j container sets the
+// allowlist to Aura Fleet Management's entry alone, as the fleet-management
+// plugin's automatic settings did before id 192.
+func fleetOnlyAllowlist(template *corev1.PodTemplateSpec) bool {
+	e, ok := findEnvVar(neo4jContainer(&template.Spec), allowlistEnvName())
+	if !ok || e.ValueFrom != nil {
+		return false
+	}
+	tokens := splitCSVSet(e.Value)
+	_, fleet := tokens[resources.FleetManagementProcedures]
+	return fleet && len(tokens) == 1
+}
+
+// findEnvVar returns the variable name of container; false when container is
+// nil or has none.
+func findEnvVar(container *corev1.Container, name string) (corev1.EnvVar, bool) {
+	if container == nil {
+		return corev1.EnvVar{}, false
+	}
+	for _, e := range container.Env {
+		if e.Name == name {
+			return e, true
+		}
+	}
+	return corev1.EnvVar{}, false
 }
 
 // pluginListValue is a list's new value: the tokens of live that own or
