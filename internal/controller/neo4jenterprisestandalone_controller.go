@@ -2222,11 +2222,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 	}
 	externalIP := standaloneServiceExternalIP(ctx, r.Client, standalone)
 
+	// status.observedGeneration, and the Ready condition's, is the generation
+	// this pass read at its start and acted on, not the one the write
+	// re-reads: a spec edited while the pass ran has not been acted on, and
+	// claiming it had read as "nothing pending" (as setFailedStatus, and the
+	// cluster since #547; operations.md id 153).
+	actedOn := standalone.Generation
+
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		// Get the latest version of the resource to avoid conflicts
 		latestStandalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name, Namespace: standalone.Namespace}, latestStandalone); err != nil {
 			return fmt.Errorf("failed to get latest standalone resource: %w", err)
+		}
+		if actedOn == 0 {
+			// An object built in memory rather than read from the API server.
+			actedOn = latestStandalone.Generation
 		}
 
 		version := latestStandalone.Status.Version
@@ -2246,7 +2257,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 			latestStandalone.Status.Message == message &&
 			latestStandalone.Status.Ready == ready &&
 			latestStandalone.Status.Version == version &&
-			latestStandalone.Status.ObservedGeneration == latestStandalone.Generation &&
+			latestStandalone.Status.ObservedGeneration == actedOn &&
 			endpointsCurrent {
 			logger.V(1).Info("Status unchanged, skipping update")
 			return nil
@@ -2262,11 +2273,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) updateStatus(ctx context.Context, 
 		latestStandalone.Status.Message = message
 		latestStandalone.Status.Ready = ready
 		latestStandalone.Status.Version = version
-		latestStandalone.Status.ObservedGeneration = latestStandalone.Generation
+		latestStandalone.Status.ObservedGeneration = actedOn
 
 		// Update Ready condition using standard helper
 		condStatus, condReason := PhaseToConditionStatus(phase)
-		SetReadyCondition(&latestStandalone.Status.Conditions, latestStandalone.Generation, condStatus, condReason, message)
+		SetReadyCondition(&latestStandalone.Status.Conditions, actedOn, condStatus, condReason, message)
 
 		latestStandalone.Status.Endpoints = &neo4jv1beta1.EndpointStatus{
 			Bolt:               fmt.Sprintf("%s://%s-client.%s.svc.cluster.local:7687", boltScheme, standalone.Name, standalone.Namespace),

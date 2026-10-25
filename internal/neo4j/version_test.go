@@ -176,6 +176,31 @@ func TestGetImageVersion(t *testing.T) {
 			t.Error("expected error for image without colon")
 		}
 	})
+
+	// A tag carrying a digest, which the image validation accepts, and a
+	// registry port: neither colon is the tag's (#531).
+	for image, want := range map[string]string{
+		"neo4j:2026.08.1-enterprise@sha256:0123abcd":               "2026.8.1",
+		"registry.example:5000/neo4j:5.26.31-enterprise":           "5.26.31",
+		"registry.example:5000/neo4j:5.26.31-enterprise@sha256:ab": "5.26.31",
+	} {
+		t.Run(image, func(t *testing.T) {
+			v, err := GetImageVersion(image)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if v.String() != want {
+				t.Errorf("got %s, want %s", v.String(), want)
+			}
+		})
+	}
+	for _, image := range []string{"neo4j@sha256:0123abcd", "registry.example:5000/neo4j"} {
+		t.Run(image+" names no tag", func(t *testing.T) {
+			if _, err := GetImageVersion(image); err == nil {
+				t.Error("expected an error for an image without a tag")
+			}
+		})
+	}
 }
 
 // ---------------------------------------------------------------------------

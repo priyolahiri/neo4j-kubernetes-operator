@@ -37,7 +37,7 @@
     "id": "su-rolling-upgrade",
     "name": "Rolling Upgrade State Machine",
     "kind": "worker",
-    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149).",
+    "description": "Drives an image-version upgrade through a requeue-based state machine (Staging to Rolling to Stabilizing to Verifying to Completed) so one reconcile never blocks on a multi-pod rolling restart of the server StatefulSet. Each step waits for the restarted server to be Available and for its databases to catch up before the next server restarts. A Paused or Failed upgrade keeps the partition it reached until the state machine takes it up again (operations.md id 149). A start one of its checks refuses changes nothing on the servers: the cluster stays Ready, the refusal is announced once, and a Failed one is tried again every minute (operations.md id 149). A held upgrade whose restarted servers cannot start on its target goes on towards a new tag, replacing them first (id 162), and a change of spec.topology.servers waits while an upgrade is in flight or keeps a partition (id 163).",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],
@@ -50,7 +50,10 @@
       "internal/controller/rolling_upgrade_statemachine.go",
       "internal/controller/upgrade_database_gate.go",
       "internal/controller/upgrade_diagnostics.go",
-      "internal/controller/upgrade_hold.go"
+      "internal/controller/upgrade_hold.go",
+      "internal/controller/upgrade_start.go",
+      "internal/controller/upgrade_repair.go",
+      "internal/controller/upgrade_topology.go"
     ]
   },
   {

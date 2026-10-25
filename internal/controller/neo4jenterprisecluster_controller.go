@@ -116,9 +116,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
 	// deferredUpgradeTargets dedupes the UpgradeDeferred event per cluster
-	// (key ns/name → deferred image) so a held image change doesn't emit an
-	// event on every Forming-phase reconcile (#262 review); the target a
-	// scale-down drain holds back is under drainDeferralKey (#527).
+	// (key ns/name → heldImageChange) so a held image change doesn't emit an
+	// event on every Forming-phase reconcile (#262 review), and is announced
+	// only once it outlasts the pass that first held it
+	// (announceHeldImageChange). The target a scale-down drain holds back is
+	// under drainDeferralKey (#527; announceUpgradeDeferredByDrain).
 	deferredUpgradeTargets sync.Map
 	// connectivityFailures tracks consecutive can't-connect reconciles per
 	// cluster (key ns/name → *connectivityFailureStreak) so a persistent
@@ -466,6 +468,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// once the cluster reaches Ready, isUpgradeRequired fires on the drift
 	// and the state machine performs the upgrade properly.
 	r.holdImageDriftUntilReady(ctx, cluster)
+	// Likewise a change of spec.topology.servers, while a Paused or Failed
+	// upgrade keeps a partition: servers added then would start on its target,
+	// and a drain would run mid-upgrade (operations.md id 163).
+	r.holdTopologyWhileUpgradeHolds(ctx, cluster)
 
 	// Neo4jEnterpriseCluster is always multi-node from the start
 	// (minimum 1 primary + 1 secondary OR 2+ primaries)
@@ -1758,6 +1764,20 @@ type statusRecord struct {
 	// resolvedTargetVersion is status.upgradeStatus.resolvedTargetVersion,
 	// written only when there is an upgrade record.
 	resolvedTargetVersion *string
+	// outcome, when set, receives what became of the two above in the write
+	// that succeeded.
+	outcome *reportedVersionsOutcome
+}
+
+// reportedVersionsOutcome is what a status write did with the versions the
+// servers report (statusRecord).
+type reportedVersionsOutcome struct {
+	// sent: the write carried a change of them.
+	sent bool
+	// dropped: the stored object came back without one of them — the
+	// installed CRD does not have the field (this release's CRDs are not
+	// applied), and the API server pruned it.
+	dropped bool
 }
 
 // updateClusterStatusRecording is updateClusterStatusWithVersion with the
@@ -1804,6 +1824,9 @@ func (r *Neo4jEnterpriseClusterReconciler) writeClusterStatus(ctx context.Contex
 		if actedOn == 0 {
 			// An object built in memory rather than read from the API server.
 			actedOn = latest.Generation
+		}
+		if rec.outcome != nil {
+			*rec.outcome = reportedVersionsOutcome{} // this attempt's
 		}
 
 		// Check if status is already exactly what we want
@@ -1911,7 +1934,20 @@ func (r *Neo4jEnterpriseClusterReconciler) writeClusterStatus(ctx context.Contex
 		}
 
 		statusChanged = statusNeedsUpdate || conditionNeedsUpdate
-		return r.Status().Update(ctx, latest)
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		if rec.outcome != nil {
+			// The update returns the object as stored: without a field the
+			// installed CRD lacks.
+			*rec.outcome = reportedVersionsOutcome{
+				sent: versionsNeedUpdate,
+				dropped: (rec.runningVersion != nil && latest.Status.RunningVersion != *rec.runningVersion) ||
+					(rec.resolvedTargetVersion != nil && latest.Status.UpgradeStatus != nil &&
+						latest.Status.UpgradeStatus.ResolvedTargetVersion != *rec.resolvedTargetVersion),
+			}
+		}
+		return nil
 	}
 
 	err := retry.RetryOnConflict(retry.DefaultBackoff, update)
@@ -2202,9 +2238,12 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	// Skip upgrade check if cluster is not ready — including a cluster that
 	// is still Ready while a server is down (#444): rolling the others then
 	// could cost it its majority. holdImageDriftUntilReady keeps the image
-	// change held until every server is back.
+	// change held until every server is back. The one exception: a held
+	// upgrade whose restarted servers cannot start on its target, and a new
+	// tag — only the machine's write of it brings them back, and it restarts
+	// nothing that is up (heldUpgradeRepair, operations.md id 162).
 	if cluster.Status.Phase != "Ready" || serversUnavailableSince(cluster) != nil {
-		return false
+		return r.heldUpgradeRepair(ctx, cluster) != nil
 	}
 
 	// "Paused" is an explicit manual hold (autoPauseOnFailure) — never
@@ -2236,7 +2275,12 @@ func (r *Neo4jEnterpriseClusterReconciler) isUpgradeRequired(ctx context.Context
 	currentImage := serverSts.Spec.Template.Spec.Containers[0].Image
 	desiredImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	if currentImage != desiredImage {
-		return true
+		// An attempt at this image that a check refused before it staged
+		// anything is tried again once upgradeStartRetry has passed, not on
+		// every pass: the normal pass runs in between, with the change held
+		// (refuseUpgradeStart). Retried on every pass, it starved the normal
+		// pass; failed and then made Ready again, it flapped (#538).
+		return !startRefusedRecently(cluster.Status.UpgradeStatus, cluster.Spec.Image.Tag, time.Now())
 	}
 
 	// Failed-upgrade retry: once Staging has run, the template already carries
@@ -2299,6 +2343,8 @@ func (r *Neo4jEnterpriseClusterReconciler) handleRollingUpgrade(ctx context.Cont
 			us.Message = us.CurrentStep
 		}); err != nil {
 			logger.Error(err, "Failed to persist re-staging transition")
+		} else {
+			r.noteUpgradeInClusterMessage(ctx, cluster)
 		}
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 	}
@@ -3642,20 +3688,19 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 // IN-MEMORY cluster object while the cluster is not Ready, so the normal
 // reconcile path keeps converging the cluster on its CURRENT image instead of
 // silently applying a version change outside the upgrade state machine
-// (#262). No-ops when the StatefulSet doesn't exist yet (initial install) or
-// there is no drift.
+// (#262). No-ops when there are no servers yet (initial install) or there is
+// no drift.
+//
+// The image in place is the server StatefulSet's, or, while a storage
+// expansion has orphan-deleted it, the image its orphaned pods run
+// (serverImageInPlace): the StatefulSet created again must not carry a held
+// image change in as an ungated roll of every server (#538).
 func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
-	serverSts := &appsv1.StatefulSet{}
-	if err := r.Get(ctx, types.NamespacedName{
-		Name:      fmt.Sprintf("%s-server", cluster.Name),
-		Namespace: cluster.Namespace,
-	}, serverSts); err != nil {
+	place, found := r.serverImageInPlace(ctx, cluster)
+	if !found {
 		return
 	}
-	if len(serverSts.Spec.Template.Spec.Containers) == 0 {
-		return
-	}
-	currentImage := serverSts.Spec.Template.Spec.Containers[0].Image
+	currentImage := place.image
 	desiredImage := fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)
 	if currentImage == desiredImage {
 		return
@@ -3670,28 +3715,22 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 	// lost every server: the version rule has already checked the tag
 	// against status.version, and the Ready pass records the new version once
 	// every server runs it (clusterVersionToRecord, operations.md id 144).
-	if serverSts.Status.ReadyReplicas == 0 {
+	if place.ready == 0 {
 		log.FromContext(ctx).Info("Applying image change without the Ready gate: no ready replicas exist to protect (formation blocked, possibly by the current image)",
 			"current", currentImage, "desired", desiredImage)
 		return
 	}
-	idx := strings.LastIndex(currentImage, ":")
-	if idx <= 0 {
+	// A tag can carry a digest: split as the image was built, never on the
+	// last colon (#531).
+	repo, tag, ok := splitImage(currentImage)
+	if !ok {
 		return // unparseable image — leave the spec alone
 	}
 	log.FromContext(ctx).V(1).Info("Image change deferred until the cluster is Ready — the rolling-upgrade state machine will perform it",
 		"current", currentImage, "desired", desiredImage, "phase", cluster.Status.Phase)
-	// Event once per deferred target (not per reconcile — a Forming cluster
-	// reconciles every ~30s and would spam the event stream). In-memory
-	// dedupe: an operator restart re-emits a single event, which is fine.
-	key := cluster.Namespace + "/" + cluster.Name
-	if prev, _ := r.deferredUpgradeTargets.Load(key); prev != desiredImage {
-		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonUpgradeDeferred,
-			"Image change to %s deferred until the cluster is Ready with every server available; the rolling-upgrade state machine will perform it", desiredImage)
-		r.deferredUpgradeTargets.Store(key, desiredImage)
-	}
-	cluster.Spec.Image.Repo = currentImage[:idx]
-	cluster.Spec.Image.Tag = currentImage[idx+1:]
+	r.announceHeldImageChange(cluster, desiredImage)
+	cluster.Spec.Image.Repo = repo
+	cluster.Spec.Image.Tag = tag
 }
 
 // recordClusterReady writes the Ready status of a cluster whose formation and
@@ -3722,15 +3761,25 @@ func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Contex
 		log.FromContext(ctx).Info("Recording the version the servers now run",
 			"previous", cluster.Status.Version, "running", rec.version)
 	}
-	if rec.runningVersion != nil && *rec.runningVersion != cluster.Status.RunningVersion {
-		log.FromContext(ctx).Info("Recording the version the servers report",
-			"version", firstNonEmpty(rec.version, cluster.Status.Version), "reported", *rec.runningVersion)
+	var outcome reportedVersionsOutcome
+	rec.outcome = &outcome
+	changed := r.updateClusterStatusRecording(ctx, cluster, "Ready", clusterReadyMessage(cluster), rec, conditions...)
+	// Said once it is stored. With the CRDs of an earlier release installed,
+	// the API server drops the fields, so every Ready pass sends them again
+	// (the first pass after the CRDs are applied records them): that write
+	// changes nothing, and is not worth an Info line each time (#550; the
+	// standalone does the same, recordStandaloneRunningVersion).
+	switch {
+	case outcome.dropped:
+		log.FromContext(ctx).V(1).Info("The API server dropped the versions the servers report (this release's CRDs are not applied); sending them again on the next pass",
+			"version", firstNonEmpty(rec.version, cluster.Status.Version), "runningVersion", reportedValue(rec.runningVersion),
+			"resolvedTargetVersion", reportedValue(rec.resolvedTargetVersion))
+	case outcome.sent:
+		log.FromContext(ctx).Info("Recorded the versions the servers report",
+			"version", firstNonEmpty(rec.version, cluster.Status.Version), "runningVersion", reportedValue(rec.runningVersion),
+			"resolvedTargetVersion", reportedValue(rec.resolvedTargetVersion))
 	}
-	if rec.resolvedTargetVersion != nil {
-		log.FromContext(ctx).Info("Recording the version the held upgrade's target resolved to",
-			"target", cluster.Status.UpgradeStatus.TargetVersion, "reported", *rec.resolvedTargetVersion)
-	}
-	return r.updateClusterStatusRecording(ctx, cluster, "Ready", clusterReadyMessage(cluster), rec, conditions...)
+	return changed
 }
 
 // reportedVersionsToRecord is what a Ready pass records about the versions the
@@ -3751,7 +3800,11 @@ func reportedVersionsToRecord(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts 
 		rec.version = clusterVersionToRecord(&cluster.Status, rolledImageTag(sts))
 	}
 	tag := firstNonEmpty(rec.version, cluster.Status.Version)
-	if !upgradeHeld(cluster) {
+	// An upgrade a check refused before it staged anything holds nothing:
+	// every server runs status.version, and what they report is recorded as
+	// for any cluster. It used to be left alone for as long as the record
+	// stayed Paused or Failed (#550).
+	if !upgradeHeld(cluster) || (sts != nil && !upgradeStaged(cluster.Status.UpgradeStatus, sts)) {
 		if running, ok := runningVersionFor(tag, highestReportedVersion(servers, nil)); ok {
 			rec.runningVersion = &running
 		}

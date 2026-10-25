@@ -80,7 +80,7 @@
   {
     "id": "ev-upgrade-started",
     "name": "UpgradeStarted",
-    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster, whatever its upgradeStrategy), or when the standalone begins its own pre-upgrade check on the pass that applies a new image (once per image: not again while the pod is being replaced). A Paused or Failed upgrade taken up again is announced as resumed (\"Rolling upgrade resumed after it was Paused\").",
+    "description": "Fires when a rolling upgrade's pre-flight gates (version compatibility, StatefulSet readiness, pre-upgrade health) pass and the state machine transitions into Staging (cluster, whatever its upgradeStrategy), or when the standalone begins its own pre-upgrade check on the pass that applies a new image (once per image: not again while the pod is being replaced). A Paused or Failed upgrade taken up again is announced as resumed (\"Rolling upgrade resumed after it was Paused\"). A held upgrade taken up to replace the servers that cannot start on its target names them: '... cannot start on <target> and is replaced first' (operations.md id 162).",
     "moduleId": "mod-cluster"
   },
   {
@@ -92,19 +92,19 @@
   {
     "id": "ev-upgrade-paused",
     "name": "UpgradePaused",
-    "description": "A Warning that fires when a rolling-upgrade step fails and upgradeStrategy.autoPauseOnFailure is set, halting the state machine for manual intervention; the servers stay where it stopped until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149).",
+    "description": "A Warning that fires when a rolling-upgrade step fails and upgradeStrategy.autoPauseOnFailure is set, halting the state machine for manual intervention; the servers stay where it stopped until the user changes spec.image.tag or turns autoPauseOnFailure off (operations.md id 149). A refusal before the upgrade starts is announced once, and the cluster stays Ready.",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-upgrade-failed",
     "name": "UpgradeFailed",
-    "description": "Fires when a rolling-upgrade step's deadline or gate is exceeded without autoPauseOnFailure set, or when the standalone's pre-upgrade health check fails with autoPauseOnFailure set. The standalone's pre-upgrade health check, which holds the upgrade back and is re-run every RequeueAfter, is advisory: announced when the block starts and every 30 minutes while it lasts (knowledge operations.md id 145).",
+    "description": "Fires when a rolling-upgrade step's deadline or gate is exceeded without autoPauseOnFailure set, or when the standalone's pre-upgrade health check fails with autoPauseOnFailure set. The standalone's pre-upgrade health check, which holds the upgrade back and is re-run every RequeueAfter, is advisory: announced when the block starts and every 30 minutes while it lasts (knowledge operations.md id 145). A cluster upgrade a check refuses before it starts is announced once per refusal — again only when the phase, target or error changes — while the operator tries it every minute; the cluster stays Ready (operations.md id 149).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-upgrade-deferred",
     "name": "UpgradeDeferred",
-    "description": "Fires when an image change is held back: the cluster is not Ready with every server available (holdImageDriftUntilReady), or a scale-down drain is in progress (mutual exclusion — the drain must finish first). Announced once per held target from a per-cluster memory, not on every check: the drain's deferral names the target and was emitted every 15s while the drain ran (#527); the memory is forgotten when the drain releases its hold, so a later drain announces again (knowledge operations.md id 136).",
+    "description": "Fires when an image change is held back: the cluster is not Ready with every server available (holdImageDriftUntilReady), or a scale-down drain is in progress (mutual exclusion — the drain must finish first). Announced once per held target from a per-cluster memory, not on every check: the drain's deferral names the target and was emitted every 15s while the drain ran (#527); the memory is forgotten when the drain releases its hold, so a later drain announces again (knowledge operations.md id 136). Also when the normal pass holds an image change because the cluster is not Ready with every server available: announced on the second pass that holds the same image, once (the pass after a refused tag is fixed holds it for one pass only, #550), and not for a change a stopped upgrade's record already names.",
     "moduleId": "mod-cluster"
   },
   {
