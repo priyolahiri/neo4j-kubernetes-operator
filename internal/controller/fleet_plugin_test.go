@@ -107,6 +107,9 @@ func TestClusterReconcile_CreatesTheServersWithTheFleetPlugin(t *testing.T) {
 	scheme := noEffectTestScheme(t)
 	cluster := minimalCluster("fleet", "prod")
 	cluster.Finalizers = []string{ClusterFinalizer}
+	// The first 5.26 whose entrypoint installs fleet-management; the validator
+	// refuses it on an earlier one (operations.md id 191).
+	cluster.Spec.Image.Tag = "5.26.11-enterprise"
 	cluster.Spec.AuraFleetManagement = &neo4jv1beta1.AuraFleetManagementSpec{Enabled: true}
 	writes := &statefulSetWrites{}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, standardStorageClass()).
@@ -158,9 +161,10 @@ func TestStandaloneReconcile_CreatesThePodWithTheFleetPlugin(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "single", Namespace: "dev", Finalizers: []string{StandaloneFinalizer}},
 		Spec: neo4jv1beta1.Neo4jEnterpriseStandaloneSpec{
 			AcceptLicenseAgreement: "eval",
-			Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.0-enterprise"},
-			Storage:                neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "1Gi"},
-			AuraFleetManagement:    &neo4jv1beta1.AuraFleetManagementSpec{Enabled: true},
+			// The first 5.26 whose entrypoint installs fleet-management (id 191).
+			Image:               neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: "5.26.11-enterprise"},
+			Storage:             neo4jv1beta1.StorageSpec{ClassName: "standard", Size: "1Gi"},
+			AuraFleetManagement: &neo4jv1beta1.AuraFleetManagementSpec{Enabled: true},
 		},
 	}
 	writes := &statefulSetWrites{}

@@ -30,7 +30,7 @@ The entrypoint looks every `NEO4J_PLUGINS` name up in the image's `/startup/neo4
 | 2025.05 – 2025.07 | `apoc`, `apoc-extended`, `bloom`, `genai`, `graph-data-science` (no `n10s`) |
 | 2025.08 and later | `apoc`, `apoc-extended`, `bloom`, `fleet-management`, `genai`, `graph-data-science` |
 
-`spec.name` and a dependency's `name` may also use the aliases `gds` (`graph-data-science`) and `neosemantics` (`n10s`). So **`n10s` is listed on 5.26 only** (and on CalVer before 2025.05), and **`graphql` on no supported release**: it left the list before 5.26.0. A floating tag (`5.26-enterprise`, `2026.08-enterprise`) is judged as the newest patch of its line, and a CalVer newer than the operator release by the newest list the operator knows.
+`fleet-management` is not installed with a `Neo4jPlugin`: `spec.auraFleetManagement` on the cluster or standalone installs it, and is refused on the images whose list lacks it ([Aura Fleet Management](../aura_fleet_management.md#prerequisites)). `spec.name` and a dependency's `name` may also use the aliases `gds` (`graph-data-science`) and `neosemantics` (`n10s`). So **`n10s` is listed on 5.26 only** (and on CalVer before 2025.05), and **`graphql` on no supported release**: it left the list before 5.26.0. A floating tag (`5.26-enterprise`, `2026.08-enterprise`) is judged as the newest patch of its line, and a CalVer newer than the operator release by the newest list the operator knows.
 
 **The operator refuses such a name before it reaches a server.** A `Managed` plugin whose name, or a dependency's, the image of its target does not list — judged by the cluster's or standalone's `spec.image.tag` — goes `Failed`, with one `PluginUnknownToImage` Warning:
 

@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -69,6 +70,14 @@ func (r *AuraSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// A snapshot in a terminal phase is not observed again: Aura changes nothing
+	// about it, and a resync or an operator restart used to GET it once more —
+	// and, with the credentials since revoked, turn a Completed snapshot into a
+	// failure retried every 30s (knowledge rule 156).
+	if snapshotTerminal(snap.Status.Phase) {
+		return ctrl.Result{}, nil
+	}
+
 	creds, externalID, _, err := resolveInstanceCredsAndID(ctx, r.Client, snap.Namespace, snap.Spec.InstanceRef)
 	if err != nil {
 		logger.Info("snapshot deferred: instance not resolvable", "error", err.Error())
@@ -84,8 +93,7 @@ func (r *AuraSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 			if aura.IsConflict(err) || aura.IsTransient(err) {
 				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 			}
-			r.setSnapshotCondition(ctx, req, false, "CreateFailed", err.Error())
-			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+			return r.fail(ctx, req, snap, "CreateFailed", err)
 		}
 		if err := r.patchStatus(ctx, req, func(s *neo4jv1beta1.AuraSnapshot) {
 			// The create response carries ONLY snapshot_id — no status, no
@@ -110,16 +118,10 @@ func (r *AuraSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if aura.IsNotFound(err) || aura.IsTransient(err) {
 			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 		}
-		r.setSnapshotCondition(ctx, req, false, "ObserveFailed", err.Error())
-		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		return r.fail(ctx, req, snap, "ObserveFailed", err)
 	}
 
-	// Cancelled is terminal too. Omitting it made a cancelled snapshot requeue
-	// forever. (Note the v1 spec's snapshot LIST status enum omits Cancelled while
-	// the single-GET enum includes it — we handle it either way.)
-	done := s.Status == aura.SnapshotStatusCompleted ||
-		s.Status == aura.SnapshotStatusFailed ||
-		s.Status == aura.SnapshotStatusCancelled
+	done := snapshotTerminal(s.Status)
 	if err := r.patchStatus(ctx, req, func(sn *neo4jv1beta1.AuraSnapshot) {
 		sn.Status.Phase = s.Status
 		sn.Status.Profile = s.Profile
@@ -145,6 +147,50 @@ func (r *AuraSnapshotReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 	}
 	return ctrl.Result{}, nil
+}
+
+// snapshotTerminal reports whether an Aura snapshot status is final:
+// Completed, Failed or Cancelled. Cancelled is terminal too; omitting it made a
+// cancelled snapshot requeue forever. (The v1 spec's snapshot LIST status enum
+// omits Cancelled while the single-GET enum includes it — handled either way.)
+func snapshotTerminal(status string) bool {
+	return status == aura.SnapshotStatusCompleted ||
+		status == aura.SnapshotStatusFailed ||
+		status == aura.SnapshotStatusCancelled
+}
+
+// fail records a failure the operator retries — phase Error and the Ready
+// condition, as every Aura fail() does — and announces it with a Warning when
+// that write changed the phase or the condition: once when it starts or its
+// message changes, not on every 30s retry, nor after an operator restart
+// (knowledge rules 145 and 156). It used to write the condition alone, so the
+// phase stayed empty or Pending and `kubectl neo4j status` read a failing
+// snapshot as healthy, with no event at all. The message leaves Aura's request
+// ID out, so a refusal that repeats is the same status (rule 184).
+func (r *AuraSnapshotReconciler) fail(ctx context.Context, req ctrl.Request, snap *neo4jv1beta1.AuraSnapshot, reason string, cause error) (ctrl.Result, error) {
+	log.FromContext(ctx).Info("AuraSnapshot reconcile deferred", "reason", reason, "error", cause.Error())
+	announce := false
+	_ = retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		announce = false
+		latest := &neo4jv1beta1.AuraSnapshot{}
+		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
+			return client.IgnoreNotFound(err)
+		}
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: aura.MessageWithoutRequestID(cause)}
+		changed := auraConditionChanged(latest.Status.Conditions, want) || latest.Status.Phase != neo4jv1beta1.PhaseError
+		meta.SetStatusCondition(&latest.Status.Conditions, want)
+		latest.Status.Phase = neo4jv1beta1.PhaseError
+		latest.Status.ObservedGeneration = latest.Generation
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = changed
+		return nil
+	})
+	if announce {
+		r.Recorder.Event(snap, corev1.EventTypeWarning, EventReasonAuraSnapshotFailed, fmt.Sprintf("%s: %v", reason, cause))
+	}
+	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
 }
 
 func (r *AuraSnapshotReconciler) setSnapshotCondition(ctx context.Context, req ctrl.Request, ready bool, reason, msg string) {

@@ -241,7 +241,7 @@ For full MCP field definitions (HTTP, TLS, service exposure, and STDIO auth), se
 
 #### `auraFleetManagement` (AuraFleetManagementSpec)
 
-Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/aura/fleet-management/). The operator installs the pre-bundled fleet-management plugin and registers the Aura token automatically once the deployment is Ready.
+Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/aura/fleet-management/). The operator installs the pre-bundled fleet-management plugin and registers the Aura token automatically once the deployment is Ready. It needs **5.26.11 or a later 5.26, or 2025.08.0 or later**: an earlier image's entrypoint does not know the plugin, so `enabled: true` is refused there (`ValidationFailed`).
 
 ```yaml
 auraFleetManagement:

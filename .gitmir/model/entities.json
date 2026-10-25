@@ -2109,7 +2109,7 @@
         "id": "f-auraproviderconfig-status-conditions",
         "name": "status.conditions",
         "type": "json",
-        "note": "Ready=True once an access token was successfully obtained with the referenced credentials."
+        "note": "Ready=True once an access token was successfully obtained with the referenced credentials; re-checked every 10 minutes. A CredentialsInvalid message leaves Aura's request ID out."
       },
       {
         "id": "f-auraproviderconfig-status-observed-generation",
@@ -2301,7 +2301,7 @@
         "id": "f-aurasnapshot-status-phase",
         "name": "status.phase",
         "type": "string",
-        "note": "Pending, InProgress, Completed, Failed."
+        "note": "Pending, InProgress, Completed, Failed, Cancelled (Aura's own snapshot status; Completed, Failed and Cancelled are terminal and not read again), or Error while the operator cannot request or read the snapshot"
       },
       {
         "id": "f-aurasnapshot-status-exportable",

@@ -291,5 +291,65 @@
         "description": "Set (True, NotInAllowlist) with the list and who sets it, or removed when the list loads the plugin."
       }
     ]
+  },
+  {
+    "id": "rx-fleet-provision-onboards-deployment",
+    "name": "Fleet Manager provisioning onboards the deployment",
+    "description": "Setting spec.auraFleetManagement.provision on a cluster or standalone makes every reconcile pass run Phase 0 before the plugin merge and the registration: the Fleet Manager deployment is adopted by name or created, its ID recorded in an annotation, and a token minted into a Secret that Phase 2 registers once the deployment is Ready.",
+    "moduleId": "mod-cluster",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "spec.auraFleetManagement.provision (a standalone's likewise)",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "metadata.annotations[neo4j.com/external-fleet-deployment-id]",
+        "description": "Records the adopted or created deployment's ID before any token is minted, so a crash re-observes rather than registers a second deployment."
+      },
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "token Secret (spec.auraFleetManagement.provision.tokenSecretName)",
+        "description": "Stores the token Aura returns exactly once; status.auraFleetManagement records the deployment and token metadata."
+      },
+      {
+        "kind": "notify",
+        "entityId": "ent-neo4jenterprisecluster",
+        "description": "AuraFleetDeploymentAdopted or AuraFleetDeploymentCreated, then AuraFleetTokenProvisioned. A failed Kubernetes write or an Aura refusal is a status.auraFleetManagement.message instead; a transient Aura failure is retried quietly."
+      }
+    ]
+  },
+  {
+    "id": "rx-fleet-token-secret-lost",
+    "name": "A lost fleet token Secret is replaced or refused",
+    "description": "When the provisioned token Secret is missing (deleted, or never written), the next pass probes with POST: a deployment that already holds a token is rotated only if it was never registered or the spec says tokenPolicy: Rotate; a registered token under CreateIfMissing is never rotated, since that would break a working registration.",
+    "moduleId": "mod-cluster",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "token Secret (spec.auraFleetManagement.provision.tokenSecretName)",
+      "change": "delete"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "status.auraFleetManagement.registered",
+        "description": "Cleared before a rotation, so Phase 2 registers the replacement token."
+      },
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "token Secret (spec.auraFleetManagement.provision.tokenSecretName)",
+        "description": "Holds the rotated token; while the Secret cannot be written, status.auraFleetManagement.message says the token was rotated and why it could not be kept."
+      },
+      {
+        "kind": "notify",
+        "entityId": "ent-neo4jenterprisecluster",
+        "description": "One AuraFleetTokenRotated Warning once the new token is stored; a refused rotation is a status message, not an event."
+      }
+    ]
   }
 ]

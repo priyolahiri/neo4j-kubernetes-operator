@@ -54,6 +54,7 @@ type fakeFleetAPI struct {
 	claimed bool
 
 	listCalled   bool
+	listErr      func() error
 	createCalled bool
 	createdName  string
 	mintCalled   bool
@@ -69,6 +70,11 @@ type fakeFleetAPI struct {
 
 func (f *fakeFleetAPI) ListDeployments(_ context.Context, _, _ string) ([]aura.Deployment, error) {
 	f.listCalled = true
+	if f.listErr != nil {
+		if err := f.listErr(); err != nil {
+			return nil, err
+		}
+	}
 	return f.deployments, nil
 }
 

@@ -239,7 +239,7 @@ func (r *AuraOrganizationMemberReconciler) fail(ctx context.Context, req ctrl.Re
 	log.FromContext(ctx).Info("AuraOrganizationMember reconcile deferred", "reason", reason, "error", cause.Error())
 	// Announced when the failure starts or its message changes, not on every
 	// requeue while it stays (knowledge rule 145).
-	if changed, _ := r.setStatusChanged(ctx, req, "", "Error", metav1.ConditionFalse, reason, cause.Error()); changed {
+	if changed, _ := r.setStatusChanged(ctx, req, "", "Error", metav1.ConditionFalse, reason, aura.MessageWithoutRequestID(cause)); changed {
 		r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberFailed, fmt.Sprintf("%s: %v", reason, cause))
 	}
 	return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil

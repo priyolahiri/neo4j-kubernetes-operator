@@ -32,6 +32,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/aura"
 )
 
 // +kubebuilder:rbac:groups=neo4j.neo4j.com,resources=auraproviderconfigs,verbs=get;list;watch;create;update;patch;delete
@@ -48,7 +49,10 @@ type AuraProviderConfigReconciler struct {
 	Scheme                  *runtime.Scheme
 	Recorder                record.EventRecorder
 	MaxConcurrentReconciles int
-	RequeueAfter            time.Duration
+	// RequeueAfter overrides how often the credentials are validated again;
+	// zero is auraProviderConfigRecheck (10 minutes). The operator leaves it
+	// unset.
+	RequeueAfter time.Duration
 	// ClientFactory builds the Aura API client; nil uses the real shared client.
 	ClientFactory auraClientFactory
 }
@@ -74,9 +78,14 @@ func (r *AuraProviderConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	ready := err == nil
 	reason := "CredentialsValidated"
 	msg := "Aura API credentials validated"
+	event := msg
 	if !ready {
 		reason = "CredentialsInvalid"
-		msg = "Aura API credentials invalid: " + err.Error()
+		// The condition leaves Aura's request ID out, so a refusal that repeats
+		// is the same status; the Warning and the log keep it (knowledge rule
+		// 184).
+		msg = "Aura API credentials invalid: " + aura.MessageWithoutRequestID(err)
+		event = "Aura API credentials invalid: " + err.Error()
 		logger.Info("AuraProviderConfig validation failed", "error", err.Error())
 	}
 
@@ -107,23 +116,33 @@ func (r *AuraProviderConfigReconciler) Reconcile(ctx context.Context, req ctrl.R
 	}
 	// Announced when the credentials start failing or the error changes, not on
 	// every validation pass while they stay invalid (knowledge rule 145) — and,
-	// likewise, when they become valid, not on every pass while they stay so: the
-	// deployed operator revalidates every 30s (RequeueAfter, wired in
-	// cmd/main.go), and AuraCredentialsValidated announced each one (knowledge
-	// rule 136).
+	// likewise, when they become valid, not on every pass while they stay so
+	// (knowledge rule 136).
 	switch {
 	case !changed:
 	case ready:
-		r.Recorder.Event(pc, corev1.EventTypeNormal, EventReasonAuraCredentialsValidated, msg)
+		r.Recorder.Event(pc, corev1.EventTypeNormal, EventReasonAuraCredentialsValidated, event)
 	default:
-		r.Recorder.Event(pc, corev1.EventTypeWarning, EventReasonAuraCredentialsInvalid, msg)
+		r.Recorder.Event(pc, corev1.EventTypeWarning, EventReasonAuraCredentialsInvalid, event)
 	}
 
-	requeue := r.RequeueAfter
-	if requeue <= 0 {
-		requeue = 10 * time.Minute
+	return ctrl.Result{RequeueAfter: r.recheckInterval()}, nil
+}
+
+// auraProviderConfigRecheck is how often a provider config's credentials are
+// validated again. Each validation is a token exchange and a ListInstances
+// call, against the credential's own Aura API budget (25 calls a minute on a
+// trial account) that every Aura CR using the config shares. The operator used
+// to wire its 30s requeue in here, for no documented reason: two calls a
+// minute per config, for an answer that rarely changes (knowledge rule 184).
+const auraProviderConfigRecheck = 10 * time.Minute
+
+// recheckInterval is RequeueAfter when it is set, else auraProviderConfigRecheck.
+func (r *AuraProviderConfigReconciler) recheckInterval() time.Duration {
+	if r.RequeueAfter > 0 {
+		return r.RequeueAfter
 	}
-	return ctrl.Result{RequeueAfter: requeue}, nil
+	return auraProviderConfigRecheck
 }
 
 // SetupWithManager wires the controller.

@@ -35,7 +35,7 @@ API credentials are resolved from the referenced `AuraInstance`'s provider confi
 |---|---|---|
 | `snapshotId` | `string` | Aura snapshot ID (set once the snapshot is requested). |
 | `profile` | `string` | Snapshot profile: `AdHoc` or `Scheduled`. |
-| `phase` | `string` | Maps the Aura snapshot status: `Pending`, `InProgress`, `Completed`, `Failed`, `Cancelled` (`Completed`, `Failed` and `Cancelled` are terminal). |
+| `phase` | `string` | Maps the Aura snapshot status: `Pending`, `InProgress`, `Completed`, `Failed`, `Cancelled` (`Completed`, `Failed` and `Cancelled` are terminal: the operator does not read the snapshot again). `Error` while the operator cannot request or read the snapshot — the `Ready` condition says why (`CreateFailed`, `ObserveFailed`), an `AuraSnapshotFailed` Warning announces it once, and the operator keeps retrying. |
 | `exportable` | `bool` | Whether the snapshot can seed a new instance. |
 | `snapshotTime` | `*metav1.Time` | The snapshot's timestamp as reported by Aura. |
 | `conditions` | `[]metav1.Condition` | Standard readiness conditions. |

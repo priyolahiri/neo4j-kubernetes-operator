@@ -86,7 +86,7 @@ func TestValidateAuraFleetManagement(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			errs := validateAuraFleetManagement(tt.spec, path)
+			errs := validateAuraFleetManagement(tt.spec, "2026.08.1-enterprise", path)
 			if len(errs) != tt.wantErrs {
 				t.Errorf("got %d errors, want %d: %v", len(errs), tt.wantErrs, errs)
 				return

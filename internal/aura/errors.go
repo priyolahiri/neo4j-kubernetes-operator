@@ -105,6 +105,51 @@ func (e *APIError) Error() string {
 	}
 }
 
+// MessageWithoutRequestID is err's text without the request ID of any APIError
+// in it (" request-id=<id>"), for a status message.
+//
+// Aura gives every response its own X-Request-Id, so the text of an error that
+// repeats differs on every retry. A status message that carries it changes on
+// every pass: each is a status write, which starts the next pass at once, and a
+// Warning announced "once per failure" is announced on every one — a loop at
+// the speed of the API's rate limit, spending the budget every CR on the
+// credential shares. A log line and an event, which nothing compares, keep the
+// full error, ID included, for Aura support.
+func MessageWithoutRequestID(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	for _, id := range requestIDs(err) {
+		msg = strings.ReplaceAll(msg, " request-id="+id, "")
+	}
+	return msg
+}
+
+// requestIDs returns the request IDs of the APIErrors in err's tree.
+func requestIDs(err error) []string {
+	var ids []string
+	var walk func(error)
+	walk = func(e error) {
+		//nolint:errorlint // visits every node of the tree itself: errors.As stops at the first APIError
+		if apiErr, ok := e.(*APIError); ok && apiErr != nil && apiErr.RequestID != "" {
+			ids = append(ids, apiErr.RequestID)
+		}
+		switch u := e.(type) { //nolint:errorlint // descends into the tree by hand, through both Unwrap shapes
+		case interface{ Unwrap() []error }:
+			for _, inner := range u.Unwrap() {
+				walk(inner)
+			}
+		case interface{ Unwrap() error }:
+			if inner := u.Unwrap(); inner != nil {
+				walk(inner)
+			}
+		}
+	}
+	walk(err)
+	return ids
+}
+
 // errorEnvelope models the primary Aura error body shape:
 //
 //	{"errors":[{"message":"...","reason":"...","field":"..."}]}

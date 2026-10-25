@@ -452,7 +452,7 @@ func (r *AuraCustomerManagedKeyReconciler) fail(ctx context.Context, req ctrl.Re
 		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
 			return client.IgnoreNotFound(err)
 		}
-		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: cause.Error()}
+		want := metav1.Condition{Type: "Ready", Status: metav1.ConditionFalse, Reason: reason, Message: aura.MessageWithoutRequestID(cause)}
 		changed := auraConditionChanged(latest.Status.Conditions, want) || latest.Status.Phase != neo4jv1beta1.PhaseError
 		meta.SetStatusCondition(&latest.Status.Conditions, want)
 		latest.Status.Phase = neo4jv1beta1.PhaseError
