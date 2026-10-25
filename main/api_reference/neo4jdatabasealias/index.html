@@ -4027,7 +4027,7 @@
 </tr>
 </tbody>
 </table>
-<p>The target does <strong>not</strong> have to exist yet — the controller reports <code>Pending</code> and retries, so an alias and the replica it fronts can be applied together.</p>
+<p>The target does <strong>not</strong> have to exist yet — the controller reports <code>Pending</code> and retries, so an alias and the replica it fronts can be applied together. Nor does the cluster or standalone <code>clusterRef</code> names: until it exists the alias waits in <code>Pending</code> (Ready reason <code>ClusterNotFound</code>, one <code>ClusterNotFound</code> Warning).</p>
 <h2 id="status">Status<a class="headerlink" href="#status" title="Anchor link to this section">&para;</a></h2>
 <table>
 <thead>

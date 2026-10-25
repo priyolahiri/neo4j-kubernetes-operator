@@ -4184,7 +4184,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td><code>Pending</code>, <code>Seeding</code>, <code>Replicating</code>, <code>Promoted</code>, or <code>Failed</code>. <strong><code>Promoted</code> is terminal.</strong></td>
+<td><code>Pending</code>, <code>Seeding</code>, <code>Replicating</code>, <code>Promoted</code>, or <code>Failed</code>. <strong><code>Promoted</code> is terminal.</strong> A <code>clusterRef</code> that names no cluster or standalone yet is <code>Pending</code> with reason <code>ClusterNotFound</code> and one <code>ClusterNotFound</code> Warning, never a validation failure.</td>
 </tr>
 <tr>
 <td><code>message</code></td>

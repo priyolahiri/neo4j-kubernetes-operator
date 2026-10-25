@@ -5205,7 +5205,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found / not ready, or waiting for the seed credentials on the target — <code>SeedCredsMissing</code>, <code>SeedCredsAutoInherited</code>), <code>Failed</code> (connection, creation or data-import failure), <code>ValidationFailed</code> (the spec was refused; <code>kubectl neo4j status --problems</code> lists it), <code>Error</code> (a deletion whose <code>DROP DATABASE</code> failed and is being retried; reason <code>DeletionFailed</code>), or <code>Unknown</code> (any other blocked state)</td>
+<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found — one <code>ClusterNotFound</code> Warning, never a validation failure — or not ready, or waiting for the seed credentials on the target — <code>SeedCredsMissing</code>, <code>SeedCredsAutoInherited</code>), <code>Failed</code> (connection, creation or data-import failure), <code>ValidationFailed</code> (the spec was refused; <code>kubectl neo4j status --problems</code> lists it), <code>Error</code> (a deletion whose <code>DROP DATABASE</code> failed and is being retried; reason <code>DeletionFailed</code>), or <code>Unknown</code> (any other blocked state)</td>
 </tr>
 <tr>
 <td><code>message</code></td>

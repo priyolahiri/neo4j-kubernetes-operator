@@ -4402,6 +4402,7 @@
 </tr>
 </tbody>
 </table>
+<p>A <code>clusterRef</code> that names no cluster or standalone yet is a wait, not a validation failure: phase <code>Pending</code>, Ready reason <code>ClusterNotFound</code>, one <code>ClusterNotFound</code> Warning, and the rule is applied once the deployment exists.</p>
 <h2 id="cypher-condition-syntax">Cypher condition syntax<a class="headerlink" href="#cypher-condition-syntax" title="Anchor link to this section">&para;</a></h2>
 <p>Conditions are arbitrary Cypher expressions that resolve to a boolean. The most useful primitive is:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>abac.oidc.user_attribute('&lt;claim_key&gt;')

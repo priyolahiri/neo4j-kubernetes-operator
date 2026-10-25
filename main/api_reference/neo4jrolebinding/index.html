@@ -4352,6 +4352,10 @@
 <td>No-op; <code>UserNotFound</code> condition; reconcile every 30s until the user appears</td>
 </tr>
 <tr>
+<td>Cluster not found</td>
+<td><code>spec.clusterRef</code> names no cluster or standalone yet: phase <code>Pending</code>, Ready reason <code>ClusterNotFound</code>, one <code>ClusterNotFound</code> Warning; it carries on once the deployment exists, so it can be applied with its cluster in any order. Not a validation failure</td>
+</tr>
+<tr>
 <td>Cluster not Ready</td>
 <td>No-op; <code>ClusterNotReady</code> condition; reconcile every 30s. A <code>Ready</code> binding stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code>. So does a target that reads <code>Ready</code> but refuses the connection (<code>ClusterUnreachable</code>, logged at info), for up to 5 minutes</td>
 </tr>

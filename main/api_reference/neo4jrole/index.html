@@ -4522,6 +4522,10 @@ remove the rule — a name is a spelling, not ownership.</p>
 <td>Remove finalizer only</td>
 </tr>
 <tr>
+<td>Cluster not found</td>
+<td><code>spec.clusterRef</code> names no cluster or standalone yet: phase <code>Pending</code>, Ready reason <code>ClusterNotFound</code>, one <code>ClusterNotFound</code> Warning; it carries on once the deployment exists, so it can be applied with its cluster in any order. Not a validation failure</td>
+</tr>
+<tr>
 <td>Cluster not Ready</td>
 <td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition. A <code>Ready</code> role stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code>. So does a target that reads <code>Ready</code> but refuses the connection (<code>ClusterUnreachable</code>, logged at info), for up to 5 minutes</td>
 </tr>
