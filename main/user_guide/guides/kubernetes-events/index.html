@@ -4769,7 +4769,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraFleetManagementPluginPatchFailed</code></td>
 <td>Warning</td>
-<td>Failed to patch the fleet-management plugin onto the StatefulSet. Raised when the failure starts or its message changes, not on every pass while it lasts; announced again if it comes back after a patch went through. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin</td>
+<td>The fleet-management merge into the server StatefulSet's <code>NEO4J_PLUGINS</code> failed, and the message says which step: <code>Failed to add fleet-management to NEO4J_PLUGINS</code> for the write, <code>Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management</code> for the check before it (the StatefulSet could not be read, it has no <code>neo4j</code> container). On an image with Fleet Manager built in (2026.03+) only the check runs: nothing is added there. Raised when the failure starts or its message changes, not on every pass while it lasts; announced again if it comes back after a patch went through. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin</td>
 </tr>
 <tr>
 <td><code>AuraFleetDeploymentCreated</code></td>
@@ -5197,12 +5197,12 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraInstanceCreated</code>, <code>AuraInstanceAdopted</code>, <code>AuraInstanceUpdated</code>, <code>AuraInstancePaused</code>, <code>AuraInstanceResumed</code>, <code>AuraInstanceUpgraded</code>, <code>AuraInstanceDeleted</code>, <code>AuraInstanceOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the Aura instance. <code>AuraInstanceOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials stayed unavailable for 5 minutes after deletion was requested: the cloud instance keeps running, so delete it in the Aura console</td>
+<td>Lifecycle of the Aura instance. <code>AuraInstanceOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials stayed unavailable for 5 minutes after deletion was requested, or Aura kept refusing the delete for 5 minutes (anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last): the cloud instance keeps running, so delete it in the Aura console</td>
 </tr>
 <tr>
 <td><code>AuraInstanceFailed</code></td>
 <td>Warning</td>
-<td>Aura instance reconcile failed (also: deletion refused while <code>deletionProtection</code> is set, recorded on the <code>Synced</code> condition, reason <code>DeletionProtected</code>; a <code>Delete</code> waiting for credentials it cannot read, reason <code>CredentialsUnavailable</code>). Once per failure</td>
+<td>Aura instance reconcile failed (also: deletion refused while <code>deletionProtection</code> is set, recorded on the <code>Synced</code> condition, reason <code>DeletionProtected</code>; a <code>Delete</code> waiting for credentials it cannot read, reason <code>CredentialsUnavailable</code>; a <code>Delete</code> Aura refused, reason <code>DeletionRefused</code>, asked again until 5 minutes after deletion was requested). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraSnapshotCreated</code></td>
@@ -5227,37 +5227,37 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraCustomerManagedKeyCreated</code>, <code>AuraCustomerManagedKeyAdopted</code>, <code>AuraCustomerManagedKeyReady</code>, <code>AuraCustomerManagedKeyDeleted</code>, <code>AuraCustomerManagedKeyOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the customer-managed key (<code>AuraCustomerManagedKeyReady</code> once when the key becomes ready). <code>AuraCustomerManagedKeyOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials stayed unavailable for 5 minutes: the key stays registered in Aura</td>
+<td>Lifecycle of the customer-managed key (<code>AuraCustomerManagedKeyReady</code> once when the key becomes ready). <code>AuraCustomerManagedKeyOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials stayed unavailable for 5 minutes, or Aura kept refusing the delete for 5 minutes (anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last), or the key was still in use 5 minutes after deletion was requested: the key stays registered in Aura</td>
 </tr>
 <tr>
 <td><code>AuraCustomerManagedKeyDeleteBlocked</code></td>
 <td>Warning</td>
-<td>The key cannot be deleted: still in use by one or more instances. Once per refusal</td>
+<td>The key cannot be deleted: still in use by one or more instances. Once per refusal. The deletion asks again until 5 minutes after it was requested (condition <code>Synced</code>, reason <code>KeyInUse</code>, which names the time), then releases the finalizer with a Warning <code>AuraCustomerManagedKeyOrphaned</code></td>
 </tr>
 <tr>
 <td><code>AuraCustomerManagedKeyFailed</code></td>
 <td>Warning</td>
-<td>Customer-managed key reconcile failed (also: a <code>Delete</code> waiting for credentials, reason <code>CredentialsUnavailable</code>). Once per failure</td>
+<td>Customer-managed key reconcile failed (also: a <code>Delete</code> waiting for credentials, reason <code>CredentialsUnavailable</code>; a <code>Delete</code> Aura refused, reason <code>DeletionRefused</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraIPFilterCreated</code>, <code>AuraIPFilterAdopted</code>, <code>AuraIPFilterUpdated</code>, <code>AuraIPFilterReady</code>, <code>AuraIPFilterDeleted</code>, <code>AuraIPFilterOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the IP filter (<code>AuraIPFilterReady</code> once when it becomes Ready). <code>AuraIPFilterOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials or organization stayed unavailable for 5 minutes: the filter stays in place in Aura</td>
+<td>Lifecycle of the IP filter (<code>AuraIPFilterReady</code> once when it becomes Ready). <code>AuraIPFilterOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials or organization stayed unavailable for 5 minutes, or Aura kept refusing the delete for 5 minutes (anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last): the filter stays in place in Aura</td>
 </tr>
 <tr>
 <td><code>AuraIPFilterFailed</code></td>
 <td>Warning</td>
-<td>IP filter reconcile failed (also: a <code>Delete</code> waiting for credentials, reason <code>CredentialsUnavailable</code>). Once per failure</td>
+<td>IP filter reconcile failed (also: a <code>Delete</code> waiting for credentials, reason <code>CredentialsUnavailable</code>; a <code>Delete</code> Aura refused, reason <code>DeletionRefused</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseCreated</code>, <code>AuraDatabaseAdopted</code>, <code>AuraDatabaseReady</code>, <code>AuraDatabaseDeleted</code>, <code>AuraDatabaseOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the Aura database (<code>AuraDatabaseReady</code> once when it becomes Ready; <code>AuraDatabaseCreated</code> is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created)</td>
+<td>Lifecycle of the Aura database (<code>AuraDatabaseReady</code> once when it becomes Ready; <code>AuraDatabaseCreated</code> is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created). <code>AuraDatabaseOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run: at once when the database's <code>AuraInstance</code> CR no longer exists — nothing can reach Aura for it, since the credentials come through the instance; the database went with the instance if that was deleted in Aura, otherwise it is still there, so check the Aura console — and after 5 minutes when the credentials, the organization or project, or the instance's ID stayed unavailable, or Aura kept refusing the delete for 5 minutes (anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last): the database stays on the instance with its data</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseFailed</code></td>
 <td>Warning</td>
-<td>Aura database reconcile failed. Once per failure</td>
+<td>Aura database reconcile failed (also: a <code>Delete</code> waiting for what it needs to call Aura, reason <code>CredentialsUnavailable</code>; a <code>Delete</code> Aura refused, reason <code>DeletionRefused</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraDatabaseBackupCreated</code></td>
@@ -5292,22 +5292,22 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraMemberFailed</code></td>
 <td>Warning</td>
-<td>Member reconcile failed, or a <code>deletionPolicy: Delete</code> deletion waits for credentials it cannot read (<code>CredentialsUnavailable</code>). Once per failure</td>
+<td>Member reconcile failed, or a <code>deletionPolicy: Delete</code> deletion waits for credentials it cannot read (<code>CredentialsUnavailable</code>) or on a delete Aura refused (<code>DeletionRefused</code>). Once per failure</td>
 </tr>
 <tr>
 <td><code>AuraMemberOrphaned</code></td>
 <td>Normal</td>
-<td>A member's deletion left them in the organization or project (<code>deletionPolicy: Orphan</code>). A Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials, organization or project stayed unavailable for 5 minutes after deletion was requested: the person keeps their role, so remove them in the Aura console</td>
+<td>A member's deletion left them in the organization or project (<code>deletionPolicy: Orphan</code>). A Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials, organization or project stayed unavailable for 5 minutes after deletion was requested, or Aura kept refusing the delete for 5 minutes (anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last): the person keeps their role, so remove them in the Aura console</td>
 </tr>
 <tr>
 <td><code>AuraInviteCreated</code>, <code>AuraInviteAdopted</code>, <code>AuraInviteReady</code>, <code>AuraInviteDeleted</code>, <code>AuraInviteOrphaned</code></td>
 <td>Normal</td>
-<td>Lifecycle of the invite (<code>AuraInviteReady</code> names the invite's state, once per state: sent, accepted, declined, expired, revoked). <code>AuraInviteOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials or organization stayed unavailable for 5 minutes after deletion was requested: the invite stays pending and can still be accepted, so revoke it in the Aura console</td>
+<td>Lifecycle of the invite (<code>AuraInviteReady</code> names the invite's state, once per state: sent, accepted, declined, expired, revoked). <code>AuraInviteOrphaned</code> is a Warning when <code>deletionPolicy: Delete</code> could not run because the Aura credentials or organization stayed unavailable for 5 minutes after deletion was requested, or Aura kept refusing the delete for 5 minutes (anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last): the invite stays pending and can still be accepted, so revoke it in the Aura console</td>
 </tr>
 <tr>
 <td><code>AuraInviteFailed</code></td>
 <td>Warning</td>
-<td>Invite reconcile failed, or a <code>deletionPolicy: Delete</code> deletion waits for credentials it cannot read (<code>CredentialsUnavailable</code>). Once per failure</td>
+<td>Invite reconcile failed, or a <code>deletionPolicy: Delete</code> deletion waits for credentials it cannot read (<code>CredentialsUnavailable</code>) or on a delete Aura refused (<code>DeletionRefused</code>). Once per failure</td>
 </tr>
 </tbody>
 </table>

@@ -4043,7 +4043,7 @@
 <tr>
 <td><code>deletionPolicy</code></td>
 <td><code>string</code></td>
-<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (leave the filter in place on CR delete — deleting it would open network access). <code>Delete</code> removes it from Aura. <code>Orphan</code> needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone; <code>Delete</code> waits for the credentials and the organization (<code>Ready=False</code>, reason <code>CredentialsUnavailable</code>) and after 5 minutes removes the CR anyway with a Warning <code>AuraIPFilterOrphaned</code> — the filter stays in place in Aura.</td>
+<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (leave the filter in place on CR delete — deleting it would open network access). <code>Delete</code> removes it from Aura. <code>Orphan</code> needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone; <code>Delete</code> waits for the credentials and the organization (<code>Ready=False</code>, reason <code>CredentialsUnavailable</code>) and after 5 minutes removes the CR anyway with a Warning <code>AuraIPFilterOrphaned</code> — the filter stays in place in Aura. A delete Aura refuses — anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last — is waited on the same way: <code>Ready=False</code>, reason <code>DeletionRefused</code>, announced once, asked again until 5 minutes after deletion was requested, then the CR is removed with the same Warning.</td>
 </tr>
 <tr>
 <td><code>managementPolicies</code></td>

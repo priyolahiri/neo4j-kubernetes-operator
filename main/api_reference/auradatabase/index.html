@@ -3130,6 +3130,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3889,6 +3900,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#deletion" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Deletion
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#example" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3980,7 +4002,7 @@
 <tr>
 <td><code>deletionPolicy</code></td>
 <td><code>string</code></td>
-<td>Enum <code>Delete</code> (default; drop the database) / <code>Orphan</code> (leave it in place).</td>
+<td>Enum <code>Delete</code> (default; drop the database) / <code>Orphan</code> (leave it in place). See <a href="#deletion">Deletion</a>.</td>
 </tr>
 <tr>
 <td><code>managementPolicies</code></td>
@@ -4026,6 +4048,14 @@
 </tr>
 </tbody>
 </table>
+<h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h2>
+<p><code>Orphan</code> calls nothing: the CR is removed at once, with a Normal <code>AuraDatabaseOrphaned</code>. <code>Delete</code> drops the database in Aura, and needs what the database is reached through: its <code>AuraInstance</code> CR, the credentials and organization resolved from it, and the instance's ID.</p>
+<ul>
+<li><strong>The <code>AuraInstance</code> CR no longer exists.</strong> Nothing can reach Aura for the database again, since the credentials come through the instance, so the CR is removed at once with a <strong>Warning</strong> <code>AuraDatabaseOrphaned</code>. The database went with the instance if that was deleted in Aura; otherwise it is still there with its data, so check the Aura console. Delete the <code>AuraDatabase</code> before its <code>AuraInstance</code> to have the operator drop it.</li>
+<li><strong>Anything else cannot be resolved</strong> — the credentials Secret or provider config deleted first in a namespace teardown, say. The CR waits with phase <code>Error</code>, <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, announced once with <code>AuraDatabaseFailed</code>, and after 5 minutes is removed anyway with a Warning <code>AuraDatabaseOrphaned</code>: the database stays on the instance with its data.</li>
+<li><strong>Aura refuses the delete</strong> — anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last. The CR waits the same way, with reason <code>DeletionRefused</code>, then is removed with the same Warning.</li>
+</ul>
+<p>Before, the CR was removed at once whenever the instance or the credentials could not be resolved, with a Normal event, and a refused delete was retried with error backoff for ever.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraDatabase</span>

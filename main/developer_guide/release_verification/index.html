@@ -5057,6 +5057,10 @@ what caught four real client bugs during the 2026-07-30 re-diff.</p>
 <td>Fleet <code>provision</code></td>
 <td>Deployment registered, token minted into the Secret, DBMS registers; deleting the Secret with the default <code>tokenPolicy</code> <strong>refuses to rotate</strong> and says why</td>
 </tr>
+<tr>
+<td>Aura deletions are bounded (rules 157, 201, 202)</td>
+<td>On the multi-database instance: (a) an <code>AuraDatabase</code> with <code>deletionPolicy: Delete</code> whose <code>AuraInstance</code> CR is deleted first, under <code>Orphan</code> — the database CR goes at once with a <strong>Warning</strong> <code>AuraDatabaseOrphaned</code> naming the instance, and the database is still there in Aura (drop it in the console); (b) another, deleted after its instance's credentials Secret — <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, one <code>AuraDatabaseFailed</code>, then released 5 minutes after the deletion with a Warning <code>AuraDatabaseOrphaned</code>; a Secret put back within the 5 minutes lets the DELETE go through instead. A refused DELETE (<code>DeletionRefused</code>) cannot be provoked on demand; where a customer-managed key is set up, deleting its <code>AuraCustomerManagedKey</code> while an instance uses it shows <code>Synced=False</code>, <code>KeyInUse</code> naming the deadline, one <code>AuraCustomerManagedKeyDeleteBlocked</code>, then a Warning <code>AuraCustomerManagedKeyOrphaned</code> after 5 minutes</td>
+</tr>
 </tbody>
 </table>
 <p>→ <strong>Tear down</strong> every resource created here; Aura bills by the hour. Deleting the

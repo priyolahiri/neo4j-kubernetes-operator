@@ -4037,7 +4037,7 @@ with a per-key <code>GET</code> — a key can never be matched on
 <tr>
 <td><code>deletionPolicy</code></td>
 <td><code>string</code></td>
-<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (leave the key registered in Aura on CR delete). <code>Delete</code> deregisters it — fails while any instance still uses it.</td>
+<td>Enum <code>Orphan</code> / <code>Delete</code>. Default <code>Orphan</code> (leave the key registered in Aura on CR delete). <code>Delete</code> deregisters it — refused while any instance still uses it, which is waited on for 5 minutes (see the deletion note).</td>
 </tr>
 <tr>
 <td><code>managementPolicies</code></td>
@@ -4084,8 +4084,8 @@ with a per-key <code>GET</code> — a key can never be matched on
 </tbody>
 </table>
 <h2 id="deletion-note">Deletion note<a class="headerlink" href="#deletion-note" title="Anchor link to this section">&para;</a></h2>
-<p>A key still bound to an instance <strong>cannot be deleted</strong> — Aura returns <code>encryption-key-is-active</code>. The CR then sets <code>Synced=False</code> with reason <code>KeyInUse</code> and keeps its finalizer until the key is no longer referenced by any instance.</p>
-<p><code>Orphan</code> needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). <code>Delete</code> needs them: while they cannot be read the CR waits, with <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, and after 5 minutes it is removed anyway with a Warning <code>AuraCustomerManagedKeyOrphaned</code> — the key stays registered in Aura.</p>
+<p>A key still bound to an instance <strong>cannot be deleted</strong> — Aura returns <code>encryption-key-is-active</code>. The CR then sets <code>Synced=False</code> with reason <code>KeyInUse</code>, raises one <code>AuraCustomerManagedKeyDeleteBlocked</code>, and keeps its finalizer while it asks again — until 5 minutes after deletion was requested (the condition names the time). Then it releases the finalizer with a Warning <code>AuraCustomerManagedKeyOrphaned</code>: the key stays registered in Aura, still bound to an instance, so deregister it in the Aura console once nothing uses it. Detach or delete the instances first to have the CR deregister it. Before, a key in use held the CR — and its namespace — for as long as anything used it.</p>
+<p><code>Orphan</code> needs no credentials, so the CR is removed even when its credentials Secret or provider config is already gone (a namespace teardown). <code>Delete</code> needs them: while they cannot be read the CR waits, with <code>Ready=False</code>, reason <code>CredentialsUnavailable</code>, and after 5 minutes it is removed anyway with a Warning <code>AuraCustomerManagedKeyOrphaned</code> — the key stays registered in Aura. A delete Aura refuses — anything but a conflict, a rate limit, a 5xx or a network failure, which are retried as long as they last — is waited on the same way: <code>Ready=False</code>, reason <code>DeletionRefused</code>, announced once, asked again until 5 minutes after deletion was requested, then the CR is removed with the same Warning.</p>
 <h2 id="example">Example<a class="headerlink" href="#example" title="Anchor link to this section">&para;</a></h2>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nt">apiVersion</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">neo4j.neo4j.com/v1beta1</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="nt">kind</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">AuraCustomerManagedKey</span>
