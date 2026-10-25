@@ -132,6 +132,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	}
 
 	// Validate
+	var dependencyWait string
 	if r.Validator != nil {
 		res := r.Validator.Validate(ctx, user)
 		r.advisoryWarnings.record(r.Recorder, user, EventReasonValidationWarning, res.Warnings)
@@ -144,14 +145,11 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			}
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
-		if len(res.Pending) > 0 {
-			// Transient dependency gaps (e.g. password Secret not applied
-			// yet): Pending + requeue, like missing roles — apply order is
-			// documented as irrelevant (#259).
-			msg := strings.Join(res.Pending, "; ")
-			r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, ConditionReasonSecretPending, msg, nil, "")
-			return ctrl.Result{RequeueAfter: requeue}, nil
-		}
+		// Transient dependency gaps (e.g. password Secret not applied yet):
+		// Pending + requeue, like missing roles — apply order is documented
+		// as irrelevant (#259). Reported after the deployment: a user whose
+		// cluster and Secret are both missing waits for the cluster first.
+		dependencyWait = strings.Join(res.Pending, "; ")
 	}
 
 	// Resolve the target (cluster/standalone via clusterRef, or Aura instance).
@@ -167,6 +165,14 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		if r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, "") {
 			r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
 		}
+		return ctrl.Result{RequeueAfter: requeue}, nil
+	}
+	// The password Secret is waited for once the deployment exists. Checked
+	// before it, a user applied with neither its Secret nor its cluster said
+	// SecretPending, and its ClusterNotFound wait began only once the Secret
+	// was there (knowledge rule 182).
+	if dependencyWait != "" {
+		r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, ConditionReasonSecretPending, dependencyWait, nil, "")
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {
@@ -397,10 +403,6 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found {
-		// The deployment is gone, and the user with its system database.
-		return ctrl.Result{}, release()
-	}
 	// Anything else that keeps DROP USER from running waits, bounded: the
 	// user may still be in Neo4j, and releasing now would leave the access
 	// the deletion was meant to revoke (knowledge rule 178).
@@ -412,6 +414,11 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 			return r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserDeletionFailed, msg, nil, "")
 		},
 		release: release, requeue: r.requeueAfter(),
+	}
+	// A deployment that is gone, or going, with its volumes took the user
+	// with it; one whose volumes are kept did not (knowledge rule 178).
+	if done, res, err := cleanup.settleByTarget(ctx, r.Client, user.Namespace, user.Spec.ClusterRef, target); done {
+		return res, err
 	}
 	if !target.IsReady() {
 		return cleanup.blocked(ctx, targetDownCause(user.Spec.ClusterRef))

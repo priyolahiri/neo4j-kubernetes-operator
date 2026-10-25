@@ -569,9 +569,24 @@ The wait is bounded so a target that never comes back cannot keep the CR
 requested the finalizer is released, with one Warning that says
 `Released the finalizer without removing …`, names what is still in Neo4j,
 and gives the statement to run by hand, for example
-``DROP USER `alice` ``. A target whose cluster or standalone CR is gone
-releases at once: nothing is left to remove. `deletionPolicy: Retain`
-releases at once and removes nothing.
+``DROP USER `alice` ``. `deletionPolicy: Retain` releases at once and
+removes nothing.
+
+What a deletion removes lives on the target's volumes, so when the
+cluster or standalone itself is being deleted or is gone, its
+`spec.storage.retentionPolicy` decides:
+
+- **`Delete`** (the default): the volumes go with it, and so does the
+  user, the grant or the rule. The finalizer is released at once, with no
+  Warning, whether the target is being deleted or already gone — a
+  namespace teardown finishes without waiting.
+- **`Retain`**: the volumes stay, and a deployment created again from them
+  has everything they held. While the target is being deleted it may still
+  serve, so the drop is tried, and waited for as above. Once the target's
+  CR is gone, the deletion waits, bounded, for a deployment created again
+  from the volumes (`… was deleted and its volumes were kept …`); after
+  5 minutes the finalizer is released with the Warning naming what the
+  volumes still hold.
 
 Before this, a deletion during a restart released the finalizer at once
 when the connection failed (and an auth rule's when the target was not

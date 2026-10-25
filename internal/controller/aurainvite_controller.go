@@ -88,9 +88,9 @@ func (r *AuraInviteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	orgID := resolveProviderOrgID(ctx, r.Client, inv.Namespace, inv.Spec.ProviderConfigRef, inv.Spec.OrganizationID)
 	apiClient := resolveMemberClient(r.ClientFactory, creds)
 	if !controllerutil.ContainsFinalizer(inv, AuraInviteFinalizer) {
-		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraInvite) {
-			controllerutil.AddFinalizer(o, AuraInviteFinalizer)
-		}); err != nil {
+		// A tested JSON patch, no resourceVersion lock: a copy older than the
+		// object is no Conflict (knowledge rule 199).
+		if err := addFinalizer(ctx, r.Client, inv, AuraInviteFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

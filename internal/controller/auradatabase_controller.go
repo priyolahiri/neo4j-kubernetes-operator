@@ -124,9 +124,9 @@ func (r *AuraDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	apiClient := resolveDatabaseClient(r.ClientFactory, tgt.creds)
 
 	if !controllerutil.ContainsFinalizer(d, AuraDatabaseFinalizer) {
-		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraDatabase) {
-			controllerutil.AddFinalizer(o, AuraDatabaseFinalizer)
-		}); err != nil {
+		// A tested JSON patch, no resourceVersion lock: a copy older than the
+		// object is no Conflict (knowledge rule 199).
+		if err := addFinalizer(ctx, r.Client, d, AuraDatabaseFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

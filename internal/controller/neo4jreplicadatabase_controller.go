@@ -508,9 +508,6 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found {
-		return releaseOnly()
-	}
 	// The replica still holds the upstream's data and keeps pulling it, so a
 	// deletion that cannot drop it waits, bounded, as every other cleanup. A
 	// target that was not Ready made it wait for ever; a connection, a type
@@ -525,6 +522,9 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 				EventReasonReplicaFailed, msg, nil)
 		},
 		release: func() error { _, err := releaseOnly(); return err }, requeue: requeue,
+	}
+	if done, res, err := cleanup.settleByTarget(ctx, r.Client, replica.Namespace, replica.Spec.ClusterRef, target); done {
+		return res, err
 	}
 	if !target.IsReady() {
 		return cleanup.blocked(ctx, targetDownCause(replica.Spec.ClusterRef))

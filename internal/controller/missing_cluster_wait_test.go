@@ -250,6 +250,47 @@ func missingClusterCases() []missingClusterCase {
 	}
 }
 
+// A user applied with neither its password Secret nor its cluster waits for
+// the cluster first, as every kind does (rule 182): it said SecretPending, and
+// its ClusterNotFound wait began only once the Secret was there. With the
+// cluster created, it waits for the Secret; with both, it goes on.
+func TestUserReconcile_AMissingClusterIsReportedBeforeAMissingSecret(t *testing.T) {
+	ctx := context.Background()
+	user := &neo4jv1beta1.Neo4jUser{ObjectMeta: repeatedWarningsMeta("alice", Neo4jUserFinalizer),
+		Spec: neo4jv1beta1.Neo4jUserSpec{ClusterRef: "sa", Username: "alice", Roles: []string{"reader"},
+			PasswordSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "alice-password"}}}
+	c := fake.NewClientBuilder().WithScheme(noEffectTestScheme(t)).WithObjects(user).
+		WithStatusSubresource(user, &neo4jv1beta1.Neo4jEnterpriseStandalone{}).Build()
+	rec := record.NewFakeRecorder(100)
+	server := newFakeAuthServer()
+	r := &Neo4jUserReconciler{Client: c, Scheme: c.Scheme(), Recorder: rec, Validator: validation.NewUserValidator(c),
+		newNeo4jClient: func(ResolvedTarget) (userNeo4jClient, error) { return server, nil }}
+	key := client.ObjectKeyFromObject(user)
+	state := readyState(func() *neo4jv1beta1.Neo4jUser { return &neo4jv1beta1.Neo4jUser{} },
+		func(o *neo4jv1beta1.Neo4jUser) string { return o.Status.Phase },
+		func(o *neo4jv1beta1.Neo4jUser) []metav1.Condition { return o.Status.Conditions })
+
+	reconcileTimes(t, r, key, repeatPasses)
+	phase, reason, message := state(t, c, key)
+	assert.Equal(t, neo4jv1beta1.PhasePending, phase)
+	assert.Equal(t, EventReasonClusterNotFound, reason, message)
+	assert.Len(t, eventsWithReason(drainEvents(rec), EventReasonClusterNotFound), 1)
+
+	require.NoError(t, c.Create(ctx, authTargetStandalone()))
+	reconcileTimes(t, r, key, 1)
+	_, reason, message = state(t, c, key)
+	assert.Equal(t, ConditionReasonSecretPending, reason, message)
+	assert.Contains(t, message, "alice-password")
+
+	require.NoError(t, c.Create(ctx, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: "alice-password", Namespace: repeatedWarningsNS},
+		Data:       map[string][]byte{"password": []byte("a-long-password")},
+	}))
+	reconcileTimes(t, r, key, 1)
+	phase, reason, message = state(t, c, key)
+	assert.Equal(t, "Ready", phase, "%s: %s", reason, message)
+}
+
 // missingClusterClient holds obj, and the user's password Secret, and no
 // deployment.
 func missingClusterClient(t *testing.T, obj client.Object) client.Client {

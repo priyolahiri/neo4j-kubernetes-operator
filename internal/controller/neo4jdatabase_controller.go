@@ -376,11 +376,21 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 		logger.Error(err, "Failed to resolve referenced host during deletion")
 		return ctrl.Result{}, err
 	}
-	if !found {
-		// The host (and its databases) are gone, so there is nothing to drop.
-		// Release the finalizer.
-		logger.Info("Referenced host not found, removing finalizer", "clusterRef", database.Spec.ClusterRef)
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
+	cleanup := deletionCleanup{
+		obj: database, recorder: r.Recorder, reason: EventReasonDeletionFailed,
+		leftBehind: fmt.Sprintf("database %q on %s", database.Spec.Name, targetRefDisplay(database.Spec.ClusterRef)),
+		byHand:     fmt.Sprintf("DROP DATABASE `%s`", neo4j.EscapeBackticks(database.Spec.Name)),
+		record: func(msg string) bool {
+			return r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonDeletionFailed, msg)
+		},
+		release: func() error { return removeFinalizer(ctx, r.Client, database, DatabaseFinalizer) },
+		requeue: r.RequeueAfter,
+	}
+	// A host that is gone, or going, with its volumes took the database with
+	// it; one whose volumes are kept did not (knowledge rule 178).
+	if done, res, err := cleanup.settleByTarget(ctx, r.Client, database.Namespace, database.Spec.ClusterRef,
+		ResolvedTarget{Found: found, Cluster: cluster, Standalone: standalone}); done {
+		return res, err
 	}
 
 	// Create the Neo4j client for the resolved host (cluster or standalone).
@@ -397,16 +407,7 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 		// database. Releasing the finalizer here ("assume the database is
 		// already gone") left it, and its data, in Neo4j. The deletion waits,
 		// bounded, as every other cleanup (knowledge rule 178).
-		return deletionCleanup{
-			obj: database, recorder: r.Recorder, reason: EventReasonDeletionFailed,
-			leftBehind: fmt.Sprintf("database %q on %s", database.Spec.Name, targetRefDisplay(database.Spec.ClusterRef)),
-			byHand:     fmt.Sprintf("DROP DATABASE `%s`", neo4j.EscapeBackticks(database.Spec.Name)),
-			record: func(msg string) bool {
-				return r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonDeletionFailed, msg)
-			},
-			release: func() error { return removeFinalizer(ctx, r.Client, database, DatabaseFinalizer) },
-			requeue: r.RequeueAfter,
-		}.blocked(ctx, connectFailedCause(database.Spec.ClusterRef, err))
+		return cleanup.blocked(ctx, connectFailedCause(database.Spec.ClusterRef, err))
 	}
 	defer func() {
 		if err := neo4jClient.Close(); err != nil {

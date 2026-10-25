@@ -92,9 +92,9 @@ func (r *AuraProjectMemberReconciler) Reconcile(ctx context.Context, req ctrl.Re
 	}
 	apiClient := resolveMemberClient(r.ClientFactory, creds)
 	if !controllerutil.ContainsFinalizer(m, AuraProjectMemberFinalizer) {
-		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraProjectMember) {
-			controllerutil.AddFinalizer(o, AuraProjectMemberFinalizer)
-		}); err != nil {
+		// A tested JSON patch, no resourceVersion lock: a copy older than the
+		// object is no Conflict (knowledge rule 199).
+		if err := addFinalizer(ctx, r.Client, m, AuraProjectMemberFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -320,19 +320,6 @@ func (r *AuraProjectMemberReconciler) setStatusChanged(ctx context.Context, req 
 		return nil
 	})
 	return changed, err
-}
-
-// patch applies a mutation to the latest object with conflict retry, and
-// writes only what it changed: a merge patch, never an Update (operations.md
-// id 150).
-func (r *AuraProjectMemberReconciler) patch(ctx context.Context, req ctrl.Request, mutate func(*neo4jv1beta1.AuraProjectMember)) error {
-	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		latest := &neo4jv1beta1.AuraProjectMember{}
-		if err := r.Get(ctx, req.NamespacedName, latest); err != nil {
-			return err
-		}
-		return patchObject(ctx, r.Client, latest, func() { mutate(latest) })
-	})
 }
 
 func (r *AuraProjectMemberReconciler) fail(ctx context.Context, req ctrl.Request, m *neo4jv1beta1.AuraProjectMember, reason string, cause error) (ctrl.Result, error) {

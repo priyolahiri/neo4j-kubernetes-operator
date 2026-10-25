@@ -592,7 +592,10 @@ The operator creates the database if it is missing, then observes it:
 ### Deletion
 
 Deleting the CR runs `DROP DATABASE` on its cluster or standalone, then releases the finalizer. If the
-cluster or standalone CR no longer exists, the finalizer is released at once: its databases went with it.
+cluster or standalone CR no longer exists, or is being deleted with its volumes (`storage.retentionPolicy:
+Delete`, the default), the finalizer is released at once: its databases go with them. A host that keeps
+its volumes (`Retain`) still takes the drop while it is being deleted, and once its CR is gone the
+deletion waits, as below, for a deployment created again from them.
 
 If the drop cannot run — the operator cannot connect (the host restarting, its Bolt port not open yet,
 stopped by a `stopCluster` restore, its admin Secret unreadable, a server's name that does not resolve

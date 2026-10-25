@@ -300,10 +300,6 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found {
-		// The deployment is gone, and the grants with its system database.
-		return ctrl.Result{}, release()
-	}
 	// Anything else that keeps the revokes from running waits, bounded: the
 	// roles may still be granted, and releasing now would leave the access the
 	// deletion was meant to revoke (knowledge rule 178).
@@ -323,6 +319,9 @@ func (r *Neo4jRoleBindingReconciler) handleDeletion(ctx context.Context, rb *neo
 			},
 			release: release, requeue: r.requeueAfter(),
 		}
+	}
+	if done, res, err := cleanup(rb.Status.GrantedRoles).settleByTarget(ctx, r.Client, rb.Namespace, rb.Spec.ClusterRef, target); done {
+		return res, err
 	}
 	if !target.IsReady() {
 		return cleanup(rb.Status.GrantedRoles).blocked(ctx, targetDownCause(rb.Spec.ClusterRef))
