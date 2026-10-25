@@ -151,7 +151,7 @@ kubectl create secret generic analytics-reader-creds \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-The next reconcile (≤30s by default) sets `status.passwordLastRotated` and emits a `PasswordRotated` event.
+The next reconcile (≤30s by default) sets `status.passwordLastRotated` and emits one `PasswordRotated` event — recorded right after the `ALTER USER`, so a pass that then fails on something else does not send it again.
 
 ### Suspending a user (security incident)
 
@@ -478,7 +478,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `RolesSynced` | Granted roles equal `spec.roles` (PUBLIC excluded) |
 | `PasswordSynced` | The password from the current version of the Secret has been applied |
 | `PendingDependencies` | One or more `spec.roles` reference custom roles that don't yet exist (no `Neo4jRole`, not in `SHOW ROLES`) |
-| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority). A user already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority) — reason `ClusterNotReady` — or reads `Ready` but cannot be reached yet (reason `ClusterUnreachable`). A user already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
 | `RoleNamesResolved` | `spec.roles` names a `Neo4jRole` by its CR name; the message maps each to the Neo4j role granted. Present only then |
 
 ### `Neo4jRole`
@@ -488,7 +488,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `Ready` | Role exists, privileges in sync |
 | `PrivilegesSynced` | Live privileges match `spec.privileges` and `spec.privilegeRules` (immutable extras excluded). `False`/`PrivilegesDrifted`: something could not be reconciled (see events). `Unknown`/`UnattributedPrivileges`: learn mode holds rows it cannot attribute and will not revoke — see [Learn mode](#learn-mode-default) |
 | `PrivilegesResolve` | Every database a privilege names exists. `False`/`DatabaseNotFound`: those privileges are skipped (Neo4j refuses a grant on a missing database) and the rest applied; the message names them, and the field for a `privilegeRules` entry. `False`/`GraphPrivilegeOnComposite`: a GRAPH privilege on a composite database, which Neo4j accepts and ignores |
-| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority). A role already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority) — reason `ClusterNotReady` — or reads `Ready` but cannot be reached yet (reason `ClusterUnreachable`). A role already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
 
 ### `Neo4jRoleBinding`
 
@@ -498,7 +498,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 | `RolesSynced` | `status.grantedRoles` covers `spec.roles` |
 | `UserNotFound` | The named user does not exist in Neo4j (waiting for SSO/LDAP first-login) |
 | `PendingDependencies` | One or more `spec.roles` reference a custom role that doesn't exist yet (no `Neo4jRole`, not in `SHOW ROLES`) |
-| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority). A binding already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
+| `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority) — reason `ClusterNotReady` — or reads `Ready` but cannot be reached yet (reason `ClusterUnreachable`). A binding already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |
 | `RoleNamesResolved` | `spec.roles` names a `Neo4jRole` by its CR name; the message maps each to the Neo4j role granted. Present only then |
 
 The `kubectl get` printer columns surface the most actionable bits:
@@ -538,6 +538,15 @@ the pass that finds the target back is not a transition: no `UserReady`,
 restart of a standalone made every user on it `Pending` and then announced
 `UserReady` again.) An object that was not yet `Ready` — new, failed, or with
 a spec change not yet applied — waits in `Pending` as before.
+
+The same holds for the seconds after a restart when the target already reads
+`Ready` but its Bolt port does not accept connections yet, and for a
+`stopCluster` restore: the condition's reason is then `ClusterUnreachable`,
+nothing is announced, and the operator logs the retry at info, not as an
+error. Only if the target cannot be reached for more than 5 minutes is the
+object `Failed`, with one `ConnectionFailed` Warning. A connection failure
+that is not about reaching the target — the admin Secret missing, a refused
+login — is reported at once.
 
 ## Cluster vs namespace scope
 

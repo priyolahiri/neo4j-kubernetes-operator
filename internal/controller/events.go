@@ -344,14 +344,17 @@ const (
 )
 
 const (
-	ConditionReasonRolesSynced       = "RolesMatch"
-	ConditionReasonRolesPending      = "RolesPending"
-	ConditionReasonPasswordSynced    = "PasswordMatchesSecret"
-	ConditionReasonClusterNotReady   = "ClusterNotReady"
-	ConditionReasonUserReady         = "UserReady"
-	ConditionReasonRoleReady         = "RoleReady"
-	ConditionReasonPrivilegesSynced  = "PrivilegesMatch"
-	ConditionReasonPrivilegesDrifted = "PrivilegesDrifted"
+	ConditionReasonRolesSynced     = "RolesMatch"
+	ConditionReasonRolesPending    = "RolesPending"
+	ConditionReasonPasswordSynced  = "PasswordMatchesSecret"
+	ConditionReasonClusterNotReady = "ClusterNotReady"
+	// ConditionReasonClusterUnreachable: the target reads Ready but its Bolt
+	// port could not be reached — the rest of the same restart (id 172).
+	ConditionReasonClusterUnreachable = "ClusterUnreachable"
+	ConditionReasonUserReady          = "UserReady"
+	ConditionReasonRoleReady          = "RoleReady"
+	ConditionReasonPrivilegesSynced   = "PrivilegesMatch"
+	ConditionReasonPrivilegesDrifted  = "PrivilegesDrifted"
 	// ConditionReasonPrivilegesUnattributed: learn mode holds rows it cannot
 	// attribute to a spec statement and so will not revoke (Neo4jRole
 	// status.unattributedPrivileges).
