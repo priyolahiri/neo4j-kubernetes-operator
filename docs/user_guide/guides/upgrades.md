@@ -98,14 +98,23 @@ made meanwhile: the expansion deletes the StatefulSet (leaving its pods
 running), and the StatefulSet is created again on the image the servers run, not
 the new one.
 
-A storage expansion creates the StatefulSet again **as it was**, with the new
-volume claim templates: the same pod template — the plugins' settings, init
-containers and volumes included — the same replica count, and a held upgrade's
-partition. No server restarts for it. Changes made together with the expansion
-(a new image, a plugin) are applied by the next reconcile, with their usual
-checks. If the operator restarts between the delete and the create, it reads the
-template from the revision the orphaned pods run; the next reconcile then puts
-back the operator's own records on the StatefulSet.
+A storage expansion creates the StatefulSet again **as it was**, in the same
+reconcile, with the new volume claim templates: the same pod template — the
+plugins' settings, init containers and volumes included — the same replica
+count, and a held upgrade's partition. No server restarts for it. Changes made
+together with the expansion (a new image, a plugin) are applied by the next
+reconcile, with their usual checks. If the operator restarts between the delete
+and the create, it reads the template from the revision the orphaned pods run.
+
+While an upgrade is held, the servers below its partition run another version
+than the StatefulSet's template, and Kubernetes would create any of them that
+restarts from a new StatefulSet's template — the upgrade's target, without its
+checks. So the operator creates the StatefulSet in two steps: first on the
+template those servers run, with every server frozen, then, once Kubernetes has
+recorded that as the StatefulSet's current revision, with the held template and
+partition back. This takes a few seconds; nothing restarts, and an upgrade
+resumed meanwhile waits for it. Every server that restarts afterwards comes back
+on the version it ran.
 
 One deliberate exception: if **no server pod is ready** — the typical case
 being a first deploy stuck in `ImagePullBackOff` on a mistyped tag, but also a
@@ -177,12 +186,14 @@ What happens next:
   `2026.09.9-enterprise`, a tag that was never published, goes on towards
   `2026.09.0-enterprise`. The `UpgradeStarted` event names the servers it
   replaces, and while the cluster is short of them `status.message` says the
-  upgrade is in progress and that they are replaced first. This applies only when the servers that are down are exactly the
-  ones the upgrade restarted, every one of them failing to start, and Neo4j
-  reports no other server unavailable; otherwise the upgrade waits until every
-  server is back. Setting the same target again, or turning
-  `autoPauseOnFailure` off, does not replace them: the same image cannot start
-  there either.
+  upgrade is in progress and that they are replaced first. Each server is
+  replaced once, on the new tag. This applies only when the servers that are
+  down are the highest-numbered ones, every one of them failing to start on the
+  image it runs — one the upgrade restarted, or one running another version
+  than the servers that are up — and Neo4j reports no other server unavailable;
+  otherwise the upgrade waits until every server is back. Setting the tag those
+  servers already run does not replace them: the same image cannot start there
+  either. A `Paused` upgrade whose tag you have not changed waits for you.
 - **Going back:** you can set the tag back to `status.version` only while no
   server has started on the target (the upgrade stopped while staging, before
   its first server restarted, or the restarted servers never started because

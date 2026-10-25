@@ -166,7 +166,11 @@ func TestCreateOrUpdateResource_AfterARestartTheTemplateComesFromTheRevision(t *
 	assert.Equal(t, int32(3), *after.Spec.Replicas)
 	assert.Equal(t, "2Gi", dataSize(after))
 	assert.Equal(t, int32(2), *after.Spec.UpdateStrategy.RollingUpdate.Partition, "the held upgrade's partition, from its record")
-	assert.Empty(t, after.Annotations[clusterTemplateHashAnnotation], "no hash: the next pass's apply converges")
+	// The stamp, as on any write of the template the operator renders: a
+	// cluster short of a server applies only what the stamp shows changed
+	// (#562 re-walk: it stayed missing while the upgrade was held).
+	assert.Equal(t, podTemplateSpecHash(resources.BuildServerStatefulSetForEnterprise(grown).Spec.Template),
+		after.Annotations[clusterTemplateHashAnnotation])
 
 	// The next pass's apply keeps the template: no pod restarts.
 	require.NoError(t, r.createOrUpdateResource(ctx, resources.BuildServerStatefulSetForEnterprise(grown), grown))
@@ -204,6 +208,28 @@ func TestCreateOrUpdateResource_AfterARestartTheTemplateComesFromTheRevision(t *
 	require.NoError(t, r.createOrUpdateResource(ctx, resources.BuildServerStatefulSetForEnterprise(first), first))
 	assert.Equal(t, resources.BuildServerStatefulSetForEnterprise(first).Spec.Template.Spec.InitContainers,
 		storedServerSTS(t, fresh).Spec.Template.Spec.InitContainers)
+}
+
+// The stamp says the operator applied what it renders: a template read from a
+// revision is stamped only when the apply would leave it as it is — a spec
+// changed with the expansion is not hidden behind the stamp.
+func TestTemplateApplied(t *testing.T) {
+	desired := resources.BuildServerStatefulSetForEnterprise(expansionCluster("2Gi")).Spec.Template
+	recreated := func() *appsv1.StatefulSet {
+		sts := resources.BuildServerStatefulSetForEnterprise(expansionCluster("1Gi"))
+		withPlugins(sts) // the plugins' items, appended after the operator's
+		writeOwnedTemplateItems(sts, desired)
+		return sts
+	}
+	assert.True(t, templateApplied(recreated(), desired), "what the operator renders, and the plugins' items")
+
+	changed := *desired.DeepCopy()
+	changed.Spec.NodeSelector = map[string]string{"disk": "ssd"} // a field only the stamp catches
+	assert.False(t, templateApplied(recreated(), changed))
+
+	changed = *desired.DeepCopy()
+	changed.Spec.Containers[0].Env = append(changed.Spec.Containers[0].Env, corev1.EnvVar{Name: "NEO4J_server_x", Value: "1"})
+	assert.False(t, templateApplied(recreated(), changed))
 }
 
 func TestTemplateFromControllerRevision(t *testing.T) {

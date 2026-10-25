@@ -268,12 +268,17 @@ func (r *Neo4jEnterpriseClusterReconciler) serverImageInPlace(ctx context.Contex
 	stsName := fmt.Sprintf("%s-server", cluster.Name)
 	sts := &appsv1.StatefulSet{}
 	err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}, sts)
+	_, restoring := restorePending(sts)
 	switch {
-	case err == nil:
+	case err == nil && !restoring:
 		if len(sts.Spec.Template.Spec.Containers) == 0 {
 			return imageInPlace{}, false
 		}
 		return imageInPlace{image: sts.Spec.Template.Spec.Containers[0].Image, ready: sts.Status.ReadyReplicas}, true
+	case err == nil:
+		// Created again on the template the servers below a held partition
+		// run, until the held template is written back (operations.md id
+		// 171): the image in place is the servers', as while it was deleted.
 	case !apierrors.IsNotFound(err):
 		return imageInPlace{}, false
 	}

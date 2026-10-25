@@ -296,8 +296,8 @@ func TestStepUpgradeRolling_PersistedPartitionBeatsStaleLiveRead(t *testing.T) {
 }
 
 // TestFailUpgrade_RoutesPausedAndFailed pins the failure routing: autoPause →
-// Paused (no requeue, never auto-resumed), default → Failed with the error
-// surfaced and requeue for the normal path to take over.
+// Paused (no requeue, never auto-resumed), default → Failed with the error in
+// status and a requeue for the normal path to take over.
 func TestFailUpgrade_RoutesPausedAndFailed(t *testing.T) {
 	scheme := makeUpgradeScheme()
 
@@ -329,12 +329,16 @@ func TestFailUpgrade_RoutesPausedAndFailed(t *testing.T) {
 		fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster).WithStatusSubresource(cluster).Build()
 		r := &Neo4jEnterpriseClusterReconciler{Client: fc, Recorder: record.NewFakeRecorder(10)}
 
-		_, err := r.failUpgrade(context.Background(), cluster, assert.AnError)
-		assert.ErrorIs(t, err, assert.AnError)
+		res, err := r.failUpgrade(context.Background(), cluster, assert.AnError)
+		// Recorded in status and announced, not returned: a reconcile error is
+		// an ERROR line (#562 re-walk).
+		require.NoError(t, err)
+		assert.Equal(t, upgradeTransitionRequeue, res.RequeueAfter, "the normal path takes over on the next pass")
 
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "fail", Namespace: "default"}, latest))
 		assert.Equal(t, upgradePhaseFailed, latest.Status.UpgradeStatus.Phase)
+		assert.Contains(t, latest.Status.UpgradeStatus.LastError, assert.AnError.Error())
 		assert.Equal(t, "Failed", latest.Status.Phase)
 	})
 }

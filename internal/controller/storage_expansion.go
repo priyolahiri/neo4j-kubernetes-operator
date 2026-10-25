@@ -114,7 +114,15 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileStorageExpansion(ctx context
 	r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonStorageExpansionCompleted,
 		"Storage expansion completed successfully")
 
-	// Requeue so the next reconcile recreates the StatefulSet(s) with updated VolumeClaimTemplates
+	// This pass creates the StatefulSet again with the new claim templates as
+	// soon as the delete has gone through (operations.md id 171); a requeue
+	// when it has not within the wait.
+	stsName := fmt.Sprintf("%s-server", cluster.Name)
+	if r.deletedServerStatefulSets.remembered(cluster.Namespace, stsName, "") != nil &&
+		waitStatefulSetGone(ctx, r.Client, r.apiReader(), types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}) {
+		logger.Info("StatefulSet deleted for the expansion; creating it again in this pass", "statefulSet", stsName)
+		return false, nil
+	}
 	return true, nil
 }
 

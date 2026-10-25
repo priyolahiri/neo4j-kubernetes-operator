@@ -48,6 +48,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -337,10 +338,51 @@ func (r *Neo4jEnterpriseClusterReconciler) buildDesiredServerStatefulSet(
 	return sts, nil
 }
 
+// storedUpgradeStatus reads the cluster's upgrade record as stored, uncached
+// (APIReader); false when it cannot be read or there is none.
+func (r *Neo4jEnterpriseClusterReconciler) storedUpgradeStatus(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (*neo4jv1beta1.UpgradeStatus, bool) {
+	stored := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+	if err := r.apiReader().Get(ctx, client.ObjectKeyFromObject(cluster), stored); err != nil || stored.Status.UpgradeStatus == nil {
+		return nil, false
+	}
+	return stored.Status.UpgradeStatus, true
+}
+
+// stagingPartition is the partition Staging freezes the target at: the
+// replica count, so no server restarts until the walk releases it — unless
+// the live template already carries the target (a Staging run again after a
+// crash between its two writes, a held upgrade retried towards the same
+// target, a legacy resume) and its partition is lower. The servers at or
+// above that partition run the target already, or are being replaced on it;
+// raising it over them would make a server being replaced come back on the
+// StatefulSet's current revision, the version the upgrade leaves, and then
+// restart again onto the target (#562 re-walk), and one the walk had rolled
+// would go back down if it restarted.
+func stagingPartition(live, desired *appsv1.StatefulSet, replicas int32) int32 {
+	if imageChanges(live, desired) {
+		return replicas
+	}
+	if p := statefulSetPartition(live); p != nil && *p >= 0 && *p < replicas {
+		return *p
+	}
+	return replicas
+}
+
+// serverImage returns the image of sts's server container, or "".
+func serverImage(sts *appsv1.StatefulSet) string {
+	if c := sts.Spec.Template.Spec.Containers; len(c) > 0 {
+		return c[0].Image
+	}
+	return ""
+}
+
 // stepUpgradeStaging applies the full target template with the partition
 // frozen at replicas (atomic in one StatefulSet update — no window where the
 // new template can roll pods uncontrolled), then reconciles the ConfigMap
-// under the same freeze, then transitions to Rolling.
+// under the same freeze, then transitions to Rolling. It runs once per
+// target: a pass whose cached copy still says Staging after it has run leaves
+// the StatefulSet as it is (storedUpgradeStatus), and a second run on the same
+// template keeps the partition (stagingPartition).
 func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
@@ -352,8 +394,20 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 		return r.failUpgrade(ctx, cluster, fmt.Errorf("timed out staging the target pod template"))
 	}
 
-	live, err := orch.getServerStatefulSet(ctx, cluster)
-	if err != nil {
+	// Staging decides from what is stored, not from the cache. The pass after
+	// a Staging write is started by the watch event of that write, and its
+	// cached copy of this cluster could still say Staging: it staged again, the
+	// template already the target, and froze every server — server-2, which the
+	// first write was replacing, came back on the StatefulSet's current
+	// revision (#562 re-walk: twice in one second, partition 2 then 3). A
+	// Staging that has run is not run again.
+	if fresh, ok := r.storedUpgradeStatus(ctx, cluster); ok &&
+		(fresh.Phase != upgradePhaseStaging || fresh.TargetVersion != cluster.Status.UpgradeStatus.TargetVersion) {
+		logger.V(1).Info("Staging has run: the stored upgrade record moved on", "phase", fresh.Phase, "target", fresh.TargetVersion)
+		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+	}
+	live := &appsv1.StatefulSet{}
+	if err := r.apiReader().Get(ctx, types.NamespacedName{Name: cluster.Name + "-server", Namespace: cluster.Namespace}, live); err != nil {
 		return r.failUpgrade(ctx, cluster, fmt.Errorf("failed to get server StatefulSet: %w", err))
 	}
 	replicas := int32(0)
@@ -368,6 +422,16 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 	if err != nil {
 		return r.failUpgrade(ctx, cluster, err)
 	}
+	// A StatefulSet created again after a storage expansion waits for its held
+	// template to be written back (operations.md id 171); the write here does
+	// that once it can, and nothing else, and Staging runs on the next pass.
+	if _, pending := restorePending(live); pending {
+		logger.Info("Staging waits for the StatefulSet created again after a storage expansion to get its held template back")
+		if err := r.createOrUpdateResource(ctx, desired, cluster); err != nil {
+			logger.V(1).Info("Could not write the held template back yet", "error", err.Error())
+		}
+		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
+	}
 	// An upgrade changes no topology: the builder renders spec.topology.servers,
 	// and a scale-down applied here removed servers with no drain, a scale-up
 	// added them on the target mid-upgrade (#538). The change waits for the
@@ -377,17 +441,16 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeStaging(
 	if desired.Spec.UpdateStrategy.RollingUpdate == nil {
 		desired.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{}
 	}
-	partition := replicas
-	// Servers the upgrade restarted that cannot start on their image are
-	// replaced on the new one first: they are down, and freezing them too
-	// left them down for good — the walk waits for every pod to be ready
+	partition := stagingPartition(live, desired, replicas)
+	// Servers that cannot start on the image they run are replaced on the
+	// target first, when it is another image: they are down, and freezing them
+	// too left them down for good — the walk waits for every pod to be ready
 	// before it lowers the partition (operations.md id 162).
-	if imageChanges(live, desired) {
-		if down := r.serversDownOnTarget(ctx, cluster, live); down != nil {
-			partition = down.partition
-			logger.Info("Staging the target above the servers that cannot start on the image they run; they are replaced first",
-				"partition", partition, "servers", down.failing)
-		}
+	if down := r.serversDownOnTarget(ctx, cluster, live); down != nil && down.partition < partition &&
+		!down.images[serverImage(desired)] {
+		partition = down.partition
+		logger.Info("Staging the target above the servers that cannot start on the image they run; they are replaced first",
+			"partition", partition, "servers", down.failing)
 	}
 	desired.Spec.UpdateStrategy.RollingUpdate.Partition = &partition
 
@@ -715,8 +778,12 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 	cause error,
 	prepare ...func(*neo4jv1beta1.UpgradeStatus),
 ) (ctrl.Result, error) {
+	// A stopped upgrade is a state the user acts on, recorded in
+	// status.upgradeStatus.lastError and announced by an UpgradePaused or
+	// UpgradeFailed Warning: logged at info once its write lands, not as an
+	// ERROR, and not returned as a reconcile error, which controller-runtime
+	// logs as an ERROR too (#562 re-walk).
 	logger := log.FromContext(ctx).WithName("rolling-upgrade")
-	logger.Error(cause, "Rolling upgrade failed")
 
 	startTime := time.Now()
 	if us := cluster.Status.UpgradeStatus; us != nil && us.StartTime != nil {
@@ -749,6 +816,7 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 			return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
 		}
 		recordFailureMetric()
+		logger.Info("Rolling upgrade paused", "reason", cause.Error())
 		_ = r.updateClusterStatus(ctx, cluster, "Paused", "Upgrade paused due to failure - manual intervention required")
 		r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonUpgradePaused,
 			fmt.Sprintf("Upgrade paused: %v", cause))
@@ -768,10 +836,12 @@ func (r *Neo4jEnterpriseClusterReconciler) failUpgrade(
 		return ctrl.Result{RequeueAfter: upgradeStepRequeue}, nil
 	}
 	recordFailureMetric()
+	logger.Info("Rolling upgrade failed; it is retried once every server is available", "reason", cause.Error())
 	r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonUpgradeFailed,
 		"Rolling upgrade failed: %v", cause)
 	_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Rolling upgrade failed: %v", cause))
-	return ctrl.Result{}, cause
+	// The normal path takes over on the next pass.
+	return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 }
 
 // isServerAvailable is a one-shot SHOW SERVERS check: does the server whose

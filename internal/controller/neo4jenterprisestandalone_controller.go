@@ -303,7 +303,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	r.deletedStatefulSets.forget(standalone.Namespace, standalone.Name)
 
 	// Remove finalizer
-	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); err != nil {
+	if err := removeFinalizer(ctx, r.Client, standalone, StandaloneFinalizer); errors.IsNotFound(err) {
+		// Gone already: a pass that read it before an earlier one released the
+		// finalizer releases it again (as for a cluster, #562 re-walk).
+		logger.V(1).Info("Standalone already deleted; its finalizer was released by an earlier pass")
+		return ctrl.Result{}, nil
+	} else if err != nil {
 		logger.Error(err, "Failed to remove finalizer")
 		return ctrl.Result{}, err
 	}
@@ -362,9 +367,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		return ctrl.Result{}, err
 	} else if requeue {
 		logger.Info("Storage expansion completed, requeueing to recreate StatefulSet")
-		// The orphan-delete above triggers an Owns(&appsv1.StatefulSet{}) watch
-		// event that re-queues this standalone instance.
-		return ctrl.Result{}, nil
+		// The delete has not gone through yet (waitStatefulSetGone): its watch
+		// events, or this requeue, start the pass that creates it again.
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	// The pod's workload-identity ServiceAccount must exist before a pod

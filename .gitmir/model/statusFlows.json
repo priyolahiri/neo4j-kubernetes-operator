@@ -194,7 +194,7 @@
       {
         "key": "Staging",
         "name": "Staging",
-        "description": "Applies the full target-version pod template (image plus version-correct discovery env) with the StatefulSet partition frozen at replicas, then reconciles the ConfigMap under the same freeze. Keeps the StatefulSet's replica count (operations.md id 163), and freezes at the lowest restarted server that cannot start on its image instead, so it is replaced first (id 162)."
+        "description": "Applies the full target-version pod template (image plus version-correct discovery env) with the StatefulSet partition frozen at replicas, then reconciles the ConfigMap under the same freeze. Keeps the StatefulSet's replica count (operations.md id 163), and freezes at the lowest restarted server that cannot start on its image instead, so it is replaced first (id 162). Runs once per target: a pass whose cached copy still says Staging after it ran does nothing (the stored record is read uncached), and a template that already carries the target keeps its partition (operations.md id 162)."
       },
       {
         "key": "Rolling",

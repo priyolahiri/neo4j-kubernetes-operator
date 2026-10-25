@@ -725,9 +725,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	} else if requeue {
 		logger.Info("Storage expansion completed, requeueing to recreate StatefulSet")
-		// The orphan-delete above triggers an Owns(&appsv1.StatefulSet{}) watch
-		// event that re-queues this cluster.
-		return ctrl.Result{}, nil
+		// The delete has not gone through yet (waitStatefulSetGone): its watch
+		// events, or this requeue, start the pass that creates it again.
+		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
 	// Create single StatefulSet for all servers
@@ -920,7 +920,13 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 
 	logger.Info("Removing finalizer from cluster", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
 	err := removeFinalizer(ctx, r.Client, cluster, ClusterFinalizer)
-	if err != nil {
+	switch {
+	case errors.IsNotFound(err):
+		// Gone already: a pass that read the cluster before an earlier one
+		// released the finalizer releases it again (#562 re-walk: an ERROR and
+		// a "Reconciler error" on every cluster deletion).
+		logger.V(1).Info("Cluster already deleted; its finalizer was released by an earlier pass")
+	case err != nil:
 		logger.Error(err, "Failed to update cluster after removing finalizer", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
 		return ctrl.Result{}, err
 	}
@@ -1075,8 +1081,20 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 		"name", obj.GetName(),
 		"namespace", obj.GetNamespace())
 
+	restored := false
 	op, err := controllerutil.CreateOrUpdate(ctx, r.Client, obj, func() error {
 		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			// The second step of a server StatefulSet created again in two
+			// steps after a storage expansion, and nothing else, until it has
+			// run: a write of the spec's template before it would make that the
+			// update revision the servers below the partition are restored to
+			// (restoreHeldTemplate, operations.md id 171).
+			if ownerCluster, isCluster := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); isCluster && sts.UID != "" {
+				if _, pending := restorePending(sts); pending {
+					restored = r.restoreHeldTemplate(ctx, sts, ownerCluster, desiredSpec.Template)
+					return nil
+				}
+			}
 			// Check if this is an update (object already exists in cluster)
 			// CRITICAL FIX: Use UID to determine if this is an existing object, not ResourceVersion
 			// ResourceVersion can be populated even for new resources during CreateOrUpdate operations,
@@ -1250,6 +1268,15 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				if isCluster && sts.Spec.UpdateStrategy.RollingUpdate != nil && sts.Spec.UpdateStrategy.RollingUpdate.Partition == nil {
 					sts.Spec.UpdateStrategy.RollingUpdate.Partition = partitionForNewServerStatefulSet(ownerCluster, sts.Spec.Replicas)
 				}
+				// Servers below the partition that run another revision keep it:
+				// created first on their template, frozen, the held template
+				// written back once the StatefulSet controller has made theirs
+				// the current revision (restoreHeldTemplate, id 171).
+				twoStep := recreate != nil && recreate.holdBelowPartition(ctx, r.apiReader(), sts)
+				if twoStep {
+					logger.Info("Creating the server StatefulSet again on the template the servers below the partition run, frozen; the held template is written back once its current revision is recorded",
+						"statefulSet", sts.Name, "currentRevision", recreate.currentRevision, "updateRevision", recreate.updateRevision)
+				}
 				switch {
 				case recreate == nil:
 					writeOwnedTemplateItems(sts, desiredSpec.Template)
@@ -1261,8 +1288,13 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 					setClusterTemplateHash(sts, desiredSpec.Template)
 				case recreate.annotations == nil:
 					// Read from a revision: what the operator renders is recorded,
-					// and no template hash, so the next pass's apply converges.
+					// and the template hash when the template carries it, as on
+					// any write of it (a two-step create stamps it in its second
+					// step, with the held template).
 					writeOwnedTemplateItems(sts, desiredSpec.Template)
+					if !twoStep {
+						r.stampTemplateHashIfApplied(sts, desiredSpec.Template)
+					}
 				}
 				// A cluster with Aura Fleet Management starts its servers with
 				// the plugin. Merged here, into the StatefulSet being created and
@@ -1272,7 +1304,9 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				// the next pass instead, it rolled every server of a new cluster
 				// during its first formation (operations.md id 175). A template
 				// recreated as it was already carries it; the merge is idempotent.
-				if isCluster && sts.Name == ownerCluster.Name+"-server" && clusterInstallsFleetManagement(ownerCluster) {
+				// Not into the first step of a two-step create: its template is the
+				// revision the servers below the partition run, exactly.
+				if isCluster && !twoStep && sts.Name == ownerCluster.Name+"-server" && clusterInstallsFleetManagement(ownerCluster) {
 					sts.Spec.Template = *sts.Spec.Template.DeepCopy()
 					if _, err := addFleetManagementPlugin(&sts.Spec.Template); err != nil {
 						return fmt.Errorf("%w in StatefulSet %s", err, sts.Name)
@@ -1282,8 +1316,11 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 		}
 		return nil
 	})
-	if sts, ok := obj.(*appsv1.StatefulSet); ok && err == nil && op == controllerutil.OperationResultCreated {
-		r.deletedServerStatefulSets.forget(sts.Namespace, sts.Name)
+	if sts, ok := obj.(*appsv1.StatefulSet); ok && err == nil {
+		_, pending := restorePending(sts)
+		if (op == controllerutil.OperationResultCreated && !pending) || restored {
+			r.deletedServerStatefulSets.forget(sts.Namespace, sts.Name)
+		}
 	}
 
 	return err

@@ -56,22 +56,29 @@ import (
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
-// serversDown names the servers at or above a StatefulSet's partition that
-// cannot start on its template: partition is the lowest of their ordinals,
-// failing describes each.
+// serversDown names the highest-ordinal servers of a StatefulSet that cannot
+// start on the image they run: partition is the lowest of their ordinals,
+// failing describes each, images holds the server images they run.
 type serversDown struct {
 	partition int32
 	failing   []string
+	images    map[string]bool
 }
 
 // heldUpgradeRepair reports whether a Paused or Failed upgrade goes on towards
 // spec.image.tag although the cluster is not Ready with every server
-// available: the cluster has formed, the tag is a new one (the server
-// StatefulSet's template carries another image), and the servers that are
-// down are exactly the ones the upgrade restarted that cannot start on the
-// image they run (serversDownOnTarget). nil otherwise.
+// available: the cluster has formed, a Paused upgrade does not wait for the
+// user (upgradeWaitsForUser: spec.image.tag is not its target), the servers
+// that are down cannot start on the image they run and are the only ones down
+// (serversDownOnTarget), and spec.image.tag names another image than they run.
+// nil otherwise.
+//
+// It asks what the down servers run, not what the template says: after the
+// StatefulSet was created again, or a pod below the partition was recreated, a
+// server can be down on an image the template no longer carries, and the tag
+// the template carries is then the one that brings it back (#562 re-walk).
 func (r *Neo4jEnterpriseClusterReconciler) heldUpgradeRepair(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) *serversDown {
-	if !upgradeHeld(cluster) || !clusterHasFormed(cluster) {
+	if !upgradeHeld(cluster) || !clusterHasFormed(cluster) || upgradeWaitsForUser(cluster) {
 		return nil
 	}
 	sts := &appsv1.StatefulSet{}
@@ -81,22 +88,25 @@ func (r *Neo4jEnterpriseClusterReconciler) heldUpgradeRepair(ctx context.Context
 	}, sts); err != nil || len(sts.Spec.Template.Spec.Containers) == 0 {
 		return nil
 	}
-	if sts.Spec.Template.Spec.Containers[0].Image == fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag) {
+	down := r.serversDownOnTarget(ctx, cluster, sts)
+	if down == nil || down.images[fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag)] {
 		// The same image cannot start there either; a Failed upgrade retries
 		// it once every server is available, a Paused one waits for the user.
 		return nil
 	}
-	return r.serversDownOnTarget(ctx, cluster, sts)
+	return down
 }
 
-// serversDownOnTarget returns the servers of sts at or above its partition that
-// cannot start on the image they run (podCannotStart), when they are the only
-// servers down: the highest ordinals, every pod below them Ready, none
-// missing or being deleted (podsDownOnlyIn), and Neo4j's last view naming no
-// other server unavailable (unavailableServerOutside; no diagnostics leaves the
-// pods to decide). nil otherwise, and with no partition between zero and the
-// replica count: such pods run the template of an upgrade that has restarted
-// a server.
+// serversDownOnTarget returns the servers of sts that cannot start on the
+// image they run (podCannotStart), when they are the only servers down: the
+// highest ordinals, every pod below them Ready, none missing or being deleted
+// (podsDownOnlyIn), and Neo4j's last view naming no other server unavailable
+// (unavailableServerOutside; no diagnostics leaves the pods to decide). They
+// are the servers an upgrade restarted: at or above a partition between zero
+// and the replica count; or, with every server frozen (the partition at the
+// replica count), servers that run another image than every server that is
+// up — recreated from a revision the walk had not put them on. nil otherwise:
+// a server down on the version the others run is down for another reason.
 func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, sts *appsv1.StatefulSet) *serversDown {
 	replicas := int32(1)
 	if sts.Spec.Replicas != nil {
@@ -106,7 +116,7 @@ func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Conte
 	if ru := sts.Spec.UpdateStrategy.RollingUpdate; ru != nil && ru.Partition != nil {
 		partition = *ru.Partition
 	}
-	if partition <= 0 || partition >= replicas {
+	if partition <= 0 {
 		return nil
 	}
 	pods := &corev1.PodList{}
@@ -116,9 +126,34 @@ func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Conte
 	}); err != nil {
 		return nil
 	}
-	failing, down := podsDownOnlyIn(sts, pods.Items, podCannotStart)
+	frozen := partition >= replicas
+	view := sts
+	if frozen {
+		view = sts.DeepCopy()
+		zero := int32(0)
+		view.Spec.UpdateStrategy.RollingUpdate.Partition = &zero
+	}
+	failing, down := podsDownOnlyIn(view, pods.Items, podCannotStart)
 	if len(down) == 0 {
 		return nil
+	}
+	images, upImages := map[string]bool{}, map[string]bool{}
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		image := podServerImage(pod)
+		switch {
+		case down[pod.Name]:
+			images[image] = true
+		case isPodReady(pod):
+			upImages[image] = true
+		}
+	}
+	if frozen {
+		for image := range images {
+			if upImages[image] {
+				return nil
+			}
+		}
 	}
 	if other := unavailableServerOutside(cluster, down); other != "" {
 		log.FromContext(ctx).Info("Not replacing the servers that cannot start on the upgrade's target: another server is unavailable",
@@ -131,7 +166,17 @@ func (r *Neo4jEnterpriseClusterReconciler) serversDownOnTarget(ctx context.Conte
 			lowest = int32(ordinal)
 		}
 	}
-	return &serversDown{partition: lowest, failing: failing}
+	return &serversDown{partition: lowest, failing: failing, images: images}
+}
+
+// podServerImage returns the image of the pod's neo4j container, or "".
+func podServerImage(pod *corev1.Pod) string {
+	for _, c := range pod.Spec.Containers {
+		if c.Name == resources.Neo4jContainer {
+			return c.Image
+		}
+	}
+	return ""
 }
 
 // imagePullFailures are the waiting reasons of a container whose image cannot
