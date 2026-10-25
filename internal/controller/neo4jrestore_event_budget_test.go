@@ -200,10 +200,15 @@ func TestAllDatabasesRestore_TheOutcomeIsAnnouncedAfterALongSeed(t *testing.T) {
 	// outran the progress source's budget and 13 reached the API (#573).
 	assert.Equal(t, 1, broadcaster.emitted[EventReasonRestoreStarted], "the start is announced once")
 	assert.Equal(t, 1, broadcaster.delivered[EventReasonRestoreStarted], "and reaches the API")
-	// Per database: "no allocations yet", "0/3" and "2/3"; db00 sits at 0/3
-	// for two hours and is announced again every ten minutes meanwhile.
-	assert.LessOrEqual(t, broadcaster.emitted[EventReasonRestoreSeedProgress], 3*databases+int(2*time.Hour/seedProgressRefresh),
-		"progress is announced when it changes and every %s, not on each of %d polls", seedProgressRefresh, passes)
+	// One progress summary for the restore on its first seed poll and one
+	// every ten minutes, not one per database and state: those were 101, and
+	// 55 reached the API (#573). Every summary is delivered.
+	elapsed := time.Duration(passes) * poll
+	assert.LessOrEqual(t, broadcaster.emitted[EventReasonRestoreSeedProgress], 1+int(elapsed/seedProgressRefresh),
+		"one summary every %s over %s, not one per database change", seedProgressRefresh, elapsed)
+	assert.Positive(t, broadcaster.emitted[EventReasonRestoreSeedProgress])
+	assert.Equal(t, broadcaster.emitted[EventReasonRestoreSeedProgress], broadcaster.delivered[EventReasonRestoreSeedProgress],
+		"every progress event reaches the API server")
 }
 
 // existingServer is seedingServer with some databases already present.
@@ -276,41 +281,56 @@ func TestAllDatabasesRestoreStartedMessage(t *testing.T) {
 	assert.NotContains(t, msg, "db10")
 }
 
-// The throttle on its own: a change is announced at once, the same progress
-// again only after seedProgressRefresh, a database whose seed ended starts
-// afresh, and two restores do not share a database's record.
+// The summary on its own: one per restore at its first poll, then one every
+// seedProgressRefresh whatever the databases and states in between; it counts
+// the databases from status and says how long the database being seeded has
+// shown its progress; two restores have one summary each, and a forgotten
+// restore starts afresh.
 func TestSeedProgressEvents(t *testing.T) {
 	now := time.Date(2026, 10, 24, 12, 0, 0, 0, time.UTC)
 	s := &seedProgressEvents{now: func() time.Time { return now }}
 	rec := record.NewFakeRecorder(20)
-	r1 := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "r1", Namespace: "ns", UID: "1"}}
-	r2 := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "r2", Namespace: "ns", UID: "2"}}
-	count := func() int { return len(drainEvents(rec)) }
+	results := []neo4jv1beta1.DatabaseRestoreResult{
+		{Database: "a", Phase: StatusCompleted}, {Database: "b", Phase: StatusFailed},
+		{Database: "c", Phase: StatusRunning}, {Database: "d", Phase: StatusPending},
+	}
+	r1 := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "r1", Namespace: "ns", UID: "1"},
+		Status: neo4jv1beta1.Neo4jRestoreStatus{DatabaseResults: results}}
+	r2 := &neo4jv1beta1.Neo4jRestore{ObjectMeta: metav1.ObjectMeta{Name: "r2", Namespace: "ns", UID: "2"},
+		Status: neo4jv1beta1.Neo4jRestoreStatus{DatabaseResults: results}}
 
-	s.announce(rec, r1, "a", "0/3 allocations online")
-	s.announce(rec, r1, "a", "0/3 allocations online")
-	assert.Equal(t, 1, count(), "the same progress is not repeated")
+	s.announce(rec, r1, "c", "seeding from backup; 0/3 allocations online")
+	events := drainEvents(rec)
+	require.Len(t, events, 1, "the first poll is announced")
+	assert.Equal(t, `Normal RestoreSeedProgress 1 of 4 database(s) restored, 1 failed; seeding "c": 0/3 allocations online, unchanged for under a minute`, events[0])
 
-	s.announce(rec, r1, "a", "1/3 allocations online")
-	assert.Equal(t, 1, count(), "a change is announced at once")
+	for _, progress := range []string{"1/3 allocations online", "2/3 allocations online", "2/3 allocations online"} {
+		now = now.Add(2 * time.Minute)
+		s.announce(rec, r1, "c", progress)
+	}
+	assert.Empty(t, drainEvents(rec), "a change is not an event of its own")
 
-	now = now.Add(seedProgressRefresh - time.Second)
-	s.announce(rec, r1, "a", "1/3 allocations online")
-	assert.Zero(t, count())
-	now = now.Add(time.Second)
-	s.announce(rec, r1, "a", "1/3 allocations online")
-	assert.Equal(t, 1, count(), "repeated once a refresh period has passed")
+	now = now.Add(seedProgressRefresh - 6*time.Minute)
+	s.announce(rec, r1, "c", "2/3 allocations online")
+	events = drainEvents(rec)
+	require.Len(t, events, 1, "one summary a refresh period after the last")
+	assert.Contains(t, events[0], `seeding "c": 2/3 allocations online, unchanged for 6m`, "how long it has stood still")
 
-	s.announce(rec, r2, "a", "1/3 allocations online")
-	assert.Equal(t, 1, count(), "another restore's database is its own")
+	// Two hours more of polls every five minutes: a summary every ten.
+	for range 24 {
+		now = now.Add(5 * time.Minute)
+		s.announce(rec, r1, "c", "2/3 allocations online")
+	}
+	events = drainEvents(rec)
+	require.Len(t, events, 12)
+	assert.Contains(t, events[11], "unchanged for 2h06m", "a stall shows as its length")
 
-	s.forget(r1, "a")
-	s.announce(rec, r1, "a", "1/3 allocations online")
-	assert.Equal(t, 1, count(), "a forgotten database starts afresh")
+	s.announce(rec, r2, "c", "2/3 allocations online")
+	assert.Len(t, drainEvents(rec), 1, "another restore has a summary of its own")
 
-	events := []string{}
-	s.announce(rec, r1, "b", "seeding from backup; last status poll FAILED: boom")
-	events = append(events, drainEvents(rec)...)
-	require.Len(t, events, 1)
-	assert.True(t, strings.Contains(events[0], `Normal RestoreSeedProgress database "b": seeding from backup; last status poll FAILED: boom`), events[0])
+	s.forget(r1)
+	s.announce(rec, r1, "d", "seeding from backup; last status poll FAILED: boom")
+	events = drainEvents(rec)
+	require.Len(t, events, 1, "a forgotten restore starts afresh")
+	assert.True(t, strings.HasSuffix(events[0], `seeding "d": last status poll FAILED: boom, unchanged for under a minute`), events[0])
 }

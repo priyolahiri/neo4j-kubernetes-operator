@@ -224,7 +224,7 @@
   {
     "id": "ev-cluster-not-found",
     "name": "ClusterNotFound",
-    "description": "The CR's clusterRef did not resolve to a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (a Neo4jShardedDatabase: a cluster) in the namespace. The resource waits in phase Pending and carries on once it exists: Neo4jDatabase, Neo4jShardedDatabase, Neo4jUser, Neo4jRole, Neo4jRoleBinding, Neo4jAuthRule, Neo4jCompositeDatabase, Neo4jDatabaseAlias, Neo4jReplicaDatabase, Neo4jPlugin (a Neo4jPlugin was Failed before, and installs as usual once its target exists). A missing deployment is never a validation failure (operations.md id 182). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per wait, not on every retry, nor after an operator restart (id 145).",
+    "description": "The CR's clusterRef did not resolve to a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (a Neo4jShardedDatabase: a cluster) in the namespace. The resource waits in phase Pending and carries on once it exists: Neo4jDatabase, Neo4jShardedDatabase, Neo4jUser, Neo4jRole, Neo4jRoleBinding, Neo4jAuthRule, Neo4jCompositeDatabase, Neo4jDatabaseAlias, Neo4jReplicaDatabase, Neo4jPlugin (a Neo4jPlugin was Failed before, and installs as usual once its target exists), Neo4jRestore, and Neo4jBackup, which keeps its documented phase Waiting; the backup and the restore say \"Waiting for target to appear: …\" (operations.md id 198). A missing deployment is never a validation failure (operations.md id 182). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per wait, not on every retry, nor after an operator restart (id 145).",
     "moduleId": "mod-database"
   },
   {
@@ -536,7 +536,7 @@
   {
     "id": "ev-restore-seed-progress",
     "name": "RestoreSeedProgress",
-    "description": "The progress of one database's seed in an all-databases restore (allocation counts or the last poll's error), announced when it changes and every 10 minutes while it does not, from the source neo4j-restore-progress — an event budget of its own, so a long seed cannot crowd out the restore's outcome (knowledge operations.md ids 92, 166).",
+    "description": "An all-databases restore's progress summary: databases restored and failed so far, the database being seeded with its progress (allocation counts or the last poll's error) and how long it has shown it — \"unchanged for 40m\" is a stall. One per restore on its first seed poll, then one every 10 minutes while it seeds, from the source neo4j-restore-progress: half that source's refill, so every one reaches the API server whatever the number of databases, and the restore's outcome is never crowded out. It was one per database change, which outran the budget on a large restore (55 of 101 delivered) (knowledge operations.md ids 92, 166).",
     "moduleId": "mod-backup-restore"
   },
   {

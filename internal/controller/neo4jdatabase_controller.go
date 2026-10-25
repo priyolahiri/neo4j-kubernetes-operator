@@ -134,9 +134,10 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	if r.DatabaseValidator != nil {
 		validationResult := r.DatabaseValidator.Validate(ctx, database)
 
-		// Log and record warnings
+		// Warnings are announced by their events, when they start to apply
+		// (advisoryWarnings); the log has them at V(1), not on every pass.
 		for _, warning := range validationResult.Warnings {
-			logger.Info("Database validation warning", "warning", warning)
+			logger.V(1).Info("Database validation warning", "warning", warning)
 		}
 		r.advisoryWarnings.record(r.Recorder, database, EventReasonValidationWarning, validationResult.Warnings)
 
@@ -147,11 +148,15 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 				errMessages[i] = err.Error()
 			}
 			message := fmt.Sprintf("Database validation failed: %v", errMessages)
-			logger.Error(nil, message)
 			// Announced when the failure starts or its message changes, not on
 			// every RequeueAfter while the spec stays invalid (knowledge rule
-			// 136): the status write reports the transition.
-			if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonValidationFailed, message) {
+			// 136): the status write reports the transition. Its log line
+			// follows the same write: at info once per cause, at V(1) on the
+			// passes in between — a refusal is not a controller error (it was
+			// an ERROR on every requeue, 60 in ten minutes on a walk; id 197).
+			announced := r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonValidationFailed, message)
+			logRefusal(logger, announced, "Database validation failed", fmt.Errorf("%s", strings.Join(errMessages, "; ")))
+			if announced {
 				r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonValidationFailed, message)
 			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
@@ -249,11 +254,13 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 		autoInherited, credsErr := EnsureSeedCredsProjected(ctx, r.Client, target, database.Spec.SeedCredentials.SecretRef)
 		if credsErr != nil {
-			logger.Error(credsErr, "Host missing seed credentials projection")
 			// Pending, not Failed: nothing has touched a database yet, and
 			// the next pass carries on once the host has the Secret
-			// (knowledge rule 145). Announced when the wait starts.
-			if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonSeedCredsMissing, credsErr.Error()) {
+			// (knowledge rule 145). Announced, and logged at info, when the
+			// wait starts; a wait is not an ERROR on every pass (id 197).
+			announced := r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonSeedCredsMissing, credsErr.Error())
+			logRefusal(logger, announced, "Host missing seed credentials projection", credsErr)
+			if announced {
 				r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonSeedCredsMissing, credsErr.Error())
 			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil

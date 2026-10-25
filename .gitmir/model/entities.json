@@ -1548,7 +1548,7 @@
         "name": "source.backupPath",
         "type": "string",
         "isNullable": true,
-        "note": "Specific backup path within storage. On a pvc storage it is relative to the PVC's root (storage.path is not added): the restore mounts the PVC at /backup and adds the /backup/ prefix itself, so a path that starts with /backup/ draws an advisory ValidationWarning (RestorePVCPathWarnings; backup-restore.md Rule 44)."
+        "note": "Specific backup path within storage. On a pvc storage it is relative to the PVC's root (storage.path is not added): the restore mounts the PVC at /backup and adds the /backup/ prefix itself, so a path that starts with /backup/ draws an advisory ValidationWarning (RestorePVCPathWarnings; backup-restore.md Rule 44). A storage.path set on a PVC source is read by nothing and draws a no-effect ValidationWarning (operations.md id 102)."
       },
       {
         "id": "f-neo4jrestore-source-source-database",

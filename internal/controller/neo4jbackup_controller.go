@@ -250,8 +250,16 @@ func (r *Neo4jBackupReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		// RBAC denials and other API failures stay on the error path (#224
 		// review: a substring match on "not found" misclassified those).
 		if errors.IsNotFound(err) {
-			logger.Info("Backup target not found yet; waiting", "error", err.Error())
-			r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseWaiting, fmt.Sprintf("Waiting for target to appear: %v", err))
+			// A wait, announced once as every kind's is (knowledge id 182):
+			// one ClusterNotFound from the status write that enters it, and
+			// its log line at info then, at V(1) on the passes in between. The
+			// phase stays the documented Waiting (id 198).
+			msg := fmt.Sprintf("Waiting for target to appear: %v", err)
+			announced := r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseWaiting, msg)
+			logRefusal(logger, announced, "Backup target not found yet; waiting", err)
+			if announced {
+				r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		logger.Error(err, "Failed to get target cluster")

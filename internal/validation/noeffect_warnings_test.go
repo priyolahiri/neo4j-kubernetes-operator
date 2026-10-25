@@ -606,6 +606,13 @@ func TestBackupValidator_NoEffectWarnings(t *testing.T) {
 	requireNoEffectWarning(t, warnings, "spec.storage.cloud.identity.autoCreate.enabled", "neo4j-backup-sa")
 
 	backup.Spec.Storage.Cloud.Identity = &neo4jv1beta1.CloudIdentity{Provider: "aws"}
+	backup.Spec.Storage.Path = "nightly"
+	assert.Empty(t, v.NoEffectWarnings(backup), "storage.path in a bucket is read")
+
+	// On a PVC it is not: the Job writes /backup/<chain directory>.
+	backup.Spec.Storage = neo4jv1beta1.StorageLocation{Type: "pvc", Path: "nightly", PVC: &neo4jv1beta1.PVCSpec{Name: "backups"}}
+	requireNoEffectWarning(t, v.NoEffectWarnings(backup), "spec.storage.path", "at the PVC's root")
+	backup.Spec.Storage.Path = ""
 	assert.Empty(t, v.NoEffectWarnings(backup))
 }
 
@@ -637,7 +644,28 @@ func TestRestoreNoEffectWarnings(t *testing.T) {
 	requireNoEffectWarning(t, warnings, "spec.source.storage.cloud.identity.serviceAccount", "neo4j-restore-sa")
 	requireNoEffectWarning(t, warnings, "spec.source.pitr.logStorage.cloud.identity.serviceAccount", "neo4j-restore-sa")
 	requireNoEffectWarning(t, warnings, "spec.source.pitr.baseBackup.storage.cloud.identity.serviceAccount", "neo4j-restore-sa")
-	assert.Len(t, warnings, 3)
+	assert.Len(t, warnings, 3, "storage.path on a cloud source is read: no warning")
+}
+
+// storage.path on a PVC restore source is read by nothing: the Job reads
+// /backup/<backupPath> and the seed proxy serves the PVC's root (#R8; knowledge
+// rule 102, backup-restore.md Rule 44).
+func TestRestoreNoEffectWarnings_StoragePathOnAPVCSource(t *testing.T) {
+	pvc := func(path string) *neo4jv1beta1.StorageLocation {
+		return &neo4jv1beta1.StorageLocation{Type: "pvc", Path: path, PVC: &neo4jv1beta1.PVCSpec{Name: "backups"}}
+	}
+	restore := &neo4jv1beta1.Neo4jRestore{Spec: neo4jv1beta1.Neo4jRestoreSpec{Source: neo4jv1beta1.RestoreSource{
+		Type: "storage", Storage: pvc("/nightly/"), BackupPath: "neo4j-2026-10-25T01-00-00.backup",
+		PITR: &neo4jv1beta1.PITRConfig{BaseBackup: &neo4jv1beta1.BaseBackupSource{Type: "storage", Storage: pvc("base")}},
+	}}}
+	warnings := RestoreNoEffectWarnings(restore)
+	requireNoEffectWarning(t, warnings, "spec.source.storage.path", `spec.source.backupPath, relative to that root (for example "nightly/<backup directory>")`)
+	requireNoEffectWarning(t, warnings, "spec.source.pitr.baseBackup.storage.path", "spec.source.pitr.baseBackup.backupPath")
+	assert.Len(t, warnings, 2)
+
+	restore.Spec.Source.Storage = pvc("")
+	restore.Spec.Source.PITR = nil
+	assert.Empty(t, RestoreNoEffectWarnings(restore), "a PVC source without storage.path gets none")
 }
 
 func TestAuraInstanceNoEffectWarnings(t *testing.T) {

@@ -478,7 +478,7 @@
       {
         "key": "Pending",
         "name": "Pending",
-        "description": "The Neo4jRestore CR was just created, or it waits on a precondition the controller re-checks on every requeue: the target or the backup run not there yet, the target's server pods lacking the cloud seed credentials or endpoint (until the user projects them or opts the target in), the seed-config rolling restart, or the seed proxy."
+        "description": "The Neo4jRestore CR was just created, or it waits on a precondition the controller re-checks on every requeue: the target or the backup run not there yet, the target's server pods lacking the cloud seed credentials or endpoint (until the user projects them or opts the target in), the seed-config rolling restart, or the seed proxy. A target that does not exist yet is announced once with ClusterNotFound (operations.md id 198)."
       },
       {
         "key": "Running",
@@ -520,7 +520,7 @@
       {
         "from": "Failed",
         "to": "Running",
-        "label": "spec is bumped to a new generation (or the CR is recreated); a Failed CR at the SAME generation never re-enters; an earlier attempt's Job, even one still terminating, is never adopted — the attempt waits in Pending until it is gone (backup-restore.md Rule 46)"
+        "label": "spec is bumped to a new generation (or the CR is recreated); a Failed CR at the SAME generation never re-enters; an earlier attempt's Job, even one still terminating, is never adopted — the attempt waits in Pending until it is gone (backup-restore.md Rule 46); a Failed or Completed restore at its generation is decided before its target is looked up, so a target deleted and recreated never reopens it (id 198)"
       },
       {
         "from": "Completed",

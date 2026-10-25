@@ -291,10 +291,27 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	r.advisoryWarnings.record(r.Recorder, restore, EventReasonValidationWarning,
 		append(validation.RestoreNoEffectWarnings(restore), validation.RestorePVCPathWarnings(restore)...))
 
+	// A restore that ended at this generation is decided before its target is
+	// looked up, as a one-time backup's is (#116). Checked after the lookup, a
+	// target deleted after the restore wrote Pending over Completed or Failed,
+	// and the target created again under the same name ran the restore a
+	// second time — a Job restore into a new standalone overwrote its data
+	// (knowledge id 198).
+	if restore.Status.Phase == StatusCompleted && restore.Status.ObservedGeneration == restore.Generation {
+		logger.Info("Restore already completed")
+		return ctrl.Result{}, nil
+	}
+	// A previously failed restore for the same spec generation must not silently retry.
+	// The user must bump spec (new generation) or delete/recreate the CR to trigger a retry.
+	if restore.Status.Phase == StatusFailed && restore.Status.ObservedGeneration == restore.Generation {
+		logger.Info("Restore previously failed; not retrying until spec changes or resource is recreated",
+			"message", restore.Status.Message)
+		return ctrl.Result{}, nil
+	}
+
 	// Get target cluster. Not-found is TRANSIENT (#218): `kubectl apply -f
-	// dir/` commonly creates the Neo4jRestore before its target CR, and a
-	// terminal Failed here is pinned by the previously-failed guard below
-	// even after the target appears.
+	// dir/` commonly creates the Neo4jRestore before its target CR; it waits
+	// in Pending and carries on once the target exists.
 	targetCluster, err := r.getClusterRef(ctx, restore)
 	if err != nil {
 		// errors.IsNotFound unwraps %w chains — ONLY genuine NotFound waits;
@@ -302,8 +319,15 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		// a substring match on the static "not found" message misclassified
 		// wrapped non-NotFound errors).
 		if errors.IsNotFound(err) {
-			logger.Info("Restore target not found yet; waiting", "error", err.Error())
-			r.updateRestoreStatus(ctx, restore, StatusPending, fmt.Sprintf("Waiting for target to appear: %v", err))
+			// A wait, announced once as every kind's is (knowledge id 182):
+			// one ClusterNotFound from the status write that enters it, and
+			// its log line at info then, at V(1) on the passes in between.
+			msg := fmt.Sprintf("Waiting for target to appear: %v", err)
+			announced := r.transitionRestoreStatus(ctx, restore, StatusPending, msg)
+			logRefusal(logger, announced, "Restore target not found yet; waiting", err)
+			if announced {
+				r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+			}
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		logger.Error(err, "Failed to get target cluster")
@@ -316,12 +340,6 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		logger.Error(err, "Neo4j version validation failed")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Neo4j version not supported: %v", err))
 		return ctrl.Result{}, err
-	}
-
-	// Check if restore is already completed
-	if restore.Status.Phase == StatusCompleted && restore.Status.ObservedGeneration == restore.Generation {
-		logger.Info("Restore already completed")
-		return ctrl.Result{}, nil
 	}
 
 	// Check if restore is running.
@@ -346,14 +364,6 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		if routeToProgress {
 			return r.checkRestoreProgress(ctx, restore, targetCluster)
 		}
-	}
-
-	// A previously failed restore for the same spec generation must not silently retry.
-	// The user must bump spec (new generation) or delete/recreate the CR to trigger a retry.
-	if restore.Status.Phase == StatusFailed && restore.Status.ObservedGeneration == restore.Generation {
-		logger.Info("Restore previously failed; not retrying until spec changes or resource is recreated",
-			"message", restore.Status.Message)
-		return ctrl.Result{}, nil
 	}
 
 	// Start restore process
