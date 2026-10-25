@@ -468,9 +468,13 @@ check-docs-tables: ## Verify every Markdown table in docs/ renders as a table, n
 check-knowledge-drift: ## Verify every 'pinned-by:'/file reference in docs/knowledge/ still resolves to a real path.
 	@./scripts/check-knowledge-drift.sh
 
+.PHONY: check-test-cr-updates
+check-test-cr-updates: ## Verify no test Updates a whole operator CR: specs patch what they change (typed scan of every test package; docs/knowledge/operations.md id 205).
+	@go run ./scripts/check-test-cr-updates
+
 .PHONY: check-knowledge
-check-knowledge: check-invariants check-knowledge-drift ## Run both LLM-readiness guards (invariants + knowledge-base drift). Advisory; run by the agent skills and a non-blocking CI job.
-	@echo "Knowledge guards passed: invariants hold and docs/knowledge/ references resolve."
+check-knowledge: check-invariants check-knowledge-drift check-test-cr-updates ## Run the LLM-readiness guards (invariants, knowledge-base drift, whole-object CR Updates in tests). Advisory; run by the agent skills and a non-blocking CI job.
+	@echo "Knowledge guards passed: invariants hold, docs/knowledge/ references resolve, and no test Updates a whole operator CR."
 
 .PHONY: check-apiref-drift
 check-apiref-drift: ## Verify docs/api_reference/ pages exist and document every top-level CRD spec field (hand-written docs have no generator).

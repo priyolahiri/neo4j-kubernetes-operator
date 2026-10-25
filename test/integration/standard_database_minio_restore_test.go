@@ -131,8 +131,7 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 		}
 		for _, cr := range toClean {
 			if len(cr.GetFinalizers()) > 0 {
-				cr.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, cr)
+				_ = releaseFinalizers(ctx, cr)
 			}
 			_ = k8sClient.Delete(ctx, cr)
 		}
@@ -439,8 +438,7 @@ var _ = Describe("Standard Database Restore (MinIO) Integration Tests", Label("e
 		Expect(k8sClient.Create(ctx, shardedDB)).To(Succeed())
 		defer func() {
 			if len(shardedDB.GetFinalizers()) > 0 {
-				shardedDB.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, shardedDB)
+				_ = releaseFinalizers(ctx, shardedDB)
 			}
 			_ = k8sClient.Delete(ctx, shardedDB)
 		}()

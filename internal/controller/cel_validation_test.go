@@ -224,8 +224,7 @@ func TestCELValidations(t *testing.T) {
 			return
 		}
 		defer func() { _ = c.Delete(ctx, obj) }()
-		edit(obj)
-		err := c.Update(ctx, obj)
+		err := patchObject(ctx, c, obj, func() { edit(obj) })
 		if wantOK && err != nil {
 			t.Errorf("%s: expected the update to be ACCEPTED, got %v", name, err)
 		}

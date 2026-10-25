@@ -63,8 +63,7 @@ var _ = Describe("Rolling Upgrade Integration", Label("extended"), func() {
 		if cluster != nil {
 			By("Cleaning up cluster resource")
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			_ = k8sClient.Delete(ctx, cluster)
 		}
@@ -161,8 +160,7 @@ var _ = Describe("Rolling Upgrade Integration", Label("extended"), func() {
 				if err != nil {
 					return err
 				}
-				cluster.Spec.Image.Tag = targetTag
-				return k8sClient.Update(ctx, cluster)
+				return patchCR(ctx, cluster, func() { cluster.Spec.Image.Tag = targetTag })
 			}, clusterTimeout, interval).Should(Succeed())
 
 			By("Waiting for StatefulSet to roll to the target image")

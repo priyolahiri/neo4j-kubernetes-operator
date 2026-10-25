@@ -72,8 +72,7 @@ var _ = Describe("Neo4jRole end-to-end", Label("core"), func() {
 		// usable for the next spec.
 		if role != nil {
 			if len(role.GetFinalizers()) > 0 {
-				role.SetFinalizers([]string{})
-				_ = k8sClient.Update(testCtx, role)
+				_ = releaseFinalizers(testCtx, role)
 			}
 			_ = k8sClient.Delete(testCtx, role)
 			role = nil
@@ -156,11 +155,12 @@ var _ = Describe("Neo4jRole end-to-end", Label("core"), func() {
 				if err := k8sClient.Get(ctx, types.NamespacedName{Name: "analytics-reader", Namespace: namespace.Name}, r); err != nil {
 					return err
 				}
-				if r.Annotations == nil {
-					r.Annotations = map[string]string{}
-				}
-				r.Annotations["test.neo4j.com/poke"] = fmt.Sprintf("%d", i)
-				return k8sClient.Update(ctx, r)
+				return patchCR(ctx, r, func() {
+					if r.Annotations == nil {
+						r.Annotations = map[string]string{}
+					}
+					r.Annotations["test.neo4j.com/poke"] = fmt.Sprintf("%d", i)
+				})
 			}, 30*time.Second, time.Second).Should(Succeed())
 			Consistently(showCommands, 6*time.Second, 2*time.Second).Should(Equal(settled),
 				"a reconcile must not revoke a privilege the spec asks for")

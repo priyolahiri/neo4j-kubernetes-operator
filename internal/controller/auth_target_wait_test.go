@@ -170,8 +170,7 @@ func TestRoleBindingReconcile_ATargetRestartIsNotATransition(t *testing.T) {
 
 	// A change to the granted set is still announced, once.
 	b := live()
-	b.Spec.Roles = []string{"reader", "editor"}
-	require.NoError(t, base.Update(ctx, b))
+	require.NoError(t, patchObject(ctx, base, b, func() { b.Spec.Roles = []string{"reader", "editor"} }))
 	reconcileTimes(t, r, key, 2)
 	events = drainEvents(rec)
 	assert.Len(t, eventsWithReason(events, EventReasonBindingUpdated), 1)

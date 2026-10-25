@@ -145,8 +145,9 @@ func TestClusterReconcile_CreatesTheServersWithTheFleetPlugin(t *testing.T) {
 	// A change the cluster renders keeps the plugin.
 	live := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, c.Get(ctx, key, live))
-	live.Spec.Env = []corev1.EnvVar{{Name: "NEO4J_server_memory_pagecache_size", Value: "256m"}}
-	require.NoError(t, c.Update(ctx, live))
+	require.NoError(t, patchObject(ctx, c, live, func() {
+		live.Spec.Env = []corev1.EnvVar{{Name: "NEO4J_server_memory_pagecache_size", Value: "256m"}}
+	}))
 	_, err = r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
 	require.NoError(t, err)
 	assert.Equal(t, `["fleet-management"]`, neo4jPlugins(t, server()))

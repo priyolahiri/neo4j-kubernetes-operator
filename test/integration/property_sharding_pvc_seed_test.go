@@ -130,8 +130,7 @@ var _ = Describe("Property Sharding PVC Seed (F5) Integration Tests", Label("ext
 		}
 		for _, cr := range toClean {
 			if len(cr.GetFinalizers()) > 0 {
-				cr.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, cr)
+				_ = releaseFinalizers(ctx, cr)
 			}
 			_ = k8sClient.Delete(ctx, cr)
 		}

@@ -199,8 +199,7 @@ var _ = Describe("Neo4jEnterpriseCluster whose upgrade is Paused or Failed", fun
 			if err := k8sClient.Get(ctx, key, got); err != nil {
 				return err
 			}
-			got.Spec.Image.Tag = running
-			return k8sClient.Update(ctx, got)
+			return patchCR(ctx, got, func() { got.Spec.Image.Tag = running })
 		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
 		Eventually(func() string {
 			got := &neo4jv1beta1.Neo4jEnterpriseCluster{}

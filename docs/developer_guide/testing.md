@@ -489,10 +489,9 @@ AfterEach(func() {
     // Critical: Clean up resources immediately to prevent CI resource exhaustion
     if cluster != nil {
         By("Cleaning up cluster resource")
-        // Remove finalizers first
+        // Remove finalizers first: a merge patch, never an Update
         if len(cluster.GetFinalizers()) > 0 {
-            cluster.SetFinalizers([]string{})
-            _ = k8sClient.Update(ctx, cluster)
+            _ = releaseFinalizers(ctx, cluster)
         }
         // Delete the resource
         _ = k8sClient.Delete(ctx, cluster)
@@ -519,6 +518,7 @@ AfterEach(func() {
 ❌ **Missing namespace cleanup** - Leaves behind ConfigMaps, Services, etc.
 ❌ **Not removing finalizers** - Resources stay in Terminating state
 ❌ **Relying on test suite cleanup** - Not sufficient for resource-intensive tests
+❌ **Updating a CR** - A whole-object `Update` of one of the operator's CRs (see below)
 
 #### 2. Handle All Resource Types
 
@@ -558,9 +558,37 @@ The integration test suite provides cleanup utilities:
 cleanupCustomResourcesInNamespace(namespace)
 
 // Remove a resource's finalizers by hand (as in the AfterEach pattern above)
-resource.SetFinalizers([]string{})
-_ = k8sClient.Update(ctx, resource)
+_ = releaseFinalizers(ctx, resource)
+
+// Change a CR: a merge patch of what the spec changes
+Expect(patchCR(ctx, cluster, func() { cluster.Spec.Image.Tag = targetTag })).To(Succeed())
 ```
+
+### Writing a CR in a spec: patch, never Update
+
+A spec writes one of the operator's CRs as the operator does (knowledge
+`operations.md` ids 150 and 205): a merge patch of what it changes. A
+whole-object `Update` sends the object as the Go types encode it, and the
+API server then stores a different spec: a `false` the CRD defaults to
+`true` (`monitoring.enabled`, a role's `enforcePrivileges`, a plugin's
+`enabled`) is left out and comes back `true`.
+
+| Where | Change a field | Remove the finalizers |
+|---|---|---|
+| `test/integration/` | `patchCR(ctx, obj, mutate)` | `releaseFinalizers(ctx, obj)` |
+| `internal/controller/` Ginkgo suite (`package controller_test`) | `patchCR(ctx, obj, mutate)` | `releaseFinalizers(ctx, obj)` |
+| `internal/controller/` unit tests (`package controller`) | `patchObject(ctx, c, obj, mutate)` | `removeFinalizer(ctx, c, obj, name)` |
+
+A merge patch from Go cannot set such a field to `false` either: the `false`
+is left out of the patch too, as a removal, and the API server defaults it
+again. A spec that needs the `false` writes it as JSON
+(``patchJSON(ctx, obj, `{"spec":{"monitoring":{"enabled":false}}}`)``), or
+creates the object from JSON. The fake client applies no CRD defaults, so a
+unit test against it does not see either trap; write it the same way anyway.
+
+`make check-test-cr-updates` (part of `make check-knowledge`, advisory)
+reports a whole-object `Update` of an operator CR in any test package. A call
+that must `Update` on purpose takes a `// cr-update-ok: <reason>` comment.
 
 ## Testing Best Practices
 

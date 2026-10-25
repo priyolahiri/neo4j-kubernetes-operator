@@ -131,8 +131,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", Label("extended"), 
 			if err := k8sClient.Get(context.Background(), types.NamespacedName{
 				Name: testCluster.Name, Namespace: testNamespace,
 			}, &latest); err == nil {
-				latest.SetFinalizers([]string{})
-				_ = k8sClient.Update(context.Background(), &latest)
+				_ = releaseFinalizers(context.Background(), &latest)
 				_ = k8sClient.Delete(context.Background(), &latest)
 			}
 		}
@@ -147,8 +146,7 @@ var _ = Describe("Neo4jDatabase Seed URI Integration Tests", Label("extended"), 
 		if err := k8sClient.Get(context.Background(), types.NamespacedName{
 			Name: name, Namespace: testNamespace,
 		}, &db); err == nil {
-			db.SetFinalizers([]string{})
-			_ = k8sClient.Update(context.Background(), &db)
+			_ = releaseFinalizers(context.Background(), &db)
 			_ = k8sClient.Delete(context.Background(), &db)
 		}
 	}

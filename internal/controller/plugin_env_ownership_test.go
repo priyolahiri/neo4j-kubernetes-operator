@@ -129,9 +129,10 @@ func editPlugin(t *testing.T, c client.Client, name string, edit func(*neo4jv1be
 	t.Helper()
 	p := &neo4jv1beta1.Neo4jPlugin{}
 	require.NoError(t, c.Get(context.Background(), client.ObjectKey{Namespace: selfHealNS, Name: name}, p))
-	edit(p)
-	p.Generation++
-	require.NoError(t, c.Update(context.Background(), p))
+	require.NoError(t, patchObject(context.Background(), c, p, func() {
+		edit(p)
+		p.Generation++
+	}))
 }
 
 func envNames(env []corev1.EnvVar) []string {
@@ -840,8 +841,7 @@ func TestPluginEnvFollowsItsConfig_APIServer(t *testing.T) {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(genai), p); err != nil {
 				return err
 			}
-			delete(p.Spec.Config, "genai.vector.enabled")
-			return c.Update(ctx, p)
+			return patchObject(ctx, c, p, func() { delete(p.Spec.Config, "genai.vector.enabled") })
 		}))
 		pass(genai)
 		assert.Equal(t, before+1, live().Generation, "one write")
@@ -868,8 +868,9 @@ func TestPluginEnvFollowsItsConfig_APIServer(t *testing.T) {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(cluster), latest); err != nil {
 				return err
 			}
-			latest.Spec.Env = append(latest.Spec.Env, corev1.EnvVar{Name: "WALK_OWNED_BY_CLUSTER", Value: "kept"})
-			return c.Update(ctx, latest)
+			return patchObject(ctx, c, latest, func() {
+				latest.Spec.Env = append(latest.Spec.Env, corev1.EnvVar{Name: "WALK_OWNED_BY_CLUSTER", Value: "kept"})
+			})
 		}))
 		before := live().Generation
 		for i := 0; i < 3; i++ {

@@ -112,8 +112,7 @@ var _ = Describe("Neo4jEnterpriseCluster on a tag without a patch", func() {
 			if err := k8sClient.Get(ctx, key, latest); err != nil {
 				return err
 			}
-			latest.Spec.Image.Tag = tag
-			return k8sClient.Update(ctx, latest)
+			return patchCR(ctx, latest, func() { latest.Spec.Image.Tag = tag })
 		})).To(Succeed())
 		Expect(retry.RetryOnConflict(retry.DefaultRetry, func() error {
 			latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}

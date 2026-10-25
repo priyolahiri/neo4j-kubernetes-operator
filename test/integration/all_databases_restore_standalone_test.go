@@ -82,8 +82,7 @@ var _ = Describe("Standalone All-Databases Restore (v1.13 API)", Label("extended
 				continue
 			}
 			if len(cr.GetFinalizers()) > 0 {
-				cr.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, cr)
+				_ = releaseFinalizers(ctx, cr)
 			}
 			_ = k8sClient.Delete(ctx, cr)
 		}

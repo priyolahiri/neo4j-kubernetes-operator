@@ -235,16 +235,30 @@ jobs:
       continue-on-error: true
       run: ./scripts/check-knowledge-drift.sh
 
+    # The test-CR-update guard type-checks the test packages, so it needs Go.
+    - name: Set up Go
+      continue-on-error: true
+      uses: ./.github/actions/setup-go
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Whole-object CR Updates in tests (advisory)
+      id: testcrupdates
+      continue-on-error: true
+      run: go run ./scripts/check-test-cr-updates
+
     - name: Summarize (non-blocking)
       if: always()
       run: |
         inv='${{ steps.invariants.outcome }}'
         kn='${{ steps.knowledge.outcome }}'
+        tcu='${{ steps.testcrupdates.outcome }}'
         echo "## Invariant guards (advisory — does not block merge)" >> "$GITHUB_STEP_SUMMARY"
         echo "" >> "$GITHUB_STEP_SUMMARY"
         echo "- Architectural invariants (\`scripts/check-invariants.sh\`): $inv" >> "$GITHUB_STEP_SUMMARY"
         echo "- Knowledge-base drift (\`scripts/check-knowledge-drift.sh\`): $kn" >> "$GITHUB_STEP_SUMMARY"
-        if [ "$inv" != "success" ] || [ "$kn" != "success" ]; then
+        echo "- Whole-object CR Updates in tests (\`scripts/check-test-cr-updates\`): $tcu" >> "$GITHUB_STEP_SUMMARY"
+        if [ "$inv" != "success" ] || [ "$kn" != "success" ] || [ "$tcu" != "success" ]; then
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "⚠️ A guard reported a violation. This job is **advisory and does not block merge**, but please review the failed step log — see \`AGENTS.md\` / \`docs/knowledge/\`. Reproduce locally with \`make check-knowledge\`." >> "$GITHUB_STEP_SUMMARY"
         fi

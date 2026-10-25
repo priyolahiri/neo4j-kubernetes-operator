@@ -122,8 +122,7 @@ var _ = Describe("Property Sharding Integration Tests", Label("extended"), Seria
 		if shardedDB != nil {
 			By("Cleaning up sharded database resource")
 			if len(shardedDB.GetFinalizers()) > 0 {
-				shardedDB.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, shardedDB)
+				_ = releaseFinalizers(ctx, shardedDB)
 			}
 			_ = k8sClient.Delete(ctx, shardedDB)
 			shardedDB = nil
@@ -132,8 +131,7 @@ var _ = Describe("Property Sharding Integration Tests", Label("extended"), Seria
 		if cluster != nil {
 			By("Cleaning up cluster resource")
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			_ = k8sClient.Delete(ctx, cluster)
 			cluster = nil
@@ -499,8 +497,7 @@ var _ = Describe("Property Sharding Integration Tests", Label("extended"), Seria
 			AfterEach(func() {
 				if nonShardingCluster != nil {
 					if len(nonShardingCluster.GetFinalizers()) > 0 {
-						nonShardingCluster.SetFinalizers([]string{})
-						_ = k8sClient.Update(ctx, nonShardingCluster)
+						_ = releaseFinalizers(ctx, nonShardingCluster)
 					}
 					_ = k8sClient.Delete(ctx, nonShardingCluster)
 				}

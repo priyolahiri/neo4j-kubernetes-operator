@@ -297,8 +297,9 @@ func TestReconcile_AnImageChangeRefusesAnInstalledPlugin(t *testing.T) {
 
 	live := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(cluster), live))
-	live.Spec.Image.Tag, live.Generation = "2026.08.1-enterprise", live.Generation+1
-	require.NoError(t, r.Update(context.Background(), live))
+	require.NoError(t, patchObject(context.Background(), r.Client, live, func() {
+		live.Spec.Image.Tag, live.Generation = "2026.08.1-enterprise", live.Generation+1
+	}))
 	reconcilePlugin(t, r, "n10s")
 
 	assert.Equal(t, 1, *writes, "the cluster has not acted on its new image: the removal waits")
@@ -309,8 +310,8 @@ func TestReconcile_AnImageChangeRefusesAnInstalledPlugin(t *testing.T) {
 
 	// Once the target is Ready with every server available, the name comes off
 	// in one write.
-	live.Status.ObservedGeneration = live.Generation
-	require.NoError(t, r.Update(context.Background(), live)) // the fake keeps no status subresource for clusters
+	// The fake keeps no status subresource for clusters: the patch writes status.
+	require.NoError(t, patchObject(context.Background(), r.Client, live, func() { live.Status.ObservedGeneration = live.Generation }))
 	reconcilePlugin(t, r, "n10s")
 	assert.Equal(t, 2, *writes)
 	v, _ := envValueOf(t, r, "c-server", "NEO4J_PLUGINS")

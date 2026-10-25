@@ -145,8 +145,7 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Label("e
 		}
 		for _, cr := range toClean {
 			if len(cr.GetFinalizers()) > 0 {
-				cr.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, cr)
+				_ = releaseFinalizers(ctx, cr)
 			}
 			_ = k8sClient.Delete(ctx, cr)
 		}
@@ -576,13 +575,14 @@ var _ = Describe("Property Sharding Restore (MinIO) Integration Tests", Label("e
 			if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(shardedDB), shardedDB); err != nil {
 				return err
 			}
-			shardedDB.Spec.ReplaceExisting = true
-			shardedDB.Spec.Force = true
-			ifn := false
-			shardedDB.Spec.IfNotExists = &ifn
-			shardedDB.Spec.SeedBackupRef = "products-backup"
-			shardedDB.Spec.SeedSourceDatabase = "products"
-			return k8sClient.Update(ctx, shardedDB)
+			return patchCR(ctx, shardedDB, func() {
+				shardedDB.Spec.ReplaceExisting = true
+				shardedDB.Spec.Force = true
+				ifn := false
+				shardedDB.Spec.IfNotExists = &ifn // a pointer: the patch carries the false
+				shardedDB.Spec.SeedBackupRef = "products-backup"
+				shardedDB.Spec.SeedSourceDatabase = "products"
+			})
 		}, 30*time.Second, pollInterval).Should(Succeed(),
 			"failed to update sharded DB CR for destructive restore")
 		preReplaceGeneration := shardedDB.Generation

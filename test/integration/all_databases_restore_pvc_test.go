@@ -77,8 +77,7 @@ var _ = Describe("PVC Cluster Restore — All-Databases and Single-Database (v1.
 				continue
 			}
 			if len(cr.GetFinalizers()) > 0 {
-				cr.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, cr)
+				_ = releaseFinalizers(ctx, cr)
 			}
 			_ = k8sClient.Delete(ctx, cr)
 		}

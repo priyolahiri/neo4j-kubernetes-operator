@@ -157,8 +157,7 @@ var _ = Describe("Restore Integration Tests", Label("extended"), Ordered, func()
 			if err := k8sClient.Get(ctx, types.NamespacedName{
 				Name: clusterName, Namespace: ns,
 			}, latest); err == nil {
-				latest.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, latest)
+				_ = releaseFinalizers(ctx, latest)
 				_ = k8sClient.Delete(ctx, latest)
 			}
 		}
@@ -247,11 +246,12 @@ var _ = Describe("Restore Integration Tests", Label("extended"), Ordered, func()
 				}, latest); err != nil {
 					return err
 				}
-				if latest.Annotations == nil {
-					latest.Annotations = map[string]string{}
-				}
-				latest.Annotations[restoreInProgressAnnotation] = "phantom-restore-a"
-				return k8sClient.Update(ctx, latest)
+				return patchCR(ctx, latest, func() {
+					if latest.Annotations == nil {
+						latest.Annotations = map[string]string{}
+					}
+					latest.Annotations[restoreInProgressAnnotation] = "phantom-restore-a"
+				})
 			}, time.Second*10, restoreInterval).Should(Succeed())
 
 			defer func() {
@@ -260,8 +260,7 @@ var _ = Describe("Restore Integration Tests", Label("extended"), Ordered, func()
 				if err := k8sClient.Get(ctx, types.NamespacedName{
 					Name: clusterName, Namespace: ns,
 				}, latest); err == nil {
-					delete(latest.Annotations, restoreInProgressAnnotation)
-					_ = k8sClient.Update(ctx, latest)
+					_ = patchCR(ctx, latest, func() { delete(latest.Annotations, restoreInProgressAnnotation) })
 				}
 			}()
 
@@ -336,15 +335,13 @@ func removeFinalizersAndDelete(list client.ObjectList, namespace string) error {
 	case *neo4jv1beta1.Neo4jRestoreList:
 		for i := range typed.Items {
 			item := &typed.Items[i]
-			item.SetFinalizers(nil)
-			_ = k8sClient.Update(ctx, item)
+			_ = releaseFinalizers(ctx, item)
 			_ = k8sClient.Delete(ctx, item)
 		}
 	case *neo4jv1beta1.Neo4jBackupList:
 		for i := range typed.Items {
 			item := &typed.Items[i]
-			item.SetFinalizers(nil)
-			_ = k8sClient.Update(ctx, item)
+			_ = releaseFinalizers(ctx, item)
 			_ = k8sClient.Delete(ctx, item)
 		}
 	}

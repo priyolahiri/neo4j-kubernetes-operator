@@ -70,8 +70,9 @@ func bumped(t *testing.T, c client.Client, obj client.Object) {
 	live, ok := obj.DeepCopyObject().(client.Object)
 	require.True(t, ok)
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(obj), live))
-	live.SetAnnotations(map[string]string{"test/bumped": "true"})
-	require.NoError(t, c.Update(context.Background(), live))
+	require.NoError(t, patchObject(context.Background(), c, live, func() {
+		live.SetAnnotations(map[string]string{"test/bumped": "true"})
+	}))
 	require.NotEqual(t, obj.GetResourceVersion(), live.GetResourceVersion())
 }
 
@@ -244,8 +245,7 @@ func TestRemoveFinalizer_KeepsAnotherWritersFinalizer(t *testing.T) {
 			stale := &neo4jv1beta1.Neo4jBackup{}
 			require.NoError(t, c.Get(ctx, client.ObjectKeyFromObject(obj), stale))
 			live := stale.DeepCopy()
-			live.Finalizers = tc.live
-			require.NoError(t, c.Update(ctx, live))
+			require.NoError(t, patchObject(ctx, c, live, func() { live.Finalizers = tc.live }))
 
 			require.NoError(t, removeFinalizer(ctx, c, stale, BackupFinalizer))
 			got := &neo4jv1beta1.Neo4jBackup{}
@@ -294,8 +294,7 @@ func TestRemoveFinalizer_APIServer(t *testing.T) {
 	t.Run("another writer's finalizer inserted before it", func(t *testing.T) {
 		stale := newDB("moved", DatabaseFinalizer)
 		live := stale.DeepCopy()
-		live.Finalizers = []string{other, DatabaseFinalizer}
-		require.NoError(t, c.Update(ctx, live))
+		require.NoError(t, patchObject(ctx, c, live, func() { live.Finalizers = []string{other, DatabaseFinalizer} }))
 
 		require.NoError(t, removeFinalizer(ctx, c, stale, DatabaseFinalizer))
 		assert.Equal(t, []string{other}, finalizersOf("moved"))

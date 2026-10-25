@@ -122,8 +122,7 @@ func teardownSharedNativeCluster(ctx context.Context) {
 	c := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Name: sharedNativeName, Namespace: sharedNativeNS}, c); err == nil {
 		if len(c.GetFinalizers()) > 0 {
-			c.SetFinalizers([]string{})
-			_ = k8sClient.Update(ctx, c)
+			_ = releaseFinalizers(ctx, c)
 		}
 		_ = k8sClient.Delete(ctx, c)
 	}

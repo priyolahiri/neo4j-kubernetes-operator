@@ -307,8 +307,7 @@ func TestHeldUpgrade_AnExpansionThenTheFixedTagWalksToTheEnd(t *testing.T) {
 
 	// The fixed tag: the upgrade goes on, replacing server-2 first.
 	fixed := latestCluster(t, fc, c)
-	fixed.Spec.Image.Tag = holdTarget
-	require.NoError(t, fc.Update(ctx, fixed))
+	require.NoError(t, patchObject(ctx, fc, fixed, func() { fixed.Spec.Image.Tag = holdTarget }))
 	require.True(t, r.isUpgradeRequired(ctx, latestCluster(t, fc, c)), "the repair takes it up")
 	_, err := r.handleRollingUpgrade(ctx, latestCluster(t, fc, c))
 	require.NoError(t, err)
@@ -435,8 +434,7 @@ func TestStepUpgradeStaging_RunsOncePerTarget(t *testing.T) {
 	t.Run("a cached copy from before a retarget", func(t *testing.T) {
 		const later = "2026.11.0-enterprise"
 		retargeted := latestCluster(t, fc, c)
-		retargeted.Spec.Image.Tag = later
-		require.NoError(t, fc.Update(ctx, retargeted))
+		require.NoError(t, patchObject(ctx, fc, retargeted, func() { retargeted.Spec.Image.Tag = later }))
 		require.NoError(t, r.patchUpgradeStatus(ctx, latestCluster(t, fc, c), func(us *neo4jv1beta1.UpgradeStatus) {
 			us.Phase, us.TargetVersion, us.StepStartTime = upgradePhaseStaging, later, &now
 		}))
@@ -525,8 +523,7 @@ func TestStepUpgradeStaging_WritesTheHeldTemplateBackFirst(t *testing.T) {
 	require.NoError(t, r.createOrUpdateResource(ctx, resources.BuildServerStatefulSetForEnterprise(grown), grown))
 
 	staging := latestCluster(t, fc, c)
-	staging.Spec.Image.Tag = holdTarget
-	require.NoError(t, fc.Update(ctx, staging))
+	require.NoError(t, patchObject(ctx, fc, staging, func() { staging.Spec.Image.Tag = holdTarget }))
 	now := metav1.Now()
 	require.NoError(t, r.patchUpgradeStatus(ctx, latestCluster(t, fc, c), func(us *neo4jv1beta1.UpgradeStatus) {
 		us.Phase, us.TargetVersion, us.StepStartTime = upgradePhaseStaging, holdTarget, &now

@@ -118,24 +118,21 @@ var _ = Describe("Neo4jAuthRule end-to-end", Label("extended"), func() {
 	AfterEach(func() {
 		if authRule != nil {
 			if len(authRule.GetFinalizers()) > 0 {
-				authRule.SetFinalizers([]string{})
-				_ = k8sClient.Update(testCtx, authRule)
+				_ = releaseFinalizers(testCtx, authRule)
 			}
 			_ = k8sClient.Delete(testCtx, authRule)
 			authRule = nil
 		}
 		if role != nil {
 			if len(role.GetFinalizers()) > 0 {
-				role.SetFinalizers([]string{})
-				_ = k8sClient.Update(testCtx, role)
+				_ = releaseFinalizers(testCtx, role)
 			}
 			_ = k8sClient.Delete(testCtx, role)
 			role = nil
 		}
 		if cluster != nil {
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(testCtx, cluster)
+				_ = releaseFinalizers(testCtx, cluster)
 			}
 			_ = k8sClient.Delete(testCtx, cluster)
 			cluster = nil

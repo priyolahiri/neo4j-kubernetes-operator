@@ -50,8 +50,7 @@ var _ = Describe("Composite Database — API and validation", Label("core"), Ser
 	AfterEach(func() {
 		if composite != nil {
 			if len(composite.GetFinalizers()) > 0 {
-				composite.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, composite)
+				_ = releaseFinalizers(ctx, composite)
 			}
 			_ = k8sClient.Delete(ctx, composite)
 			composite = nil

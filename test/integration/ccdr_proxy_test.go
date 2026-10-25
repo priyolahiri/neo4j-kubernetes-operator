@@ -69,8 +69,7 @@ var _ = Describe("CCDR Proxy (same-cluster ergonomics)", Label("core"), func() {
 	AfterEach(func() {
 		if cluster != nil {
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			_ = k8sClient.Delete(ctx, cluster)
 			cluster = nil
@@ -169,8 +168,8 @@ var _ = Describe("CCDR Proxy (same-cluster ergonomics)", Label("core"), func() {
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: clusterName, Namespace: testNamespace}, cluster); err != nil {
 				return err
 			}
-			cluster.Spec.CrossClusterReplication.Enabled = false
-			return k8sClient.Update(ctx, cluster)
+			// enabled has no CRD default: the patch's removal reads false.
+			return patchCR(ctx, cluster, func() { cluster.Spec.CrossClusterReplication.Enabled = false })
 		}, clusterTimeout, interval).Should(Succeed())
 
 		Eventually(func() bool {

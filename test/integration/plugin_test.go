@@ -58,8 +58,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 				cluster := &clusterList.Items[i]
 				if cluster.Name == "plugin-test-cluster" || strings.Contains(cluster.Namespace, "plugin") {
 					if len(cluster.GetFinalizers()) > 0 {
-						cluster.SetFinalizers([]string{})
-						_ = k8sClient.Update(ctx, cluster)
+						_ = releaseFinalizers(ctx, cluster)
 					}
 					_ = k8sClient.Delete(ctx, cluster)
 				}
@@ -73,8 +72,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 				standalone := &standaloneList.Items[i]
 				if standalone.Name == "plugin-test-standalone" || strings.Contains(standalone.Namespace, "plugin") {
 					if len(standalone.GetFinalizers()) > 0 {
-						standalone.SetFinalizers([]string{})
-						_ = k8sClient.Update(ctx, standalone)
+						_ = releaseFinalizers(ctx, standalone)
 					}
 					_ = k8sClient.Delete(ctx, standalone)
 				}
@@ -87,8 +85,7 @@ var _ = Describe("Neo4jPlugin Integration Tests", Label("core"), func() {
 			for i := range pluginList.Items {
 				plugin := &pluginList.Items[i]
 				if len(plugin.GetFinalizers()) > 0 {
-					plugin.SetFinalizers([]string{})
-					_ = k8sClient.Update(ctx, plugin)
+					_ = releaseFinalizers(ctx, plugin)
 				}
 				_ = k8sClient.Delete(ctx, plugin)
 			}

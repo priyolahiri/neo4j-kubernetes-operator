@@ -642,8 +642,7 @@ func cleanupResource(obj client.Object, namespace, resourceType string) {
 	// Remove finalizers if present
 	if len(obj.GetFinalizers()) > 0 {
 		By(fmt.Sprintf("Removing finalizers from %s %s/%s", resourceType, namespace, obj.GetName()))
-		obj.SetFinalizers([]string{})
-		_ = k8sClient.Update(ctx, obj)
+		_ = releaseFinalizers(ctx, obj)
 	}
 
 	// Delete the resource

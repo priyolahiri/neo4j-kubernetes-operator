@@ -110,24 +110,21 @@ var _ = Describe("Property Sharding Backup Integration Tests", Label("extended")
 		}
 		if backup != nil {
 			if len(backup.GetFinalizers()) > 0 {
-				backup.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, backup)
+				_ = releaseFinalizers(ctx, backup)
 			}
 			_ = k8sClient.Delete(ctx, backup)
 			backup = nil
 		}
 		if shardedDB != nil {
 			if len(shardedDB.GetFinalizers()) > 0 {
-				shardedDB.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, shardedDB)
+				_ = releaseFinalizers(ctx, shardedDB)
 			}
 			_ = k8sClient.Delete(ctx, shardedDB)
 			shardedDB = nil
 		}
 		if cluster != nil {
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			_ = k8sClient.Delete(ctx, cluster)
 			cluster = nil

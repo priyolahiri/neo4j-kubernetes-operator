@@ -210,8 +210,7 @@ func TestRepair_OnKubernetes135_TheWalkReplacesTheServerThatCannotStart(t *testi
 	r.Recorder = rec
 
 	fixed := latestCluster(t, fc, c)
-	fixed.Spec.Image.Tag = holdTarget
-	require.NoError(t, fc.Update(ctx, fixed))
+	require.NoError(t, patchObject(ctx, fc, fixed, func() { fixed.Spec.Image.Tag = holdTarget }))
 	require.True(t, r.isUpgradeRequired(ctx, latestCluster(t, fc, c)), "the repair takes it up")
 	for step := 0; step < 16; step++ {
 		got := latestCluster(t, fc, c)

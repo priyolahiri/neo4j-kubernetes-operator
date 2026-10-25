@@ -107,8 +107,7 @@ func TestReconcile_AMissingStatefulSetIsWaitedForQuietly(t *testing.T) {
 		}
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		require.NoError(t, r.Get(context.Background(), client.ObjectKeyFromObject(cluster), latest))
-		latest.Status.Phase = neo4jv1beta1.PhaseReady
-		require.NoError(t, r.Update(context.Background(), latest))
+		require.NoError(t, patchObject(context.Background(), r.Client, latest, func() { latest.Status.Phase = neo4jv1beta1.PhaseReady }))
 		installAndRoll(t, r, "apoc", "c-server")
 		assert.Equal(t, 1, *writes)
 	})

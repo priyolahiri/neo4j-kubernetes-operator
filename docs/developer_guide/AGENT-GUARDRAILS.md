@@ -14,10 +14,14 @@ If you are an LLM agent, treat enforcement as two tiers:
 - **Blocking** — `make check-drift` (generated artifacts), the `unit-tests` job
   and the `go-lint` job (`ci.yml` describes it as a merge gate) reject a violating
   change mechanically; there is no arguing past review.
-- **Advisory** — `make check-invariants` and `make check-knowledge-drift` (run by
-  the agent skills and a non-blocking `Invariant Guards` CI job) surface a
+- **Advisory** — `make check-invariants`, `make check-knowledge-drift` and
+  `make check-test-cr-updates` (all three are `make check-knowledge`, run by the
+  agent skills and a non-blocking `Invariant Guards` CI job) surface a
   violation without gating merge. A flag there means you have broken the product
   contract, not tripped a lint nit. Fix the change, never the guard.
+  `check-test-cr-updates` flags a test that writes one of the operator's CRs
+  with a whole-object `Update`: specs patch what they change, as the operator
+  does ([`operations.md`](../knowledge/operations.md) id 205).
 
 INV-3 additionally has **runtime** teeth (`internal/validation/image_validator.go`
 rejects `-community`, pinned by `image_validator_test.go`); INV-4 is

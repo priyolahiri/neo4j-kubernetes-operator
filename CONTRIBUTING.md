@@ -214,10 +214,9 @@ Deploys a minimal Neo4j Enterprise standalone instance (`hack/smoke-test-standal
 ```go
 AfterEach(func() {
     if cluster != nil {
-        // Remove finalizers before deletion
+        // Remove finalizers before deletion: a merge patch, never an Update
         if len(cluster.GetFinalizers()) > 0 {
-            cluster.SetFinalizers([]string{})
-            _ = k8sClient.Update(ctx, cluster)
+            _ = releaseFinalizers(ctx, cluster)
         }
         _ = k8sClient.Delete(ctx, cluster)
         cluster = nil
@@ -230,6 +229,7 @@ AfterEach(func() {
 
 Key rules:
 - Always remove finalizers before deleting custom resources
+- Write a custom resource with a merge patch (`patchCR`, `releaseFinalizers`), never a whole-object `Update`: the Go types leave out a `false` the CRD defaults to `true`, and it comes back `true` (see [Testing](docs/developer_guide/testing.md))
 - Use `cleanupCustomResourcesInNamespace()` in every `AfterEach`
 - Use 300-second timeouts for all integration tests
 - Memory requests must be >= 1.5Gi (Neo4j Enterprise minimum)

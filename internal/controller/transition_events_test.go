@@ -131,8 +131,7 @@ func TestBackupReconcile_AnnouncesTheScheduleOnce(t *testing.T) {
 	require.Equal(t, neo4jv1beta1.PhaseScheduled, got.Status.Phase)
 
 	// Editing the schedule is a change worth announcing.
-	got.Spec.Schedule = "30 3 * * *"
-	require.NoError(t, r.Update(ctx, got))
+	require.NoError(t, patchObject(ctx, r.Client, got, func() { got.Spec.Schedule = "30 3 * * *" }))
 	reconcile()
 	reconcile()
 	scheduled = eventsWithReason(drainEvents(rec), EventReasonBackupScheduled)

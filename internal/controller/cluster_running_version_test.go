@@ -106,8 +106,7 @@ var _ = Describe("Neo4jEnterpriseCluster image tag against the version it runs",
 			latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			if err := k8sClient.Get(ctx, types.NamespacedName{Name: cluster.Name, Namespace: cluster.Namespace}, latest); err == nil {
 				if len(latest.GetFinalizers()) > 0 {
-					latest.SetFinalizers([]string{})
-					_ = k8sClient.Update(ctx, latest)
+					_ = releaseFinalizers(ctx, latest)
 				}
 				_ = k8sClient.Delete(ctx, latest)
 			}

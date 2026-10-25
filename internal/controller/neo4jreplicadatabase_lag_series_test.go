@@ -271,14 +271,12 @@ func TestReplicaLagSeries_RemovedWhileDownstreamClusterNotUsable(t *testing.T) {
 		h.publishesFirst(20)
 
 		cluster := h.cluster()
-		cluster.Spec.Image.Tag = "5.26.0-enterprise"
-		require.NoError(t, h.c.Update(context.Background(), cluster))
+		require.NoError(t, patchObject(context.Background(), h.c, cluster, func() { cluster.Spec.Image.Tag = "5.26.0-enterprise" }))
 		require.NoError(t, h.reconcile())
 		assert.False(t, h.lag().found)
 
 		cluster = h.cluster()
-		cluster.Spec.Image.Tag = "2026.08.0-enterprise"
-		require.NoError(t, h.c.Update(context.Background(), cluster))
+		require.NoError(t, patchObject(context.Background(), h.c, cluster, func() { cluster.Spec.Image.Tag = "2026.08.0-enterprise" }))
 		h.recovers(6)
 	})
 }
@@ -343,14 +341,12 @@ func TestReplicaLagSeries_RemovedWhenLagCannotBeRead(t *testing.T) {
 		replica := &neo4jv1beta1.Neo4jReplicaDatabase{}
 		key := types.NamespacedName{Namespace: h.ns, Name: h.name}
 		require.NoError(t, h.c.Get(context.Background(), key, replica))
-		replica.Spec.UpstreamDatabase = "bad`name"
-		require.NoError(t, h.c.Update(context.Background(), replica))
+		require.NoError(t, patchObject(context.Background(), h.c, replica, func() { replica.Spec.UpstreamDatabase = "bad`name" }))
 		require.NoError(t, h.reconcile())
 		assert.False(t, h.lag().found, "a reconcile that refuses the spec is not reading the lag")
 
 		require.NoError(t, h.c.Get(context.Background(), key, replica))
-		replica.Spec.UpstreamDatabase = "foo"
-		require.NoError(t, h.c.Update(context.Background(), replica))
+		require.NoError(t, patchObject(context.Background(), h.c, replica, func() { replica.Spec.UpstreamDatabase = "foo" }))
 		h.recovers(10)
 	})
 }
