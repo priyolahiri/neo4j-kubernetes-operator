@@ -5200,12 +5200,12 @@
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td>Current status conditions</td>
+<td>Current status conditions: <code>Ready</code>, and <code>ClusterNotReady</code> — <code>True</code> (reason <code>ClusterNotReady</code>) while the host is not Ready, <code>True</code> (reason <code>ClusterUnreachable</code>) while it reads Ready but does not accept the connection, <code>False</code> (reason <code>ClusterReady</code>) once a connection succeeded</td>
 </tr>
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found — one <code>ClusterNotFound</code> Warning, never a validation failure — or not ready, or waiting for the seed credentials on the target — <code>SeedCredsMissing</code>, <code>SeedCredsAutoInherited</code>), <code>Failed</code> (connection, creation or data-import failure), <code>ValidationFailed</code> (the spec was refused; <code>kubectl neo4j status --problems</code> lists it), <code>Error</code> (a deletion whose <code>DROP DATABASE</code> failed and is being retried; reason <code>DeletionFailed</code>), or <code>Unknown</code> (any other blocked state)</td>
+<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found — one <code>ClusterNotFound</code> Warning, never a validation failure — or not ready or not answering, or waiting for the seed credentials on the target — <code>SeedCredsMissing</code>, <code>SeedCredsAutoInherited</code>), <code>Failed</code> (connection, creation or data-import failure, or anything else Neo4j refused), <code>ValidationFailed</code> (the spec was refused; <code>kubectl neo4j status --problems</code> lists it), or <code>Error</code> (a deletion whose <code>DROP DATABASE</code> failed and is being retried; reason <code>DeletionFailed</code>). A database that is <code>Ready</code> stays <code>Ready</code> while its host restarts — the <code>ClusterNotReady</code> condition says it waits — so the host's return announces nothing; a host that does not answer for more than 5 minutes makes it <code>Failed</code> (<code>ConnectionFailed</code>). Operators up to v1.21 also wrote <code>Unknown</code> (a host without the seed credentials Secret); none is written now</td>
 </tr>
 <tr>
 <td><code>message</code></td>

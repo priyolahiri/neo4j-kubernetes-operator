@@ -4224,7 +4224,7 @@
 <tr>
 <td><code>conditions[]</code></td>
 <td><code>metav1.Condition</code></td>
-<td><code>Ready</code>, <code>ClusterNotReady</code>.</td>
+<td><code>Ready</code>, <code>ClusterNotReady</code> (reason <code>ClusterNotReady</code> while the downstream target is not Ready, <code>ClusterUnreachable</code> while it reads Ready but does not accept the connection, <code>ClusterReady</code> once a connection succeeded). A <code>Replicating</code> replica stays <code>Replicating</code> while its target restarts (its lag series is withdrawn meanwhile); one not yet <code>Replicating</code> waits in <code>Pending</code>. A target that does not answer for more than 5 minutes makes it <code>Failed</code> (<code>ConnectionFailed</code>).</td>
 </tr>
 </tbody>
 </table>

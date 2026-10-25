@@ -4342,13 +4342,13 @@ name a composite reports <code>PrivilegesResolve=False</code>.</p>
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>CompositeDatabaseReady</code>, <code>CompositeDatabaseFailed</code>, <code>CompositeDatabaseNameBlocked</code>, <code>ClusterNotFound</code> (phase <code>Pending</code>), <code>ClusterNotReady</code> (phase <code>Pending</code>), <code>Creating</code> (phase <code>Creating</code>), <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
-<td>True when the composite exists and its constituents match spec.</td>
+<td><code>CompositeDatabaseReady</code>, <code>CompositeDatabaseFailed</code>, <code>CompositeDatabaseNameBlocked</code>, <code>ClusterNotFound</code> (phase <code>Pending</code>), <code>ClusterNotReady</code> / <code>ClusterUnreachable</code> (phase <code>Pending</code>, for a composite not yet <code>Ready</code>), <code>Creating</code> (phase <code>Creating</code>), <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
+<td>True when the composite exists and its constituents match spec. A <code>Ready</code> composite stays <code>Ready</code> while its target restarts.</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>ClusterNotReady</code>, <code>ClusterReady</code></td>
-<td>Mirrors the readiness of the referenced deployment.</td>
+<td><code>ClusterNotReady</code>, <code>ClusterUnreachable</code>, <code>ClusterReady</code></td>
+<td>Mirrors the readiness of the referenced deployment: <code>ClusterUnreachable</code> while it reads <code>Ready</code> but does not accept the connection (reported as <code>ConnectionFailed</code> after 5 minutes). <code>ClusterReady</code> is written once a connection succeeds.</td>
 </tr>
 </tbody>
 </table>

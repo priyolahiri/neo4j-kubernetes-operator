@@ -4913,7 +4913,7 @@
 <td><code>backupPath</code></td>
 <td><code>string</code></td>
 <td>conditional</td>
-<td>Specific backup path within the storage location. <strong>Required (non-empty) when <code>type="storage"</code></strong> — the controller fails the restore otherwise; for cluster targets it must be the exact <code>.backup</code> file. On a standalone it may be the directory or the exact <code>.backup</code> file; restoring under a different name from a cloud directory needs the exact file. Not used for <code>type="backup"</code> (resolved from the <code>Neo4jBackup</code>).</td>
+<td>Specific backup path within the storage location. <strong>Required (non-empty) when <code>type="storage"</code></strong> — the controller fails the restore otherwise; for cluster targets it must be the exact <code>.backup</code> file. On a standalone it may be the directory or the exact <code>.backup</code> file; restoring under a different name from a cloud directory needs the exact file. Not used for <code>type="backup"</code> (resolved from the <code>Neo4jBackup</code>). <strong>On a <code>pvc</code> storage it is relative to the PVC's root</strong> (<code>storage.path</code> is not added): write <code>bk1</code> or <code>bk1/neo4j-2026-10-25T01-00-00.backup</code>, never the mount path. The restore mounts the PVC at <code>/backup</code> (the Job; the seed proxy serves the same root) and adds the <code>/backup/</code> itself, so <code>backupPath: /backup/bk1</code> reads <code>/backup//backup/bk1</code> — <code>backup/bk1</code> on the PVC — and fails unless the PVC has a <code>backup</code> directory at its root. A path that starts with <code>/backup/</code> draws a <code>ValidationWarning</code> saying so. A PVC backup records its directory in this form, in the <code>Neo4jBackup</code>'s <code>status.history[].backupsPath</code>.</td>
 </tr>
 <tr>
 <td><code>sourceDatabase</code></td>
@@ -5058,7 +5058,7 @@
 <td><code>backupPath</code></td>
 <td><code>string</code></td>
 <td>❌</td>
-<td>Specific backup path within the storage location</td>
+<td>Specific backup path within the storage location. On a <code>pvc</code> storage it is relative to the PVC's root, as for <code>source.backupPath</code>: not <code>/backup/…</code>, which the operator adds itself (a path that starts with it draws a <code>ValidationWarning</code>)</td>
 </tr>
 </tbody>
 </table>
@@ -5667,7 +5667,8 @@
 </tr>
 </tbody>
 </table>
-<p>The operator emits a <code>RestoreStarted</code> event naming the case, once: with <code>stopCluster: true</code> when it stops the instance, with <code>stopCluster: false</code> when it starts the restore Job (a restore that waits first — for example for the previous attempt's Job to finish terminating — says nothing until then).</p>
+<p>The operator names the case in the restore's one <code>RestoreStarted</code> event, "Restore job … started", emitted when the restore Job starts and the restore turns <code>Running</code>: with <code>stopCluster: true</code> it says the restore stops the standalone, with <code>stopCluster: false</code> that the standalone is stopped already. A restore that waits first — for example for the previous attempt's Job to finish terminating — says nothing until then.</p>
+<p>Each attempt runs a Job of its own. The Job carries the attempt — the restore's <code>metadata.generation</code> — in the annotation <code>neo4j.com/restore-attempt</code>; a Job under the restore's Job name from an earlier attempt (failed, completed or still running) is deleted, and the new attempt waits in <code>Pending</code> until it is gone. A completed restore run again within the Job's five-minute TTL no longer reports <code>Completed</code> at once from the previous attempt's Job.</p>
 <p>From a PVC directory with no recorded artifact, the restore Job takes the newest <code>&lt;database&gt;-&lt;timestamp&gt;.backup</code> of the source database, with the name lower-cased as <code>neo4j-admin</code> writes it (<code>spec.database: Orders</code> finds <code>orders-2026-10-24T02-00-00.backup</code>), and never another database whose name begins with it (<code>orders-eu-…</code> is not <code>orders</code>).</p>
 <p>When <code>spec.stopCluster: true</code>:</p>
 <ol>
