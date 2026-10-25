@@ -103,6 +103,8 @@ func (s *namedReplicaServer) CreateReplicaDatabaseFromNetwork(_ context.Context,
 	return s.create(name)
 }
 
+func (s *namedReplicaServer) DropDatabase(context.Context, string) error { return nil }
+
 func (s *namedReplicaServer) Close() error { return nil }
 
 // A replica named `Ledger` is listed as `ledger`. GetDatabaseInfo matched

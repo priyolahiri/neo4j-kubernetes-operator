@@ -58,6 +58,8 @@ type scriptedReplicaServer struct {
 	info    *neo4jclient.DatabaseInfo
 	infoErr error
 	created int
+	drops   int   // DROP DATABASE attempts
+	dropErr error // returned by DROP DATABASE while set
 }
 
 func (s *scriptedReplicaServer) GetDatabaseInfo(_ context.Context, _ string) (*neo4jclient.DatabaseInfo, error) {
@@ -72,6 +74,11 @@ func (s *scriptedReplicaServer) CreateReplicaDatabaseFromBackup(context.Context,
 func (s *scriptedReplicaServer) CreateReplicaDatabaseFromNetwork(context.Context, string, neo4jclient.ReplicaNetworkSource) error {
 	s.created++
 	return nil
+}
+
+func (s *scriptedReplicaServer) DropDatabase(context.Context, string) error {
+	s.drops++
+	return s.dropErr
 }
 
 func (s *scriptedReplicaServer) Close() error { return nil }

@@ -135,6 +135,7 @@ func (s *fakeAuthServer) drop() error {
 func (s *fakeAuthServer) DropUserIfExists(context.Context, string) error     { return s.drop() }
 func (s *fakeAuthServer) DropRoleIfExists(context.Context, string) error     { return s.drop() }
 func (s *fakeAuthServer) DropAuthRuleIfExists(context.Context, string) error { return s.drop() }
+func (s *fakeAuthServer) DropAliasIfExists(context.Context, string) error    { return s.drop() }
 func (s *fakeAuthServer) DropCompositeDatabase(context.Context, string, bool) error {
 	return s.drop()
 }

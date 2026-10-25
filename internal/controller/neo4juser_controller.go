@@ -149,7 +149,7 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			// yet): Pending + requeue, like missing roles — apply order is
 			// documented as irrelevant (#259).
 			msg := strings.Join(res.Pending, "; ")
-			r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, "SecretPending", msg, nil, "")
+			r.setStatus(ctx, user, "Pending", metav1.ConditionFalse, ConditionReasonSecretPending, msg, nil, "")
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 	}
@@ -239,7 +239,9 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 			return r.fail(ctx, user, "create user failed", err, requeue)
 		}
 		r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserCreated, "User %q created", username)
-		r.passwordApplied(ctx, user, passwordHash)
+		if r.passwordApplied(ctx, user, passwordHash) {
+			r.Recorder.Event(user, corev1.EventTypeNormal, EventReasonPasswordRotated, "password updated from Secret")
+		}
 		// Re-read so we have fresh state for the rest of the loop.
 		info, err = nc.ShowUser(ctx, username)
 		if err != nil {
@@ -275,7 +277,10 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				// condition permanent, because the hash is what would stop us
 				// re-issuing the same ALTER next time. Announced only by the
 				// write that records it: a pass on a copy from before that
-				// write sends the same ALTER again and says nothing.
+				// write sends the same ALTER again and says nothing. Nothing
+				// was rotated, so it is this event alone, not PasswordRotated
+				// too: a Neo4jUser for neo4j, whose Secret holds the admin
+				// password, announced both at its creation.
 				if !neo4jclient.IsPasswordUnchangedError(err) {
 					return r.fail(ctx, user, "alter user failed", err, requeue)
 				}
@@ -285,8 +290,8 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 				}
 			} else {
 				r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserUpdated, "User %q updated", username)
-				if setsPassword {
-					r.passwordApplied(ctx, user, passwordHash)
+				if setsPassword && r.passwordApplied(ctx, user, passwordHash) {
+					r.Recorder.Event(user, corev1.EventTypeNormal, EventReasonPasswordRotated, "password updated from Secret")
 				}
 			}
 		}
@@ -379,14 +384,13 @@ func (r *Neo4jUserReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 }
 
 func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1beta1.Neo4jUser, username string) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(user, Neo4jUserFinalizer) {
 		return ctrl.Result{}, nil
 	}
-	requeue := r.requeueAfter()
+	release := func() error { return removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer) }
 
 	if strings.EqualFold(user.Spec.DeletionPolicy, "Retain") {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
+		return ctrl.Result{}, release()
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, user.Namespace, user.Spec.ClusterRef)
@@ -394,37 +398,36 @@ func (r *Neo4jUserReconciler) handleDeletion(ctx context.Context, user *neo4jv1b
 		return ctrl.Result{}, err
 	}
 	if !target.Found {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
+		// The deployment is gone, and the user with its system database.
+		return ctrl.Result{}, release()
+	}
+	// Anything else that keeps DROP USER from running waits, bounded: the
+	// user may still be in Neo4j, and releasing now would leave the access
+	// the deletion was meant to revoke (knowledge rule 178).
+	cleanup := deletionCleanup{
+		obj: user, recorder: r.Recorder, reason: EventReasonUserDeletionFailed,
+		leftBehind: fmt.Sprintf("user %q on %s", username, targetRefDisplay(user.Spec.ClusterRef)),
+		byHand:     fmt.Sprintf("DROP USER `%s`", neo4jclient.EscapeBackticks(username)),
+		record: func(msg string) bool {
+			return r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserDeletionFailed, msg, nil, "")
+		},
+		release: release, requeue: r.requeueAfter(),
 	}
 	if !target.IsReady() {
-		return ctrl.Result{RequeueAfter: requeue}, nil
+		return cleanup.blocked(ctx, targetDownCause(user.Spec.ClusterRef))
 	}
 
 	nc, err := r.connect(target)
 	if err != nil {
-		logger.Error(err, "cannot connect during user deletion; releasing finalizer")
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
+		return cleanup.blocked(ctx, connectFailedCause(user.Spec.ClusterRef, err))
 	}
 	defer func() { _ = nc.Close() }()
 
 	if err := nc.DropUserIfExists(ctx, username); err != nil {
-		if classifyFinalizerCleanup(user, err) == retryCleanup {
-			// Retried every RequeueAfter and on every status change of the
-			// target until the drop succeeds or the grace period ends. The
-			// failure is written to status and announced when it starts or
-			// its message changes, not on every retry (knowledge rule 145).
-			msg := fmt.Sprintf("DROP USER %q failed, will retry: %v", username, err)
-			if r.setStatus(ctx, user, "Failed", metav1.ConditionFalse, EventReasonUserDeletionFailed, msg, nil, "") {
-				r.Recorder.Event(user, corev1.EventTypeWarning, EventReasonUserDeletionFailed, msg)
-			}
-			return ctrl.Result{RequeueAfter: requeue}, nil
-		}
-		r.Recorder.Eventf(user, corev1.EventTypeWarning, EventReasonUserDeletionFailed,
-			"DROP USER %q failed; releasing finalizer to avoid wedging deletion: %v", username, err)
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
+		return cleanup.blocked(ctx, statementFailedCause(user.Spec.ClusterRef, "DROP USER", err))
 	}
 	r.Recorder.Eventf(user, corev1.EventTypeNormal, EventReasonUserDeleted, "User %q dropped", username)
-	return ctrl.Result{}, removeFinalizer(ctx, r.Client, user, Neo4jUserFinalizer)
+	return ctrl.Result{}, release()
 }
 
 // computeAlter builds the set of ALTER USER clauses needed to bring `info`
@@ -704,7 +707,9 @@ func passwordRotationDue(user *neo4jv1beta1.Neo4jUser, passwordHash string) bool
 // the user's, in a status write right after the statement that applied it:
 // CREATE USER, ALTER USER … SET PASSWORD, or the refusal that says the
 // password was already set. It reports whether the write changed the recorded
-// token, and announces PasswordRotated when it did (knowledge rule 15).
+// token; the caller announces what happened — PasswordRotated for a password
+// the statement set, the "already matches" UserUpdated for one Neo4j already
+// held, never both (knowledge rule 15).
 //
 // The token used to be written only at the end of a successful pass. A pass
 // that stopped at a failing grant never wrote it, so every retry sent the same
@@ -739,21 +744,20 @@ func (r *Neo4jUserReconciler) passwordApplied(ctx context.Context, user *neo4jv1
 		log.FromContext(ctx).Error(err, "failed to record the applied password on Neo4jUser")
 		return false
 	}
-	if changed {
-		r.Recorder.Event(user, corev1.EventTypeNormal, EventReasonPasswordRotated, "password updated from Secret")
-	}
 	return changed
 }
 
 // waitForTarget records that the target cannot serve the user — reason
 // ClusterNotReady (not Ready) or ClusterUnreachable (reads Ready, cannot be
 // reached): the ClusterNotReady condition, and phase Pending unless the user
-// is already Ready at its generation. A Ready user stays Ready while its target
-// restarts — nothing about the user changed, and the target announces its own
-// state — so the pass that finds the target back is not a transition and
-// announces nothing. Demoting it to Pending made every restart of a standalone
-// a UserReady event (28 in 40 minutes of restarts, v1.22.0 re-walk; knowledge
-// rule 158). The status is written only when it changes. It reports lasting
+// already has an outcome at its generation. A Ready user stays Ready, and a
+// Failed one Failed, while its target restarts — nothing about the user
+// changed, and the target announces its own state — so the pass that finds the
+// target back is not a transition and announces nothing. Demoting it to
+// Pending made every restart of a standalone a UserReady event (28 in 40
+// minutes of restarts, v1.22.0 re-walk; knowledge rule 158), or a
+// UserSyncFailed for the same failure (#573; id 189). The status is written
+// only when it changes. It reports lasting
 // when an unreachable target has outlasted targetUnreachableGrace (id 172).
 func (r *Neo4jUserReconciler) waitForTarget(ctx context.Context, user *neo4jv1beta1.Neo4jUser, reason, msg string) (lasting bool) {
 	update := func() error {
@@ -781,8 +785,8 @@ func (r *Neo4jUserReconciler) waitForTarget(ctx context.Context, user *neo4jv1be
 // standalone whose Bolt port refuses connections for a few seconds after it
 // reads Ready, or for longer during a stopCluster restore. That is the rest of
 // the same outage waitForTarget waits through, not a failure of this user: a
-// user Ready at its generation stays Ready (ClusterNotReady=True, reason
-// ClusterUnreachable), any other waits in Pending, it is logged at info and
+// user with an outcome at its generation keeps it (ClusterNotReady=True,
+// reason ClusterUnreachable), any other waits in Pending, it is logged at info and
 // retried on the fixed interval — an error would be logged at ERROR by
 // controller-runtime and retried within milliseconds. It used to write Failed
 // with a ConnectionFailed Warning and announce UserReady again on the next

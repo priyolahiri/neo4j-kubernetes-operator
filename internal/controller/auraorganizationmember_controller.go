@@ -76,19 +76,17 @@ func (r *AuraOrganizationMemberReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, nil
 	}
 
+	// A deletion resolves the credentials only to call Aura, and waits for
+	// them a bounded time (knowledge rules 157, 178).
+	if !m.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, req, m)
+	}
 	creds, err := resolveAuraCredentials(ctx, r.Client, m.Namespace, m.Spec.ProviderConfigRef, m.Spec.CredentialsSecretRef)
 	if err != nil {
-		if !m.DeletionTimestamp.IsZero() {
-			return r.releaseFinalizer(ctx, req)
-		}
 		return r.fail(ctx, req, m, "CredentialsUnavailable", err)
 	}
 	orgID := resolveProviderOrgID(ctx, r.Client, m.Namespace, m.Spec.ProviderConfigRef, m.Spec.OrganizationID)
 	apiClient := resolveMemberClient(r.ClientFactory, creds)
-
-	if !m.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, req, m, apiClient, orgID)
-	}
 	if !controllerutil.ContainsFinalizer(m, AuraOrgMemberFinalizer) {
 		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraOrganizationMember) {
 			controllerutil.AddFinalizer(o, AuraOrgMemberFinalizer)
@@ -156,30 +154,66 @@ func (r *AuraOrganizationMemberReconciler) findByEmail(ctx context.Context, apiC
 	return nil, nil
 }
 
-func (r *AuraOrganizationMemberReconciler) handleDeletion(ctx context.Context, req ctrl.Request, m *neo4jv1beta1.AuraOrganizationMember, apiClient auraMemberAPI, orgID string) (ctrl.Result, error) {
+func (r *AuraOrganizationMemberReconciler) handleDeletion(ctx context.Context, req ctrl.Request, m *neo4jv1beta1.AuraOrganizationMember) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(m, AuraOrgMemberFinalizer) {
 		return ctrl.Result{}, nil
 	}
 	remove := m.Spec.DeletionPolicy == "Delete" && managementAllows(m.Spec.ManagementPolicies, auraPolicyDelete)
-	if remove && orgID != "" && m.Status.UserID != "" {
-		if err := apiClient.DeleteOrgMember(ctx, orgID, m.Status.UserID); err != nil {
-			if aura.IsConflict(err) || aura.IsTransient(err) {
-				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-			}
-			if !aura.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
+	if !remove || m.Status.UserID == "" {
+		if m.Status.UserID != "" {
+			r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberOrphaned,
+				fmt.Sprintf("Orphaning organization member %q; they keep the role %s in Aura", m.Spec.Email, m.Spec.Role))
 		}
-		r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberRemoved,
-			fmt.Sprintf("Removed %q from the organization", m.Spec.Email))
+		return r.releaseFinalizer(ctx, req)
 	}
+	// Removing calls Aura. Credentials or an organization that cannot be
+	// resolved used to release the finalizer at once, without an event, and
+	// the person kept their organization role. The deletion waits for them,
+	// then says what it left (knowledge rules 157, 178).
+	what := fmt.Sprintf("organization member %q", m.Spec.Email)
+	apiClient, orgID, targetErr := r.deletionTarget(ctx, m)
+	if targetErr != nil {
+		if !deletionGracePeriodExceeded(m) {
+			return r.fail(ctx, req, m, "CredentialsUnavailable",
+				auraDeletionNeedsCredentials(m, what, m.Status.UserID, targetErr))
+		}
+		r.Recorder.Event(m, corev1.EventTypeWarning, EventReasonAuraMemberOrphaned,
+			auraOrphanedWithoutCredentials(what, m.Status.UserID,
+				fmt.Sprintf("they keep the role %s in the organization", m.Spec.Role), targetErr))
+		return r.releaseFinalizer(ctx, req)
+	}
+	if err := apiClient.DeleteOrgMember(ctx, orgID, m.Status.UserID); err != nil {
+		if aura.IsConflict(err) || aura.IsTransient(err) {
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
+		if !aura.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+	}
+	r.Recorder.Event(m, corev1.EventTypeNormal, EventReasonAuraMemberRemoved,
+		fmt.Sprintf("Removed %q from the organization", m.Spec.Email))
 	return r.releaseFinalizer(ctx, req)
 }
 
+// deletionTarget resolves what removing the member needs: the client, from
+// the credentials, and the organization.
+func (r *AuraOrganizationMemberReconciler) deletionTarget(ctx context.Context, m *neo4jv1beta1.AuraOrganizationMember) (auraMemberAPI, string, error) {
+	creds, err := resolveAuraCredentials(ctx, r.Client, m.Namespace, m.Spec.ProviderConfigRef, m.Spec.CredentialsSecretRef)
+	if err != nil {
+		return nil, "", err
+	}
+	orgID := resolveProviderOrgID(ctx, r.Client, m.Namespace, m.Spec.ProviderConfigRef, m.Spec.OrganizationID)
+	if orgID == "" {
+		return nil, "", fmt.Errorf("organizationId is required (set it on the CR or as defaultOrganizationId on the AuraProviderConfig)")
+	}
+	return resolveMemberClient(r.ClientFactory, creds), orgID, nil
+}
+
 func (r *AuraOrganizationMemberReconciler) releaseFinalizer(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	return ctrl.Result{}, r.patch(ctx, req, func(o *neo4jv1beta1.AuraOrganizationMember) {
-		controllerutil.RemoveFinalizer(o, AuraOrgMemberFinalizer)
-	})
+	// One removal a stale cache or a status write just before cannot turn
+	// into a Conflict, and that an object already gone has done already
+	// (knowledge rule 189).
+	return ctrl.Result{}, removeFinalizerAt(ctx, r.Client, req.NamespacedName, &neo4jv1beta1.AuraOrganizationMember{}, AuraOrgMemberFinalizer)
 }
 
 // setStatusChanged writes the phase, the user ID and the Ready condition, and

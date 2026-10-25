@@ -82,7 +82,8 @@ func TestUserReconcile_AnAlreadyMatchingPasswordIsAnnouncedOnceWhileAGrantFails(
 	updated := eventsWithReason(events, EventReasonUserUpdated)
 	require.Len(t, updated, 1, "announced once, not on every retry of the grant: %q", updated)
 	assert.Contains(t, updated[0], "password already matches spec")
-	assert.Len(t, eventsWithReason(events, EventReasonPasswordRotated), 1)
+	assert.Empty(t, eventsWithReason(events, EventReasonPasswordRotated),
+		"nothing was rotated: the already-matching password is one event, not two")
 	assert.Len(t, eventsWithReason(events, EventReasonUserSyncFailed), 1, "the grant's failure, once")
 	assert.Equal(t, 1, server.alters, "the same ALTER is not sent again on every retry")
 	live := &neo4jv1beta1.Neo4jUser{}
@@ -132,4 +133,35 @@ func TestUserReconcile_ANewUsersPasswordIsAnnouncedOnce(t *testing.T) {
 	assert.Len(t, eventsWithReason(events, EventReasonUserUpdated), 1)
 	assert.Len(t, eventsWithReason(events, EventReasonPasswordRotated), 1)
 	assert.Empty(t, eventsWithReason(events, EventReasonUserReady), "a rotation leaves the user Ready")
+}
+
+// The v1.22.x walk: a Neo4jUser for neo4j, its Secret holding the admin
+// password, announced PasswordRotated and "password already matches spec" at
+// its creation. Neo4j refused the ALTER as unchanged: nothing was rotated, and
+// one event says so.
+func TestUserReconcile_TheAdminUsersPasswordIsAnnouncedOnce(t *testing.T) {
+	server := newFakeAuthServer()
+	server.users["neo4j"] = []string{"admin"}
+	server.alterErr = errPasswordUnchanged
+	user := &neo4jv1beta1.Neo4jUser{
+		ObjectMeta: repeatedWarningsMeta("neo4j", Neo4jUserFinalizer),
+		Spec: neo4jv1beta1.Neo4jUserSpec{ClusterRef: "sa", Username: "neo4j", Roles: []string{"admin"},
+			PasswordSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "alice-pw"}},
+	}
+	c := fake.NewClientBuilder().WithScheme(noEffectTestScheme(t)).
+		WithObjects(user, passwordSecret("the-admin-password"), authTargetStandalone()).
+		WithStatusSubresource(user, &neo4jv1beta1.Neo4jEnterpriseStandalone{}).Build()
+	rec := record.NewFakeRecorder(100)
+	r := &Neo4jUserReconciler{Client: c, Scheme: c.Scheme(), Recorder: rec,
+		newNeo4jClient: func(ResolvedTarget) (userNeo4jClient, error) { return server, nil }}
+
+	reconcileTimes(t, r, client.ObjectKeyFromObject(user), repeatPasses)
+
+	events := drainEvents(rec)
+	rotated := eventsWithReason(events, EventReasonPasswordRotated)
+	updated := eventsWithReason(events, EventReasonUserUpdated)
+	assert.Len(t, append(rotated, updated...), 1, "one password event: %q", events)
+	assert.Len(t, updated, 1)
+	assert.Contains(t, updated[0], "password already matches spec")
+	assert.Len(t, eventsWithReason(events, EventReasonUserReady), 1)
 }

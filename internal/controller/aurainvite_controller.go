@@ -76,19 +76,17 @@ func (r *AuraInviteReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
+	// A deletion resolves the credentials only to call Aura, and waits for
+	// them a bounded time (knowledge rules 157, 178).
+	if !inv.DeletionTimestamp.IsZero() {
+		return r.handleDeletion(ctx, req, inv)
+	}
 	creds, err := resolveAuraCredentials(ctx, r.Client, inv.Namespace, inv.Spec.ProviderConfigRef, inv.Spec.CredentialsSecretRef)
 	if err != nil {
-		if !inv.DeletionTimestamp.IsZero() {
-			return r.releaseFinalizer(ctx, req)
-		}
 		return r.fail(ctx, req, inv, "CredentialsUnavailable", err)
 	}
 	orgID := resolveProviderOrgID(ctx, r.Client, inv.Namespace, inv.Spec.ProviderConfigRef, inv.Spec.OrganizationID)
 	apiClient := resolveMemberClient(r.ClientFactory, creds)
-
-	if !inv.DeletionTimestamp.IsZero() {
-		return r.handleDeletion(ctx, req, inv, apiClient, orgID)
-	}
 	if !controllerutil.ContainsFinalizer(inv, AuraInviteFinalizer) {
 		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraInvite) {
 			controllerutil.AddFinalizer(o, AuraInviteFinalizer)
@@ -289,7 +287,7 @@ func (r *AuraInviteReconciler) observeOrCreate(ctx context.Context, req ctrl.Req
 	return created.ID, false, nil
 }
 
-func (r *AuraInviteReconciler) handleDeletion(ctx context.Context, req ctrl.Request, inv *neo4jv1beta1.AuraInvite, apiClient auraMemberAPI, orgID string) (ctrl.Result, error) {
+func (r *AuraInviteReconciler) handleDeletion(ctx context.Context, req ctrl.Request, inv *neo4jv1beta1.AuraInvite) (ctrl.Result, error) {
 	if !controllerutil.ContainsFinalizer(inv, AuraInviteFinalizer) {
 		return ctrl.Result{}, nil
 	}
@@ -298,28 +296,60 @@ func (r *AuraInviteReconciler) handleDeletion(ctx context.Context, req ctrl.Requ
 		externalID = inv.Status.InviteID
 	}
 	revoke := inv.Spec.DeletionPolicy != "Orphan" && managementAllows(inv.Spec.ManagementPolicies, auraPolicyDelete)
-	if revoke && externalID != "" && orgID != "" {
-		if err := apiClient.DeleteInvite(ctx, orgID, externalID); err != nil {
-			if aura.IsConflict(err) || aura.IsTransient(err) {
-				return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
-			}
-			if !aura.IsNotFound(err) {
-				return ctrl.Result{}, err
-			}
+	if !revoke || externalID == "" {
+		if externalID != "" {
+			r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteOrphaned,
+				fmt.Sprintf("Orphaning invite %s; it stays pending in Aura", externalID))
 		}
-		r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteDeleted,
-			fmt.Sprintf("Revoked invite %s", externalID))
-	} else if externalID != "" {
-		r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteOrphaned,
-			fmt.Sprintf("Orphaning invite %s; it stays pending in Aura", externalID))
+		return r.releaseFinalizer(ctx, req)
 	}
+	// Revoking calls Aura. Credentials or an organization that cannot be
+	// resolved used to release the finalizer at once, without an event, and
+	// the invite stayed pending — anyone holding it could still accept it.
+	// The deletion waits for them, then says what it left (rules 157, 178).
+	apiClient, orgID, targetErr := r.deletionTarget(ctx, inv)
+	if targetErr != nil {
+		if !deletionGracePeriodExceeded(inv) {
+			return r.fail(ctx, req, inv, "CredentialsUnavailable",
+				auraDeletionNeedsCredentials(inv, "invite", externalID, targetErr))
+		}
+		r.Recorder.Event(inv, corev1.EventTypeWarning, EventReasonAuraInviteOrphaned,
+			auraOrphanedWithoutCredentials("invite", externalID,
+				fmt.Sprintf("it stays pending in Aura and %s can still accept it", inv.Spec.Email), targetErr))
+		return r.releaseFinalizer(ctx, req)
+	}
+	if err := apiClient.DeleteInvite(ctx, orgID, externalID); err != nil {
+		if aura.IsConflict(err) || aura.IsTransient(err) {
+			return ctrl.Result{RequeueAfter: r.requeueAfter()}, nil
+		}
+		if !aura.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+	}
+	r.Recorder.Event(inv, corev1.EventTypeNormal, EventReasonAuraInviteDeleted,
+		fmt.Sprintf("Revoked invite %s", externalID))
 	return r.releaseFinalizer(ctx, req)
 }
 
+// deletionTarget resolves what revoking the invite needs: the client, from
+// the credentials, and the organization.
+func (r *AuraInviteReconciler) deletionTarget(ctx context.Context, inv *neo4jv1beta1.AuraInvite) (auraMemberAPI, string, error) {
+	creds, err := resolveAuraCredentials(ctx, r.Client, inv.Namespace, inv.Spec.ProviderConfigRef, inv.Spec.CredentialsSecretRef)
+	if err != nil {
+		return nil, "", err
+	}
+	orgID := resolveProviderOrgID(ctx, r.Client, inv.Namespace, inv.Spec.ProviderConfigRef, inv.Spec.OrganizationID)
+	if orgID == "" {
+		return nil, "", fmt.Errorf("organizationId is required (set it on the CR or as defaultOrganizationId on the AuraProviderConfig)")
+	}
+	return resolveMemberClient(r.ClientFactory, creds), orgID, nil
+}
+
 func (r *AuraInviteReconciler) releaseFinalizer(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	return ctrl.Result{}, r.patch(ctx, req, func(o *neo4jv1beta1.AuraInvite) {
-		controllerutil.RemoveFinalizer(o, AuraInviteFinalizer)
-	})
+	// One removal a stale cache or a status write just before cannot turn
+	// into a Conflict, and that an object already gone has done already
+	// (knowledge rule 189).
+	return ctrl.Result{}, removeFinalizerAt(ctx, r.Client, req.NamespacedName, &neo4jv1beta1.AuraInvite{}, AuraInviteFinalizer)
 }
 
 func (r *AuraInviteReconciler) setExternalID(ctx context.Context, req ctrl.Request, id string) error {

@@ -924,14 +924,11 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	}
 
 	logger.Info("Removing finalizer from cluster", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
-	err := removeFinalizer(ctx, r.Client, cluster, ClusterFinalizer)
-	switch {
-	case errors.IsNotFound(err):
-		// Gone already: a pass that read the cluster before an earlier one
-		// released the finalizer releases it again (#562 re-walk: an ERROR and
-		// a "Reconciler error" on every cluster deletion).
-		logger.V(1).Info("Cluster already deleted; its finalizer was released by an earlier pass")
-	case err != nil:
+	// A cluster already gone — a pass that read it before an earlier one
+	// released the finalizer — is released: removeFinalizer returns nil (#562
+	// re-walk: an ERROR and a "Reconciler error" on every cluster deletion;
+	// knowledge rule 189).
+	if err := removeFinalizer(ctx, r.Client, cluster, ClusterFinalizer); err != nil {
 		logger.Error(err, "Failed to update cluster after removing finalizer", "finalizers", cluster.Finalizers, "deletionTimestamp", cluster.DeletionTimestamp)
 		return ctrl.Result{}, err
 	}

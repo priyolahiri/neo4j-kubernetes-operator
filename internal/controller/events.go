@@ -356,10 +356,13 @@ const (
 	// ConditionReasonClusterUnreachable: the target reads Ready but its Bolt
 	// port could not be reached — the rest of the same restart (id 172).
 	ConditionReasonClusterUnreachable = "ClusterUnreachable"
-	ConditionReasonUserReady          = "UserReady"
-	ConditionReasonRoleReady          = "RoleReady"
-	ConditionReasonPrivilegesSynced   = "PrivilegesMatch"
-	ConditionReasonPrivilegesDrifted  = "PrivilegesDrifted"
+	// ConditionReasonSecretPending: a Neo4jUser's password Secret is not
+	// there yet; a wait, not an outcome of the user (id 189).
+	ConditionReasonSecretPending     = "SecretPending"
+	ConditionReasonUserReady         = "UserReady"
+	ConditionReasonRoleReady         = "RoleReady"
+	ConditionReasonPrivilegesSynced  = "PrivilegesMatch"
+	ConditionReasonPrivilegesDrifted = "PrivilegesDrifted"
 	// ConditionReasonPrivilegesUnattributed: learn mode holds rows it cannot
 	// attribute to a spec statement and so will not revoke (Neo4jRole
 	// status.unattributedPrivileges).
@@ -424,6 +427,11 @@ const (
 	EventReasonAuraMemberRemoved  = "AuraMemberRemoved"
 	EventReasonAuraMemberNotFound = "AuraMemberNotFound"
 	EventReasonAuraMemberFailed   = "AuraMemberFailed"
+	// EventReasonAuraMemberOrphaned: a member's deletion asked to remove them
+	// from Aura and could not, within finalizerDeletionGracePeriod, resolve
+	// the credentials or the organization to; the finalizer is released and
+	// they keep their role (knowledge rules 157, 178).
+	EventReasonAuraMemberOrphaned = "AuraMemberOrphaned"
 	EventReasonAuraInviteCreated  = "AuraInviteCreated"
 	EventReasonAuraInviteAdopted  = "AuraInviteAdopted"
 	EventReasonAuraInviteReady    = "AuraInviteReady"

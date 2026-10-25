@@ -385,9 +385,21 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 		neo4jClient, err = r.createNeo4jClient(ctx, cluster)
 	}
 	if err != nil {
-		logger.Error(err, "Failed to create Neo4j client during deletion")
-		// If we can't connect, assume the database is already gone.
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
+		// A host that exists but cannot be reached — restarting, its Bolt port
+		// not open yet, stopped by a stopCluster restore — still has the
+		// database. Releasing the finalizer here ("assume the database is
+		// already gone") left it, and its data, in Neo4j. The deletion waits,
+		// bounded, as every other cleanup (knowledge rule 178).
+		return deletionCleanup{
+			obj: database, recorder: r.Recorder, reason: EventReasonDeletionFailed,
+			leftBehind: fmt.Sprintf("database %q on %s", database.Spec.Name, targetRefDisplay(database.Spec.ClusterRef)),
+			byHand:     fmt.Sprintf("DROP DATABASE `%s`", neo4j.EscapeBackticks(database.Spec.Name)),
+			record: func(msg string) bool {
+				return r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonDeletionFailed, msg)
+			},
+			release: func() error { return removeFinalizer(ctx, r.Client, database, DatabaseFinalizer) },
+			requeue: r.RequeueAfter,
+		}.blocked(ctx, connectFailedCause(database.Spec.ClusterRef, err))
 	}
 	defer func() {
 		if err := neo4jClient.Close(); err != nil {
@@ -397,7 +409,9 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 
 	// Drop database
 	if err := neo4jClient.DropDatabase(ctx, database.Spec.Name); err != nil {
-		logger.Error(err, "Failed to drop database")
+		// Retried and reported below; a routine outage is not an ERROR (rule
+		// 164).
+		logger.Info("Failed to drop database", "error", err.Error())
 		if classifyFinalizerCleanup(database, err) == retryCleanup {
 			// Retried every RequeueAfter and on every status change of the
 			// host, which a teardown makes often: the Warning came about ten
@@ -411,7 +425,9 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonDeletionFailed,
-			"Failed to drop database; releasing finalizer to avoid wedging deletion: %v", err)
+			"Failed to drop database; releasing finalizer to avoid wedging deletion: %v. Database %q is "+
+				"still in Neo4j; drop it by hand: DROP DATABASE `%s`", err, database.Spec.Name,
+			neo4j.EscapeBackticks(database.Spec.Name))
 		return ctrl.Result{}, removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
 	}
 

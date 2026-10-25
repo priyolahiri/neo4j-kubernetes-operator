@@ -110,7 +110,7 @@ is met on many passes. It is announced once:
 | `DatabaseDeleted` | Normal | Database was dropped |
 | `DatabaseCreatedFromSeed` | Normal | Database created from a seed URI |
 | `CreationFailed` | Warning | Database creation failed; the database is `Failed` and retried with backoff. Once per failure |
-| `DeletionFailed` | Warning | `DROP DATABASE` failed while deleting the `Neo4jDatabase`. The drop is retried (the database is phase `Error` with the failure in `status.message`) until it succeeds or five minutes have passed since the deletion was requested, then the finalizer is released. Once per failure, not on every retry; a second event says when the finalizer is released |
+| `DeletionFailed` | Warning | `DROP DATABASE` failed, or the operator could not connect to the host, while deleting the `Neo4jDatabase`. The drop is retried (the database is phase `Error` with the failure in `status.message`) until it succeeds or five minutes have passed since the deletion was requested, then the finalizer is released. Once per failure, not on every retry; a second event says when the finalizer is released and names the database left in Neo4j with the `DROP DATABASE` that removes it |
 | `DataImported` | Normal | Initial data imported successfully |
 | `DataImportFailed` | Warning | Initial data import failed; retried with backoff. Once per failure |
 | `DataSeeded` | Normal | Database seeded from URI |
@@ -186,34 +186,34 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | Reason | Type | Description |
 |---|---|---|
 | `UserCreated` | Normal | User created in Neo4j |
-| `UserUpdated` | Normal | User updated (or its password recorded as already applied — once, when status first records it, not on every retry of a pass that then fails) |
+| `UserUpdated` | Normal | User updated (or its password recorded as already applied — once, when status first records it, not on every retry of a pass that then fails; then without a `PasswordRotated`, since nothing was rotated, e.g. a `Neo4jUser` for `neo4j` whose Secret holds the admin password) |
 | `UserReady` | Normal | User exists and its roles are in sync. When the user becomes `Ready` — first, or back from a failure of its own — not on a restart of its target: a `Ready` user stays `Ready` (with `ClusterNotReady=True`) while the target is down |
 | `UserDeleted` | Normal | User dropped |
-| `UserDeletionFailed` | Warning | `DROP USER` failed; the user is `Failed` with the error in `status.message`, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes so deletion is not wedged. Once per failure, not on every retry |
-| `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed. Once per failure |
-| `PasswordRotated` | Normal | Password updated from the referenced Secret. Once per Secret version — at a user's creation, and at each change of its Secret — announced by the status write that records it |
+| `UserDeletionFailed` | Warning | `DROP USER` could not run; the user is `Failed` and the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with `deletion waits to remove …` in `status.message`; five minutes after the deletion was requested the finalizer is released with a second event, `Released the finalizer without removing …`, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure, not on every retry |
+| `UserSyncFailed` | Warning | Reconciling the user against Neo4j failed. Once per failure: the user keeps its failure while its target restarts, so the same failure afterwards is not announced again |
+| `PasswordRotated` | Normal | Password updated from the referenced Secret. Once per Secret version — at a user's creation, and at each change of its Secret — announced by the status write that records it. Not when Neo4j already held that password: that is the `UserUpdated` above |
 | `RolesGranted` / `RolesRevoked` | Normal | Roles granted to / revoked from a user, role binding or auth rule |
 | `RolesResolved` | Normal | `spec.roles` names `Neo4jRole` resources by their CR name, and those were granted as the Neo4j roles they manage; the message maps each, as the `RoleNamesResolved` condition does. Once when the mapping appears or changes, not on every reconcile. Emitted by `Neo4jUser` and `Neo4jRoleBinding` |
 | `RolePending` | Warning | Waiting for referenced roles to exist — not built in, not a `Neo4jRole`, not in `SHOW ROLES`; names them (sorted), as the `PendingDependencies` condition does. Once per wait, and again when the set of missing roles changes. Emitted by `Neo4jUser`, `Neo4jRoleBinding` and `Neo4jAuthRule` |
 | `RoleCreated` | Normal | Role created in Neo4j |
 | `RoleReady` | Normal | Role exists and its privileges are in sync. When the role becomes `Ready`, not on a restart of its target |
 | `RoleDeleted` | Normal | Role dropped |
-| `RoleDeletionFailed` | Warning | `DROP ROLE` failed; the role is `Failed` with the error in `status.message`, the drop is retried, and the finalizer is released if it keeps failing for 5 minutes. Once per failure, not on every retry |
-| `RoleSyncFailed` | Warning | Reconciling the role against Neo4j failed. Once per failure |
+| `RoleDeletionFailed` | Warning | `DROP ROLE` could not run; the role is `Failed` and the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with `deletion waits to remove …` in `status.message`; five minutes after the deletion was requested the finalizer is released with a second event, `Released the finalizer without removing …`, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure, not on every retry |
+| `RoleSyncFailed` | Warning | Reconciling the role against Neo4j failed. Once per failure, a target restart included |
 | `PrivilegesApplied` | Normal | Privileges were added to and/or revoked from the role. Only grants that created a privilege row count: learn mode re-grants every statement after an alias change on the cluster or a new image, and grants that change nothing are not reported |
 | `PrivilegesDriftKept` | Warning | A drifting privilege was not revoked (it is immutable, or no `REVOKE` could be derived). Advisory, one per kept privilege |
 | `PrivilegeNamesUnknownDatabase` | Warning | A privilege names a database that does not exist on the cluster and is not an alias for one (it is skipped), or grants graph privileges on a composite database (accepted by Neo4j but inert); see `PrivilegesResolve` on the role |
 | `PrivilegeTargetDropped` | Warning | A `Neo4jDatabase` was dropped while a `Neo4jRole` on the same cluster still grants on it; emitted on both objects |
 | `BindingCreated` / `BindingUpdated` / `BindingDeleted` | Normal | `Neo4jRoleBinding` granted its roles, changed the granted set, or revoked its roles on deletion. `BindingCreated` is not repeated on a restart of the target |
-| `BindingFailed` | Warning | A role binding grant or revoke failed (on deletion: retried, and the finalizer is released if it keeps failing for 5 minutes). Once per failure |
-| `UserNotFound` | Warning | The user a `Neo4jRoleBinding` names does not exist; the binding waits in `Pending`. Once per wait |
+| `BindingFailed` | Warning | A role binding grant or revoke failed. On deletion the revokes are retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with `deletion waits to remove …` in `status.message`; five minutes after the deletion was requested the finalizer is released with a second event, `Released the finalizer without removing …`, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once); the roles still granted are listed. Once per failure |
+| `UserNotFound` | Warning | The user a `Neo4jRoleBinding` names does not exist; the binding waits in `Pending`. Once per wait, a target restart included |
 
 ### Auth Rules
 
 | Reason | Type | Description |
 |---|---|---|
 | `AuthRuleCreated` / `AuthRuleUpdated` / `AuthRuleDeleted` | Normal | `Neo4jAuthRule` created, its condition or enabled flag updated, or the rule dropped |
-| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed (a failed drop on deletion is retried, and the finalizer released if it keeps failing for 5 minutes). Once per failure |
+| `AuthRuleFailed` | Warning | Creating, updating or dropping the auth rule failed. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with `deletion waits to remove …` in `status.message`; five minutes after the deletion was requested the finalizer is released with a second event, `Released the finalizer without removing …`, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure |
 | `AuthRuleVersionTooOld` | Warning | Auth rules need Neo4j 2026.03 or later on the referenced cluster. Once per failure |
 | `OIDCProviderNotConfigured` | Warning | The referenced cluster's `spec.config` lists no OIDC provider for attribute-based access control; the rule stays `Pending`. Once per wait |
 
@@ -224,7 +224,7 @@ Emitted on `Neo4jUser`, `Neo4jRole` and `Neo4jRoleBinding` objects.
 | `ReplicationSourceCaveat` | Normal / Warning | On a `Neo4jBackup` with `mode: replication-source`: Normal when the pull URI is published (with the reminder that bucket lifecycle rules can break the chain); Warning when the storage type (e.g. `pvc`) has no cross-cluster URI form (advisory) |
 | `ReplicaCreated` | Normal | Replica database created |
 | `ReplicaReady` | Normal | Replica database is online: once when it becomes `Replicating`, not again after a restart of its downstream target (a `Replicating` replica stays `Replicating`, with the condition `ClusterNotReady=True`, while the target is away) |
-| `ReplicaFailed` | Warning | Creating the replica (or dropping it on deletion) failed. Once per failure |
+| `ReplicaFailed` | Warning | Creating the replica, or dropping it on deletion, failed. On deletion the drop is retried, and a database type that cannot be read is never taken for a promoted database; A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with `deletion waits to remove …` in `status.message`; five minutes after the deletion was requested the finalizer is released with a second event, `Released the finalizer without removing …`, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once). Once per failure |
 | `ReplicaObjectStoreEnvMissing` | Warning | A backup-mode replica's downstream servers have no `AWS_REGION` (or `AWS_DEFAULT_REGION`) in any source of their environment, so Neo4j could not read the `s3://` seed or pulls. The replica waits in `Pending` — nothing is asked of Neo4j yet — and is created by itself, within two minutes, once the servers have it. Once per wait. (Before: `ReplicaFailed`, phase `Failed`) |
 | `ReplicaDropped` | Normal | Replica database dropped on CR deletion |
 | `ReplicaVersionTooOld` | Warning | The downstream cluster predates Neo4j 2026.08; phase `Failed`. Once per failure |
@@ -243,7 +243,7 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 |---|---|---|
 | `CompositeDatabaseCreated` | Normal | Composite database created |
 | `CompositeDatabaseReady` | Normal | Composite database is ready, with its observed constituent count. Once when it becomes `Ready`, not again after a restart of its target (a `Ready` composite stays `Ready`, with the condition `ClusterNotReady=True`, while the target is away) |
-| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed. Once per failure. On deletion, a drop Neo4j refuses is retried for 5 minutes, then a second `CompositeDatabaseFailed` says the finalizer is released and the composite left in Neo4j |
+| `CompositeDatabaseFailed` | Warning | Reconciling the composite database failed. Once per failure. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with `deletion waits to remove …` in `status.message`; five minutes after the deletion was requested the finalizer is released with a second event, `Released the finalizer without removing …`, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once) |
 | `CompositeDatabaseDropped` | Normal | Composite dropped (constituent aliases removed; their target databases kept) |
 | `CompositeConstituentAdded` | Normal | A constituent alias now resolves to its target |
 | `CompositeConstituentRetargeted` | Normal | A constituent alias was re-pointed to a different target |
@@ -253,7 +253,7 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 | `AliasRetargeted` | Normal | Alias re-pointed to a different target database |
 | `AliasReady` | Normal | Alias resolves to its target. Once when it becomes `Ready`, not again after a restart of its target (a `Ready` alias stays `Ready`, with the condition `ClusterNotReady=True`, while the target is away) |
 | `AliasDropped` | Normal | Alias dropped |
-| `AliasFailed` | Warning | Reconciling or dropping the alias failed. Once per failure |
+| `AliasFailed` | Warning | Reconciling or dropping the alias failed. Once per failure. On deletion the drop is retried. A deletion that cannot run — the target not Ready, refusing the connection, its admin Secret unreadable, or Neo4j refusing the statement — waits with `deletion waits to remove …` in `status.message`; five minutes after the deletion was requested the finalizer is released with a second event, `Released the finalizer without removing …`, naming what is left in Neo4j and the statement that removes it (a target whose CR is gone releases at once) |
 
 ### Aura Orchestration
 
@@ -281,9 +281,10 @@ Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, 
 | `AuraDatabaseRestoreFailed` | Warning | Per-database restore failed. Once per failure |
 | `AuraMemberRoleUpdated`, `AuraMemberReady`, `AuraMemberRemoved` | Normal | Organization/project member role set or member added/removed, reconciled (`AuraMemberReady` once when the membership becomes Ready), or removed on CR deletion |
 | `AuraMemberNotFound` | Warning | The person is not an organization member; invite them with an `AuraInvite`. Once per wait |
-| `AuraMemberFailed` | Warning | Member reconcile failed. Once per failure |
-| `AuraInviteCreated`, `AuraInviteAdopted`, `AuraInviteReady`, `AuraInviteDeleted`, `AuraInviteOrphaned` | Normal | Lifecycle of the invite (`AuraInviteReady` names the invite's state, once per state: sent, accepted, declined, expired, revoked) |
-| `AuraInviteFailed` | Warning | Invite reconcile failed. Once per failure |
+| `AuraMemberFailed` | Warning | Member reconcile failed, or a `deletionPolicy: Delete` deletion waits for credentials it cannot read (`CredentialsUnavailable`). Once per failure |
+| `AuraMemberOrphaned` | Normal | A member's deletion left them in the organization or project (`deletionPolicy: Orphan`). A Warning when `deletionPolicy: Delete` could not run because the Aura credentials, organization or project stayed unavailable for 5 minutes after deletion was requested: the person keeps their role, so remove them in the Aura console |
+| `AuraInviteCreated`, `AuraInviteAdopted`, `AuraInviteReady`, `AuraInviteDeleted`, `AuraInviteOrphaned` | Normal | Lifecycle of the invite (`AuraInviteReady` names the invite's state, once per state: sent, accepted, declined, expired, revoked). `AuraInviteOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials or organization stayed unavailable for 5 minutes after deletion was requested: the invite stays pending and can still be accepted, so revoke it in the Aura console |
+| `AuraInviteFailed` | Warning | Invite reconcile failed, or a `deletionPolicy: Delete` deletion waits for credentials it cannot read (`CredentialsUnavailable`). Once per failure |
 
 ## Using Events in Alerting
 

@@ -72,11 +72,11 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 | Create | `GRANT ROLE r TO username` for each role in `.spec.roles` (skipping built-ins not yet listed in current grants is fine; PUBLIC is always skipped) |
 | Update (`.spec.roles` changes) | `GRANT` for additions; `REVOKE` for removals from `.spec.roles` *and* roles previously listed in `status.grantedRoles` |
 | Update (`enforceExclusive: true`) | Same as above + revoke any extra roles on the user that are not in `.spec.roles` |
-| Delete (`Revoke` policy) | `REVOKE ROLE r FROM username` for each role in `status.grantedRoles`, then remove finalizer. A failed revoke is recorded in status (phase `Failed`, reason `BindingFailed`), announced once, and retried for up to 5 minutes before the finalizer is released anyway |
+| Delete (`Revoke` policy) | `REVOKE ROLE r FROM username` for each role in `status.grantedRoles`, then remove finalizer; with nothing in `status.grantedRoles`, the finalizer is released at once. A failed revoke is recorded in status (phase `Failed`, reason `BindingFailed`, message `deletion waits to remove …`), announced once, and retried; a revoke that cannot run waits too: the target not `Ready`, refusing the connection, its admin Secret unreadable. Five minutes after the deletion was requested the finalizer is released with one Warning naming what is left in Neo4j and the statement that removes it; a target whose CR is gone releases at once (knowledge rule 178). The Warning lists the roles still granted |
 | Delete (`Retain` policy) | Remove finalizer only |
 | User absent | No-op; `UserNotFound` condition; reconcile every 30s until the user appears |
 | Cluster not found | `spec.clusterRef` names no cluster or standalone yet: phase `Pending`, Ready reason `ClusterNotFound`, one `ClusterNotFound` Warning; it carries on once the deployment exists, so it can be applied with its cluster in any order. Not a validation failure |
-| Cluster not Ready | No-op; `ClusterNotReady` condition; reconcile every 30s. A `Ready` binding stays `Ready` (a target restart announces nothing); any other waits in `Pending`. So does a target that reads `Ready` but refuses the connection (`ClusterUnreachable`, logged at info), for up to 5 minutes |
+| Cluster not Ready | No-op; `ClusterNotReady` condition; reconcile every 30s. A `Ready` binding stays `Ready` (a target restart announces nothing), and one that failed at its generation keeps its failure (`BindingFailed`, `UserNotFound` is not announced again for the same cause after the restart); a new or changed one waits in `Pending`. So does a target that reads `Ready` but refuses the connection (`ClusterUnreachable`, logged at info), for up to 5 minutes |
 | Missing custom role | Skip the grant for that role; `PendingDependencies` condition; the binding controller watches `Neo4jRole` and re-reconciles when one lands, and every 30s for a role created in Neo4j directly |
 
 ## Examples
@@ -150,7 +150,7 @@ Apply order doesn't matter — the binding waits in `PendingDependencies` until 
 
 **Bound roles are revoked unexpectedly**: check whether `enforceExclusive: true` is set. With exclusive mode, any role not in `.spec.roles` is revoked on every reconcile, even if added by a different process.
 
-**Cannot delete the CR — finalizer hangs**: the controller is trying to revoke roles but cannot reach the cluster. Check the cluster's Ready phase; if the cluster is permanently gone, edit the CR to set `deletionPolicy: Retain` (or remove the finalizer manually only as a last resort).
+**The CR stays `Terminating`**: the controller is waiting to revoke the roles it granted while the cluster is not Ready or cannot be reached (`status.message` starts `deletion waits to remove`). It waits at most 5 minutes from the deletion, then releases the finalizer and names, in a `BindingFailed` Warning, the roles still granted and the `REVOKE ROLE` to run. To give up at once, set `deletionPolicy: Retain` (the grants stay in Neo4j).
 
 ## See also
 

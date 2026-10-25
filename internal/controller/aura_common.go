@@ -545,9 +545,5 @@ func auraOrphanedWithoutCredentials(what, externalID, remains string, cause erro
 // auraDeletionDeadline is when a deletion that cannot resolve its credentials
 // stops waiting for them (finalizerDeletionGracePeriod after it was requested).
 func auraDeletionDeadline(obj client.Object) time.Time {
-	ts := obj.GetDeletionTimestamp()
-	if ts == nil {
-		return time.Now().Add(finalizerDeletionGracePeriod)
-	}
-	return ts.Add(finalizerDeletionGracePeriod)
+	return deletionDeadline(obj)
 }

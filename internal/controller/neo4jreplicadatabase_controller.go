@@ -54,6 +54,7 @@ type replicaNeo4jClient interface {
 	GetDatabaseInfo(ctx context.Context, databaseName string) (*neo4jclient.DatabaseInfo, error)
 	CreateReplicaDatabaseFromBackup(ctx context.Context, databaseName string, src neo4jclient.ReplicaBackupSource) error
 	CreateReplicaDatabaseFromNetwork(ctx context.Context, databaseName string, src neo4jclient.ReplicaNetworkSource) error
+	DropDatabase(ctx context.Context, databaseName string) error
 	Close() error
 }
 
@@ -476,7 +477,6 @@ func (r *Neo4jReplicaDatabaseReconciler) markPromoted(
 // handleDeletion drops the replica — unless it has been promoted, in which
 // case it must NOT.
 func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, dbName string) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	// Whatever happens to the database below, this replica is going away:
 	// stop publishing its lag.
 	metrics.DeleteReplicaLagTransactions(replica.Namespace, replica.Name)
@@ -511,24 +511,38 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 	if !target.Found {
 		return releaseOnly()
 	}
+	// The replica still holds the upstream's data and keeps pulling it, so a
+	// deletion that cannot drop it waits, bounded, as every other cleanup. A
+	// target that was not Ready made it wait for ever; a connection, a type
+	// read or a drop that failed released the finalizer at once (knowledge
+	// rule 178).
+	cleanup := deletionCleanup{
+		obj: replica, recorder: r.Recorder, reason: EventReasonReplicaFailed,
+		leftBehind: fmt.Sprintf("replica database %q on %s", dbName, targetRefDisplay(replica.Spec.ClusterRef)),
+		byHand:     fmt.Sprintf("DROP DATABASE `%s`", neo4jclient.EscapeBackticks(dbName)),
+		record: func(msg string) bool {
+			return r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse,
+				EventReasonReplicaFailed, msg, nil)
+		},
+		release: func() error { _, err := releaseOnly(); return err }, requeue: requeue,
+	}
 	if !target.IsReady() {
-		return ctrl.Result{RequeueAfter: requeue}, nil
+		return cleanup.blocked(ctx, targetDownCause(replica.Spec.ClusterRef))
 	}
 
-	nc, err := target.NewClient(r.Client)
+	nc, err := r.neo4jClientFor(target)
 	if err != nil {
-		logger.Error(err, "cannot connect during replica deletion; releasing finalizer")
-		return releaseOnly()
+		return cleanup.blocked(ctx, connectFailedCause(replica.Spec.ClusterRef, err))
 	}
 	defer func() { _ = nc.Close() }()
 
 	// Re-check live state before dropping. Status could be stale — this is the
 	// same guard as the reconcile path, and it is the one that matters most:
-	// dropping here is unrecoverable.
+	// dropping here is unrecoverable. A read that fails is not a "no": the
+	// type is unknown, so nothing is dropped and the deletion waits.
 	info, err := nc.GetDatabaseInfo(ctx, dbName)
 	if err != nil {
-		logger.Error(err, "cannot read database type during deletion; releasing finalizer without dropping")
-		return releaseOnly()
+		return cleanup.blocked(ctx, statementFailedCause(replica.Spec.ClusterRef, "reading the database's type", err))
 	}
 	if info == nil {
 		return releaseOnly()
@@ -541,9 +555,7 @@ func (r *Neo4jReplicaDatabaseReconciler) handleDeletion(ctx context.Context, rep
 	}
 
 	if err := nc.DropDatabase(ctx, dbName); err != nil {
-		r.Recorder.Eventf(replica, corev1.EventTypeWarning, EventReasonReplicaFailed,
-			"DROP DATABASE %q failed; releasing finalizer to avoid wedging deletion: %v", dbName, err)
-		return releaseOnly()
+		return cleanup.blocked(ctx, statementFailedCause(replica.Spec.ClusterRef, "DROP DATABASE", err))
 	}
 
 	r.Recorder.Eventf(replica, corev1.EventTypeNormal, EventReasonReplicaDropped,

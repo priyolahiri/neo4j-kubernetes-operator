@@ -245,6 +245,10 @@ func TestRecordTargetWait(t *testing.T) {
 		return []metav1.Condition{{Type: ConditionTypeReady, Status: metav1.ConditionTrue, Reason: "UserReady",
 			ObservedGeneration: observed, Message: "in sync"}}
 	}
+	failed := func(observed int64) []metav1.Condition {
+		return []metav1.Condition{{Type: ConditionTypeReady, Status: metav1.ConditionFalse, Reason: EventReasonUserSyncFailed,
+			ObservedGeneration: observed, Message: "in sync"}}
+	}
 	for _, tc := range []struct {
 		name      string
 		phase     string
@@ -255,6 +259,10 @@ func TestRecordTargetWait(t *testing.T) {
 		{"a Ready object stays Ready", "Ready", ready(gen), "Ready"},
 		{"a spec change not yet applied waits", "Ready", ready(gen - 1), "Pending"},
 		{"a failed object waits", "Failed", nil, "Pending"},
+		// #573: the failure is the object's own; a target restart does not
+		// end it, and the same failure met again is not a new one (id 189).
+		{"a failure at its generation is kept", "Failed", failed(gen), "Failed"},
+		{"a failure at an earlier generation waits", "Failed", failed(gen - 1), "Pending"},
 	} {
 		for _, reason := range []string{ConditionReasonClusterNotReady, ConditionReasonClusterUnreachable} {
 			t.Run(tc.name+"/"+reason, func(t *testing.T) {
@@ -268,10 +276,14 @@ func TestRecordTargetWait(t *testing.T) {
 				assert.Equal(t, reason, cnr.Reason)
 				readyCond := meta.FindStatusCondition(conds, ConditionTypeReady)
 				require.NotNil(t, readyCond)
-				if tc.wantPhase == "Ready" {
+				switch tc.wantPhase {
+				case "Ready":
 					assert.Equal(t, metav1.ConditionTrue, readyCond.Status)
 					assert.Equal(t, "in sync", message)
-				} else {
+				case "Failed":
+					assert.Equal(t, EventReasonUserSyncFailed, readyCond.Reason)
+					assert.Equal(t, "in sync", message, "the failure's message is kept")
+				default:
 					assert.Equal(t, reason, readyCond.Reason)
 					assert.Equal(t, `clusterRef "sa" is not Ready`, message)
 				}
@@ -296,4 +308,55 @@ func TestRecordTargetWait(t *testing.T) {
 	conds = since(ConditionReasonClusterNotReady, targetUnreachableGrace+time.Minute)
 	assert.False(t, recordTargetWait(&conds, &phase, &message, gen, ConditionReasonClusterUnreachable, "unreachable", time.Now()),
 		"a not-Ready target that now reads Ready but refuses starts a new wait")
+}
+
+// The v1.22.x walk: an auth rule its Ready target refuses — the OIDC provider
+// not listed, a version older than 2026.03 — kept ClusterNotReady=True from the
+// last restart, since the refusal returned before the write that follows the
+// connection. The refusal is read from the target's spec and waits on nothing;
+// ClusterNotReady reads False once the target is Ready (knowledge rule 158).
+func TestAuthRuleReconcile_ARefusalOfAReadyTargetIsNotATargetWait(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		name   string
+		target func() *neo4jv1beta1.Neo4jEnterpriseStandalone
+		reason string
+	}{
+		{"no OIDC provider", authTargetStandalone, EventReasonOIDCProviderNotConfigured},
+		{"a version older than 2026.03", func() *neo4jv1beta1.Neo4jEnterpriseStandalone {
+			sa := unreachableTarget()
+			sa.Spec.Image.Tag = "2026.01.0-enterprise"
+			return sa
+		}, EventReasonAuthRuleVersionTooOld},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := &neo4jv1beta1.Neo4jAuthRule{
+				ObjectMeta: repeatedWarningsMeta("rule", Neo4jAuthRuleFinalizer),
+				Spec:       neo4jv1beta1.Neo4jAuthRuleSpec{ClusterRef: "sa", Name: "rule", Condition: "true"},
+			}
+			c := fake.NewClientBuilder().WithScheme(noEffectTestScheme(t)).WithObjects(rule.DeepCopy(), tc.target()).
+				WithStatusSubresource(rule, &neo4jv1beta1.Neo4jEnterpriseStandalone{}).Build()
+			r := &Neo4jAuthRuleReconciler{Client: c, Scheme: c.Scheme(), Recorder: record.NewFakeRecorder(20)}
+			key := client.ObjectKeyFromObject(rule)
+			live := func() *neo4jv1beta1.Neo4jAuthRule {
+				t.Helper()
+				got := &neo4jv1beta1.Neo4jAuthRule{}
+				require.NoError(t, c.Get(ctx, key, got))
+				return got
+			}
+
+			setStandaloneReady(t, c, false)
+			reconcileTimes(t, r, key, 1)
+			require.True(t, meta.IsStatusConditionTrue(live().Status.Conditions, ConditionTypeClusterNotReady))
+
+			setStandaloneReady(t, c, true)
+			reconcileTimes(t, r, key, 1)
+			got := live()
+			assert.True(t, meta.IsStatusConditionFalse(got.Status.Conditions, ConditionTypeClusterNotReady),
+				"the target is Ready; the rule waits on its own refusal, not on the target")
+			ready := meta.FindStatusCondition(got.Status.Conditions, ConditionTypeReady)
+			require.NotNil(t, ready)
+			assert.Equal(t, tc.reason, ready.Reason)
+		})
+	}
 }

@@ -55,7 +55,7 @@ Before applying a `Neo4jAuthRule`:
 | `RolesSynced` | Granted roles match `spec.grantedRoles`. |
 | `OIDCProviderConfigured` | Cluster has `dbms.security.abac.authorization_providers` set. |
 | `AuthRuleVersionTooOld` | Cluster version is below 2026.03; reconcile is paused. |
-| `ClusterNotReady` | Cluster has not reached its `Ready` phase (reason `ClusterNotReady`), or reads `Ready` but refuses the connection (reason `ClusterUnreachable`; a `ConnectionFailed` failure only after 5 minutes). A rule that is `Ready` keeps phase `Ready` meanwhile (a restart); any other waits in `Pending`. |
+| `ClusterNotReady` | Cluster has not reached its `Ready` phase (reason `ClusterNotReady`), or reads `Ready` but refuses the connection (reason `ClusterUnreachable`; a `ConnectionFailed` failure only after 5 minutes). A rule that is `Ready` keeps phase `Ready` meanwhile (a restart), and one that failed or waits on something of its own at its generation keeps that status (not announced again for the same cause); a new or changed one waits in `Pending`. A rule its `Ready` target's version or `spec.config` refuses (`AuthRuleVersionTooOld`, `OIDCProviderConfigured=False`) reads `False` here: it waits on the refusal, not on the target. |
 | `PendingDependencies` | One or more `grantedRoles` do not yet exist. |
 
 A `clusterRef` that names no cluster or standalone yet is a wait, not a validation failure: phase `Pending`, Ready reason `ClusterNotFound`, one `ClusterNotFound` Warning, and the rule is applied once the deployment exists.
@@ -165,7 +165,7 @@ Set `enforceRoles: false` to disable the revoke step (additions still happen) �
 
 - **Create**: the controller adds the `neo4j.com/authrule-finalizer`, runs `CREATE OR REPLACE AUTH RULE`, then grants `spec.grantedRoles`.
 - **Update**: edits to `spec` trigger drift reconciliation as described above.
-- **Delete (`Drop`, default)**: `DROP AUTH RULE … IF EXISTS` on the cluster, finalizer released. If the cluster is gone or downgraded below 2026.03, the finalizer is released without remote action. A failed drop is recorded in status (phase `Failed`, reason `AuthRuleFailed`), announced once, and retried for up to 5 minutes before the finalizer is released anyway.
+- **Delete (`Drop`, default)**: `DROP AUTH RULE … IF EXISTS` on the cluster, finalizer released. If the cluster is gone or downgraded below 2026.03, the finalizer is released without remote action. A failed drop is recorded in status (phase `Failed`, reason `AuthRuleFailed`, message `deletion waits to remove …`), announced once, and retried; a drop that cannot run waits too: the target not `Ready`, refusing the connection, its admin Secret unreadable. Five minutes after the deletion was requested the finalizer is released with one Warning naming what is left in Neo4j and the statement that removes it; a target whose CR is gone releases at once (knowledge rule 178). A target that was not Ready used to release the finalizer at once and leave the rule granting its roles.
 - **Delete (`Retain`)**: finalizer released; rule left in Neo4j.
 
 ## Limitations

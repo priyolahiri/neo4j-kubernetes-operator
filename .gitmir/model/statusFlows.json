@@ -678,7 +678,7 @@
       {
         "key": "pending",
         "name": "Pending",
-        "description": "status.phase=Pending — set on a missing target, a target that is not Ready or reads Ready but cannot be reached when the user is not yet Ready at its generation, a not-yet-applied password Secret, or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
+        "description": "status.phase=Pending — set on a missing target; on a target that is not Ready, or reads Ready but cannot be reached, when the user has no outcome of its own at its generation (new, or a spec change not yet applied); a not-yet-applied password Secret (SecretPending); or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
       },
       {
         "key": "failed",
@@ -698,12 +698,12 @@
       {
         "key": "deletion-failed",
         "name": "DeletionFailed",
-        "description": "DROP USER failed but was classified retryable (classifyFinalizerCleanup); status.phase=Failed with Ready reason UserDeletionFailed, announced once, and the reconcile requeues and retries instead of releasing the finalizer."
+        "description": "DROP USER cannot run — the target not Ready or not accepting connections, its admin Secret unreadable, or Neo4j refusing the drop; status.phase=Failed with Ready reason UserDeletionFailed and 'deletion waits to remove …' in status.message, announced once, and the reconcile requeues and retries instead of releasing the finalizer (deletionCleanup; operations.md id 178)."
       },
       {
         "key": "removed",
         "name": "Removed",
-        "description": "The finalizer is released and the Neo4jUser CR is deleted from the API server — after a successful DROP USER, a Retain deletionPolicy, a missing cluster target, or a non-retryable cleanup failure."
+        "description": "The finalizer is released and the Neo4jUser CR is deleted from the API server — after a successful DROP USER, a Retain deletionPolicy, a missing cluster target, or the end of finalizerDeletionGracePeriod (with a Warning naming the user left in Neo4j)."
       }
     ],
     "transitions": [
@@ -805,7 +805,7 @@
       {
         "from": "deleting",
         "to": "deletion-failed",
-        "label": "UserDeletionFailed (retryable) — DROP USER failed, will retry"
+        "label": "UserDeletionFailed — the target is not Ready, refuses the connection, or DROP USER fails; deletion waits (id 178)"
       },
       {
         "from": "deletion-failed",
@@ -820,12 +820,17 @@
       {
         "from": "deletion-failed",
         "to": "removed",
-        "label": "UserDeletionFailed (non-retryable) — cleanup gives up, finalizer released to avoid wedging deletion"
+        "label": "UserDeletionFailed — finalizerDeletionGracePeriod has passed; finalizer released with a Warning naming the user left in Neo4j and the DROP USER that removes it"
       },
       {
         "from": "ready",
         "to": "failed",
         "label": "ConnectionFailed — the target has been unreachable for more than 5 minutes (id 172)"
+      },
+      {
+        "from": "failed",
+        "to": "failed",
+        "label": "ClusterNotReady / ClusterUnreachable (ConditionTypeClusterNotReady=True) — the target restarts; a user Failed at its generation keeps its failure, and the same failure afterwards announces nothing (#573; id 189)"
       }
     ]
   },

@@ -277,9 +277,10 @@ func (r *AuraDatabaseReconciler) handleDeletion(
 		r.Recorder.Event(d, corev1.EventTypeNormal, EventReasonAuraDatabaseOrphaned,
 			fmt.Sprintf("Orphaning database %s; it stays in place in Aura", externalID))
 	}
-	return ctrl.Result{}, r.patch(ctx, req, func(o *neo4jv1beta1.AuraDatabase) {
-		controllerutil.RemoveFinalizer(o, AuraDatabaseFinalizer)
-	})
+	// One removal a stale cache or a status write just before cannot turn
+	// into a Conflict, and that an object already gone has done already
+	// (knowledge rule 189).
+	return ctrl.Result{}, removeFinalizerAt(ctx, r.Client, req.NamespacedName, &neo4jv1beta1.AuraDatabase{}, AuraDatabaseFinalizer)
 }
 
 func (r *AuraDatabaseReconciler) setExternalID(ctx context.Context, req ctrl.Request, id string) error {

@@ -43,17 +43,21 @@ const targetUnreachableGrace = 5 * time.Minute
 // clusterRef target cannot serve it: the ClusterNotReady condition with reason
 // (ClusterNotReady: the target is not Ready; ClusterUnreachable: it reads Ready
 // but cannot be reached), and phase Pending with a Ready condition False for
-// that reason — unless the object is already Ready at its generation, which it
-// stays.
+// that reason — unless the object's status already records an outcome of its
+// own for its generation, which it keeps (settledAtGeneration).
 //
 // What such an object reports — a user, a role, a grant, a database, an alias —
 // lives in the target and does not change while the target restarts, and the
 // target announces its own state. Demoting a Ready object to Pending for the
 // restart made the pass that found the target back a transition into Ready, so
 // every restart of a standalone was a UserReady (RoleReady, BindingCreated)
-// event: 28 UserReady in 40 minutes of restarts on the v1.22.0 re-walk. An
-// object not yet Ready at its generation — a new one, one whose spec changed,
-// one that failed — still waits in Pending (knowledge rules 158 and 183).
+// event: 28 UserReady in 40 minutes of restarts on the v1.22.0 re-walk
+// (knowledge rule 158). A Failed one was demoted the same way, so the pass
+// that met the same failure again was a transition back into Failed: a
+// UserSyncFailed after every standalone restart (#573), and a binding's
+// UserNotFound likewise (knowledge rule 189). An object with no outcome at its
+// generation — a new one, one whose spec changed, one already waiting on its
+// target — still waits in Pending (knowledge rule 183).
 //
 // It reports lasting when the target has been unreachable for longer than
 // targetUnreachableGrace, measured from the condition's LastTransitionTime; it
@@ -61,9 +65,11 @@ const targetUnreachableGrace = 5 * time.Minute
 func recordTargetWait(conditions *[]metav1.Condition, phase, message *string, generation int64,
 	reason, msg string, now time.Time,
 ) (lasting bool) {
-	lasting, keepsReady := noteTargetWait(conditions, *phase, generation, neo4jv1beta1.PhaseReady, reason, msg, now)
-	if lasting || keepsReady {
-		return lasting
+	if lasting, _ = noteTargetWait(conditions, *phase, generation, neo4jv1beta1.PhaseReady, reason, msg, now); lasting {
+		return true
+	}
+	if settledAtGeneration(*phase, *conditions, generation) {
+		return false
 	}
 	SetReadyCondition(conditions, generation, metav1.ConditionFalse, reason, msg)
 	*phase = neo4jv1beta1.PhasePending
@@ -104,6 +110,33 @@ func targetAnswered(conditions *[]metav1.Condition, generation int64) bool {
 		return false
 	}
 	SetNamedCondition(conditions, ConditionTypeClusterNotReady, generation, metav1.ConditionFalse, "ClusterReady", "")
+	return true
+}
+
+// settledAtGeneration reports whether the persisted status records an outcome
+// of the object's own for its current generation, which a target restart does
+// not change: Ready at this generation (readyAtGeneration), or a Ready
+// condition the phase writers stamped at this generation for a cause of the
+// object's own — a failure (UserSyncFailed, a refused grant, a lasting
+// ConnectionFailed) or a wait on something other than the target (a binding's
+// UserNotFound, roles pending). A wait on the target itself (ClusterNotReady,
+// ClusterUnreachable, ClusterNotFound), and the password Secret wait that runs
+// before the target is looked at, are not outcomes.
+func settledAtGeneration(phase string, conditions []metav1.Condition, generation int64) bool {
+	if readyAtGeneration(neo4jv1beta1.PhaseReady, phase, conditions, generation) {
+		return true
+	}
+	if phase == "" || phase == "Ready" {
+		return false
+	}
+	ready := findCondition(conditions, ConditionTypeReady)
+	if ready == nil || ready.Status != metav1.ConditionFalse || ready.ObservedGeneration != generation {
+		return false
+	}
+	switch ready.Reason {
+	case ConditionReasonClusterNotReady, ConditionReasonClusterUnreachable, EventReasonClusterNotFound, ConditionReasonSecretPending:
+		return false
+	}
 	return true
 }
 

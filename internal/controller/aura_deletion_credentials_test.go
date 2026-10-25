@@ -120,6 +120,68 @@ func auraDeletionCases() []auraDeletionCase {
 					func() bool { return api.deleteCalled }
 			},
 		},
+		// The invite and the members released their finalizer at once, and
+		// without an event, when the credentials could not be resolved: a
+		// pending invite stayed acceptable, a member kept their role (knowledge
+		// rule 178).
+		{
+			name: "AuraInvite", finalizer: AuraInviteFinalizer,
+			orphaned: EventReasonAuraInviteOrphaned, failed: EventReasonAuraInviteFailed,
+			obj: func(policy string, at time.Time) client.Object {
+				inv := &neo4jv1beta1.AuraInvite{
+					ObjectMeta: metav1.ObjectMeta{Name: "inv-gone-creds", Namespace: testNS,
+						Annotations: map[string]string{AuraExternalInviteAnnotation: "inv-1"}},
+					Spec: neo4jv1beta1.AuraInviteSpec{CredentialsSecretRef: missingCreds("gone"), OrganizationID: "org-1",
+						Email: "eve@example.com", DeletionPolicy: policy},
+				}
+				terminatingSince(inv, AuraInviteFinalizer, at)
+				return inv
+			},
+			newReconciler: func(c client.Client, rec record.EventRecorder) (reconcile.Reconciler, func() bool) {
+				api := &fakeMemberAPI{}
+				return &AuraInviteReconciler{Client: c, Scheme: c.Scheme(), Recorder: rec, ClientFactory: memberFactory(api)},
+					func() bool { return api.deleteInvite }
+			},
+		},
+		{
+			name: "AuraOrganizationMember", finalizer: AuraOrgMemberFinalizer,
+			orphaned: EventReasonAuraMemberOrphaned, failed: EventReasonAuraMemberFailed,
+			obj: func(policy string, at time.Time) client.Object {
+				m := &neo4jv1beta1.AuraOrganizationMember{
+					ObjectMeta: metav1.ObjectMeta{Name: "org-member-gone-creds", Namespace: testNS},
+					Spec: neo4jv1beta1.AuraOrganizationMemberSpec{CredentialsSecretRef: missingCreds("gone"),
+						OrganizationID: "org-1", Email: "eve@example.com", Role: "organization-admin", DeletionPolicy: policy},
+					Status: neo4jv1beta1.AuraOrganizationMemberStatus{UserID: "user-1"},
+				}
+				terminatingSince(m, AuraOrgMemberFinalizer, at)
+				return m
+			},
+			newReconciler: func(c client.Client, rec record.EventRecorder) (reconcile.Reconciler, func() bool) {
+				api := &fakeMemberAPI{}
+				return &AuraOrganizationMemberReconciler{Client: c, Scheme: c.Scheme(), Recorder: rec, ClientFactory: memberFactory(api)},
+					func() bool { return api.deleteOrgMember }
+			},
+		},
+		{
+			name: "AuraProjectMember", finalizer: AuraProjectMemberFinalizer,
+			orphaned: EventReasonAuraMemberOrphaned, failed: EventReasonAuraMemberFailed,
+			obj: func(policy string, at time.Time) client.Object {
+				m := &neo4jv1beta1.AuraProjectMember{
+					ObjectMeta: metav1.ObjectMeta{Name: "project-member-gone-creds", Namespace: testNS},
+					Spec: neo4jv1beta1.AuraProjectMemberSpec{CredentialsSecretRef: missingCreds("gone"),
+						OrganizationID: "org-1", ProjectID: "proj-1", Email: "eve@example.com", Role: "project-admin",
+						DeletionPolicy: policy},
+					Status: neo4jv1beta1.AuraProjectMemberStatus{UserID: "user-1"},
+				}
+				terminatingSince(m, AuraProjectMemberFinalizer, at)
+				return m
+			},
+			newReconciler: func(c client.Client, rec record.EventRecorder) (reconcile.Reconciler, func() bool) {
+				api := &fakeMemberAPI{}
+				return &AuraProjectMemberReconciler{Client: c, Scheme: c.Scheme(), Recorder: rec, ClientFactory: memberFactory(api)},
+					func() bool { return api.deleteProjMember }
+			},
+		},
 	}
 }
 
@@ -229,7 +291,47 @@ func auraStatusOf(t *testing.T, o client.Object) ([]metav1.Condition, string) {
 		return v.Status.Conditions, v.Status.Phase
 	case *neo4jv1beta1.AuraIPFilter:
 		return v.Status.Conditions, v.Status.Phase
+	case *neo4jv1beta1.AuraInvite:
+		return v.Status.Conditions, v.Status.Phase
+	case *neo4jv1beta1.AuraOrganizationMember:
+		return v.Status.Conditions, v.Status.Phase
+	case *neo4jv1beta1.AuraProjectMember:
+		return v.Status.Conditions, v.Status.Phase
 	}
 	t.Fatalf("no status accessor for %T", o)
 	return nil, ""
+}
+
+// With its credentials, a Delete of an invite or a member calls Aura and
+// releases the finalizer on the first pass: the wait above is only for
+// credentials that cannot be read (knowledge rule 178).
+func TestAuraDeletion_DeleteWithCredentialsRemovesAtOnce(t *testing.T) {
+	scheme := auraTestScheme(t)
+	for _, tc := range auraDeletionCases() {
+		obj := tc.obj("Delete", time.Now())
+		switch v := obj.(type) {
+		case *neo4jv1beta1.AuraInvite:
+			v.Spec.CredentialsSecretRef = credRef()
+		case *neo4jv1beta1.AuraOrganizationMember:
+			v.Spec.CredentialsSecretRef = credRef()
+		case *neo4jv1beta1.AuraProjectMember:
+			v.Spec.CredentialsSecretRef = credRef()
+		default:
+			continue // the instance, key and filter kinds have their own deletion tests
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			c := newAuraFakeClient(t, scheme, obj)
+			rec := record.NewFakeRecorder(20)
+			r, deleted := tc.newReconciler(c, rec)
+
+			_, err := r.Reconcile(context.Background(), ctrl.Request{NamespacedName: client.ObjectKeyFromObject(obj)})
+			require.NoError(t, err)
+
+			assert.True(t, deleted(), "removed in Aura")
+			assert.True(t, finalizerReleased(t, c, obj, tc.finalizer), "released on the first pass")
+			events := drainEvents(rec)
+			assert.Empty(t, eventsWithReason(events, tc.failed), "%q", events)
+			assert.Empty(t, eventsWithReason(events, tc.orphaned), "%q", events)
+		})
+	}
 }

@@ -520,7 +520,7 @@ prod       analytics-reader  prod-cluster  Ready   True   false  3m
 | Apply CR | Controller adds finalizer; creates user/role on next reconcile |
 | Update spec | Diffed against live state; only changed fields trigger Cypher |
 | Update Secret | Secret's `resourceVersion` changes → `ALTER USER SET PASSWORD` |
-| `kubectl delete` | Finalizer-protected: controller drops user/role first (unless `deletionPolicy: Retain`). A drop that fails is recorded in status (phase `Failed`) and announced once, retried, and given up after 5 minutes — the finalizer is released and the object left in Neo4j for an admin |
+| `kubectl delete` | Finalizer-protected: controller drops user/role first (unless `deletionPolicy: Retain`). A drop that cannot run — the target restarting, refusing connections, or refusing the drop — is recorded in status (phase `Failed`) and announced once, retried, and given up after 5 minutes: the finalizer is released with one Warning naming what was left in Neo4j and the statement that removes it. See [Deleting while the target restarts](#deleting-while-the-target-restarts) |
 | Cluster neither Ready nor Degraded | `ClusterNotReady` condition; reconcile requeued every 30s |
 | Referenced role missing | `PendingDependencies` condition; requeue when role lands |
 
@@ -536,8 +536,11 @@ not change while the target is down, and the target reports its own state, so
 the pass that finds the target back is not a transition: no `UserReady`,
 `RoleReady` or `BindingCreated` event is announced for it. (Before, each
 restart of a standalone made every user on it `Pending` and then announced
-`UserReady` again.) An object that was not yet `Ready` — new, failed, or with
-a spec change not yet applied — waits in `Pending` as before.
+`UserReady` again.) An object that failed keeps its failure the same way:
+its `UserSyncFailed` (`RoleSyncFailed`, `BindingFailed`, a binding's
+`UserNotFound`) is not announced again when the target comes back and the
+same thing fails, only when the cause changes. A new object, or one with a
+spec change not yet applied, waits in `Pending` as before.
 
 The same holds for the seconds after a restart when the target already reads
 `Ready` but its Bolt port does not accept connections yet, and for a
@@ -547,6 +550,32 @@ error. Only if the target cannot be reached for more than 5 minutes is the
 object `Failed`, with one `ConnectionFailed` Warning. A connection failure
 that is not about reaching the target — the admin Secret missing, a refused
 login — is reported at once.
+
+### Deleting while the target restarts
+
+Deleting a `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding` or `Neo4jAuthRule`
+revokes access, so the finalizer is not released until the `DROP USER`,
+`DROP ROLE`, `REVOKE ROLE` or `DROP AUTH RULE` has run. If it cannot run —
+the target is not `Ready`, reads `Ready` but does not accept connections yet,
+its admin Secret cannot be read, or Neo4j refuses the statement — the
+deletion waits: phase `Failed`, the message `deletion waits to remove …`
+naming the object and the moment it stops waiting, and one Warning
+(`UserDeletionFailed`, `RoleDeletionFailed`, `BindingFailed` or
+`AuthRuleFailed`). It retries every 30 seconds and whenever the target's
+status changes, so it finishes as soon as the target is back.
+
+The wait is bounded so a target that never comes back cannot keep the CR
+(or its namespace) in `Terminating`: 5 minutes after the deletion was
+requested the finalizer is released, with one Warning that says
+`Released the finalizer without removing …`, names what is still in Neo4j,
+and gives the statement to run by hand, for example
+``DROP USER `alice` ``. A target whose cluster or standalone CR is gone
+releases at once: nothing is left to remove. `deletionPolicy: Retain`
+releases at once and removes nothing.
+
+Before this, a deletion during a restart released the finalizer at once
+when the connection failed (and an auth rule's when the target was not
+`Ready`), leaving the user, grant or rule in Neo4j without a word.
 
 ## Cluster vs namespace scope
 

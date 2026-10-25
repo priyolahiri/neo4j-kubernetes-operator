@@ -173,6 +173,7 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 
 	// Version gate — auth rules require Neo4j 2026.03+.
 	if !targetSupportsAuthRules(target) {
+		r.targetNotAwaited(ctx, rule)
 		msg := fmt.Sprintf("Neo4jAuthRule requires Neo4j 2026.03 or later; cluster %q runs %s. See https://neo4j.com/docs/operations-manual/current/authentication-authorization/attribute-based-access-control/.",
 			rule.Spec.ClusterRef, targetVersionString(target))
 		r.setNamedCondition(ctx, rule, ConditionTypeAuthRuleVersionTooOld, metav1.ConditionTrue, ConditionReasonAuthRuleVersionGate, msg)
@@ -190,6 +191,7 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// document as prerequisite, surface a clear status condition rather
 	// than mutating the cluster's spec.config).
 	if !targetHasABACProvider(target) {
+		r.targetNotAwaited(ctx, rule)
 		msg := fmt.Sprintf(
 			"clusterRef %q does not configure %s in spec.config. ABAC requires at least one OIDC provider name listed there. See docs/api_reference/neo4jauthrule.md for setup.",
 			rule.Spec.ClusterRef, abacAuthorizationProvidersKey,
@@ -325,57 +327,68 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
+// targetNotAwaited records ClusterNotReady=False for a rule its target's spec
+// refuses — a version older than 2026.03, no OIDC provider listed — once the
+// target reads Ready. The refusal is the rule's state, read from the spec
+// without a connection, so there is no outage whose start the condition must
+// keep (id 172). Returning before the write after the connection left
+// ClusterNotReady=True from the last restart for as long as the refusal held
+// (knowledge rule 158).
+func (r *Neo4jAuthRuleReconciler) targetNotAwaited(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule) {
+	r.setNamedCondition(ctx, rule, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
+}
+
 func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule) (ctrl.Result, error) {
-	logger := log.FromContext(ctx)
 	if !controllerutil.ContainsFinalizer(rule, Neo4jAuthRuleFinalizer) {
 		return ctrl.Result{}, nil
 	}
-	requeue := r.requeueAfter()
+	release := func() error { return removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer) }
 
 	if strings.EqualFold(rule.Spec.DeletionPolicy, "Retain") {
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
+		return ctrl.Result{}, release()
 	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, rule.Namespace, rule.Spec.ClusterRef)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found || !target.IsReady() || !targetSupportsAuthRules(target) {
-		// Cluster gone, not ready, or too old to host auth rules — nothing
-		// for us to drop. Release the finalizer.
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
+	if !target.Found || !targetSupportsAuthRules(target) {
+		// The deployment is gone, or runs a version that cannot hold auth
+		// rules: there is no rule to drop.
+		return ctrl.Result{}, release()
 	}
-
-	nc, err := r.connectForDeletion(target)
-	if err != nil {
-		logger.Error(err, "cannot connect during auth rule deletion; releasing finalizer")
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
-	}
-	defer func() { _ = nc.Close() }()
-
 	ruleName := rule.Spec.Name
 	if ruleName == "" {
 		ruleName = rule.Name
 	}
+	// A target that is not Ready used to release the finalizer at once, so a
+	// rule deleted during a restart stayed in Neo4j and kept granting its
+	// roles. It waits, bounded, as every other cleanup (knowledge rule 178).
+	cleanup := deletionCleanup{
+		obj: rule, recorder: r.Recorder, reason: EventReasonAuthRuleFailed,
+		leftBehind: fmt.Sprintf("auth rule %q on %s", ruleName, targetRefDisplay(rule.Spec.ClusterRef)),
+		byHand:     fmt.Sprintf("DROP AUTH RULE `%s`", neo4j.EscapeBackticks(ruleName)),
+		record: func(msg string) bool {
+			return r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleFailed, msg, nil, nil)
+		},
+		release: release, requeue: r.requeueAfter(),
+	}
+	if !target.IsReady() {
+		return cleanup.blocked(ctx, targetDownCause(rule.Spec.ClusterRef))
+	}
+
+	nc, err := r.connectForDeletion(target)
+	if err != nil {
+		return cleanup.blocked(ctx, connectFailedCause(rule.Spec.ClusterRef, err))
+	}
+	defer func() { _ = nc.Close() }()
+
 	if err := nc.DropAuthRuleIfExists(ctx, ruleName); err != nil {
-		if classifyFinalizerCleanup(rule, err) == retryCleanup {
-			// Retried every RequeueAfter and on every status change of the
-			// target until the drop succeeds or the grace period ends. The
-			// failure is written to status and announced when it starts or
-			// its message changes, not on every retry (knowledge rule 145).
-			msg := fmt.Sprintf("DROP AUTH RULE %q failed, will retry: %v", ruleName, err)
-			if r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleFailed, msg, nil, nil) {
-				r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed, msg)
-			}
-			return ctrl.Result{RequeueAfter: requeue}, nil
-		}
-		r.Recorder.Eventf(rule, corev1.EventTypeWarning, EventReasonAuthRuleFailed,
-			"DROP AUTH RULE %q failed; releasing finalizer to avoid wedging deletion: %v", ruleName, err)
-		return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
+		return cleanup.blocked(ctx, statementFailedCause(rule.Spec.ClusterRef, "DROP AUTH RULE", err))
 	}
 	r.Recorder.Eventf(rule, corev1.EventTypeNormal, EventReasonAuthRuleDeleted, "auth rule %q dropped", ruleName)
 
-	return ctrl.Result{}, removeFinalizer(ctx, r.Client, rule, Neo4jAuthRuleFinalizer)
+	return ctrl.Result{}, release()
 }
 
 // findMissingRoles returns the subset of desired role names that exist
@@ -548,9 +561,10 @@ func (r *Neo4jAuthRuleReconciler) setStatus(
 
 // waitForTarget records that the target cannot serve the rule (reason
 // ClusterNotReady or ClusterUnreachable): the ClusterNotReady condition, and
-// phase Pending unless the rule is already Ready at its generation, which it
-// stays while the target restarts, as a user, role and binding do
-// (recordTargetWait; knowledge rule 158). The status is written only when it
+// phase Pending unless the rule already has an outcome at its generation —
+// Ready, a failure or a wait of its own — which it keeps while the target
+// restarts, as a user, role and binding do (recordTargetWait; knowledge rules
+// 158, 189). The status is written only when it
 // changes. It reports lasting when an unreachable target has outlasted
 // targetUnreachableGrace (id 172).
 func (r *Neo4jAuthRuleReconciler) waitForTarget(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule, reason, msg string) (lasting bool) {
@@ -576,8 +590,8 @@ func (r *Neo4jAuthRuleReconciler) waitForTarget(ctx context.Context, rule *neo4j
 }
 
 // unreachable handles a target that reads Ready but cannot be reached, as the
-// user's does (Neo4jUserReconciler.unreachable): a rule Ready at its
-// generation stays Ready, any other waits in Pending, logged at info and
+// user's does (Neo4jUserReconciler.unreachable): a rule with an outcome at
+// its generation keeps it, any other waits in Pending, logged at info and
 // retried on the fixed interval; only an outage that outlasts
 // targetUnreachableGrace is announced, once (knowledge rule 172).
 func (r *Neo4jAuthRuleReconciler) unreachable(ctx context.Context, rule *neo4jv1beta1.Neo4jAuthRule, err error, requeue time.Duration) (ctrl.Result, error) {

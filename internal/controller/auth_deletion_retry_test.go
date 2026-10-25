@@ -149,7 +149,7 @@ func TestAuthDeletion_ARetriedDropIsAnnouncedOnce(t *testing.T) {
 				WithStatusSubresource(obj, &neo4jv1beta1.Neo4jEnterpriseStandalone{}).Build()
 			rec := record.NewFakeRecorder(50)
 			server := newFakeAuthServer()
-			server.dropErr = errors.New("Neo.TransientError.General.DatabaseUnavailable: the database is unavailable")
+			server.dropErr = errors.New("Neo.ClientError.Security.Forbidden: permission denied")
 			key := client.ObjectKeyFromObject(obj)
 
 			for _, err := range reconcileTimes(t, tc.reconciler(c, rec, server), key, repeatPasses) {
@@ -157,18 +157,19 @@ func TestAuthDeletion_ARetriedDropIsAnnouncedOnce(t *testing.T) {
 			}
 			failed := eventsWithReason(drainEvents(rec), tc.reason)
 			require.Len(t, failed, 1, "announced when the failure starts, not on every retry: %q", failed)
-			assert.Contains(t, failed[0], "will retry: Neo.TransientError.General.DatabaseUnavailable")
+			assert.Contains(t, failed[0], "failed: Neo.ClientError.Security.Forbidden: permission denied")
+			assert.Contains(t, failed[0], "deletion waits to remove")
 			assert.Equal(t, repeatPasses, server.drops, "the cleanup is still retried on every pass")
 			phase, message := tc.status(t, c, key)
 			assert.Equal(t, "Failed", phase)
-			assert.Contains(t, message, "will retry")
+			assert.Contains(t, message, "deletion waits to remove")
 			live, ok := obj.DeepCopyObject().(client.Object)
 			require.True(t, ok)
 			require.NoError(t, c.Get(ctx, key, live))
 			assert.Contains(t, live.GetFinalizers(), tc.finalizer, "the finalizer stays while the cleanup is retried")
 
 			// A different failure is news.
-			server.dropErr = errors.New("Neo.TransientError.Transaction.LockClientStopped: the transaction was terminated")
+			server.dropErr = errors.New("Neo.ClientError.Statement.ArgumentError: refused")
 			reconcileTimes(t, tc.reconciler(c, rec, server), key, repeatPasses)
 			require.Len(t, eventsWithReason(drainEvents(rec), tc.reason), 1)
 
@@ -214,7 +215,7 @@ func TestCompositeDeletion_ARefusedDropReleasesTheFinalizerAfterTheGracePeriod(t
 		live := &neo4jv1beta1.Neo4jCompositeDatabase{}
 		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(cd), live))
 		assert.Contains(t, live.Finalizers, Neo4jCompositeDatabaseFinalizer)
-		assert.Contains(t, live.Status.Message, "will retry")
+		assert.Contains(t, live.Status.Message, "deletion waits to remove composite database")
 	})
 
 	t.Run("after the grace period: released", func(t *testing.T) {
@@ -223,7 +224,8 @@ func TestCompositeDeletion_ARefusedDropReleasesTheFinalizerAfterTheGracePeriod(t
 		assert.Equal(t, 1, server.drops, "one more attempt, then the finalizer goes")
 		released := eventsWithReason(drainEvents(rec), EventReasonCompositeFailed)
 		require.Len(t, released, 1)
-		assert.Contains(t, released[0], "releasing finalizer")
+		assert.Contains(t, released[0], "Released the finalizer without removing composite database")
+		assert.Contains(t, released[0], "DROP COMPOSITE DATABASE `sales` CASCADE ALIASES")
 		err := c.Get(context.Background(), client.ObjectKeyFromObject(cd), &neo4jv1beta1.Neo4jCompositeDatabase{})
 		assert.True(t, apierrors.IsNotFound(err), "the CR is gone once its finalizer is released: %v", err)
 	})

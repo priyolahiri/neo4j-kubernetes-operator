@@ -541,9 +541,10 @@ func (r *AuraInstanceReconciler) handleDeletion(ctx context.Context, inst *neo4j
 	}
 
 	// Release the finalizer.
-	return ctrl.Result{}, r.patchInstance(ctx, req, func(o *neo4jv1beta1.AuraInstance) {
-		controllerutil.RemoveFinalizer(o, AuraInstanceFinalizer)
-	})
+	// One removal a stale cache or a status write just before cannot turn
+	// into a Conflict, and that an object already gone has done already
+	// (knowledge rule 189).
+	return ctrl.Result{}, removeFinalizerAt(ctx, r.Client, req.NamespacedName, &neo4jv1beta1.AuraInstance{}, AuraInstanceFinalizer)
 }
 
 // instanceName is the Aura instance name (spec.name or the CR name, ≤30 chars).

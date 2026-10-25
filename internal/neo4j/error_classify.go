@@ -23,18 +23,18 @@ import (
 	"github.com/neo4j/neo4j-go-driver/v5/neo4j"
 )
 
-// IsHostUnresolvableError reports whether err indicates the Neo4j host's DNS
-// name authoritatively does not exist — the signal that the Service (and almost
-// always the whole cluster/standalone) has been deleted. Distinct from a
-// transient connect failure (IsConnectivityError): a vanished DNS name will not
-// come back on its own, so finalizer cleanup against it is a permanent no-op and
-// the finalizer can be released immediately.
+// IsHostUnresolvableError reports whether err indicates that a Neo4j host's DNS
+// name does not exist right now. It does NOT say the deployment is gone: the
+// operator's client bootstraps on the {name}-client ClusterIP Service, but
+// under the routing scheme it sends a statement to the server the routing
+// table names — on a cluster a pod's FQDN under the headless Service — and that
+// record is absent between a pod's deletion and its replacement. Callers treat
+// it as the target being unreachable and read whether the deployment is gone
+// from its CR (knowledge operations.md id 178).
 //
 // Matches ONLY "no such host" — Go's rendering of an NXDOMAIN (the name does not
-// exist). It deliberately excludes "temporary failure in name resolution"
-// (SERVFAIL) and "server misbehaving", which are transient resolver hiccups
-// while the cluster is still up; those fall through to the bounded-retry bucket
-// rather than releasing the finalizer prematurely.
+// exist). "Temporary failure in name resolution" (SERVFAIL) and "server
+// misbehaving" are resolver hiccups and are not matched.
 func IsHostUnresolvableError(err error) bool {
 	if err == nil {
 		return false
