@@ -693,6 +693,8 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - **The operator no longer rewrites Routes on every pass.** It keeps what it does not render — `wildcardPolicy`, a generated host, a certificate added by hand. Removing `host` from the spec keeps the Route's current host; delete the Route to have OpenShift generate a new one.
 - **Events:** `ClusterFormationFailed` is gone (it was never emitted; use `ConnectivityDegraded` and `status.message`). `TopologyPlacementCalculated` names the zones and is raised when they change; `UpgradeDeferred` once per held change; `ClusterFormationStarted` once per new cluster; `ScaleDownBlocked` once per cause. A diagnostics query refused with a Neo4j transient error (`Neo.TransientError.*`, `NotALeader`) during a restart is logged at info, and a refused spec once at info, not as an ERROR on every pass.
 
+- **JVM arguments (documented, unchanged):** the servers do not run the Neo4j image's own `server.jvm.additional` list — the image's conf directory is replaced by the operator's. A cluster runs the operator's list (see the cluster API reference); a standalone runs none of its own. Set `server.jvm.additional` in `spec.config` or `NEO4J_server_jvm_additional` in `spec.env` to change them; either replaces the list.
+
 **Plugins**
 
 - **A plugin's procedure lists join the cluster's own.** On a cluster, a plugin's `dbms.security.procedures.*` list used to replace the cluster's own `spec.config` list and Aura Fleet Management's `fleetManagement.*` entry; the servers now load the union. Security-relevant: procedures the cluster's own list allows load again. Affected clusters get it at the servers' next restart (`kubectl rollout restart statefulset/<cluster>-server` applies it now); a `NEO4J_dbms_security_procedures_*` variable set by hand in the cluster's env is joined too.
@@ -722,6 +724,8 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 
 - A `Neo4jUser` applied before both its cluster and its password Secret reports `ClusterNotFound` first and `SecretPending` after.
 
+- **A Neo4j error that asks to be retried** (a deadlock in a bulk change, a leader switch: `Neo.TransientError.*`, `NotALeader`) on a user's, role's, binding's or auth rule's statements, or in any deletion's cleanup, is retried every few seconds at info — no `Failed` phase, no `…SyncFailed` / `…DeletionFailed` Warning, no ERROR — and reported only if it lasts more than 5 minutes.
+
 **Deletion**
 
 - **Deleting during a restart no longer leaves access behind.** Deleting a `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias` or `Neo4jReplicaDatabase` while its target is down, refusing connections or being replaced keeps the CR `Terminating` (status `deletion waits to remove …`, one Warning) until the target answers, for at most 5 minutes; it is then released with a Warning naming what is left in Neo4j and the statement to run. A failed `DROP` or `REVOKE` sets the object to `Failed`, announced once, and is retried for the same 5 minutes. A target CR that is gone still releases at once; `deletionPolicy: Retain` is unchanged.
@@ -747,6 +751,8 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - **A PVC `backupPath` is relative to the PVC's root**; one starting with `/backup/` raises a `ValidationWarning`.
 
 - **A backup or restore whose target does not exist yet** raises one `ClusterNotFound` Warning; the backup stays in phase `Waiting`, the restore in `Pending`. A `Neo4jRestore` that is `Completed` or `Failed` at its generation stays so when its target is deleted — before, it went `Pending` and could run again when a target of the same name was created.
+
+- **An all-databases restore waits through a target that is briefly unavailable** (for example while `neo4j` is recreated with `replaceExisting`): it keeps its phase and results with `ClusterNotReady=True` and resumes, instead of logging an ERROR, dropping back to `Pending` and announcing `RestoreStarted` again; a wait over 5 minutes raises one `ConnectionFailed` and it keeps waiting.
 
 **Aura**
 
