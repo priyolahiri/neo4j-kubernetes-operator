@@ -4282,12 +4282,12 @@
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Anchor link to this section">&para;</a></h2>
 <p>The fleet-management plugin jar is pre-bundled in every Neo4j Enterprise image at <code>/var/lib/neo4j/products/</code>. When you enable Fleet Management in the operator:</p>
 <ol>
-<li>The operator merges <code>"fleet-management"</code> into the existing <code>NEO4J_PLUGINS</code> list on the StatefulSet. This is additive — any plugins already installed via <code>Neo4jPlugin</code> CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to <code>/plugins/</code> — <strong>no internet access required</strong>.</li>
+<li>The operator merges <code>"fleet-management"</code> into the existing <code>NEO4J_PLUGINS</code> list on the StatefulSet. This is additive — any plugins already installed via <code>Neo4jPlugin</code> CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to <code>/plugins/</code> — <strong>no internet access required</strong>. A new cluster or standalone is created with the plugin already listed, so its servers start with it; enabling Fleet Management on a running deployment restarts its servers once to load it.</li>
 <li>The required procedure security settings (<code>dbms.security.procedures.unrestricted=fleetManagement.*</code> and <code>dbms.security.procedures.allowlist=fleetManagement.*</code>) are added to <code>neo4j.conf</code> automatically.</li>
 <li>Once the cluster reaches <code>Ready</code> phase and the plugin is loaded, the operator reads the Aura registration token from a Kubernetes Secret and calls <code>CALL fleetManagement.registerToken($token)</code> via Bolt. This is idempotent — re-registering on reconcile loops is harmless.</li>
 </ol>
 <h3 id="two-phase-reconciliation">Two-phase reconciliation<a class="headerlink" href="#two-phase-reconciliation" title="Anchor link to this section">&para;</a></h3>
-<p>Plugin installation (step 1) happens on every reconcile when <code>enabled: true</code>. Token registration (step 2–3) is gated on <code>status.phase == "Ready"</code> and skips if <code>status.auraFleetManagement.registered == true</code>. This ensures the pod restart triggered by the plugin load completes before registration is attempted.</p>
+<p>Plugin installation (step 1) happens on every reconcile when <code>enabled: true</code>. Token registration (step 2–3) is gated on <code>status.phase == "Ready"</code> and skips if <code>status.auraFleetManagement.registered == true</code>. This ensures the plugin is loaded (on a running deployment, after the restart that loads it) before registration is attempted.</p>
 <h3 id="plugin-coexistence">Plugin coexistence<a class="headerlink" href="#plugin-coexistence" title="Anchor link to this section">&para;</a></h3>
 <p>Fleet Management works alongside any <code>Neo4jPlugin</code> CRDs you apply to the same deployment. For example, if APOC is installed via a <code>Neo4jPlugin</code> resource, the <code>NEO4J_PLUGINS</code> list on the StatefulSet will contain both:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>["apoc","fleet-management"]
@@ -4340,7 +4340,7 @@
 </span></code></pre></div>
 <p>The operator will:</p>
 <ul>
-<li>Merge <code>"fleet-management"</code> into <code>NEO4J_PLUGINS</code> on the next reconcile (causes a rolling pod restart to load the jar)</li>
+<li>Merge <code>"fleet-management"</code> into <code>NEO4J_PLUGINS</code>: a new cluster's servers start with it; on a running cluster this rolls the servers once to load the jar</li>
 <li>Register the token once the cluster reaches <code>Ready</code> phase</li>
 </ul>
 <h3 id="verify-registration">Verify registration<a class="headerlink" href="#verify-registration" title="Anchor link to this section">&para;</a></h3>

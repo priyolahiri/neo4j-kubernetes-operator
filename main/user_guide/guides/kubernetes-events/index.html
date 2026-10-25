@@ -4759,7 +4759,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>AuraFleetManagementPluginPatchFailed</code></td>
 <td>Warning</td>
-<td>Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the pass that finds it adds the plugin</td>
+<td>Failed to patch the fleet-management plugin onto the StatefulSet. Not raised while the server StatefulSet does not exist yet (a new deployment's first pass): the write that creates it already lists the plugin</td>
 </tr>
 <tr>
 <td><code>AuraFleetDeploymentCreated</code></td>
