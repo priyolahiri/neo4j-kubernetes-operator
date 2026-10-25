@@ -28,8 +28,10 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -43,6 +45,7 @@ import (
 	"sigs.k8s.io/yaml"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/controller"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/validation"
 )
 
@@ -105,7 +108,7 @@ var validators = map[string]kindValidator{
 	// validated; nothing prints that copy, and ApplyDefaults adds no field an
 	// error can then be reported on (operations.md id 144).
 	"Neo4jEnterpriseCluster": {
-		connectedChecks: "a Neo4jEnterpriseCluster's spec.image.tag against the version the cluster already runs",
+		connectedChecks: "a Neo4jEnterpriseCluster's spec.image.tag against the version the cluster already runs, and its spec.storage.className against its volumes",
 		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 			var obj neo4jv1beta1.Neo4jEnterpriseCluster
 			if err := yaml.Unmarshal(doc, &obj); err != nil {
@@ -117,6 +120,8 @@ var validators = map[string]kindValidator{
 			v.ApplyDefaults(ctx, &obj)
 			out := v.ValidateWithWarnings(ctx, &obj)
 			warnings := append(out.Warnings, out.NoEffectWarnings...)
+			warnings = append(warnings, storageClassFindings(ctx, c, obj.Spec.Storage.ClassName, obj.Namespace, obj.Name,
+				controller.ClusterDataVolumeClasses)...)
 			return out.Errors, append(warnings, notChecked...), nil, nil
 		},
 	},
@@ -124,7 +129,7 @@ var validators = map[string]kindValidator{
 	// validates one, so neither does this: the CRD's, which the API server
 	// stores, are in the document already (validateDoc).
 	"Neo4jEnterpriseStandalone": {
-		connectedChecks: "a Neo4jEnterpriseStandalone's spec.image.tag against the version it already runs",
+		connectedChecks: "a Neo4jEnterpriseStandalone's spec.image.tag against the version it already runs, and its spec.storage.className against its volume",
 		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 			var obj neo4jv1beta1.Neo4jEnterpriseStandalone
 			if err := yaml.Unmarshal(doc, &obj); err != nil {
@@ -133,7 +138,9 @@ var validators = map[string]kindValidator{
 			ctx := context.Background()
 			notChecked := withLiveStandaloneStatus(ctx, c, &obj)
 			v := validation.NewStandaloneValidator()
-			return v.Validate(ctx, c, &obj), append(v.NoEffectWarnings(&obj), notChecked...), nil, nil
+			warnings := append(v.NoEffectWarnings(&obj), storageClassFindings(ctx, c, obj.Spec.Storage.ClassName,
+				obj.Namespace, obj.Name, controller.StandaloneDataVolumeClasses)...)
+			return v.Validate(ctx, c, &obj), append(warnings, notChecked...), nil, nil
 		},
 	},
 	// Connected, a backup's spec.shardedDatabase is resolved as the backup
@@ -141,7 +148,7 @@ var validators = map[string]kindValidator{
 	// backup's instanceRef — through the same function. The operator fails a
 	// backup whose reference does not resolve; offline it passed here.
 	"Neo4jBackup": {
-		connectedChecks: "a Neo4jBackup's spec.shardedDatabase against the Neo4jShardedDatabase it names",
+		connectedChecks: "a Neo4jBackup's spec.instanceRef against the deployments that exist, and its spec.shardedDatabase against the Neo4jShardedDatabase it names",
 		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 			var obj neo4jv1beta1.Neo4jBackup
 			if err := yaml.Unmarshal(doc, &obj); err != nil {
@@ -152,6 +159,10 @@ var validators = map[string]kindValidator{
 			if c == nil {
 				return errs, warnings, nil, nil
 			}
+			// A target not created yet: the operator waits for it (phase
+			// Waiting), as every kind waits for its deployment (id 182).
+			pending, unread := deploymentRefFindings(c, field.NewPath("spec", "instanceRef"), obj.Namespace, obj.Spec.InstanceRef)
+			warnings = append(warnings, unread...)
 			_, refusal, err := validation.ResolveBackupShardedDatabase(context.Background(), c, &obj)
 			switch {
 			case err != nil:
@@ -161,7 +172,7 @@ var validators = map[string]kindValidator{
 			case refusal != nil:
 				errs = append(errs, refusal)
 			}
-			return errs, warnings, nil, nil
+			return errs, warnings, pending, nil
 		},
 	},
 	// Connected, a Managed plugin's NEO4J_PLUGINS names are held to the image
@@ -179,6 +190,7 @@ var validators = map[string]kindValidator{
 			}
 			out := validation.NewPluginValidator().Validate(&obj)
 			errs, warnings := out.Errors, out.Warnings
+			var pending []string
 			if c == nil {
 				return errs, append(warnings, validation.ManagedPluginNameWarnings(&obj)...), nil, nil
 			}
@@ -190,6 +202,9 @@ var validators = map[string]kindValidator{
 					obj.Namespace, obj.Spec.ClusterRef, err))
 				warnings = append(warnings, validation.ManagedPluginNameWarnings(&obj)...)
 			case !found:
+				// A target not applied yet is a wait for the operator, as for
+				// every kind with a clusterRef (id 182).
+				pending = append(pending, validation.DeploymentPending(clusterRefPath, obj.Spec.ClusterRef, obj.Namespace))
 				warnings = append(warnings, fmt.Sprintf(
 					"no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone %s/%s, so spec.name was checked against every supported Neo4j image, not the one it will run",
 					obj.Namespace, obj.Spec.ClusterRef))
@@ -198,33 +213,48 @@ var validators = map[string]kindValidator{
 				// The operator's own refusal, word for word.
 				errs = append(errs, validation.ManagedPluginImageErrors(&obj, tag)...)
 			}
-			return errs, warnings, nil, nil
+			return errs, warnings, pending, nil
 		},
 	},
-	"Neo4jDatabaseAlias": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
-		var obj neo4jv1beta1.Neo4jDatabaseAlias
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			return nil, nil, nil, err
-		}
-		out := validation.NewAliasValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
-	}},
-	"Neo4jCompositeDatabase": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
-		var obj neo4jv1beta1.Neo4jCompositeDatabase
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			return nil, nil, nil, err
-		}
-		out := validation.NewCompositeDatabaseValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
-	}},
-	"Neo4jReplicaDatabase": {fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
-		var obj neo4jv1beta1.Neo4jReplicaDatabase
-		if err := yaml.Unmarshal(doc, &obj); err != nil {
-			return nil, nil, nil, err
-		}
-		out := validation.NewReplicaValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
-	}},
+	// The alias, composite and replica validators do not resolve their
+	// clusterRef; connected, it is resolved here as their reconcilers resolve
+	// it, and a deployment that does not exist yet is pending (id 182).
+	"Neo4jDatabaseAlias": {
+		connectedChecks: "a Neo4jDatabaseAlias's spec.clusterRef against the deployments that exist",
+		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+			var obj neo4jv1beta1.Neo4jDatabaseAlias
+			if err := yaml.Unmarshal(doc, &obj); err != nil {
+				return nil, nil, nil, err
+			}
+			out := validation.NewAliasValidator(c).Validate(context.Background(), &obj)
+			pending, unread := deploymentRefFindings(c, clusterRefPath, obj.Namespace, obj.Spec.ClusterRef)
+			return out.Errors, append(out.Warnings, unread...), pending, nil
+		},
+	},
+	"Neo4jCompositeDatabase": {
+		connectedChecks: "a Neo4jCompositeDatabase's spec.clusterRef against the deployments that exist",
+		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+			var obj neo4jv1beta1.Neo4jCompositeDatabase
+			if err := yaml.Unmarshal(doc, &obj); err != nil {
+				return nil, nil, nil, err
+			}
+			out := validation.NewCompositeDatabaseValidator(c).Validate(context.Background(), &obj)
+			pending, unread := deploymentRefFindings(c, clusterRefPath, obj.Namespace, obj.Spec.ClusterRef)
+			return out.Errors, append(out.Warnings, unread...), pending, nil
+		},
+	},
+	"Neo4jReplicaDatabase": {
+		connectedChecks: "a Neo4jReplicaDatabase's spec.clusterRef against the deployments that exist",
+		fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
+			var obj neo4jv1beta1.Neo4jReplicaDatabase
+			if err := yaml.Unmarshal(doc, &obj); err != nil {
+				return nil, nil, nil, err
+			}
+			out := validation.NewReplicaValidator(c).Validate(context.Background(), &obj)
+			pending, unread := deploymentRefFindings(c, clusterRefPath, obj.Namespace, obj.Spec.ClusterRef)
+			return out.Errors, append(out.Warnings, unread...), pending, nil
+		},
+	},
 
 	// --- require a cluster connection ---------------------------------
 	"Neo4jDatabase": {needsClient: true, fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
@@ -233,7 +263,7 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		out := validation.NewDatabaseValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
+		return out.Errors, out.Warnings, withTargetPending(nil, out.TargetPending), nil
 	}},
 	"Neo4jUser": {needsClient: true, fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jUser
@@ -241,7 +271,7 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		out := validation.NewUserValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, out.Pending, nil
+		return out.Errors, out.Warnings, withTargetPending(out.Pending, out.TargetPending), nil
 	}},
 	"Neo4jRole": {needsClient: true, fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jRole
@@ -249,7 +279,7 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		out := validation.NewRoleValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
+		return out.Errors, out.Warnings, withTargetPending(nil, out.TargetPending), nil
 	}},
 	"Neo4jRoleBinding": {needsClient: true, fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jRoleBinding
@@ -257,7 +287,7 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		out := validation.NewRoleBindingValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
+		return out.Errors, out.Warnings, withTargetPending(nil, out.TargetPending), nil
 	}},
 	"Neo4jAuthRule": {needsClient: true, fn: func(doc []byte, c client.Client) (field.ErrorList, []string, []string, error) {
 		var obj neo4jv1beta1.Neo4jAuthRule
@@ -265,7 +295,7 @@ var validators = map[string]kindValidator{
 			return nil, nil, nil, err
 		}
 		out := validation.NewAuthRuleValidator(c).Validate(context.Background(), &obj)
-		return out.Errors, out.Warnings, nil, nil
+		return out.Errors, out.Warnings, withTargetPending(nil, out.TargetPending), nil
 	}},
 	// The reconciler's entry point (ValidateShardedDatabase) folds everything
 	// into one error; Validate is the same rules with each finding apart, so
@@ -286,6 +316,59 @@ var validators = map[string]kindValidator{
 		}
 		return out.Errors, warnings, out.Pending, nil
 	}},
+}
+
+// storageClassFindings is, connected, the operator's StorageClass advisory for
+// a deployment that exists: spec.storage.className naming a class its data
+// volumes do not use, which an apply cannot change (a volume keeps its class;
+// operations.md id 102). The volumes are found as the operator's storage pass
+// finds them (volumes), so the warning is the one the operator will raise. A
+// read that fails says the check was not made; offline nothing is said.
+func storageClassFindings(ctx context.Context, c client.Client, className, namespace, name string,
+	volumes func(context.Context, client.Client, string, string) (map[string]string, error)) []string {
+	if c == nil || className == "" {
+		return nil
+	}
+	classes, err := volumes(ctx, c, namespace, name)
+	if err != nil {
+		return []string{fmt.Sprintf(
+			"could not list the PersistentVolumeClaims of %s/%s, so spec.storage.className was not checked against its volumes: %v",
+			namespace, name, err)}
+	}
+	if w := validation.StorageClassChangeWarning(className, classes); w != "" {
+		return []string{w}
+	}
+	return nil
+}
+
+// clusterRefPath is spec.clusterRef, the reference most kinds resolve.
+var clusterRefPath = field.NewPath("spec", "clusterRef")
+
+// withTargetPending adds a validator's missing-deployment finding to pending.
+func withTargetPending(pending []string, target string) []string {
+	if target == "" {
+		return pending
+	}
+	return append(pending, target)
+}
+
+// deploymentRefFindings resolves a reference to a cluster or standalone as the
+// reconcilers resolve it, for the kinds whose validator does not: one that
+// does not exist yet is pending, never an error, since the operator waits for
+// it (operations.md id 182), and one that cannot be read is a warning that it
+// was not checked. Offline it says nothing.
+func deploymentRefFindings(c client.Client, path *field.Path, namespace, ref string) (pending, warnings []string) {
+	if c == nil || ref == "" {
+		return nil, nil
+	}
+	cluster, standalone, err := validation.LookupDeployment(context.Background(), c, namespace, ref)
+	switch {
+	case err != nil:
+		return nil, []string{validation.DeploymentUnreadable(path, ref, err)}
+	case cluster == nil && standalone == nil:
+		return []string{validation.DeploymentPending(path, ref, namespace)}, nil
+	}
+	return nil, nil
 }
 
 // withLiveClusterStatus gives obj the status of the cluster already in the API
@@ -540,24 +623,123 @@ func warnOnVersionSkew(c client.Client, stdout *os.File) {
 	if c == nil || version == "dev" {
 		return
 	}
+	ctx := context.Background()
 	var deployments appsv1.DeploymentList
-	if err := c.List(context.Background(), &deployments,
+	if err := c.List(ctx, &deployments,
 		client.MatchingLabels{"app.kubernetes.io/name": "neo4j-operator"}); err != nil {
 		return
 	}
-	for _, d := range deployments.Items {
-		deployed := deployedOperatorVersion(d)
-		if deployed == "" {
-			continue
-		}
-		if strings.TrimPrefix(deployed, "v") != strings.TrimPrefix(version, "v") {
-			fmt.Fprintf(stdout,
-				"⚠ version skew: this CLI carries %s rules, but the operator in %s/%s is %s.\n"+
-					"  Rules added or removed between those releases are checked incorrectly here.\n",
-				version, d.Namespace, d.Name, deployed)
-		}
+	d, note := runningOperator(ctx, c, deployments.Items, time.Now())
+	if note != "" {
+		fmt.Fprintf(stdout, "version skew not checked: %s\n", note)
 		return
 	}
+	if d == nil {
+		return
+	}
+	deployed := deployedOperatorVersion(*d)
+	if deployed == "" {
+		return
+	}
+	if strings.TrimPrefix(deployed, "v") != strings.TrimPrefix(version, "v") {
+		fmt.Fprintf(stdout,
+			"⚠ version skew: this CLI carries %s rules, but the operator in %s/%s is %s.\n"+
+				"  Rules added or removed between those releases are checked incorrectly here.\n",
+			version, d.Namespace, d.Name, deployed)
+	}
+}
+
+// runningOperator picks, from the operator Deployments it is given, the one
+// that is running, by two signals: a Deployment with no available replica
+// (status.availableReplicas) runs nothing, and of several that do, the one
+// whose pod holds a current coordination.k8s.io Lease in its namespace — the
+// operator's leader election, whose holderIdentity starts with the pod name —
+// is the one reconciling. The first Deployment the list returned used to be
+// taken, which once compared the CLI with a v1.22.0 operator scaled to 0 in
+// another namespace (#573). Several running operators that report one version
+// need no choice. Otherwise it cannot tell, and says why rather than guess:
+// note is set and the Deployment is nil. No Deployment at all is nil and no
+// note: the operator may be in a namespace this user cannot list.
+func runningOperator(ctx context.Context, c client.Client, deployments []appsv1.Deployment, now time.Time) (*appsv1.Deployment, string) {
+	if len(deployments) == 0 {
+		return nil, ""
+	}
+	var running []*appsv1.Deployment
+	for i := range deployments {
+		if deployments[i].Status.AvailableReplicas > 0 {
+			running = append(running, &deployments[i])
+		}
+	}
+	switch len(running) {
+	case 0:
+		return nil, fmt.Sprintf("none of the %d operator Deployment(s) (%s) has an available replica",
+			len(deployments), deploymentNames(deployments))
+	case 1:
+		return running[0], ""
+	}
+	if sameVersion(running) {
+		return running[0], ""
+	}
+	var leaders []*appsv1.Deployment
+	for _, d := range running {
+		if holdsLeaderLease(ctx, c, d, now) {
+			leaders = append(leaders, d)
+		}
+	}
+	if len(leaders) == 1 {
+		return leaders[0], ""
+	}
+	names := make([]appsv1.Deployment, 0, len(running))
+	for _, d := range running {
+		names = append(names, *d)
+	}
+	return nil, fmt.Sprintf("%d operators are running (%s) on different versions, and no single one holds its leader lease",
+		len(running), deploymentNames(names))
+}
+
+// holdsLeaderLease reports whether one of d's pods holds a Lease in d's
+// namespace that has not expired. A Lease this user cannot read counts as
+// not held.
+func holdsLeaderLease(ctx context.Context, c client.Client, d *appsv1.Deployment, now time.Time) bool {
+	var leases coordinationv1.LeaseList
+	if err := c.List(ctx, &leases, client.InNamespace(d.Namespace)); err != nil {
+		return false
+	}
+	for _, l := range leases.Items {
+		s := l.Spec
+		if s.HolderIdentity == nil || !strings.HasPrefix(*s.HolderIdentity, d.Name+"-") {
+			continue
+		}
+		if s.RenewTime == nil || s.LeaseDurationSeconds == nil {
+			continue
+		}
+		if now.Before(s.RenewTime.Add(time.Duration(*s.LeaseDurationSeconds) * time.Second)) {
+			return true
+		}
+	}
+	return false
+}
+
+func sameVersion(ds []*appsv1.Deployment) bool {
+	first := deployedOperatorVersion(*ds[0])
+	for _, d := range ds[1:] {
+		if deployedOperatorVersion(*d) != first {
+			return false
+		}
+	}
+	return first != ""
+}
+
+func deploymentNames(ds []appsv1.Deployment) string {
+	names := make([]string, 0, len(ds))
+	for _, d := range ds {
+		v := deployedOperatorVersion(d)
+		if v == "" {
+			v = "version unknown"
+		}
+		names = append(names, fmt.Sprintf("%s/%s %s", d.Namespace, d.Name, v))
+	}
+	return strings.Join(names, ", ")
 }
 
 // deployedOperatorVersion reports which operator release a Deployment runs, or

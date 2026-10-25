@@ -526,12 +526,12 @@ func TestDatabaseValidator_NoEffectWarnings(t *testing.T) {
 	})
 
 	t.Run("the warning survives an unresolvable clusterRef", func(t *testing.T) {
-		// Validate returns early when the host is missing; the warning must not
-		// depend on getting past that.
+		// The warning must not depend on finding the host.
 		db := dbWith(&neo4jv1beta1.InitialDataSpec{SecretRef: "data"})
 		db.Spec.ClusterRef = "missing"
 		res := v.Validate(context.Background(), db)
-		require.NotEmpty(t, res.Errors, "a missing cluster is an error in its own right")
+		assert.Empty(t, res.Errors, "a missing cluster is a wait, not an error (operations.md id 182)")
+		assert.NotEmpty(t, res.TargetPending)
 		requireNoEffectWarning(t, res.Warnings, "spec.initialData.secretRef", instead)
 	})
 }

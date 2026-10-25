@@ -75,6 +75,7 @@ The validator rejects a `Neo4jRoleBinding` whose `spec.username` overlaps with a
 | Delete (`Revoke` policy) | `REVOKE ROLE r FROM username` for each role in `status.grantedRoles`, then remove finalizer. A failed revoke is recorded in status (phase `Failed`, reason `BindingFailed`), announced once, and retried for up to 5 minutes before the finalizer is released anyway |
 | Delete (`Retain` policy) | Remove finalizer only |
 | User absent | No-op; `UserNotFound` condition; reconcile every 30s until the user appears |
+| Cluster not found | `spec.clusterRef` names no cluster or standalone yet: phase `Pending`, Ready reason `ClusterNotFound`, one `ClusterNotFound` Warning; it carries on once the deployment exists, so it can be applied with its cluster in any order. Not a validation failure |
 | Cluster not Ready | No-op; `ClusterNotReady` condition; reconcile every 30s. A `Ready` binding stays `Ready` (a target restart announces nothing); any other waits in `Pending`. So does a target that reads `Ready` but refuses the connection (`ClusterUnreachable`, logged at info), for up to 5 minutes |
 | Missing custom role | Skip the grant for that role; `PendingDependencies` condition; the binding controller watches `Neo4jRole` and re-reconciles when one lands, and every 30s for a role created in Neo4j directly |
 

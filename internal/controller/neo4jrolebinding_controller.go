@@ -153,7 +153,11 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 	}
 	if !target.Found {
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(rb.Spec.ClusterRef))
-		r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil)
+		// A wait, announced once: when it starts, not on every pass until the
+		// deployment exists (operations.md ids 145 and 182).
+		if r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil) {
+			r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
+		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 	if !target.IsReady() {

@@ -139,6 +139,13 @@ Neo4jEnterpriseCluster/prod (cluster.yaml):
 
 For a standalone the message says `the standalone runs`. A deployment that does not exist yet has nothing to compare with. One the command cannot read (no `get` permission) is a warning saying the tag was not checked, rather than a silent pass.
 
+The same goes for `spec.storage.className`: a volume keeps the StorageClass it was created with, so a class its data volumes do not use changes nothing for a deployment that already runs. The command lists them as the operator's storage pass does and gives the warning the operator will raise after the apply:
+
+```
+Neo4jEnterpriseCluster/prod (cluster.yaml):
+  ⚠ spec.storage.className "fast" has no effect on the data volumes that already exist (data-prod-server-0, data-prod-server-1 use StorageClass "standard"): …
+```
+
 For a deployment on a tag without a patch (`5.26-enterprise`), the check uses the version the operator recorded from the servers (`status.runningVersion`, and for an unfinished upgrade `status.upgradeStatus.resolvedTargetVersion`), so `5.26.31-enterprise` is refused for servers that run 5.26.32 (see [Tags without a patch](../guides/upgrades.md#tags-without-a-patch)).
 
 A `Neo4jBackup`'s `spec.shardedDatabase` is resolved as the operator resolves it before a run: the `Neo4jShardedDatabase` with that CR name (`metadata.name`, not the logical `spec.name`) in the backup's namespace, on the backup's `instanceRef`. The operator fails a backup whose reference does not resolve, so the command reports it as an error, naming the CR when the value is a logical name:
@@ -159,6 +166,15 @@ Neo4jUser/analytics (users.yaml):
 
 **Pending is neither an error nor a warning.** It is the operator's own category for a dependency that is not satisfiable *yet* — a Secret you have not applied — as opposed to something wrong. Pending never affects the exit code, **including under `--strict`**: failing a pipeline because a Secret has not been created yet would punish a correct manifest.
 
+A deployment that does not exist yet is the commonest pending finding. On every kind that names one — `spec.clusterRef` of a `Neo4jDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase`, `Neo4jShardedDatabase` and `Neo4jPlugin`, and a `Neo4jBackup`'s `spec.instanceRef` — it is pending, because the operator waits for it (phase `Pending`, one `ClusterNotFound` event; a backup waits in `Waiting`) and carries on once it is applied. Apply order does not matter:
+
+```
+Neo4jDatabase/orders (app.yaml):
+  … spec.clusterRef: waiting for Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone "prod" in namespace "neo4j"; the operator waits for it and carries on once it exists
+```
+
+One the command cannot read (no `get` permission) is a warning that the rules needing it were not checked.
+
 The connection is also what makes version-skew detection possible. When connected, the CLI compares itself against the operator running in the cluster:
 
 ```
@@ -166,11 +182,11 @@ The connection is also what makes version-skew detection possible. When connecte
   Rules added or removed between those releases are checked incorrectly here.
 ```
 
-It is advisory and silent when it cannot tell — the operator may be in a namespace you cannot list, which is not worth failing over.
+It compares with the operator that is running. Of the operator Deployments (label `app.kubernetes.io/name: neo4j-operator`), one with no available replica runs nothing — a release scaled to 0 in another namespace is not compared with — and of several that run different releases, the one whose pod holds a current leader-election `Lease` in its namespace is the one reconciling. When it still cannot tell (none available, or several on different releases and no single lease holder), it says `version skew not checked:` and why, instead of picking one. It is advisory, and silent when there is nothing to compare with — the operator may be in a namespace you cannot list, which is not worth failing over.
 
 ### Required permissions
 
-`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster` (for a cluster manifest, the running cluster's status; for the other kinds, their `clusterRef`), `Neo4jEnterpriseStandalone` (likewise, for a standalone manifest the running standalone's status), `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`, and `get` and `list` on `Neo4jShardedDatabase` when validating a `Neo4jBackup` with `spec.shardedDatabase`), plus `list` on `Deployment` for the version check (which degrades silently without it). It never writes anything.
+`--connect` reads only. It needs `get` on `Neo4jEnterpriseCluster` (for a cluster manifest, the running cluster's status; for the other kinds, their `clusterRef`), `Neo4jEnterpriseStandalone` (likewise, for a standalone manifest the running standalone's status), `Neo4jRole` and `Secret` in the namespaces you are validating (plus `list` on `Neo4jUser` when validating a `Neo4jRoleBinding`, `get` on `Neo4jShardedDatabase` when validating a `Neo4jRole`, and `get` and `list` on `Neo4jShardedDatabase` when validating a `Neo4jBackup` with `spec.shardedDatabase`), `list` on `PersistentVolumeClaim` for a cluster or standalone that already exists (its volumes' StorageClass), plus `list` on `Deployment` and `Lease` (`coordination.k8s.io`) for the version check (which degrades silently without them). It never writes anything.
 
 ### One run lists every error
 

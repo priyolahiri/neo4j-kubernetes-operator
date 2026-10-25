@@ -100,6 +100,7 @@ Configures a single non-native authentication provider for the user. The provide
 | Update (Secret only) | `ALTER USER name SET PASSWORD $pw`, then, in a status write right after it, update `passwordSecretHash` and `passwordLastRotated`; one `PasswordRotated` event |
 | Delete (`Delete` policy) | `DROP USER name IF EXISTS`, then remove finalizer. A failed drop is recorded in status (phase `Failed`, reason `UserDeletionFailed`), announced once, and retried for up to 5 minutes before the finalizer is released anyway |
 | Delete (`Retain` policy) | Remove finalizer only |
+| Cluster not found | `spec.clusterRef` names no cluster or standalone yet: phase `Pending`, Ready reason `ClusterNotFound`, one `ClusterNotFound` Warning; it carries on once the deployment exists, so it can be applied with its cluster in any order. Not a validation failure |
 | Cluster not Ready | No-op; requeue every 30s with `ClusterNotReady` condition. A `Ready` user stays `Ready` (a target restart announces nothing); any other waits in `Pending`. So does a target that reads `Ready` but refuses the connection (`ClusterUnreachable`, logged at info), for up to 5 minutes |
 | Missing custom role | Skip the grant for that role; set `PendingDependencies` condition; reconcile triggers when a `Neo4jRole` lands (the user controller watches `Neo4jRole`), and every 30s for a role created in Neo4j directly |
 

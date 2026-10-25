@@ -66,7 +66,7 @@ Same same-Kubernetes-cluster-only constraint as `upstreamClusterRef`, for the sa
 
 | Field | Type | Description |
 |---|---|---|
-| `phase` | `string` | `Pending`, `Seeding`, `Replicating`, `Promoted`, or `Failed`. **`Promoted` is terminal.** |
+| `phase` | `string` | `Pending`, `Seeding`, `Replicating`, `Promoted`, or `Failed`. **`Promoted` is terminal.** A `clusterRef` that names no cluster or standalone yet is `Pending` with reason `ClusterNotFound` and one `ClusterNotFound` Warning, never a validation failure. |
 | `message` | `string` | Short human-readable explanation of `phase`. |
 | `observedGeneration` | `int64` | `metadata.generation` observed at the last successful reconcile. |
 | `databaseType` | `string` | Live `type` column from `SHOW DATABASES` — `replica` while replicating, a standard type after promotion. This, not `phase`, is the operator's authoritative signal. |

@@ -45,6 +45,10 @@ func NewRoleBindingValidator(c client.Client) *RoleBindingValidator {
 type RoleBindingValidationResult struct {
 	Errors   field.ErrorList
 	Warnings []string
+	// TargetPending is set when spec.clusterRef names no deployment yet: a
+	// wait the reconciler handles (Pending, one ClusterNotFound event), never
+	// an error (operations.md id 182).
+	TargetPending string
 }
 
 // Validate runs all checks on a Neo4jRoleBinding spec.
@@ -108,6 +112,7 @@ func (v *RoleBindingValidator) validateClusterRefAndUserOverlap(ctx context.Cont
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	clusterKey := types.NamespacedName{Name: rb.Spec.ClusterRef, Namespace: rb.Namespace}
 	clusterFound := false
+	warningsBefore := len(result.Warnings)
 	if err := v.client.Get(ctx, clusterKey, cluster); err == nil {
 		clusterFound = true
 	} else if !errors.IsNotFound(err) {
@@ -123,9 +128,10 @@ func (v *RoleBindingValidator) validateClusterRefAndUserOverlap(ctx context.Cont
 				fmt.Sprintf("could not verify clusterRef %q: %v", rb.Spec.ClusterRef, err))
 		}
 	}
-	if !clusterFound {
-		result.Errors = append(result.Errors, field.NotFound(clusterRefPath,
-			fmt.Sprintf("no Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone named %q in namespace %q", rb.Spec.ClusterRef, rb.Namespace)))
+	if !clusterFound && len(result.Warnings) == warningsBefore {
+		// Not there yet (rather than unreadable): the reconciler waits for it
+		// (operations.md id 182).
+		result.TargetPending = DeploymentPending(clusterRefPath, rb.Spec.ClusterRef, rb.Namespace)
 	}
 
 	// The target the binding points at, for the same-target overlap check below.

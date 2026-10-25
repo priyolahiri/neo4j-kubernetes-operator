@@ -77,8 +77,12 @@ func TestRoleBindingValidator_ClusterRefMissing(t *testing.T) {
 	cl := newUserValidatorClient(t)
 	v := NewRoleBindingValidator(cl)
 	res := v.Validate(context.Background(), sampleBinding("alice", []string{"reader"}))
-	if len(res.Errors) == 0 {
-		t.Fatalf("expected error for missing clusterRef, got none")
+	// A deployment not there yet is a wait, not an error (operations.md id 182).
+	if len(res.Errors) != 0 {
+		t.Fatalf("a missing clusterRef must not be an error, got %v", res.Errors)
+	}
+	if res.TargetPending == "" {
+		t.Fatalf("expected the missing clusterRef as pending")
 	}
 }
 

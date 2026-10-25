@@ -205,9 +205,10 @@ func TestDatabaseValidator_ValidateTopology(t *testing.T) {
 					},
 				},
 			},
-			expectedErrors:     1,
-			expectedWarnings:   0,
-			shouldContainError: "Referenced cluster nonexistent-cluster not found",
+			// A wait, not an error: the reconciler holds the database in
+			// Pending until the cluster exists (operations.md id 182).
+			expectedErrors:   0,
+			expectedWarnings: 0,
 		},
 	}
 
@@ -970,9 +971,9 @@ func TestDatabaseValidator_ValidateStandalone(t *testing.T) {
 					Wait:       true,
 				},
 			},
-			expectErrors:   1,
+			// A wait, not an error (operations.md id 182).
+			expectErrors:   0,
 			expectWarnings: 0,
-			errorMessages:  []string{"Referenced cluster nonexistent-standalone not found"},
 		},
 	}
 

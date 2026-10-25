@@ -52,6 +52,9 @@ func NewDatabaseValidator(client client.Client) *DatabaseValidator {
 type DatabaseValidationResult struct {
 	Errors   field.ErrorList
 	Warnings []string
+	// TargetPending is set when spec.clusterRef names no deployment yet: a
+	// wait the reconciler handles (Pending, ClusterNotFound), never an error.
+	TargetPending string
 }
 
 // neo4jDatabaseNamePattern matches valid Neo4j database names: starts with a letter,
@@ -182,55 +185,51 @@ func (v *DatabaseValidator) Validate(ctx context.Context, database *neo4jv1beta1
 	// before the cluster lookup so the warning is not lost when it fails.
 	result.Warnings = append(result.Warnings, databaseNoEffectWarnings(database)...)
 
-	// Try to get referenced cluster first
-	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
-	clusterKey := types.NamespacedName{
-		Name:      database.Spec.ClusterRef,
-		Namespace: database.Namespace,
-	}
-
-	clusterErr := v.client.Get(ctx, clusterKey, cluster)
-
-	// If cluster not found, try to get standalone
+	// The deployment the database is created on. One that does not exist yet
+	// is a wait, not an error: the reconciler holds the database in Pending
+	// and creates it once the deployment is there (operations.md id 182). A
+	// read that fails otherwise leaves the rules that need the deployment
+	// unchecked. Every other rule runs either way.
+	clusterRefPath := field.NewPath("spec", "clusterRef")
+	var cluster *neo4jv1beta1.Neo4jEnterpriseCluster
 	var standalone *neo4jv1beta1.Neo4jEnterpriseStandalone
-	if errors.IsNotFound(clusterErr) {
-		standalone = &neo4jv1beta1.Neo4jEnterpriseStandalone{}
-		standaloneKey := types.NamespacedName{
-			Name:      database.Spec.ClusterRef,
-			Namespace: database.Namespace,
+	switch {
+	case database.Spec.ClusterRef == "":
+		result.Errors = append(result.Errors, field.Required(clusterRefPath, "clusterRef is required"))
+	case v.client == nil:
+	default:
+		var err error
+		cluster, standalone, err = LookupDeployment(ctx, v.client, database.Namespace, database.Spec.ClusterRef)
+		switch {
+		case err != nil:
+			result.Warnings = append(result.Warnings, DeploymentUnreadable(clusterRefPath, database.Spec.ClusterRef, err))
+		case cluster == nil && standalone == nil:
+			result.TargetPending = DeploymentPending(clusterRefPath, database.Spec.ClusterRef, database.Namespace)
 		}
-
-		standaloneErr := v.client.Get(ctx, standaloneKey, standalone)
-		if errors.IsNotFound(standaloneErr) {
-			result.Errors = append(result.Errors, field.NotFound(
-				field.NewPath("spec", "clusterRef"),
-				fmt.Sprintf("Referenced cluster %s not found", database.Spec.ClusterRef)))
-			return result
-		} else if standaloneErr != nil {
-			result.Warnings = append(result.Warnings,
-				fmt.Sprintf("Cannot validate database configuration: failed to get cluster %s", database.Spec.ClusterRef))
-			return result
-		}
-	} else if clusterErr != nil {
-		result.Warnings = append(result.Warnings,
-			fmt.Sprintf("Cannot validate database topology: failed to get cluster %s", database.Spec.ClusterRef))
-		return result
 	}
 
-	// Validate topology if specified
+	// Validate topology if specified: against the deployment when it is
+	// known, and only for counts no deployment admits when it is not.
 	if database.Spec.Topology != nil {
-		if standalone != nil {
+		switch {
+		case standalone != nil:
 			v.validateDatabaseTopologyForStandalone(database, standalone, result)
-		} else {
+		case cluster != nil:
 			v.validateDatabaseTopology(database, cluster, result)
+		default:
+			validateTopologyCounts(database.Spec.Topology, result)
 		}
 	}
 
 	// Resolve the target image tag (cluster or standalone) so version-gated
 	// fields can be enforced: seedRestoreUntil and defaultCypherLanguage are
-	// both CalVer-only.
-	imageTag := cluster.Spec.Image.Tag
-	if standalone != nil {
+	// both CalVer-only. Without a deployment the tag is empty, which gates
+	// nothing (operations.md id 101).
+	imageTag := ""
+	switch {
+	case cluster != nil:
+		imageTag = cluster.Spec.Image.Tag
+	case standalone != nil:
 		imageTag = standalone.Spec.Image.Tag
 	}
 
@@ -286,6 +285,22 @@ func (v *DatabaseValidator) validateDatabaseTopologyForStandalone(database *neo4
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("Database topology specifies %d secondaries, but standalone deployments cannot provide read replicas. "+
 				"All operations will be handled by the single standalone instance.", topology.Secondaries))
+	}
+}
+
+// validateTopologyCounts holds a topology to what no deployment admits, for a
+// database whose deployment is not known yet: negative counts. The rest
+// depends on whether it is a cluster (how many servers) or a standalone (the
+// topology is ignored), and is checked once it exists.
+func validateTopologyCounts(topology *neo4jv1beta1.DatabaseTopology, result *DatabaseValidationResult) {
+	topologyPath := field.NewPath("spec", "topology")
+	if topology.Primaries < 0 {
+		result.Errors = append(result.Errors, field.Invalid(topologyPath.Child("primaries"), topology.Primaries,
+			"primaries cannot be negative"))
+	}
+	if topology.Secondaries < 0 {
+		result.Errors = append(result.Errors, field.Invalid(topologyPath.Child("secondaries"), topology.Secondaries,
+			"secondaries cannot be negative"))
 	}
 }
 

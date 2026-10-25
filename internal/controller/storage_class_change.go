@@ -21,6 +21,7 @@ import (
 	"fmt"
 
 	corev1 "k8s.io/api/core/v1"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -45,19 +46,41 @@ func dataVolumeClasses(pvcs []corev1.PersistentVolumeClaim) map[string]string {
 	return classes
 }
 
+// ClusterDataVolumeClasses maps each data volume (PVC) of the cluster named
+// name to the StorageClass it names, found as the storage pass finds them.
+// `kubectl neo4j validate --connect` reads them through this, so it says what
+// the operator's advisory will say before the manifest is applied.
+func ClusterDataVolumeClasses(ctx context.Context, c client.Client, namespace, name string) (map[string]string, error) {
+	pvcs, err := (&Neo4jEnterpriseClusterReconciler{Client: c}).
+		findPVCsForStatefulSet(ctx, namespace, name, fmt.Sprintf("%s-server", name), "data")
+	if err != nil {
+		return nil, err
+	}
+	return dataVolumeClasses(pvcs), nil
+}
+
+// StandaloneDataVolumeClasses is ClusterDataVolumeClasses for a standalone.
+func StandaloneDataVolumeClasses(ctx context.Context, c client.Client, namespace, name string) (map[string]string, error) {
+	pvcs, err := (&Neo4jEnterpriseStandaloneReconciler{Client: c}).findStandalonePVCs(ctx, namespace, name, "neo4j-data")
+	if err != nil {
+		return nil, err
+	}
+	return dataVolumeClasses(pvcs), nil
+}
+
 // recordStorageClassChange warns, as an advisory ValidationWarning, while
 // spec.storage.className names a StorageClass the cluster's data volumes do
 // not use: an edit of it changes nothing for volumes that exist (#532). A
 // failed read is logged and changes nothing, so a warning already announced
 // is neither repeated nor forgotten.
 func (r *Neo4jEnterpriseClusterReconciler) recordStorageClassChange(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) {
-	pvcs, err := r.findPVCsForStatefulSet(ctx, cluster.Namespace, cluster.Name, fmt.Sprintf("%s-server", cluster.Name), "data")
+	classes, err := ClusterDataVolumeClasses(ctx, r.Client, cluster.Namespace, cluster.Name)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to read the data volumes for the StorageClass check (non-fatal)")
 		return
 	}
 	var warnings []string
-	if w := validation.StorageClassChangeWarning(cluster.Spec.Storage.ClassName, dataVolumeClasses(pvcs)); w != "" {
+	if w := validation.StorageClassChangeWarning(cluster.Spec.Storage.ClassName, classes); w != "" {
 		warnings = append(warnings, w)
 	}
 	r.advisoryWarnings.recordScoped(r.Recorder, cluster, EventReasonValidationWarning, storageClassChangeScope, warnings)
@@ -65,13 +88,13 @@ func (r *Neo4jEnterpriseClusterReconciler) recordStorageClassChange(ctx context.
 
 // recordStorageClassChange is the cluster's check for a standalone.
 func (r *Neo4jEnterpriseStandaloneReconciler) recordStorageClassChange(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) {
-	pvcs, err := r.findStandalonePVCs(ctx, standalone.Namespace, standalone.Name, "neo4j-data")
+	classes, err := StandaloneDataVolumeClasses(ctx, r.Client, standalone.Namespace, standalone.Name)
 	if err != nil {
 		log.FromContext(ctx).Error(err, "Failed to read the data volume for the StorageClass check (non-fatal)")
 		return
 	}
 	var warnings []string
-	if w := validation.StorageClassChangeWarning(standalone.Spec.Storage.ClassName, dataVolumeClasses(pvcs)); w != "" {
+	if w := validation.StorageClassChangeWarning(standalone.Spec.Storage.ClassName, classes); w != "" {
 		warnings = append(warnings, w)
 	}
 	r.advisoryWarnings.recordScoped(r.Recorder, standalone, EventReasonValidationWarning, storageClassChangeScope, warnings)
