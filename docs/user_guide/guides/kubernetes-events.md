@@ -151,7 +151,7 @@ is met on many passes. It is announced once:
 | `AuraFleetDeploymentAdopted` | Normal | Provisioning adopted an existing Aura fleet deployment of the same name instead of creating one |
 | `AuraFleetDeploymentDeleted` | Normal | The Aura fleet deployment was unregistered |
 | `AuraFleetTokenProvisioned` | Normal | The fleet registration token was stored in a Secret |
-| `AuraFleetTokenRotated` | Warning | The fleet token was rotated; any previous registration is now invalid |
+| `AuraFleetTokenRotated` | Warning | The fleet token was rotated and the new one stored in its Secret; any previous registration is now invalid. Raised once the new token is stored: while the Secret cannot be written, each attempt rotates again and `status.auraFleetManagement.message` says why |
 
 ### Storage Expansion
 
@@ -252,31 +252,31 @@ The replica's `UpstreamClusterNotFound`, `UpstreamClusterNotReady`, `UpstreamBac
 
 ### Aura Orchestration
 
-Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, `AuraRestore`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore`, `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite`). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place.
+Emitted by the Aura CRDs (`AuraProviderConfig`, `AuraInstance`, `AuraSnapshot`, `AuraRestore`, `AuraCustomerManagedKey`, `AuraIPFilter`, `AuraDatabase`, `AuraDatabaseBackup`, `AuraDatabaseRestore`, `AuraOrganizationMember`, `AuraProjectMember`, `AuraInvite`). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The `…Ready` events and `AuraCredentialsValidated` are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call.
 
 | Reason | Type | Description |
 |---|---|---|
-| `AuraCredentialsValidated` / `AuraCredentialsInvalid` | Normal / Warning | The provider config's Aura API credentials were accepted / rejected (the Warning once per failure) |
-| `AuraInstanceCreated`, `AuraInstanceAdopted`, `AuraInstanceUpdated`, `AuraInstancePaused`, `AuraInstanceResumed`, `AuraInstanceUpgraded`, `AuraInstanceDeleted`, `AuraInstanceOrphaned` | Normal | Lifecycle of the Aura instance |
-| `AuraInstanceFailed` | Warning | Aura instance reconcile failed (also: deletion refused while `deletionProtection` is set, recorded on the `Synced` condition, reason `DeletionProtected`). Once per failure |
+| `AuraCredentialsValidated` / `AuraCredentialsInvalid` | Normal / Warning | The provider config's Aura API credentials were accepted / rejected. Each once per change: valid again after a failure is announced again |
+| `AuraInstanceCreated`, `AuraInstanceAdopted`, `AuraInstanceUpdated`, `AuraInstancePaused`, `AuraInstanceResumed`, `AuraInstanceUpgraded`, `AuraInstanceDeleted`, `AuraInstanceOrphaned` | Normal | Lifecycle of the Aura instance. `AuraInstanceOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials stayed unavailable for 5 minutes after deletion was requested: the cloud instance keeps running, so delete it in the Aura console |
+| `AuraInstanceFailed` | Warning | Aura instance reconcile failed (also: deletion refused while `deletionProtection` is set, recorded on the `Synced` condition, reason `DeletionProtected`; a `Delete` waiting for credentials it cannot read, reason `CredentialsUnavailable`). Once per failure |
 | `AuraSnapshotCreated` | Normal | Aura snapshot requested |
 | `AuraRestoreStarted`, `AuraRestoreCompleted` | Normal | Instance restore from a snapshot started / completed |
 | `AuraRestoreFailed` | Warning | The instance entered a failed status during restore |
-| `AuraCustomerManagedKeyCreated`, `AuraCustomerManagedKeyAdopted`, `AuraCustomerManagedKeyReady`, `AuraCustomerManagedKeyDeleted`, `AuraCustomerManagedKeyOrphaned` | Normal | Lifecycle of the customer-managed key |
+| `AuraCustomerManagedKeyCreated`, `AuraCustomerManagedKeyAdopted`, `AuraCustomerManagedKeyReady`, `AuraCustomerManagedKeyDeleted`, `AuraCustomerManagedKeyOrphaned` | Normal | Lifecycle of the customer-managed key (`AuraCustomerManagedKeyReady` once when the key becomes ready). `AuraCustomerManagedKeyOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials stayed unavailable for 5 minutes: the key stays registered in Aura |
 | `AuraCustomerManagedKeyDeleteBlocked` | Warning | The key cannot be deleted: still in use by one or more instances. Once per refusal |
-| `AuraCustomerManagedKeyFailed` | Warning | Customer-managed key reconcile failed. Once per failure |
-| `AuraIPFilterCreated`, `AuraIPFilterAdopted`, `AuraIPFilterUpdated`, `AuraIPFilterReady`, `AuraIPFilterDeleted`, `AuraIPFilterOrphaned` | Normal | Lifecycle of the IP filter |
-| `AuraIPFilterFailed` | Warning | IP filter reconcile failed. Once per failure |
-| `AuraDatabaseCreated`, `AuraDatabaseAdopted`, `AuraDatabaseReady`, `AuraDatabaseDeleted`, `AuraDatabaseOrphaned` | Normal | Lifecycle of the Aura database (`AuraDatabaseCreated` is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created) |
+| `AuraCustomerManagedKeyFailed` | Warning | Customer-managed key reconcile failed (also: a `Delete` waiting for credentials, reason `CredentialsUnavailable`). Once per failure |
+| `AuraIPFilterCreated`, `AuraIPFilterAdopted`, `AuraIPFilterUpdated`, `AuraIPFilterReady`, `AuraIPFilterDeleted`, `AuraIPFilterOrphaned` | Normal | Lifecycle of the IP filter (`AuraIPFilterReady` once when it becomes Ready). `AuraIPFilterOrphaned` is a Warning when `deletionPolicy: Delete` could not run because the Aura credentials or organization stayed unavailable for 5 minutes: the filter stays in place in Aura |
+| `AuraIPFilterFailed` | Warning | IP filter reconcile failed (also: a `Delete` waiting for credentials, reason `CredentialsUnavailable`). Once per failure |
+| `AuraDatabaseCreated`, `AuraDatabaseAdopted`, `AuraDatabaseReady`, `AuraDatabaseDeleted`, `AuraDatabaseOrphaned` | Normal | Lifecycle of the Aura database (`AuraDatabaseReady` once when it becomes Ready; `AuraDatabaseCreated` is a Warning when the instance already had databases: a pre-existing one cannot be adopted by name, so verify no duplicate was created) |
 | `AuraDatabaseFailed` | Warning | Aura database reconcile failed. Once per failure |
 | `AuraDatabaseBackupCreated` | Normal | Per-database backup created |
-| `AuraDatabaseBackupFailed` | Warning | Per-database backup failed. Once per failure |
+| `AuraDatabaseBackupFailed` | Warning | Per-database backup failed. Once per failure. Not raised while Aura is briefly unavailable or busy with another operation: the backup is retried |
 | `AuraDatabaseRestoreStarted`, `AuraDatabaseRestoreCompleted` | Normal | Per-database restore started / submitted |
 | `AuraDatabaseRestoreFailed` | Warning | Per-database restore failed. Once per failure |
-| `AuraMemberRoleUpdated`, `AuraMemberReady`, `AuraMemberRemoved` | Normal | Organization/project member role set or member added/removed, reconciled, or removed on CR deletion |
+| `AuraMemberRoleUpdated`, `AuraMemberReady`, `AuraMemberRemoved` | Normal | Organization/project member role set or member added/removed, reconciled (`AuraMemberReady` once when the membership becomes Ready), or removed on CR deletion |
 | `AuraMemberNotFound` | Warning | The person is not an organization member; invite them with an `AuraInvite`. Once per wait |
 | `AuraMemberFailed` | Warning | Member reconcile failed. Once per failure |
-| `AuraInviteCreated`, `AuraInviteAdopted`, `AuraInviteReady`, `AuraInviteDeleted`, `AuraInviteOrphaned` | Normal | Lifecycle of the invite |
+| `AuraInviteCreated`, `AuraInviteAdopted`, `AuraInviteReady`, `AuraInviteDeleted`, `AuraInviteOrphaned` | Normal | Lifecycle of the invite (`AuraInviteReady` names the invite's state, once per state: sent, accepted, declined, expired, revoked) |
 | `AuraInviteFailed` | Warning | Invite reconcile failed. Once per failure |
 
 ## Using Events in Alerting

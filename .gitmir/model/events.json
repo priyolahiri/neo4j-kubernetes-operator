@@ -728,13 +728,13 @@
   {
     "id": "ev-aura-instance-orphaned",
     "name": "AuraInstanceOrphaned",
-    "description": "Emitted when handleDeletion leaves the cloud instance running under the default Orphan deletionPolicy.",
+    "description": "Emitted (Normal) when handleDeletion leaves the cloud instance running under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-instance-failed",
     "name": "AuraInstanceFailed",
-    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() on any reconcile failure (credentials, project ID, create, observe) and by handleDeletion when deletionProtection blocks a requested delete. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -776,7 +776,7 @@
   {
     "id": "ev-aura-database-ready",
     "name": "AuraDatabaseReady",
-    "description": "Emitted every reconcile once GetDatabase succeeds and status is synced.",
+    "description": "Emitted when the database becomes Ready. Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -794,7 +794,7 @@
   {
     "id": "ev-aura-database-failed",
     "name": "AuraDatabaseFailed",
-    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for TargetUnresolved, CreateFailed (including InstanceNotMultiDatabase) and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). The InstanceNotMultiDatabase refusal, once on status for the current generation and the same Aura instance, is not asked again (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -806,7 +806,7 @@
   {
     "id": "ev-aura-database-backup-failed",
     "name": "AuraDatabaseBackupFailed",
-    "description": "Emitted by fail() when resolving the database/target or taking the backup fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() when resolving the database/target or taking the backup fails. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx, a transport failure or a 409 (another operation in flight) of the backup create is retried without it, as the snapshot create does (id 88).",
     "moduleId": "mod-aura-database"
   },
   {
@@ -842,7 +842,7 @@
   {
     "id": "ev-aura-member-ready",
     "name": "AuraMemberReady",
-    "description": "Emitted once the member's role matches spec.role and status is synced.",
+    "description": "Emitted when an organization or project membership becomes Ready (the member's role matches spec.role). Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -872,7 +872,7 @@
   {
     "id": "ev-aura-invite-ready",
     "name": "AuraInviteReady",
-    "description": "Emitted every reconcile once the invite's v2beta1 status has been mapped to a CR phase.",
+    "description": "Emitted when the invite's v2beta1 status, mapped to a CR phase, changes: once per state (Sent, Accepted, Declined, Expired, Revoked); the message names the phase. Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-rbac"
   },
   {
@@ -890,13 +890,13 @@
   {
     "id": "ev-aura-invite-failed",
     "name": "AuraInviteFailed",
-    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for CreateFailed/ObserveFailed and other non-refusal errors. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88); the OrganizationRoleRequired refusal, once on status for the current generation, is not asked again (id 156).",
     "moduleId": "mod-aura-rbac"
   },
   {
     "id": "ev-aura-credentials-validated",
     "name": "AuraCredentialsValidated",
-    "description": "Emitted when the AuraProviderConfig's credentials produce a working token and a successful ListInstances call.",
+    "description": "Emitted when the AuraProviderConfig's credentials produce a working token and a successful ListInstances call and the status write changed the Ready condition: when they become valid, and again after a failure — not on every 30s revalidation (knowledge operations.md id 136).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -920,7 +920,7 @@
   {
     "id": "ev-aura-customer-managed-key-ready",
     "name": "AuraCustomerManagedKeyReady",
-    "description": "Emitted once aura.IsCMKReady(observed.Status) is true.",
+    "description": "Emitted when the key becomes ready (aura.IsCMKReady(observed.Status)). Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -938,13 +938,13 @@
   {
     "id": "ev-aura-customer-managed-key-orphaned",
     "name": "AuraCustomerManagedKeyOrphaned",
-    "description": "Emitted when handleDeletion leaves the key registered under the default Orphan deletionPolicy.",
+    "description": "Emitted (Normal) when handleDeletion leaves the key registered under the default Orphan deletionPolicy, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-customer-managed-key-failed",
     "name": "AuraCustomerManagedKeyFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for CredentialsUnavailable, ProjectIDMissing, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). fail() sets status.phase=Error with the Ready condition (id 156). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -968,7 +968,7 @@
   {
     "id": "ev-aura-ip-filter-ready",
     "name": "AuraIPFilterReady",
-    "description": "Emitted every reconcile once GetIPFilter succeeds and status is synced.",
+    "description": "Emitted when the IP filter becomes Ready. Emitted when the status write that records it changed the phase or the Ready condition, read inside the conflict retry — not on every 5-minute re-observe, nor on a lastSyncedTime refresh, nor after an operator restart (knowledge operations.md ids 136 and 156).",
     "moduleId": "mod-aura-core"
   },
   {
@@ -980,13 +980,13 @@
   {
     "id": "ev-aura-ip-filter-orphaned",
     "name": "AuraIPFilterOrphaned",
-    "description": "Emitted when handleDeletion leaves the filter in place under deletionPolicy=Orphan.",
+    "description": "Emitted (Normal) when handleDeletion leaves the filter in place under deletionPolicy=Orphan, or when managementPolicies does not permit Delete. A Warning instead when deletionPolicy is Delete but the Aura credentials or organization could not be resolved for finalizerDeletionGracePeriod (5 minutes) after deletion was requested: the finalizer is released without deleting, and the message says the resource was left in Aura (knowledge operations.md id 157).",
     "moduleId": "mod-aura-core"
   },
   {
     "id": "ev-aura-ip-filter-failed",
     "name": "AuraIPFilterFailed",
-    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "Emitted by fail() for CredentialsUnavailable, OrganizationMissing, InstanceRefUnresolved, CreateFailed and ObserveFailed reasons. Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). Also records a Delete that waits for Aura credentials it cannot resolve (reason CredentialsUnavailable, id 157). A 429, a 5xx or a transport failure of the list or the create is retried without it (id 88).",
     "moduleId": "mod-aura-core"
   },
   {
