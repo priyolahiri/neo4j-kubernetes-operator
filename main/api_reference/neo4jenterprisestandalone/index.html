@@ -5617,7 +5617,7 @@
 <tr>
 <td><code>tag</code></td>
 <td><code>string</code></td>
-<td><strong>Required</strong>. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward). A change is checked against <code>status.version</code> on every reconcile: a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>)</td>
+<td><strong>Required</strong>. Neo4j version tag — 5.26 LTS or any CalVer release (2025.x, 2026.x, and onward). A change is checked against <code>status.version</code> on every reconcile: a downgrade is refused (see <a href="../../user_guide/guides/upgrades/#version-checks">Version checks</a>), and so is a change a <code>Managed</code> plugin of it cannot follow (see <a href="../../user_guide/guides/upgrades/#plugins-that-cannot-follow">Plugins that cannot follow</a>)</td>
 </tr>
 <tr>
 <td><code>pullPolicy</code></td>

@@ -4638,7 +4638,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>ClusterNotFound</code></td>
 <td>Warning</td>
-<td>Referenced cluster or standalone not found; the database waits in phase <code>Pending</code> and carries on once it exists. Once per wait. A missing deployment is never a validation failure. Also emitted, with the same wait, by <code>Neo4jShardedDatabase</code> (for a cluster), <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code> and <code>Neo4jReplicaDatabase</code></td>
+<td>Referenced cluster or standalone not found; the database waits in phase <code>Pending</code> and carries on once it exists. Once per wait. A missing deployment is never a validation failure. Also emitted, with the same wait, by <code>Neo4jShardedDatabase</code> (for a cluster), <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jReplicaDatabase</code> and <code>Neo4jPlugin</code> (phase <code>Pending</code>, then installed once its target exists)</td>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
