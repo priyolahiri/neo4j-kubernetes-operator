@@ -494,8 +494,8 @@ The `Neo4jEnterpriseStandalone` status provides information about the current st
 #### `phase` (string)
 Current deployment phase:
 
-- `Pending`: Deployment is being created
-- `Ready`: Deployment is running and ready for connections
+- `Pending`: Deployment is being created, or its pod restarts onto a new pod template ("Waiting for the standalone to restart on its latest pod template: …" — from the template write until the new pod is ready, so databases, users, roles and plugins that wait for a `Ready` standalone do not act on the pod about to restart)
+- `Ready`: Deployment is running and ready for connections: its pod is ready on the StatefulSet's latest pod template
 - `Failed`: Deployment has failed — including spec validation errors and a missing StorageClass (the reason is in `status.message`; there is no separate `ValidationFailed` phase)
 
 #### `effectiveCypherLanguage` (string)

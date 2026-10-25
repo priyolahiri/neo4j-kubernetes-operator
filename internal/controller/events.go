@@ -189,6 +189,16 @@ const (
 	// standalone's pod stuck on an older revision, which an OrderedReady
 	// StatefulSet does not replace.
 	EventReasonPluginSettingsFailing = "PluginSettingsFailing"
+	// EventReasonPluginDisabled is emitted once on a Neo4jPlugin with
+	// spec.enabled: false when it reaches phase Disabled: nothing of it is on
+	// its target's servers any more — its removal written and rolled out, or
+	// nothing there to remove (operations.md id 160).
+	EventReasonPluginDisabled = "PluginDisabled"
+	// EventReasonPluginProceduresHidden is emitted once, as a Warning, when a
+	// Neo4jPlugin's condition ProceduresHidden appears or changes: the
+	// target's effective dbms.security.procedures.allowlist loads none of the
+	// plugin's procedures (operations.md id 161).
+	EventReasonPluginProceduresHidden = "PluginProceduresHidden"
 )
 
 // Split-brain events

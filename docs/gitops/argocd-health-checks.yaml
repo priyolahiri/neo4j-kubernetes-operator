@@ -149,6 +149,10 @@ data:
     if phase == "Ready" or phase == "Installed" then
       hs.status = "Healthy"
       hs.message = obj.status.message or "Plugin is installed and ready"
+    elseif phase == "Disabled" then
+      -- spec.enabled: false, and the plugin is off its target's servers.
+      hs.status = "Healthy"
+      hs.message = obj.status.message or "Plugin is disabled"
     elseif phase == "Failed" or phase == "Error" or phase == "Invalid" or phase == "ValidationFailed" or phase == "Degraded" or phase == "Unknown" then
       -- "Invalid" is terminal until the spec is edited (no requeue).
       hs.status = "Degraded"

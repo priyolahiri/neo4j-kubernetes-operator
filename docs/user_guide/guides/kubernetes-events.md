@@ -125,11 +125,15 @@ is met on many passes. It is announced once:
 
 | Reason | Type | Description |
 |---|---|---|
-| `PluginInstalled` | Normal | Plugin successfully installed |
+| `PluginInstalled` | Normal | Plugin installed: every server runs the new pod template. Once per install, from the status write that makes the plugin `Ready` (a pass that read an older copy of the plugin says nothing) |
 | `PluginInstallFailed` | Warning | Plugin installation failed (once per failure; retried every 30s without repeating it). A server that is restarting or briefly unreachable is not a failure: the plugin stays `Installing` |
 | `PluginMissing` | Warning | A `Ready` plugin's target StatefulSet no longer carries what the plugin set (its `NEO4J_PLUGINS` entry, a variable it sets, a `VerifiedDownload` init container or its volumes); the plugin goes back to `Installing` and restores it, which restarts the servers — or, while the target is not `Ready` with every server available, says so and is `Waiting` until it is |
-| `PluginInstallDeferred` | Normal | Installing the plugin — or a `VerifiedDownload` plugin's update of its trusted CAs after the target's `spec.trustedCASecrets` changed — would restart the servers of a target that is not `Ready` with every server available (a cluster `Degraded`, or forming, rolling or upgrading); the plugin is `Waiting` and writes once the target is. Once per wait |
+| `PluginInstallDeferred` | Normal | Installing the plugin — or a `VerifiedDownload` plugin's update of its trusted CAs after the target's `spec.trustedCASecrets` changed, or the removal of a plugin set to `spec.enabled: false` — would restart the servers of a target that is not `Ready` with every server available (a cluster `Degraded`, or forming, rolling or upgrading); the plugin is `Waiting` and writes once the target is. Once per wait |
 | `PluginDuplicate` | Warning | Another `Neo4jPlugin` already targets this name (only the first owner reconciles; duplicates sit in `Failed` until the conflict is resolved). Once per conflict |
+| `PluginInitContainerFailing` | Warning / Normal | A `VerifiedDownload` plugin writes a change of its own failing init container — a fixed source, a CA list, or its removal when it is disabled — to a target that is not `Ready` (Warning, once), or deletes a standalone's pod stuck in that container (Normal) |
+| `PluginSettingsFailing` | Warning / Normal | The plugin writes a change of the settings every down server keeps failing with — a key removed, or the plugin disabled — to a target that is not `Ready` (Warning, once), or deletes a standalone's pod stuck on the old settings (Normal) |
+| `PluginDisabled` | Normal | `spec.enabled: false`, and nothing of the plugin is on its target's servers any more (its removal written and rolled out, or nothing there): phase `Disabled`. Once |
+| `PluginProceduresHidden` | Warning | The target's effective `dbms.security.procedures.allowlist` — shared by every plugin of the target — loads none of this plugin's procedures; the plugin carries the condition `ProceduresHidden` (reason `NotInAllowlist`) and stays `Ready`. When the condition appears or its message changes |
 
 ### Split-Brain Detection
 

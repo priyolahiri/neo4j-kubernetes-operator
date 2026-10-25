@@ -141,6 +141,7 @@ func TestResourceStatus_EveryPhaseInTheVocabularyIsClassified(t *testing.T) {
 		neo4jv1beta1.PhaseInstalled: true,
 		neo4jv1beta1.PhaseCompleted: true,
 		neo4jv1beta1.PhaseSuspended: true, // a deliberate pause, not a fault
+		neo4jv1beta1.PhaseDisabled:  true, // a plugin kept off its target, as asked
 		neo4jv1beta1.PhasePending:   true,
 		// A Neo4jAuthRule waiting for roles to exist: "not yet", like Pending.
 		neo4jv1beta1.PhasePendingDependencies: true,

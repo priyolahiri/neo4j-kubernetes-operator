@@ -49,6 +49,10 @@ const (
 	PhaseDegraded         = "Degraded"
 	PhaseSuspended        = "Suspended"
 
+	// Resting, as asked: a Neo4jPlugin with spec.enabled: false, which the
+	// operator keeps off its target's servers. Not a fault.
+	PhaseDisabled = "Disabled"
+
 	// In progress.
 	PhasePending    = "Pending"
 	PhaseValidating = "Validating"
@@ -92,6 +96,7 @@ var AllPhases = []string{
 	PhaseValidationFailed,
 	PhaseDegraded,
 	PhaseSuspended,
+	PhaseDisabled,
 	PhasePending,
 	PhaseValidating,
 	PhaseCreating,
