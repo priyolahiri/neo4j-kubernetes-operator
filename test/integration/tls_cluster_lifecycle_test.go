@@ -158,8 +158,7 @@ var _ = Describe("TLS Cluster Lifecycle (strict peer validation, default)", Labe
 	AfterEach(func() {
 		if cluster != nil {
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			if err := k8sClient.Delete(ctx, cluster); err != nil && !errors.IsNotFound(err) {
 				GinkgoWriter.Printf("Failed to delete cluster: %v\n", err)

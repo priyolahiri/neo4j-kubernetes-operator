@@ -61,6 +61,8 @@
 
 `*_test.go` here run under the envtest suite (`suite_test.go`, no real cluster). Run the whole package with `make test-unit`, or directly: `go test ./internal/controller/...`. The core/extended ginkgo label split lives in `test/integration/`, not in this package. A single integration spec: `make test-one TEST="name"`.
 
+A test writes one of the operator's CRs with a patch, never a whole-object `Update`: `patchObject` / `removeFinalizer` in the package's unit tests, `patchCR` / `patchJSON` / `releaseFinalizers` (`spec_writes_test.go`) in the Ginkgo suite. An Update leaves out a `false` the CRD defaults to `true` and it comes back `true`; a deliberate one carries `// cr-update-ok: <reason>`. `make check-test-cr-updates` reports the rest (advisory; knowledge `operations.md` id 205).
+
 ## See also
 
 - `../../AGENTS.md` and `../../CLAUDE.md` — repo-wide invariants and domain reference.

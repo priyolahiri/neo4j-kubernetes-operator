@@ -120,8 +120,7 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 				// If standalone is stuck with finalizers, force remove them
 				if standalone.DeletionTimestamp != nil && len(standalone.Finalizers) > 0 {
 					fmt.Printf("Standalone is stuck with finalizers: %v, forcing removal\n", standalone.Finalizers)
-					standalone.Finalizers = []string{}
-					if err := k8sClient.Update(ctx, standalone); err != nil {
+					if err := releaseFinalizers(ctx, standalone); err != nil {
 						fmt.Printf("Failed to remove finalizers: %v\n", err)
 					}
 				}
@@ -721,11 +720,11 @@ var _ = Describe("Neo4jEnterpriseStandalone Controller", func() {
 				}
 
 				// Update service spec
-				standalone.Spec.Service = &neo4jv1beta1.ServiceSpec{
-					Type: "LoadBalancer",
-				}
-
-				return k8sClient.Update(ctx, standalone)
+				return patchCR(ctx, standalone, func() {
+					standalone.Spec.Service = &neo4jv1beta1.ServiceSpec{
+						Type: "LoadBalancer",
+					}
+				})
 			}, timeout, interval).Should(Succeed())
 
 			By("Waiting for Service to be updated to LoadBalancer")

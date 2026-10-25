@@ -61,9 +61,10 @@ func passes(t *testing.T, r reconcile.Reconciler, o client.Object, n int) {
 func editSpec[T client.Object](t *testing.T, c client.Client, o T, edit func(T)) {
 	t.Helper()
 	require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(o), o))
-	edit(o)
-	o.SetGeneration(o.GetGeneration() + 1)
-	require.NoError(t, c.Update(context.Background(), o))
+	require.NoError(t, patchObject(context.Background(), c, o, func() {
+		edit(o)
+		o.SetGeneration(o.GetGeneration() + 1)
+	}))
 }
 
 func TestAuraInstance_ARecordedRefusalIsNotAskedAgain(t *testing.T) {
@@ -115,8 +116,7 @@ func TestAuraInstance_ARecordedRefusalIsNotAskedAgain(t *testing.T) {
 		// The fix the message offers is outside the AuraInstance's spec, so its
 		// generation does not move; the refusal is looked at again regardless.
 		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(pc), pc))
-		pc.Spec.DefaultOrganizationID = "org-1"
-		require.NoError(t, c.Update(context.Background(), pc))
+		require.NoError(t, patchObject(context.Background(), c, pc, func() { pc.Spec.DefaultOrganizationID = "org-1" }))
 		passes(t, r, inst, 1)
 		assert.Equal(t, 2, v1.listCalls, "an organization from the provider config looks again")
 		assert.True(t, v2.createCalled)
@@ -170,8 +170,7 @@ func TestAuraDatabase_ARecordedRefusalIsNotAskedAgain(t *testing.T) {
 
 		// A new instance under the same name has another ID: a different target.
 		require.NoError(t, c.Get(context.Background(), client.ObjectKeyFromObject(inst), inst))
-		inst.Annotations[AuraExternalIDAnnotation] = "inst-2"
-		require.NoError(t, c.Update(context.Background(), inst))
+		require.NoError(t, patchObject(context.Background(), c, inst, func() { inst.Annotations[AuraExternalIDAnnotation] = "inst-2" }))
 		passes(t, r, db, 1)
 		assert.Equal(t, 2, api.createCalls, "a replaced instance is asked again")
 	})

@@ -87,8 +87,7 @@ func deleteCluster(ctx context.Context, key types.NamespacedName) {
 	latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	if err := k8sClient.Get(ctx, key, latest); err == nil {
 		if len(latest.GetFinalizers()) > 0 {
-			latest.SetFinalizers([]string{})
-			_ = k8sClient.Update(ctx, latest)
+			_ = releaseFinalizers(ctx, latest)
 		}
 		_ = k8sClient.Delete(ctx, latest)
 	}
@@ -199,8 +198,7 @@ var _ = Describe("Neo4jEnterpriseStandalone image tag against the version it run
 		}
 		latest := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(standalone), latest); err == nil {
-			latest.SetFinalizers(nil)
-			_ = k8sClient.Update(ctx, latest)
+			_ = releaseFinalizers(ctx, latest)
 			_ = k8sClient.Delete(ctx, latest)
 		}
 		standalone = nil
@@ -253,8 +251,7 @@ var _ = Describe("Neo4jEnterpriseStandalone image tag against the version it run
 			if err := k8sClient.Get(ctx, key, got); err != nil {
 				return err
 			}
-			got.Spec.Image.Tag = earlier
-			return k8sClient.Update(ctx, got)
+			return patchCR(ctx, got, func() { got.Spec.Image.Tag = earlier })
 		}, 10*time.Second, 200*time.Millisecond).Should(Succeed())
 
 		Eventually(func() string {

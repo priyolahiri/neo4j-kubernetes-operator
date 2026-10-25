@@ -92,8 +92,7 @@ var _ = Describe("Multi-Node Cluster Formation Integration Tests", Label("extend
 			By("Cleaning up cluster resource")
 			// Remove finalizers if any
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			// Delete the resource
 			err := k8sClient.Delete(ctx, cluster)

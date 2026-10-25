@@ -109,8 +109,7 @@ var _ = Describe("All-Databases Backup and Cluster Restore (MinIO) Integration T
 				continue
 			}
 			if len(cr.GetFinalizers()) > 0 {
-				cr.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, cr)
+				_ = releaseFinalizers(ctx, cr)
 			}
 			_ = k8sClient.Delete(ctx, cr)
 		}

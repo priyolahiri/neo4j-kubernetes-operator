@@ -179,9 +179,10 @@ func TestClusterStorageExpansion_ARefusedExpansionIsAnnouncedOnce(t *testing.T) 
 	// A new generation (the user edits the spec) is a new attempt.
 	live := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, c.Get(ctx, key, live))
-	live.Spec.Storage.Size = "30Gi"
-	live.Generation = 2
-	require.NoError(t, c.Update(ctx, live))
+	require.NoError(t, patchObject(ctx, c, live, func() {
+		live.Spec.Storage.Size = "30Gi"
+		live.Generation = 2
+	}))
 	pass()
 	assert.Len(t, eventsWithReason(drainEvents(rec), EventReasonStorageExpansionStarted), 1)
 }
@@ -420,9 +421,10 @@ func TestDatabaseReconcile_WaitsAreAnnouncedOnce(t *testing.T) {
 
 		host := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 		require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "ec", Namespace: "default"}, host))
-		host.Spec.ExtraEnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
-			LocalObjectReference: corev1.LocalObjectReference{Name: "s3-creds"}}}}
-		require.NoError(t, r.Update(context.Background(), host))
+		require.NoError(t, patchObject(context.Background(), r.Client, host, func() {
+			host.Spec.ExtraEnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
+				LocalObjectReference: corev1.LocalObjectReference{Name: "s3-creds"}}}}
+		}))
 		reconcileTimes(t, r, key, 1)
 		assert.Equal(t, "Ready", databasePhase(t, r, key))
 		assert.Len(t, server.statements, 1, "created once the host has the Secret")
@@ -639,9 +641,10 @@ func TestShardedReconcile_MissingSeedCredentialsAreAWait(t *testing.T) {
 	// The user projects the Secret; the servers roll out with it.
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, r.Get(ctx, types.NamespacedName{Name: "sc", Namespace: "default"}, cluster))
-	cluster.Spec.ExtraEnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
-		LocalObjectReference: corev1.LocalObjectReference{Name: "s3-creds"}}}}
-	require.NoError(t, r.Update(ctx, cluster))
+	require.NoError(t, patchObject(ctx, r.Client, cluster, func() {
+		cluster.Spec.ExtraEnvFrom = []corev1.EnvFromSource{{SecretRef: &corev1.SecretEnvSource{
+			LocalObjectReference: corev1.LocalObjectReference{Name: "s3-creds"}}}}
+	}))
 	three := int32(3)
 	require.NoError(t, r.Create(ctx, &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{Name: "sc-server", Namespace: "default", Generation: 2},
@@ -668,15 +671,15 @@ func newBackupModeReplicaHarness(t *testing.T, ns, tag string) *lagHarness {
 	h := newLagHarness(t, ns)
 	replica := &neo4jv1beta1.Neo4jReplicaDatabase{}
 	require.NoError(t, h.c.Get(context.Background(), types.NamespacedName{Namespace: ns, Name: h.name}, replica))
-	replica.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
-		Mode:    neo4jv1beta1.ReplicaSourceModeBackup,
-		PullURI: "s3://chains/ledger/",
-	}
-	require.NoError(t, h.c.Update(context.Background(), replica))
+	require.NoError(t, patchObject(context.Background(), h.c, replica, func() {
+		replica.Spec.Source = neo4jv1beta1.ReplicaSourceSpec{
+			Mode:    neo4jv1beta1.ReplicaSourceModeBackup,
+			PullURI: "s3://chains/ledger/",
+		}
+	}))
 	if tag != "" {
 		cluster := h.cluster()
-		cluster.Spec.Image.Tag = tag
-		require.NoError(t, h.c.Update(context.Background(), cluster))
+		require.NoError(t, patchObject(context.Background(), h.c, cluster, func() { cluster.Spec.Image.Tag = tag }))
 	}
 	return h
 }
@@ -713,8 +716,9 @@ func TestReplicaReconcile_MissingRegionIsAWait(t *testing.T) {
 	assert.Empty(t, h.events(EventReasonReplicaObjectStoreEnvMissing), "a restarted operator reads the wait from status")
 
 	cluster := h.cluster()
-	cluster.Spec.Env = []corev1.EnvVar{{Name: "AWS_REGION", Value: "eu-west-1"}}
-	require.NoError(t, h.c.Update(context.Background(), cluster))
+	require.NoError(t, patchObject(context.Background(), h.c, cluster, func() {
+		cluster.Spec.Env = []corev1.EnvVar{{Name: "AWS_REGION", Value: "eu-west-1"}}
+	}))
 	require.NoError(t, h.reconcile())
 	assert.Equal(t, 1, h.server.created, "the replica carries on once the servers have the region")
 }

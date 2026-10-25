@@ -228,8 +228,8 @@ It also checks **box diagrams**: every line of a rectangle must be the same widt
 **Description**: Verify every docs link in `.github/release-notes-template.md` points at the release's own docs version (`__DOCS_VERSION__`, which `release.yml` replaces with `vX.Y`), and that `release.yml` and `pages-docs.yml` derive that version the same way (`scripts/check-release-notes-links.sh`). The docs site has no unversioned pages, so a link without the version is a 404.
 **Usage**: `make check-release-notes-links`
 
-### `make check-invariants`, `make check-knowledge-drift`, `make check-knowledge`
-**Description**: The advisory LLM-readiness guards. `check-invariants` runs `scripts/check-invariants.sh` (the five hard invariants — webhooks, Kind-only, Enterprise images, V2_ONLY, server-based architecture); `check-knowledge-drift` runs `scripts/check-knowledge-drift.sh` (every test, path and `Neo4j*` identifier cited in `docs/knowledge/` must still exist); `check-knowledge` runs both.
+### `make check-invariants`, `make check-knowledge-drift`, `make check-test-cr-updates`, `make check-knowledge`
+**Description**: The advisory LLM-readiness guards. `check-invariants` runs `scripts/check-invariants.sh` (the five hard invariants — webhooks, Kind-only, Enterprise images, V2_ONLY, server-based architecture); `check-knowledge-drift` runs `scripts/check-knowledge-drift.sh` (every test, path and `Neo4j*` identifier cited in `docs/knowledge/` must still exist); `check-test-cr-updates` runs `scripts/check-test-cr-updates` (no test writes one of the operator's CRs with a whole-object `Update`; specs patch what they change, knowledge `operations.md` id 205); `check-knowledge` runs all three.
 **Usage**: `make check-knowledge`
 **Notes**: advisory — the `Invariant Guards (advisory)` CI job runs them with `continue-on-error`, so they never block merge. See [Agent guardrails](AGENT-GUARDRAILS.md).
 

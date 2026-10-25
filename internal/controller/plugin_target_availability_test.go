@@ -56,12 +56,13 @@ func setClusterAvailability(t *testing.T, c client.Client, phase string, down bo
 	t.Helper()
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, c.Get(context.Background(), types.NamespacedName{Namespace: selfHealNS, Name: "c"}, cluster))
-	cluster.Status.Phase = phase
-	cluster.Status.Conditions = nil
-	if down {
-		cluster.Status.Conditions = degradedCluster(phase).Status.Conditions
-	}
-	require.NoError(t, c.Update(context.Background(), cluster))
+	require.NoError(t, patchObject(context.Background(), c, cluster, func() {
+		cluster.Status.Phase = phase
+		cluster.Status.Conditions = nil
+		if down {
+			cluster.Status.Conditions = degradedCluster(phase).Status.Conditions
+		}
+	}))
 }
 
 // The defect: getTargetDeployment computed whether the target could take a

@@ -125,8 +125,9 @@ func (f *seedConfigWaitFixture) seedConfigWarnings() int {
 func (f *seedConfigWaitFixture) optIn() {
 	f.t.Helper()
 	c := f.cluster()
-	c.Annotations = map[string]string{AutoInheritSeedCredsAnnotation: "true"}
-	require.NoError(f.t, f.r.Update(f.ctx, c))
+	require.NoError(f.t, patchObject(f.ctx, f.r.Client, c, func() {
+		c.Annotations = map[string]string{AutoInheritSeedCredsAnnotation: "true"}
+	}))
 }
 
 func TestRestore_WaitsForSeedConfigAndCarriesOn(t *testing.T) {

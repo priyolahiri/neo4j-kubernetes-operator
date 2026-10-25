@@ -81,8 +81,7 @@ var _ = Describe("Neo4jUser end-to-end", Label("core"), func() {
 		// Shared cluster torn down in AfterSuite — delete only this spec's CRs.
 		if user != nil {
 			if len(user.GetFinalizers()) > 0 {
-				user.SetFinalizers([]string{})
-				_ = k8sClient.Update(testCtx, user)
+				_ = releaseFinalizers(testCtx, user)
 			}
 			_ = k8sClient.Delete(testCtx, user)
 			user = nil

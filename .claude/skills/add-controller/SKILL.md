@@ -145,8 +145,9 @@ also owns `GetTestRequeueAfter()` and shows `Owns(...)`-based wiring.
   banned — DNS resolution fails); deploy into Kind. Kind is the only supported
   dev/test/CI environment (invariant 2).
 - **Label every new spec** `core` or `extended`, and keep the finalizer-stripping
-  `AfterEach`.
-- `make check-invariants` / `make check-knowledge-drift` (the `Invariant Guards (advisory)`
+  `AfterEach` (`releaseFinalizers`). A spec writes a CR with a merge patch
+  (`patchCR`), never a whole-object `Update` (knowledge `operations.md` id 205).
+- `make check-invariants` / `make check-knowledge-drift` / `make check-test-cr-updates` (the `Invariant Guards (advisory)`
   CI job) are **advisory and non-blocking** — they're a quality signal, not a
   merge gate. The only blocking gates are `check-drift` and `unit-tests`.
 

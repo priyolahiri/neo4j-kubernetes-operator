@@ -98,8 +98,7 @@ func TestStaging_JudgesTheServersDownFromThePodsAsStored(t *testing.T) {
 	}
 
 	fixed := latestCluster(t, fc, c)
-	fixed.Spec.Image.Tag = holdTarget
-	require.NoError(t, fc.Update(ctx, fixed))
+	require.NoError(t, patchObject(ctx, fc, fixed, func() { fixed.Spec.Image.Tag = holdTarget }))
 	require.True(t, r.isUpgradeRequired(ctx, latestCluster(t, fc, c)))
 	_, err := r.handleRollingUpgrade(ctx, latestCluster(t, fc, c)) // the repair starts: Staging
 	require.NoError(t, err)

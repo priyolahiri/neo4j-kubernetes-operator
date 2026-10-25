@@ -73,8 +73,7 @@ var _ = Describe("Split-Brain Detection Integration Tests", Label("extended"), f
 			By("Cleaning up cluster in split-brain test AfterEach")
 			// Remove finalizers first
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			// Delete the resource
 			_ = k8sClient.Delete(ctx, cluster)

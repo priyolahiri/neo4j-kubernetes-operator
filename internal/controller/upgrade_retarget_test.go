@@ -121,8 +121,7 @@ func walkingTo(t *testing.T, phase string, partition int32, downAt ...int) (*Neo
 func setTag(t *testing.T, fc client.Client, c *neo4jv1beta1.Neo4jEnterpriseCluster, tag string) {
 	t.Helper()
 	got := latestCluster(t, fc, c)
-	got.Spec.Image.Tag = tag
-	require.NoError(t, fc.Update(context.Background(), got))
+	require.NoError(t, patchObject(context.Background(), fc, got, func() { got.Spec.Image.Tag = tag }))
 }
 
 // drain deletes server pod ordinal and lets the StatefulSet controller create
@@ -188,8 +187,9 @@ func TestRetarget_HeldUpgrade_AServerTheWalkRolledNeverGoesBack(t *testing.T) {
 	// database that did not catch up in time).
 	r, fc, emu, c := walkingTo(t, upgradePhasePaused, 1)
 	stored := latestCluster(t, fc, c)
-	stored.Spec.UpgradeStrategy.PreUpgradeHealthCheck = false
-	require.NoError(t, fc.Update(ctx, stored))
+	// The fake client applies no CRD defaults, so the patch's removal stores
+	// false; against an API server the false needs a JSON patch (id 205).
+	require.NoError(t, patchObject(ctx, fc, stored, func() { stored.Spec.UpgradeStrategy.PreUpgradeHealthCheck = false }))
 
 	setTag(t, fc, c, repairTag)
 	require.True(t, r.isUpgradeRequired(ctx, latestCluster(t, fc, c)))

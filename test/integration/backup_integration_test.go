@@ -169,8 +169,7 @@ var _ = Describe("Backup Integration Tests", Label("extended"), Ordered, func() 
 		if err := k8sClient.List(ctx, backupList, client.InNamespace(testNamespace)); err == nil {
 			for i := range backupList.Items {
 				backup := &backupList.Items[i]
-				backup.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, backup)
+				_ = releaseFinalizers(ctx, backup)
 				_ = k8sClient.Delete(ctx, backup)
 			}
 		}
@@ -180,8 +179,7 @@ var _ = Describe("Backup Integration Tests", Label("extended"), Ordered, func() 
 			if err := k8sClient.Get(ctx, types.NamespacedName{
 				Name: cluster.Name, Namespace: testNamespace,
 			}, &latest); err == nil {
-				latest.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, &latest)
+				_ = releaseFinalizers(ctx, &latest)
 				_ = k8sClient.Delete(ctx, &latest)
 			}
 		}

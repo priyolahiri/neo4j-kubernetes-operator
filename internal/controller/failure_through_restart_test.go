@@ -94,9 +94,10 @@ func TestUserReconcile_AFailureIsAnnouncedOnceThroughTargetRestarts(t *testing.T
 
 	// A spec change is new work: it waits on a target that is not Ready.
 	u := live()
-	u.Spec.HomeDatabase = "other"
-	u.Generation++ // the fake API server does not bump it
-	require.NoError(t, c.Update(ctx, u))
+	require.NoError(t, patchObject(ctx, c, u, func() {
+		u.Spec.HomeDatabase = "other"
+		u.Generation++ // the fake API server does not bump it
+	}))
 	require.Equal(t, u.Generation, live().Generation)
 	setStandaloneReady(t, c, false)
 	reconcileTimes(t, r, key, 1)

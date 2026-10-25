@@ -79,8 +79,7 @@ func TestClusterReconcile_TopologyPlacementIsAnnouncedWhenTheZonesChange(t *test
 
 	live := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, c.Get(ctx, key, live))
-	live.Spec.Topology.AvailabilityZones = []string{"zone-a", "zone-b"}
-	require.NoError(t, c.Update(ctx, live))
+	require.NoError(t, patchObject(ctx, c, live, func() { live.Spec.Topology.AvailabilityZones = []string{"zone-a", "zone-b"} }))
 	for _, err := range reconcileTimes(t, r, key, repeatPasses) {
 		require.NoError(t, err)
 	}

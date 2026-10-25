@@ -100,8 +100,7 @@ var _ = Describe("Same-Cluster Network Mode CCDR", Label("extended"), Serial, fu
 				continue
 			}
 			if len(cr.GetFinalizers()) > 0 {
-				cr.SetFinalizers(nil)
-				_ = k8sClient.Update(ctx, cr)
+				_ = releaseFinalizers(ctx, cr)
 			}
 			_ = k8sClient.Delete(ctx, cr)
 		}

@@ -168,8 +168,7 @@ func TestReconcileRestartPending(t *testing.T) {
 	if err := fc.Get(ctx, types.NamespacedName{Name: "rp", Namespace: "default"}, latest); err != nil {
 		t.Fatal(err)
 	}
-	latest.Spec.Image.Tag = "2026.08.1-enterprise"
-	if err := fc.Update(ctx, latest); err != nil {
+	if err := patchObject(ctx, fc, latest, func() { latest.Spec.Image.Tag = "2026.08.1-enterprise" }); err != nil {
 		t.Fatal(err)
 	}
 	if c := run(); c != nil {
@@ -479,8 +478,9 @@ func TestRestartPending_ConnectTimeout_SpecConfigChange(t *testing.T) {
 	setTimeout := func(value string) {
 		t.Helper()
 		cluster := f.cluster()
-		cluster.Spec.Config = map[string]string{resources.ClusterConnectTimeoutSetting: value}
-		if err := f.fc.Update(f.ctx, cluster); err != nil {
+		if err := patchObject(f.ctx, f.fc, cluster, func() {
+			cluster.Spec.Config = map[string]string{resources.ClusterConnectTimeoutSetting: value}
+		}); err != nil {
 			t.Fatal(err)
 		}
 		f.reconcileConfigMap()

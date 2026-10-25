@@ -69,8 +69,7 @@ var _ = Describe("Neo4jRoleBinding end-to-end", Label("core"), func() {
 		// Shared cluster torn down in AfterSuite — delete only this spec's CR.
 		if binding != nil {
 			if len(binding.GetFinalizers()) > 0 {
-				binding.SetFinalizers([]string{})
-				_ = k8sClient.Update(testCtx, binding)
+				_ = releaseFinalizers(testCtx, binding)
 			}
 			_ = k8sClient.Delete(testCtx, binding)
 			binding = nil

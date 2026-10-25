@@ -141,7 +141,7 @@ func TestAddFinalizer_KeepsAnotherWritersFinalizer(t *testing.T) {
 			require.NoError(t, store.Get(ctx, client.ObjectKeyFromObject(obj), stale))
 			live := stale.DeepCopy()
 			live.Finalizers = tc.liveHas
-			require.NoError(t, store.Update(ctx, live))
+			require.NoError(t, store.Update(ctx, live)) // cr-update-ok: another writer moves the stored object past the reconcile's copy
 
 			require.NoError(t, addFinalizer(ctx, store, stale, BackupFinalizer))
 			got := &neo4jv1beta1.Neo4jBackup{}
@@ -188,7 +188,7 @@ func TestAddFinalizer_APIServer(t *testing.T) {
 		stale := newDB("raced")
 		live := stale.DeepCopy()
 		live.Finalizers = []string{other}
-		require.NoError(t, c.Update(ctx, live))
+		require.NoError(t, c.Update(ctx, live)) // cr-update-ok: another writer adds its finalizer after the reconcile's copy was read
 
 		require.NoError(t, addFinalizer(ctx, c, stale, DatabaseFinalizer))
 		assert.Equal(t, []string{other, DatabaseFinalizer}, finalizersOf("raced"))

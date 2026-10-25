@@ -60,16 +60,14 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("core
 	AfterEach(func() {
 		if replica != nil {
 			if len(replica.GetFinalizers()) > 0 {
-				replica.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, replica)
+				_ = releaseFinalizers(ctx, replica)
 			}
 			_ = k8sClient.Delete(ctx, replica)
 			replica = nil
 		}
 		if alias != nil {
 			if len(alias.GetFinalizers()) > 0 {
-				alias.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, alias)
+				_ = releaseFinalizers(ctx, alias)
 			}
 			_ = k8sClient.Delete(ctx, alias)
 			alias = nil
@@ -105,13 +103,13 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("core
 			Name: replica.Name, Namespace: testNamespace,
 		}, fetched)).To(Succeed())
 
-		// Re-fetch and retry on CONFLICT before asserting. The operator writes
-		// status to this object while the test holds it, so a plain Update can
-		// lose the race and fail with "the object has been modified" — which is
-		// a stale resourceVersion, not the CEL rule, and the assertion below
-		// then reads as the immutability rule having vanished. Observed on
-		// main @4d8d273 (extended run 34663889371). Retrying is the same
-		// discipline the reconcilers use (retry.RetryOnConflict, CLAUDE.md).
+		// The operator writes status to this object while the test holds it,
+		// so an Update could lose the race and fail with "the object has been
+		// modified" — a stale resourceVersion, not the CEL rule, and the
+		// assertion below then read as the immutability rule having vanished.
+		// Observed on main @4d8d273 (extended run 34663889371). The merge patch
+		// carries no resourceVersion, so only the rule can refuse it; the
+		// Conflict branch stays as a guard.
 		var err error
 		Eventually(func() string {
 			latest := &neo4jv1beta1.Neo4jReplicaDatabase{}
@@ -120,8 +118,7 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("core
 			}, latest); getErr != nil {
 				return "get failed: " + getErr.Error()
 			}
-			latest.Spec.Source.PullURI = "s3://bucket/a-different-chain/"
-			err = k8sClient.Update(ctx, latest)
+			err = patchCR(ctx, latest, func() { latest.Spec.Source.PullURI = "s3://bucket/a-different-chain/" })
 			if err == nil {
 				return "update unexpectedly succeeded"
 			}
@@ -357,8 +354,7 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("core
 		}
 		Expect(k8sClient.Create(ctx, bad)).To(Succeed())
 		defer func() {
-			bad.SetFinalizers([]string{})
-			_ = k8sClient.Update(ctx, bad)
+			_ = releaseFinalizers(ctx, bad)
 			_ = k8sClient.Delete(ctx, bad)
 		}()
 
@@ -393,8 +389,7 @@ var _ = Describe("Cross-Cluster Replication — API and validation", Label("core
 		}
 		Expect(k8sClient.Create(ctx, backup)).To(Succeed())
 		defer func() {
-			backup.SetFinalizers([]string{})
-			_ = k8sClient.Update(ctx, backup)
+			_ = releaseFinalizers(ctx, backup)
 			_ = k8sClient.Delete(ctx, backup)
 		}()
 

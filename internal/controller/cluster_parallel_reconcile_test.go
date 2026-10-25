@@ -49,8 +49,7 @@ var _ = Describe("Neo4jEnterpriseCluster parallel reconciles", func() {
 			latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 			if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: c.Name, Namespace: c.Namespace}, latest); err == nil {
 				if len(latest.GetFinalizers()) > 0 {
-					latest.SetFinalizers([]string{})
-					_ = k8sClient.Update(context.Background(), latest)
+					_ = releaseFinalizers(context.Background(), latest)
 				}
 				_ = k8sClient.Delete(context.Background(), latest)
 			}

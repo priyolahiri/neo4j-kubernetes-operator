@@ -87,7 +87,7 @@ resolve — not that the prose is correct.
 
 5. **Sanity-check the sibling guard too** (a rename often touches both):
    ```bash
-   make check-knowledge      # runs check-invariants + check-knowledge-drift
+   make check-knowledge      # runs check-invariants + check-knowledge-drift + check-test-cr-updates
    ```
 
 6. **Report**, as your final message: each WARN, what it pointed at, what it

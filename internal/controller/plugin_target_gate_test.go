@@ -213,8 +213,7 @@ func TestReconcile_ACAUpdateThatWaitedIsWrittenAsOne(t *testing.T) {
 
 	latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	require.NoError(t, r.Get(context.Background(), types.NamespacedName{Namespace: selfHealNS, Name: "c"}, latest))
-	latest.Status.ObservedGeneration = latest.Generation
-	require.NoError(t, r.Update(context.Background(), latest))
+	require.NoError(t, patchObject(context.Background(), r.Client, latest, func() { latest.Status.ObservedGeneration = latest.Generation }))
 	reconcilePlugin(t, r, "custom")
 
 	assert.Equal(t, 1, *writes)
@@ -794,8 +793,7 @@ func TestPluginWritesFollowTheTargetsRollout_APIServer(t *testing.T) {
 	// trust is the user's edit of spec.trustedCASecrets.
 	trust := func(cas ...string) {
 		editCluster(func(l *neo4jv1beta1.Neo4jEnterpriseCluster) error {
-			l.Spec.TrustedCASecrets = trustedCAs(cas...)
-			return c.Update(ctx, l)
+			return patchObject(ctx, c, l, func() { l.Spec.TrustedCASecrets = trustedCAs(cas...) })
 		})
 	}
 	// clusterWrites is the cluster controller's apply of its server

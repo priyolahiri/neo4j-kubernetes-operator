@@ -62,8 +62,7 @@ var _ = Describe("Neo4jDatabase Neo4j-Level Verification", Label("core"), func()
 		// Shared cluster torn down in AfterSuite — delete only this spec's CR.
 		if database != nil {
 			if len(database.GetFinalizers()) > 0 {
-				database.SetFinalizers([]string{})
-				_ = k8sClient.Update(testCtx, database)
+				_ = releaseFinalizers(testCtx, database)
 			}
 			_ = k8sClient.Delete(testCtx, database)
 			database = nil

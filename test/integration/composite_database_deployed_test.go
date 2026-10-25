@@ -120,16 +120,14 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 	AfterEach(func() {
 		if composite != nil {
 			if len(composite.GetFinalizers()) > 0 {
-				composite.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, composite)
+				_ = releaseFinalizers(ctx, composite)
 			}
 			_ = k8sClient.Delete(ctx, composite)
 			composite = nil
 		}
 		if standalone != nil {
 			if len(standalone.GetFinalizers()) > 0 {
-				standalone.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, standalone)
+				_ = releaseFinalizers(ctx, standalone)
 			}
 			_ = k8sClient.Delete(ctx, standalone)
 			standalone = nil
@@ -201,10 +199,11 @@ var _ = Describe("Composite Database (deployed)", Label("extended"), Serial, fun
 			}, latest); err != nil {
 				return err
 			}
-			latest.Spec.Constituents = []neo4jv1beta1.CompositeConstituent{
-				{Name: "latest", TargetDatabase: targetOne},
-			}
-			return k8sClient.Update(ctx, latest)
+			return patchCR(ctx, latest, func() {
+				latest.Spec.Constituents = []neo4jv1beta1.CompositeConstituent{
+					{Name: "latest", TargetDatabase: targetOne},
+				}
+			})
 		}, clusterTimeout, interval).Should(Succeed())
 
 		// Returning (string, error): Gomega fails the assertion outright on a

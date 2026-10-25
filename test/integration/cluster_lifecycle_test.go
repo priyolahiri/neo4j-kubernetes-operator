@@ -79,8 +79,7 @@ var _ = Describe("Cluster Lifecycle Integration Tests", Label("core"), func() {
 			By("Cleaning up cluster resource")
 			// Remove finalizers if any
 			if len(cluster.GetFinalizers()) > 0 {
-				cluster.SetFinalizers([]string{})
-				_ = k8sClient.Update(ctx, cluster)
+				_ = releaseFinalizers(ctx, cluster)
 			}
 			// Delete the resource
 			err := k8sClient.Delete(ctx, cluster)
@@ -214,8 +213,7 @@ var _ = Describe("Cluster Lifecycle Integration Tests", Label("core"), func() {
 					return err
 				}
 				// Update server count (servers self-organize into primaries/secondaries)
-				cluster.Spec.Topology.Servers = targetReplicas
-				return k8sClient.Update(ctx, cluster)
+				return patchCR(ctx, cluster, func() { cluster.Spec.Topology.Servers = targetReplicas })
 			}, clusterTimeout, interval).Should(Succeed())
 
 			By(fmt.Sprintf("Verifying scaling completed - should update StatefulSet to %d replicas", targetReplicas))
@@ -268,8 +266,8 @@ var _ = Describe("Cluster Lifecycle Integration Tests", Label("core"), func() {
 				if err != nil {
 					return err
 				}
-				cluster.Spec.Image.Tag = getNeo4jImageTag() // Skip upgrade test - use same version
-				return k8sClient.Update(ctx, cluster)
+				// Skip upgrade test - use same version
+				return patchCR(ctx, cluster, func() { cluster.Spec.Image.Tag = getNeo4jImageTag() })
 			}, clusterTimeout, interval).Should(Succeed())
 
 			By("Verifying image upgrade on server StatefulSet")
