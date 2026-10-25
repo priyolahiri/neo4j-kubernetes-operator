@@ -4638,7 +4638,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>ConnectionFailed</code></td>
 <td>Warning</td>
-<td>Could not connect to Neo4j via Bolt; retried with backoff. Once per failure. Emitted by <code>Neo4jReplicaDatabase</code>, <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jCompositeDatabase</code> and <code>Neo4jDatabaseAlias</code></td>
+<td>Could not connect to Neo4j via Bolt; retried with backoff. Once per failure. Emitted by <code>Neo4jReplicaDatabase</code>, <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jCompositeDatabase</code> and <code>Neo4jDatabaseAlias</code>. A user, role, binding or auth rule whose target reads <code>Ready</code> but refuses the connection — Bolt not open yet after a restart, a <code>stopCluster</code> restore — waits quietly instead (condition <code>ClusterNotReady</code>, reason <code>ClusterUnreachable</code>) and raises this only if that lasts more than 5 minutes</td>
 </tr>
 <tr>
 <td><code>ClientCreationFailed</code></td>
@@ -4877,7 +4877,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>UserUpdated</code></td>
 <td>Normal</td>
-<td>User updated (or its password recorded as already applied)</td>
+<td>User updated (or its password recorded as already applied — once, when status first records it, not on every retry of a pass that then fails)</td>
 </tr>
 <tr>
 <td><code>UserReady</code></td>
@@ -4902,7 +4902,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>PasswordRotated</code></td>
 <td>Normal</td>
-<td>Password updated from the referenced Secret</td>
+<td>Password updated from the referenced Secret. Once per Secret version — at a user's creation, and at each change of its Secret — announced by the status write that records it</td>
 </tr>
 <tr>
 <td><code>RolesGranted</code> / <code>RolesRevoked</code></td>

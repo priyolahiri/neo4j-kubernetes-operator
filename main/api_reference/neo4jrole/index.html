@@ -4390,8 +4390,8 @@
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>RoleReady</code>, <code>RoleSyncFailed</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>RoleDeletionFailed</code>, <code>ValidationFailed</code></td>
-<td>True when role exists and privileges are reconciled. A role that is <code>Ready</code> stays <code>Ready</code> while its target is not (a restart); <code>ClusterNotReady</code> here means the role was not yet <code>Ready</code> at its generation when the target went away. <code>RoleDeletionFailed</code> (phase <code>Failed</code>): the deletion's <code>DROP ROLE</code> failed and is retried.</td>
+<td><code>RoleReady</code>, <code>RoleSyncFailed</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ClusterUnreachable</code>, <code>ConnectionFailed</code>, <code>RoleDeletionFailed</code>, <code>ValidationFailed</code></td>
+<td>True when role exists and privileges are reconciled. A role that is <code>Ready</code> stays <code>Ready</code> while its target is not (a restart); <code>ClusterNotReady</code> here means the role was not yet <code>Ready</code> at its generation when the target went away. <code>ClusterUnreachable</code> is the same wait for a target that reads <code>Ready</code> but refuses the connection (Bolt not open yet after a restart, a <code>stopCluster</code> restore); <code>ConnectionFailed</code> is a connection failure that is not such an outage (no admin Secret, a refused login), or one that lasted more than 5 minutes. <code>RoleDeletionFailed</code> (phase <code>Failed</code>): the deletion's <code>DROP ROLE</code> failed and is retried.</td>
 </tr>
 <tr>
 <td><code>PrivilegesSynced</code></td>
@@ -4405,8 +4405,8 @@
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>ClusterNotReady</code>, <code>ClusterReady</code></td>
-<td>Mirrors the readiness of the referenced cluster.</td>
+<td><code>ClusterNotReady</code>, <code>ClusterUnreachable</code>, <code>ClusterReady</code></td>
+<td>Mirrors the readiness of the referenced cluster: <code>ClusterUnreachable</code> while it reads <code>Ready</code> but cannot be reached. <code>ClusterReady</code> is written once a connection succeeds.</td>
 </tr>
 </tbody>
 </table>
@@ -4523,7 +4523,7 @@ remove the rule — a name is a spelling, not ownership.</p>
 </tr>
 <tr>
 <td>Cluster not Ready</td>
-<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition. A <code>Ready</code> role stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code></td>
+<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition. A <code>Ready</code> role stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code>. So does a target that reads <code>Ready</code> but refuses the connection (<code>ClusterUnreachable</code>, logged at info), for up to 5 minutes</td>
 </tr>
 <tr>
 <td>Drop refused</td>

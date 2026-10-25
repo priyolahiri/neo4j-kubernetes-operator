@@ -4394,7 +4394,7 @@
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td>Cluster has not reached its <code>Ready</code> phase. A rule that is <code>Ready</code> keeps phase <code>Ready</code> meanwhile (a restart); any other waits in <code>Pending</code>.</td>
+<td>Cluster has not reached its <code>Ready</code> phase (reason <code>ClusterNotReady</code>), or reads <code>Ready</code> but refuses the connection (reason <code>ClusterUnreachable</code>; a <code>ConnectionFailed</code> failure only after 5 minutes). A rule that is <code>Ready</code> keeps phase <code>Ready</code> meanwhile (a restart); any other waits in <code>Pending</code>.</td>
 </tr>
 <tr>
 <td><code>PendingDependencies</code></td>

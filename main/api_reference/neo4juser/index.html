@@ -4401,7 +4401,7 @@
 <tr>
 <td><code>passwordLastRotated</code></td>
 <td><code>time</code></td>
-<td>Last time <code>ALTER USER ... SET PASSWORD</code> was executed.</td>
+<td>When the password of the current <code>passwordSecretHash</code> was recorded as applied — by <code>CREATE USER</code>, <code>ALTER USER ... SET PASSWORD</code>, or Neo4j saying it was already set.</td>
 </tr>
 <tr>
 <td><code>conditions</code></td>
@@ -4422,8 +4422,8 @@
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>UserReady</code>, <code>RolesPending</code>, <code>SecretPending</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ConnectionFailed</code>, <code>UserSyncFailed</code>, <code>UserDeletionFailed</code>, <code>ValidationFailed</code></td>
-<td>True when user exists, password and roles are in sync. <code>SecretPending</code> (phase <code>Pending</code>) means the password Secret does not exist yet. A user that is <code>Ready</code> stays <code>Ready</code> while its target is not (a restart); <code>ClusterNotReady</code> here means the user was not yet <code>Ready</code> at its generation when the target went away. <code>UserDeletionFailed</code> (phase <code>Failed</code>): the deletion's <code>DROP USER</code> failed and is retried.</td>
+<td><code>UserReady</code>, <code>RolesPending</code>, <code>SecretPending</code>, <code>ClusterNotFound</code>, <code>ClusterNotReady</code>, <code>ClusterUnreachable</code>, <code>ConnectionFailed</code>, <code>UserSyncFailed</code>, <code>UserDeletionFailed</code>, <code>ValidationFailed</code></td>
+<td>True when user exists, password and roles are in sync. <code>SecretPending</code> (phase <code>Pending</code>) means the password Secret does not exist yet. A user that is <code>Ready</code> stays <code>Ready</code> while its target is not (a restart); <code>ClusterNotReady</code> here means the user was not yet <code>Ready</code> at its generation when the target went away. <code>ClusterUnreachable</code> is the same wait for a target that reads <code>Ready</code> but refuses the connection (Bolt not open yet after a restart, a <code>stopCluster</code> restore); <code>ConnectionFailed</code> is a connection failure that is not such an outage (no admin Secret, a refused login), or one that lasted more than 5 minutes. <code>UserDeletionFailed</code> (phase <code>Failed</code>): the deletion's <code>DROP USER</code> failed and is retried.</td>
 </tr>
 <tr>
 <td><code>RolesSynced</code></td>
@@ -4442,8 +4442,8 @@
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>ClusterNotReady</code>, <code>ClusterReady</code></td>
-<td>Mirrors the readiness of the referenced cluster.</td>
+<td><code>ClusterNotReady</code>, <code>ClusterUnreachable</code>, <code>ClusterReady</code></td>
+<td>Mirrors the readiness of the referenced cluster: <code>ClusterUnreachable</code> while it reads <code>Ready</code> but cannot be reached. <code>ClusterReady</code> is written once a connection succeeds.</td>
 </tr>
 <tr>
 <td><code>RoleNamesResolved</code></td>
@@ -4483,7 +4483,7 @@
 </tr>
 <tr>
 <td>Update (Secret only)</td>
-<td><code>ALTER USER name SET PASSWORD $pw</code>, then update <code>passwordSecretHash</code> and <code>passwordLastRotated</code></td>
+<td><code>ALTER USER name SET PASSWORD $pw</code>, then, in a status write right after it, update <code>passwordSecretHash</code> and <code>passwordLastRotated</code>; one <code>PasswordRotated</code> event</td>
 </tr>
 <tr>
 <td>Delete (<code>Delete</code> policy)</td>
@@ -4495,7 +4495,7 @@
 </tr>
 <tr>
 <td>Cluster not Ready</td>
-<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition. A <code>Ready</code> user stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code></td>
+<td>No-op; requeue every 30s with <code>ClusterNotReady</code> condition. A <code>Ready</code> user stays <code>Ready</code> (a target restart announces nothing); any other waits in <code>Pending</code>. So does a target that reads <code>Ready</code> but refuses the connection (<code>ClusterUnreachable</code>, logged at info), for up to 5 minutes</td>
 </tr>
 <tr>
 <td>Missing custom role</td>

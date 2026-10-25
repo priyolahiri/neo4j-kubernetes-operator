@@ -4695,7 +4695,7 @@ missing for ever and never granted.)</p>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--from-literal<span class="o">=</span><span class="nv">password</span><span class="o">=</span><span class="s1">'NewStrongPassword!'</span><span class="w"> </span><span class="se">\</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span>--dry-run<span class="o">=</span>client<span class="w"> </span>-o<span class="w"> </span>yaml<span class="w"> </span><span class="p">|</span><span class="w"> </span>kubectl<span class="w"> </span>apply<span class="w"> </span>-f<span class="w"> </span>-
 </span></code></pre></div>
-<p>The next reconcile (≤30s by default) sets <code>status.passwordLastRotated</code> and emits a <code>PasswordRotated</code> event.</p>
+<p>The next reconcile (≤30s by default) sets <code>status.passwordLastRotated</code> and emits one <code>PasswordRotated</code> event — recorded right after the <code>ALTER USER</code>, so a pass that then fails on something else does not send it again.</p>
 <h3 id="suspending-a-user-security-incident">Suspending a user (security incident)<a class="headerlink" href="#suspending-a-user-security-incident" title="Anchor link to this section">&para;</a></h3>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="nt">spec</span><span class="p">:</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">  </span><span class="nt">accountStatus</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">suspended</span>
@@ -5003,7 +5003,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority). A user already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority) — reason <code>ClusterNotReady</code> — or reads <code>Ready</code> but cannot be reached yet (reason <code>ClusterUnreachable</code>). A user already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
 </tr>
 <tr>
 <td><code>RoleNamesResolved</code></td>
@@ -5034,7 +5034,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority). A role already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority) — reason <code>ClusterNotReady</code> — or reads <code>Ready</code> but cannot be reached yet (reason <code>ClusterUnreachable</code>). A role already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
 </tr>
 </tbody>
 </table>
@@ -5065,7 +5065,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 </tr>
 <tr>
 <td><code>ClusterNotReady</code></td>
-<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority). A binding already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
+<td><code>spec.clusterRef</code> exists but is neither <code>Ready</code> nor <code>Degraded</code> (still forming, restarting, or has lost its majority) — reason <code>ClusterNotReady</code> — or reads <code>Ready</code> but cannot be reached yet (reason <code>ClusterUnreachable</code>). A binding already <code>Ready</code> stays <code>Ready</code> meanwhile; see <a href="#target-restarts">Target restarts</a></td>
 </tr>
 <tr>
 <td><code>RoleNamesResolved</code></td>
@@ -5129,6 +5129,14 @@ the pass that finds the target back is not a transition: no <code>UserReady</cod
 restart of a standalone made every user on it <code>Pending</code> and then announced
 <code>UserReady</code> again.) An object that was not yet <code>Ready</code> — new, failed, or with
 a spec change not yet applied — waits in <code>Pending</code> as before.</p>
+<p>The same holds for the seconds after a restart when the target already reads
+<code>Ready</code> but its Bolt port does not accept connections yet, and for a
+<code>stopCluster</code> restore: the condition's reason is then <code>ClusterUnreachable</code>,
+nothing is announced, and the operator logs the retry at info, not as an
+error. Only if the target cannot be reached for more than 5 minutes is the
+object <code>Failed</code>, with one <code>ConnectionFailed</code> Warning. A connection failure
+that is not about reaching the target — the admin Secret missing, a refused
+login — is reported at once.</p>
 <h2 id="cluster-vs-namespace-scope">Cluster vs namespace scope<a class="headerlink" href="#cluster-vs-namespace-scope" title="Anchor link to this section">&para;</a></h2>
 <p>All three CRDs are <strong>namespace-scoped</strong> with same-namespace <code>clusterRef</code> only. This matches the existing pattern of <code>Neo4jDatabase</code>, <code>Neo4jBackup</code>, <code>Neo4jPlugin</code>. It means:</p>
 <ul>
