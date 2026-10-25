@@ -98,9 +98,9 @@ func (r *AuraIPFilterReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	apiClient := resolveIPFilterClient(r.ClientFactory, creds)
 
 	if !controllerutil.ContainsFinalizer(f, AuraIPFilterFinalizer) {
-		if err := r.patch(ctx, req, func(o *neo4jv1beta1.AuraIPFilter) {
-			controllerutil.AddFinalizer(o, AuraIPFilterFinalizer)
-		}); err != nil {
+		// A tested JSON patch, no resourceVersion lock: a copy older than the
+		// object is no Conflict (knowledge rule 199).
+		if err := addFinalizer(ctx, r.Client, f, AuraIPFilterFinalizer); err != nil {
 			return ctrl.Result{}, err
 		}
 	}

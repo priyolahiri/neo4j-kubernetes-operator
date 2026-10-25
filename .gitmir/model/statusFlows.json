@@ -678,7 +678,7 @@
       {
         "key": "pending",
         "name": "Pending",
-        "description": "status.phase=Pending — set on a missing target; on a target that is not Ready, or reads Ready but cannot be reached, when the user has no outcome of its own at its generation (new, or a spec change not yet applied); a not-yet-applied password Secret (SecretPending); or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False)."
+        "description": "status.phase=Pending — set on a missing target; on a target that is not Ready, or reads Ready but cannot be reached, when the user has no outcome of its own at its generation (new, or a spec change not yet applied); a not-yet-applied password Secret (SecretPending); or roles not yet fully synced (ConditionTypePendingDependencies/ConditionTypeRolesSynced=False). A missing target is reported first (ClusterNotFound), the Secret wait after it."
       },
       {
         "key": "failed",
@@ -795,7 +795,7 @@
       {
         "from": "deleting",
         "to": "removed",
-        "label": "ClusterNotFound during deletion — target already gone, finalizer released"
+        "label": "Target gone or being deleted with its volumes (storage.retentionPolicy Delete) — nothing can be left, finalizer released at once (id 178)"
       },
       {
         "from": "deleting",
@@ -831,6 +831,11 @@
         "from": "failed",
         "to": "failed",
         "label": "ClusterNotReady / ClusterUnreachable (ConditionTypeClusterNotReady=True) — the target restarts; a user Failed at its generation keeps its failure, and the same failure afterwards announces nothing (#573; id 189)"
+      },
+      {
+        "from": "deleting",
+        "to": "deletion-failed",
+        "label": "UserDeletionFailed — the target CR is gone but its volumes were kept; waits for a deployment created again from them (id 178)"
       }
     ]
   },

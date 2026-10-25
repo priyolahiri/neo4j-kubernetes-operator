@@ -421,10 +421,6 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found {
-		// The deployment is gone, and the role with its system database.
-		return ctrl.Result{}, release()
-	}
 	// Anything else that keeps DROP ROLE from running waits, bounded: the
 	// role and its privileges may still be in Neo4j (knowledge rule 178).
 	cleanup := deletionCleanup{
@@ -435,6 +431,9 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 			return r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleDeletionFailed, msg, nil, false)
 		},
 		release: release, requeue: r.requeueAfter(),
+	}
+	if done, res, err := cleanup.settleByTarget(ctx, r.Client, role.Namespace, role.Spec.ClusterRef, target); done {
+		return res, err
 	}
 	if !target.IsReady() {
 		return cleanup.blocked(ctx, targetDownCause(role.Spec.ClusterRef))

@@ -90,7 +90,10 @@ Promote via [`Neo4jReplicaPromotion`](neo4jreplicapromotion.md). Adopt the promo
 
 `deletionPolicy: Delete` re-reads the database's type and, if it is still a replica, runs
 `DROP DATABASE`; `Retain`, a promoted database, and a database that is already gone only release the
-finalizer, as does a cluster or standalone CR that no longer exists.
+finalizer, as does a downstream cluster or standalone that no longer exists, or is being deleted with its
+volumes (`storage.retentionPolicy: Delete`, the default). One whose volumes are kept (`Retain`) still
+takes the drop while it is being deleted, and once its CR is gone the deletion waits, as below, for a
+deployment created again from them.
 
 A replica holds the upstream's data and keeps pulling it, so a drop that cannot run — the downstream not
 Ready, refusing the connection, failing to report the type, or refusing the drop — waits: phase

@@ -27,7 +27,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/util/retry"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
@@ -68,8 +67,62 @@ func patchObject(ctx context.Context, c client.Client, obj client.Object, mutate
 }
 
 // addFinalizer adds finalizer to obj and writes metadata.finalizers alone.
+//
+// Like removeFinalizer, it is a JSON patch without the resourceVersion lock of
+// patchObject: it tests that metadata.finalizers is still the list this copy
+// has — absent, when the copy has none — and appends the finalizer to it. A
+// new object's first pass often holds a copy older than the object (another
+// writer's status or annotation write, or a cache that has not seen the
+// create's own follow-up), and the locked merge patch was a Conflict, logged
+// as "Reconciler error" (a new Neo4jRoleBinding, v1.22.x walk). A merge patch
+// without the lock would replace the whole list with this copy's and drop a
+// finalizer another writer added since; the tested list keeps it, since a
+// list that moved fails the test, and the object is read again and the
+// addition retried, with backoff. A finalizer the object already carries is
+// not added again (knowledge rule 199).
 func addFinalizer(ctx context.Context, c client.Client, obj client.Object, finalizer string) error {
-	return patchObject(ctx, c, obj, func() { controllerutil.AddFinalizer(obj, finalizer) })
+	reread := false
+	return retry.OnError(retry.DefaultBackoff, finalizerListMoved, func() error {
+		if reread {
+			if err := c.Get(ctx, client.ObjectKeyFromObject(obj), obj); err != nil {
+				return err
+			}
+		}
+		reread = true
+		if slices.Contains(obj.GetFinalizers(), finalizer) {
+			return nil // added already
+		}
+		patch, err := finalizerAddition(obj.GetFinalizers(), finalizer)
+		if err != nil {
+			return err
+		}
+		return c.Patch(ctx, obj, patch)
+	})
+}
+
+// finalizerAddition is the JSON patch that appends finalizer to
+// metadata.finalizers if the list is still current — or, when current is
+// empty, creates the list if the object still has none (a test for null passes
+// on an absent member, which is how an empty list is stored).
+func finalizerAddition(current []string, finalizer string) (client.Patch, error) {
+	const path = "/metadata/finalizers"
+	var ops []map[string]any
+	if len(current) == 0 {
+		ops = []map[string]any{
+			{"op": "test", "path": path, "value": nil},
+			{"op": "add", "path": path, "value": []string{finalizer}},
+		}
+	} else {
+		ops = []map[string]any{
+			{"op": "test", "path": path, "value": current},
+			{"op": "add", "path": path + "/-", "value": finalizer},
+		}
+	}
+	data, err := json.Marshal(ops)
+	if err != nil {
+		return nil, err
+	}
+	return client.RawPatch(types.JSONPatchType, data), nil
 }
 
 // removeFinalizer removes finalizer from obj and writes metadata.finalizers
@@ -150,8 +203,8 @@ func finalizerRemoval(i int, finalizer string) (client.Patch, error) {
 	return client.RawPatch(types.JSONPatchType, ops), nil
 }
 
-// finalizerListMoved reports a removal whose test failed: the finalizer is no
-// longer at the index the copy had it. The API server answers a failed test
+// finalizerListMoved reports an addition or removal whose test failed: the
+// finalizers are no longer what the copy had. The API server answers a failed test
 // with 422 (Invalid); the fake client returns the patch library's error.
 func finalizerListMoved(err error) bool {
 	return apierrors.IsInvalid(err) || apierrors.IsConflict(err) || strings.Contains(err.Error(), "test failed")

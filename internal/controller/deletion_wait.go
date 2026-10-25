@@ -26,6 +26,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
+
+	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 // deletionCleanup is one deletion that has to remove something in Neo4j — a
@@ -124,4 +126,82 @@ func (d deletionCleanup) blocked(ctx context.Context, cause string) (ctrl.Result
 			"It is still in Neo4j; remove it by hand: %s", d.leftBehind, cause, finalizerDeletionGracePeriod, d.byHand))
 	logger.Info("Deletion stopped waiting; finalizer released", "leftBehind", d.leftBehind, "cause", cause)
 	return ctrl.Result{}, d.release()
+}
+
+// targetFate is what becomes of what a dependent's deletion would remove —
+// a user, a grant, a database — when its target CR is being deleted or is
+// gone. It turns on the target's volumes, which hold the system database:
+// storage.retentionPolicy Delete (the default) deletes them with the target,
+// Retain keeps them, and a deployment created again from kept volumes has
+// everything they held (knowledge rule 178).
+type targetFate int
+
+const (
+	// targetHolds: the target exists and is not being deleted, or is being
+	// deleted but keeps its volumes. The cleanup runs, or waits, as for any
+	// target: a target that is being deleted may still serve the DROP.
+	targetHolds targetFate = iota
+	// targetTakesIt: the target is gone, or being deleted, and its volumes
+	// with it. Nothing can be left; the finalizer is released at once.
+	targetTakesIt
+	// targetVolumesKept: the target CR is gone but volumes of it remain. The
+	// deletion waits, bounded, for a deployment created again from them, then
+	// releases naming what they still hold.
+	targetVolumesKept
+)
+
+// fateOfTarget reads the fate of target, which ResolveClusterRef resolved
+// from ref in namespace: from its deletionTimestamp and retention policy while
+// it exists, from the PersistentVolumeClaims of the instance once it is gone
+// (the ones its deletion leaves; a claim being deleted does not count).
+func fateOfTarget(ctx context.Context, c client.Client, namespace, ref string, target ResolvedTarget) (targetFate, error) {
+	switch {
+	case target.Cluster != nil:
+		return fateOfPresent(target.Cluster, target.Cluster.Spec.Storage.RetentionPolicy), nil
+	case target.Standalone != nil:
+		return fateOfPresent(target.Standalone, target.Standalone.Spec.Storage.RetentionPolicy), nil
+	}
+	claims := &corev1.PersistentVolumeClaimList{}
+	if err := c.List(ctx, claims, client.InNamespace(namespace),
+		client.MatchingLabels(resources.PVCSelectorByInstance(ref))); err != nil {
+		return targetHolds, err
+	}
+	for i := range claims.Items {
+		if claims.Items[i].DeletionTimestamp.IsZero() {
+			return targetVolumesKept, nil
+		}
+	}
+	return targetTakesIt, nil
+}
+
+func fateOfPresent(target client.Object, retentionPolicy string) targetFate {
+	if target.GetDeletionTimestamp().IsZero() || retentionPolicy == "Retain" {
+		return targetHolds
+	}
+	return targetTakesIt
+}
+
+// volumesKeptCause is the cause of a deletion that waits on a target CR that
+// is gone while volumes of it remain.
+func volumesKeptCause(ref string) string {
+	return fmt.Sprintf("%s was deleted and its volumes were kept (storage.retentionPolicy: Retain); "+
+		"a deployment created again from them still has it", targetRefDisplay(ref))
+}
+
+// settleByTarget decides the deletion by its target's fate: done with the
+// finalizer released when nothing can be left, done and waiting when the
+// target is gone but its volumes are kept, not done when the cleanup should
+// run (targetHolds).
+func (d deletionCleanup) settleByTarget(ctx context.Context, c client.Client, namespace, ref string, target ResolvedTarget) (done bool, res ctrl.Result, err error) {
+	fate, err := fateOfTarget(ctx, c, namespace, ref, target)
+	switch {
+	case err != nil:
+		return true, ctrl.Result{}, err
+	case fate == targetTakesIt:
+		return true, ctrl.Result{}, d.release()
+	case fate == targetVolumesKept:
+		res, err := d.blocked(ctx, volumesKeptCause(ref))
+		return true, res, err
+	}
+	return false, ctrl.Result{}, nil
 }

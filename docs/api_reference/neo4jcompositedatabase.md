@@ -117,7 +117,11 @@ they target are untouched.
 `deletionPolicy: Retain` leaves everything in Neo4j and releases the finalizer.
 
 If the referenced deployment is gone at deletion time, the finalizer is
-released at once: the composite went with it.
+released at once: the composite went with it — unless its volumes were kept
+(`storage.retentionPolicy: Retain`): then the deletion waits, as below, for a
+deployment created again from them. A deployment being deleted with its
+volumes (`Delete`, the default) releases at once too; one being deleted that
+keeps them still takes the drop while it serves.
 
 If the drop cannot run — the deployment is not Ready, refuses the
 connection, or Neo4j refuses the drop — the composite is `Failed` with

@@ -247,10 +247,6 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found {
-		// The deployment is gone, and the alias with its system database.
-		return ctrl.Result{}, release()
-	}
 	// The alias still routes queries to its target — a remote alias with the
 	// credentials stored on it — so a deletion that cannot drop it waits,
 	// bounded, as every other cleanup. A target that was not Ready made it
@@ -264,6 +260,9 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 			return r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonAliasFailed, msg, "")
 		},
 		release: release, requeue: r.requeueAfter(),
+	}
+	if done, res, err := cleanup.settleByTarget(ctx, r.Client, alias.Namespace, alias.Spec.ClusterRef, target); done {
+		return res, err
 	}
 	if !target.IsReady() {
 		return cleanup.blocked(ctx, targetDownCause(alias.Spec.ClusterRef))

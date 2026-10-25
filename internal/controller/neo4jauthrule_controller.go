@@ -352,11 +352,6 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found || !targetSupportsAuthRules(target) {
-		// The deployment is gone, or runs a version that cannot hold auth
-		// rules: there is no rule to drop.
-		return ctrl.Result{}, release()
-	}
 	ruleName := rule.Spec.Name
 	if ruleName == "" {
 		ruleName = rule.Name
@@ -372,6 +367,14 @@ func (r *Neo4jAuthRuleReconciler) handleDeletion(ctx context.Context, rule *neo4
 			return r.setStatus(ctx, rule, "Failed", metav1.ConditionFalse, EventReasonAuthRuleFailed, msg, nil, nil)
 		},
 		release: release, requeue: r.requeueAfter(),
+	}
+	if done, res, err := cleanup.settleByTarget(ctx, r.Client, rule.Namespace, rule.Spec.ClusterRef, target); done {
+		return res, err
+	}
+	if !targetSupportsAuthRules(target) {
+		// The deployment runs a version that cannot hold auth rules: there
+		// is no rule to drop.
+		return ctrl.Result{}, release()
 	}
 	if !target.IsReady() {
 		return cleanup.blocked(ctx, targetDownCause(rule.Spec.ClusterRef))

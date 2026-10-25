@@ -560,10 +560,6 @@ func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if !target.Found {
-		// The deployment is gone, and the composite with it.
-		return ctrl.Result{}, release()
-	}
 	// A deployment that is down, refuses the connection or refuses the drop
 	// used to release the finalizer at once (or, for a refused drop, wait for
 	// ever, #526). It waits, bounded, as every other cleanup: the composite
@@ -577,6 +573,9 @@ func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 			return r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, EventReasonCompositeFailed, msg, nil)
 		},
 		release: release, requeue: r.requeueAfter(),
+	}
+	if done, res, err := cleanup.settleByTarget(ctx, r.Client, cd.Namespace, cd.Spec.ClusterRef, target); done {
+		return res, err
 	}
 	if !target.IsReady() {
 		return cleanup.blocked(ctx, targetDownCause(cd.Spec.ClusterRef))
