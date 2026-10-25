@@ -8603,6 +8603,12 @@ visible via <code>kubectl get svc</code>.</p>
 <td>Diagnostics cannot be collected (cluster not formed yet, or Bolt unreachable)</td>
 </tr>
 <tr>
+<td><code>TopologyChangeDeferred</code></td>
+<td><code>spec.topology.servers</code> asks for another number of servers than the server StatefulSet keeps, and the change waits: an upgrade is in progress, or a <code>Paused</code> or <code>Failed</code> one keeps a partition (reason <code>WaitsForUpgrade</code>; the message gives both counts and the upgrade). Applied once the upgrade completes — see <a href="../../user_guide/guides/upgrades/">Upgrades</a></td>
+<td>Nothing waits any more (reason <code>NoTopologyChangeWaits</code>)</td>
+<td>n/a — absent until a change first waits</td>
+</tr>
+<tr>
 <td><code>ServersPendingDrain</code></td>
 <td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them</td>
 <td>The removed servers have been drained and dropped</td>

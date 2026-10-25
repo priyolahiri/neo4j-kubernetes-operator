@@ -4047,7 +4047,7 @@ operator restarts:</p>
 <tbody>
 <tr>
 <td><code>Staging</code></td>
-<td>Pre-upgrade health check, version-compatibility check, StatefulSet frozen (partition = replica count), new image applied to the template</td>
+<td>StatefulSet frozen (partition = replica count), new image applied to the template. Before it, the version check and the pre-upgrade health check; if one refuses, nothing changes on the servers (see <a href="#when-an-upgrade-stops-paused-and-failed">When an upgrade stops</a>)</td>
 </tr>
 <tr>
 <td><code>Rolling</code></td>
@@ -4099,11 +4099,15 @@ any patch of that line pass: <code>2026.08.1</code> passes for <code>2026.08-ent
 <code>spec.image</code> while the cluster is <code>Forming</code>, <code>Degraded</code>, mid-restore, or
 otherwise not <code>Ready</code> — or while it is <code>Ready</code> but a server is unavailable (its
 <code>Degraded</code> condition is <code>True</code>) — does not roll pods immediately: the operator
-holds the change (you'll see an <code>UpgradeDeferred</code> event on the cluster) and the
+holds the change (you'll see an <code>UpgradeDeferred</code> event on the cluster once the
+hold has lasted more than one reconcile) and the
 rolling-upgrade state machine performs it once the cluster is <code>Ready</code> with every
 server available — a version change must never sneak in as an ungated restart
 while quorum is still forming, and rolling the other servers while one is down
-could cost the cluster its majority.</p>
+could cost the cluster its majority. The hold also covers a storage expansion
+made meanwhile: the expansion deletes the StatefulSet (leaving its pods
+running), and the StatefulSet is created again on the image the servers run, not
+the new one.</p>
 <p>One deliberate exception: if <strong>no server pod is ready</strong> — the typical case
 being a first deploy stuck in <code>ImagePullBackOff</code> on a mistyped tag, but also a
 cluster that has lost every server — there is no formed quorum to protect, so
@@ -4130,6 +4134,13 @@ backups wait for. Once every server is available the cluster is <code>Ready</cod
 <code>status.message</code> says the upgrade is paused or failed. A server that is down is
 reported as for any cluster: <code>Ready</code> with the <code>Degraded</code> condition, then
 <code>Degraded</code> after the grace period.</p>
+<p><strong>Refused before it starts.</strong> The version check and the pre-upgrade health check
+run before anything changes on the servers. If one of them refuses, the cluster
+stays <code>Ready</code> — its <code>status.message</code> names the stopped upgrade — and the event is
+emitted once for that refusal, not again while the same check keeps refusing
+with the same error. A <code>Failed</code> one is tried again every minute, and the rest of
+the cluster's reconciliation runs in between; a <code>Paused</code> one waits for you, as
+below.</p>
 <p>What happens next:</p>
 <ul>
 <li><strong>Failed:</strong> the operator retries the upgrade itself once the cluster is
@@ -4145,9 +4156,22 @@ reported as for any cluster: <code>Ready</code> with the <code>Degraded</code> c
     afterwards if you want the next failure to pause again.</li>
 </ul>
 <p>Either way the upgrade resumes once the cluster is <code>Ready</code> with every server
-  available, and the <code>UpgradeStarted</code> event says it resumed. A server that
-  cannot start on the target image keeps the cluster short of a server, so the
-  upgrade does not resume, towards any tag, while it is down.
+  available, and the <code>UpgradeStarted</code> event says it resumed. While it rolls,
+  <code>status.message</code> says the upgrade is in progress.
+- <strong>A server that cannot start on the target.</strong> When the servers the upgrade
+  restarted cannot start on its target — the image cannot be pulled (a typo, a
+  tag not published yet), or Neo4j keeps exiting on it — the cluster is short of
+  them, so it is not <code>Ready</code> with every server available. Set <code>spec.image.tag</code>
+  to another target (a fixed image, or a later version): the upgrade goes on
+  towards it straight away and replaces those servers first — they are down, so
+  no server that is up restarts — then rolls the rest one at a time through the
+  usual checks. The <code>UpgradeStarted</code> event names the servers it
+  replaces. This applies only when the servers that are down are exactly the
+  ones the upgrade restarted, every one of them failing to start, and Neo4j
+  reports no other server unavailable; otherwise the upgrade waits until every
+  server is back. Setting the same target again, or turning
+  <code>autoPauseOnFailure</code> off, does not replace them: the same image cannot start
+  there either.
 - <strong>Going back:</strong> you can set the tag back to <code>status.version</code> only while the
   upgrade has not restarted any server (it stopped while staging, or before its
   first server restarted); the upgrade then runs to that version, which every
@@ -4158,6 +4182,14 @@ reported as for any cluster: <code>Ready</code> with the <code>Degraded</code> c
   means below the patch the restarted servers report, which the operator
   records in <code>status.upgradeStatus.resolvedTargetVersion</code> (see
   <a href="#tags-without-a-patch">Tags without a patch</a>).</p>
+<p><strong>The number of servers waits for the upgrade.</strong> A rolling upgrade changes no
+topology. A change of <code>spec.topology.servers</code> made while an upgrade is in
+progress, or while a <code>Paused</code> or <code>Failed</code> one has restarted some of the servers
+(or staged its target), is not applied until the upgrade completes: added
+servers would start on the target, and a scale-down's drain would run
+mid-upgrade. The <code>TopologyChangeDeferred</code> condition says so, with both counts.
+Once the upgrade completes, the change is applied as usual: a scale-down
+drains its servers first.</p>
 <h3 id="version-checks">Version checks<a class="headerlink" href="#version-checks" title="Anchor link to this section">&para;</a></h3>
 <p>Every reconcile checks <code>spec.image.tag</code> against <code>status.version</code>, the version every server runs. It is recorded when the cluster first becomes <code>Ready</code>, after each verified upgrade, and when the cluster becomes <code>Ready</code> with every server on an image that reached them without the upgrade state machine (the no-ready-server exception above). It does not move while an upgrade is in flight or after one is <code>Paused</code> or <code>Failed</code>.</p>
 <p>So while an upgrade is unfinished, <code>status.version</code> is the version of the servers it has not rolled. The servers it has rolled run its target (<code>status.upgradeStatus.targetVersion</code>), so once it has restarted a server, the tag is also checked against the target: a later target, or the target itself, is allowed; anything below it, <code>status.version</code> included, is refused, because it would roll those servers back:</p>
@@ -4193,7 +4225,8 @@ reported as for any cluster: <code>Ready</code> with the <code>Degraded</code> c
 <p>and once it has completed, the same tag is refused against what every server runs:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>Update validation failed: validation failed: spec.image.tag: Invalid value: "5.26.31-enterprise": downgrades are not supported: the servers run 5.26.32 (status.runningVersion, what 5.26-enterprise in status.version resolved to), and Neo4j cannot go back to an earlier version. Set the tag to 5.26.32 or later; running an earlier version means restoring a backup taken before the upgrade
 </span></code></pre></div>
-<p><code>5.26.32-enterprise</code>, a later patch, <code>5.26-enterprise</code> itself and any later line are accepted. Moving from <code>5.26-enterprise</code> to <code>5.26.32-enterprise</code> changes the server pod template, so it runs as an upgrade and every server restarts once, even when both tags are the same image.</p>
+<p><code>5.26.32-enterprise</code>, a later patch, <code>5.26-enterprise</code> itself and any later line are accepted. Moving from <code>5.26-enterprise</code> to <code>5.26.32-enterprise</code> changes the server pod template, so it runs as an upgrade and every server restarts once, even when both tags are the same image. There is no way round that restart: Kubernetes restarts a container whose image reference changes, whatever image it resolves to, and the operator cannot tell what a tag resolves to without asking the registry, with its credentials, before any server pulls it. To avoid the extra restart, keep the tag without a patch until your next upgrade, and name a patch from then on.</p>
+<p>When an upgrade starts, the operator also asks the servers what they run, and refuses a tag below the highest version one of them reports (the upgrade turns <code>Paused</code> or <code>Failed</code> before anything changes, and <code>lastError</code> names the version). This catches a patch the servers run that the operator has not recorded yet.</p>
 <p>A <code>Neo4jEnterpriseStandalone</code> is held to the same rule. Its <code>status.version</code> is recorded once its pod is ready on the current image, so it does not move while the pod is being replaced, nor for an image that never starts: setting the tag back to the version the server runs is always allowed. A downgrade is refused the same way (the standalone turns <code>Failed</code> with a <code>ValidationFailed</code> event saying <code>the standalone runs …</code>), and the server keeps the version it runs.</p>
 <p>A tag the cluster cannot move to (see <a href="#supported-upgrade-paths">Supported Upgrade Paths</a>) is refused before anything changes: the cluster turns <code>Failed</code>, with a <code>ValidationFailed</code> event and a message that names the field and what the servers run:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>Update validation failed: validation failed: spec.image.tag: Invalid value: "2025.10.0-enterprise": downgrades are not supported: the servers run 2026.08.1-enterprise (status.version), and Neo4j cannot go back to an earlier version. Set the tag to 2026.08.1-enterprise or later; running an earlier version means restoring a backup taken before the upgrade
@@ -4203,8 +4236,8 @@ reported as for any cluster: <code>Ready</code> with the <code>Degraded</code> c
 <p>Not checked:</p>
 <ul>
 <li><strong>No <code>status.version</code> yet</strong> — a cluster that has not been <code>Ready</code> since the operator was installed. There is nothing verified to compare with; the operator records the version at the next <code>Ready</code>, for a cluster created by an older release too.</li>
-<li><strong>The patch of a tag without one, before the operator has read what the servers run.</strong> Moving from <code>5.26-enterprise</code> to <code>5.26.12-enterprise</code> (or back) is checked against <code>status.runningVersion</code> or <code>status.upgradeStatus.resolvedTargetVersion</code> once they are recorded (see <a href="#tags-without-a-patch">Tags without a patch</a>). Until then — while an upgrade's first restarted server has not yet passed its availability check, or before the first <code>Ready</code> pass under an operator that records them — the patch is not ordered, and such a move is allowed. The <code>Verifying</code> phase accepts any patch of the line for such a tag (see <a href="#upgrade-phases-and-resumability">Version verification</a>).</li>
-<li><strong>A patch Neo4j changed without a new tag.</strong> A floating tag pulled again (<code>imagePullPolicy: Always</code>, or a new node) can start a server on a newer patch. The cluster records it on its next <code>Ready</code> pass, and the standalone when its container restarts on the new image; a tag set between the two before then is not refused.</li>
+<li><strong>The patch of a tag without one, before the operator has read what the servers run.</strong> Moving from <code>5.26-enterprise</code> to <code>5.26.12-enterprise</code> (or back) is checked against <code>status.runningVersion</code> or <code>status.upgradeStatus.resolvedTargetVersion</code> once they are recorded (see <a href="#tags-without-a-patch">Tags without a patch</a>), and, when an upgrade starts with <code>preUpgradeHealthCheck</code> on, against what the servers report then. Not checked: a target changed while an upgrade is rolling, before the server it restarted has passed its availability check (the operator records what it runs there); and an upgrade started with <code>preUpgradeHealthCheck: false</code> before the first <code>Ready</code> pass under an operator that records them. The <code>Verifying</code> phase accepts any patch of the line for such a tag (see <a href="#upgrade-phases-and-resumability">Version verification</a>).</li>
+<li><strong>A patch Neo4j changed without a new tag, on a standalone.</strong> A floating tag pulled again (<code>imagePullPolicy: Always</code>, or a new node) can start a server on a newer patch. A cluster records it on its next <code>Ready</code> pass, and checks the servers again when an upgrade starts; a standalone records it on the pass after its container restarts on the new image, and a tag set before then is not refused.</li>
 </ul>
 <h2 id="upgrade-strategy">Upgrade Strategy<a class="headerlink" href="#upgrade-strategy" title="Anchor link to this section">&para;</a></h2>
 <p>Configure the upgrade strategy with <code>spec.upgradeStrategy</code>:</p>
@@ -4239,7 +4272,7 @@ reported as for any cluster: <code>Ready</code> with the <code>Degraded</code> c
 </span></code></pre></div>
 <p>The three timeouts are Go durations above zero: <code>30m</code>, <code>1h30m</code>, <code>90s</code>. A value that does not parse, such as <code>"5 minutes"</code>, or one of zero or less, such as <code>"0s"</code> or <code>"-5m"</code>, is refused (the cluster turns <code>Failed</code> with a <code>ValidationFailed</code> event), and <code>kubectl neo4j validate</code> reports it before you apply. A step fails once its timeout has passed since it started, so at zero or less a step failed at its first check unless it was already done; an <code>upgradeTimeout</code> of zero or less failed every upgrade while staging.</p>
 <p>Servers always restart one at a time, as Neo4j's rolling upgrade requires. <code>maxUnavailableDuringUpgrade</code> is accepted for compatibility but has no effect; a value other than <code>1</code> raises a <code>ValidationWarning</code> event.</p>
-<p>When <code>preUpgradeHealthCheck</code> is enabled, the operator verifies connectivity to Neo4j before changing the image. If the check fails and <code>autoPauseOnFailure</code> is <code>true</code>, the upgrade is <code>Paused</code> before anything changes, rather than proceeding against an unhealthy deployment; resume it as described in <a href="#when-an-upgrade-stops-paused-and-failed">When an upgrade stops</a>. Without <code>autoPauseOnFailure</code> it is <code>Failed</code>, and retried once the cluster is <code>Ready</code> with every server available.</p>
+<p>When <code>preUpgradeHealthCheck</code> is enabled, the operator checks the cluster before changing the image: a majority of servers available, a majority enabled, a leader, and no server running a version above the target. If the check fails and <code>autoPauseOnFailure</code> is <code>true</code>, the upgrade is <code>Paused</code> before anything changes, rather than proceeding against an unhealthy deployment; resume it as described in <a href="#when-an-upgrade-stops-paused-and-failed">When an upgrade stops</a>. Without <code>autoPauseOnFailure</code> it is <code>Failed</code>, and tried again every minute while the cluster is <code>Ready</code> with every server available. Either way the cluster stays <code>Ready</code>.</p>
 <p>For the full field reference see the <a href="../../../api_reference/neo4jenterprisecluster/">API Reference</a>.</p>
 <h2 id="supported-upgrade-paths">Supported Upgrade Paths<a class="headerlink" href="#supported-upgrade-paths" title="Anchor link to this section">&para;</a></h2>
 <p>These follow Neo4j's <a href="https://neo4j.com/docs/upgrade-migration-guide/current/">Upgrade and Migration Guide</a>. Neo4j does not support downgrades: going back to an earlier version means restoring a backup taken before the upgrade, into a deployment that runs the earlier version.</p>
