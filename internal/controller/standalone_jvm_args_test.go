@@ -33,6 +33,19 @@ import (
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
+// imageLinesRendered is a vendored image's own list less -XX:+AlwaysPreTouch,
+// which the operator leaves out (operations.md id 212).
+func imageLinesRendered(t *testing.T, release string) []string {
+	t.Helper()
+	var out []string
+	for _, v := range entrypointsim.ImageJVMArguments(t, release) {
+		if v != "-XX:+AlwaysPreTouch" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
 // standaloneJVMLines returns the values of the server.jvm.additional lines of
 // a rendered neo4j.conf, in order.
 func standaloneJVMLines(conf string) []string {
@@ -63,18 +76,19 @@ func TestStandaloneRendersTheImagesJVMArgumentsFirst(t *testing.T) {
 					Image:                  neo4jv1beta1.ImageSpec{Repo: "neo4j", Tag: tag},
 				},
 			}
-			image := entrypointsim.ImageJVMArguments(t, release)
+			image := imageLinesRendered(t, release)
 			conf := r.createConfigMap(standalone).Data["neo4j.conf"]
-			assert.Equal(t, image, standaloneJVMLines(conf), "the image's own lines")
+			assert.Equal(t, image, standaloneJVMLines(conf), "the image's own lines, less pre-touch")
+			assert.NotContains(t, conf, "server.jvm.additional=-XX:+AlwaysPreTouch")
 			assert.Contains(t, conf, resources.RestartNeutralBegin)
 			for _, e := range r.buildEnvVars(standalone) {
 				assert.NotEqual(t, "NEO4J_server_jvm_additional", e.Name)
 			}
 
-			standalone.Spec.Config = map[string]string{"server.jvm.additional": "-XX:-AlwaysPreTouch"}
+			standalone.Spec.Config = map[string]string{"server.jvm.additional": "-XX:+AlwaysPreTouch"}
 			standalone.Spec.TrustedCASecrets = []neo4jv1beta1.TrustedCASecret{{Name: "corp-ca"}}
 			want := append(append([]string{}, image...),
-				"-XX:-AlwaysPreTouch",
+				"-XX:+AlwaysPreTouch", // the user's opt-in, once
 				"-Djavax.net.ssl.trustStore=/truststore/truststore.jks",
 				"-Djavax.net.ssl.trustStorePassword=changeit")
 			assert.Equal(t, want, standaloneJVMLines(r.createConfigMap(standalone).Data["neo4j.conf"]),
@@ -99,34 +113,43 @@ func TestStandaloneRendersTheImagesJVMArgumentsFirst(t *testing.T) {
 // the block is left out of the restart decision (withoutDeferredConf), so the
 // pod keeps the config-hash stamp of the conf it runs, whether the
 // StatefulSet records the semantic hash (every operator since #465) or not.
-// The new conf is in the ConfigMap for the pod's next start.
+// The new conf is in the ConfigMap for the pod's next start. So does a change
+// of the block's lines: a standalone that rendered the block with
+// -XX:+AlwaysPreTouch (only the unreleased #598 build did; nothing released
+// renders the block) keeps its pod when the line goes.
 func TestStandalone_ImageJVMBlockRestartsNothing(t *testing.T) {
-	for _, recorded := range []bool{true, false} {
-		name := "semantic hash recorded"
-		if !recorded {
-			name = "no semantic hash"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		recorded bool
+		before   func(conf string) string // the conf an earlier operator rendered
+	}{
+		{"no block, semantic hash recorded", true, withoutDeferredConf},
+		{"no block, no semantic hash", false, withoutDeferredConf},
+		{"the block with pre-touch", true, func(conf string) string {
+			return strings.Replace(conf, "server.jvm.additional=-XX:-OmitStackTraceInFastThrow\n",
+				"server.jvm.additional=-XX:-OmitStackTraceInFastThrow\nserver.jvm.additional=-XX:+AlwaysPreTouch\n", 1)
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			ctx := context.Background()
 			r, c := standaloneCMTestReconciler(t)
 			sa := standaloneForSTS("2026.08.1-enterprise")
 			require.NoError(t, r.reconcileConfigMap(ctx, sa))
 			require.NoError(t, r.reconcileStatefulSet(ctx, sa))
 
-			// The ConfigMap and StatefulSet as an operator before the block left
-			// them: the conf without it, the pod stamped for that conf.
+			// The ConfigMap and StatefulSet as an earlier operator left them: its
+			// conf, the pod stamped for that conf.
 			cm := &corev1.ConfigMap{}
 			require.NoError(t, c.Get(ctx, types.NamespacedName{Name: "sa-config", Namespace: "default"}, cm))
 			newConf := cm.Data["neo4j.conf"]
-			oldConf := withoutDeferredConf(newConf)
-			require.NotEqual(t, oldConf, newConf, "test premise: the conf carries the block")
-			require.Empty(t, standaloneJVMLines(oldConf))
+			oldConf := tc.before(newConf)
+			require.NotEqual(t, oldConf, newConf, "test premise: the earlier conf differs")
 			cm.Data["neo4j.conf"] = oldConf
 			require.NoError(t, c.Update(ctx, cm))
 			oldStamp := standaloneConfHash(oldConf)
 			sts := getSTS(t, r)
 			sts.Spec.Template.Annotations[standaloneConfigHashAnnotation] = oldStamp
-			if recorded {
+			if tc.recorded {
 				sts.Annotations[standaloneConfigSemanticHashAnnotation] = standaloneConfSemanticHash(oldConf)
 			} else {
 				delete(sts.Annotations, standaloneConfigSemanticHashAnnotation)
@@ -138,10 +161,10 @@ func TestStandalone_ImageJVMBlockRestartsNothing(t *testing.T) {
 			require.NoError(t, r.reconcileStatefulSet(ctx, sa))
 
 			require.NoError(t, c.Get(ctx, types.NamespacedName{Name: "sa-config", Namespace: "default"}, cm))
-			assert.Equal(t, entrypointsim.ImageJVMArguments(t, "2026.08.1"), standaloneJVMLines(cm.Data["neo4j.conf"]),
-				"the ConfigMap carries the image's lines for the next start")
+			assert.Equal(t, imageLinesRendered(t, "2026.08.1"), standaloneJVMLines(cm.Data["neo4j.conf"]),
+				"the ConfigMap carries the image's lines, less pre-touch, for the next start")
 			assert.Equal(t, oldStamp, getSTS(t, r).Spec.Template.Annotations[standaloneConfigHashAnnotation],
-				"adding the image's JVM arguments must not restart the pod")
+				"changing the image's JVM arguments must not restart the pod")
 		})
 	}
 }

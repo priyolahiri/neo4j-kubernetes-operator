@@ -32,21 +32,39 @@ import (
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/entrypointsim"
 )
 
-// The table is the images' own lists: each vendored release gets exactly what
-// its image's neo4j.conf sets, in its order; a tag without a patch, a
-// release between known ones, a newer CalVer and a digest-pinned tag get the
-// list the table says; a tag that is no supported Neo4j gets none.
+// imageLinesRendered is a vendored image's own list as the operator renders
+// it: without -XX:+AlwaysPreTouch, which pre-touches the whole heap at start
+// (the round 9 walk's OOMKilled writer at the documented 1.5Gi minimum).
+func imageLinesRendered(t *testing.T, release string) []string {
+	t.Helper()
+	var out []string
+	for _, v := range entrypointsim.ImageJVMArguments(t, release) {
+		if v != "-XX:+AlwaysPreTouch" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// The table is the images' own lists: each vendored release gets what its
+// image's neo4j.conf sets, in its order, less -XX:+AlwaysPreTouch, which every
+// image sets and no server gets; a tag without a patch, a release between
+// known ones, a newer CalVer and a digest-pinned tag get the list the table
+// says; a tag that is no supported Neo4j gets none.
 func TestImageJVMArguments_AreTheImagesOwn(t *testing.T) {
 	for _, release := range entrypointsim.JVMReleases {
-		assert.Equal(t, entrypointsim.ImageJVMArguments(t, release), ImageJVMArguments(release+"-enterprise"), release)
+		require.Contains(t, entrypointsim.ImageJVMArguments(t, release), "-XX:+AlwaysPreTouch", "test premise: %s sets it", release)
+		got := ImageJVMArguments(release + "-enterprise")
+		assert.Equal(t, imageLinesRendered(t, release), got, release)
+		assert.NotContains(t, got, "-XX:+AlwaysPreTouch", release)
 	}
 
-	newest := entrypointsim.ImageJVMArguments(t, "2026.09.0")
+	newest := imageLinesRendered(t, "2026.09.0")
 	for tag, want := range map[string][]string{
-		"5.26-enterprise":    entrypointsim.ImageJVMArguments(t, "5.26.32"),
+		"5.26-enterprise":    imageLinesRendered(t, "5.26.32"),
 		"2026.09-enterprise": newest,
-		"2025.06.0":          entrypointsim.ImageJVMArguments(t, "2025.01.0"),
-		"2026.07.1":          entrypointsim.ImageJVMArguments(t, "2026.06.0"),
+		"2025.06.0":          imageLinesRendered(t, "2025.01.0"),
+		"2026.07.1":          imageLinesRendered(t, "2026.06.0"),
 		"2027.01.0":          newest, // newer than the newest known: best effort
 		"2026.08.1-enterprise@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef": newest,
 	} {
@@ -80,28 +98,31 @@ func TestStandaloneImageJVMArgumentsBlock(t *testing.T) {
 			values = append(values, v)
 		}
 	}
-	assert.Equal(t, entrypointsim.ImageJVMArguments(t, "2026.08.1"), values)
+	assert.Equal(t, imageLinesRendered(t, "2026.08.1"), values)
 	assert.Contains(t, values, "--add-modules=jdk.incubator.vector")
+	assert.NotContains(t, block, "server.jvm.additional=-XX:+AlwaysPreTouch")
 	assert.Empty(t, StandaloneImageJVMArgumentsBlock("4.4.30-enterprise"))
 }
 
 // The cluster's startup block, run as a pod runs it: before the entrypoint,
 // over the image's own neo4j.conf, then the entrypoint's copy of /conf over
 // the image's conf directory and its environment pass. The server's
-// neo4j.conf starts with the image's lines, then the user's own
-// (spec.config), then the operator's list the entrypoint appends from
-// NEO4J_server_jvm_additional (append-not-replace), so a later flag wins; the
-// image's other settings do not come through. Without the block the image's
-// lines were gone.
+// neo4j.conf starts with the image's lines less -XX:+AlwaysPreTouch, then the
+// user's own (spec.config, here opting into pre-touch), then the operator's
+// list the entrypoint appends from NEO4J_server_jvm_additional
+// (append-not-replace), so a later flag wins; the image's other settings do
+// not come through. Without the block the image's lines were gone; with the
+// image's pre-touch copied, a server at the documented minimum held its whole
+// heap from the start and was OOMKilled under write load.
 func TestImageJVMArgumentsBlock_PutsTheImagesLinesFirst(t *testing.T) {
 	for _, release := range []string{entrypointsim.Release52632, entrypointsim.Release2026090} {
 		t.Run(release, func(t *testing.T) {
-			image := entrypointsim.ImageJVMArguments(t, release)
 			imageConf := "# the image's neo4j.conf\nserver.directories.import=import\n"
-			for _, v := range image {
+			for _, v := range entrypointsim.ImageJVMArguments(t, release) {
 				imageConf += "server.jvm.additional=" + v + "\n"
 			}
-			mounted := "server.jvm.additional=-XX:-AlwaysPreTouch\ndb.tx_log.rotation.size=256M\n"
+			require.Contains(t, imageConf, "server.jvm.additional=-XX:+AlwaysPreTouch\n", "test premise")
+			mounted := "server.jvm.additional=-XX:+AlwaysPreTouch\ndb.tx_log.rotation.size=256M\n"
 			operator := buildJVMSettings(&neo4jv1beta1.Neo4jEnterpriseCluster{})
 
 			conf := entrypointsim.Start(t, entrypointsim.Image{Release: release, Conf: imageConf}, mounted,
@@ -113,8 +134,8 @@ func TestImageJVMArgumentsBlock_PutsTheImagesLinesFirst(t *testing.T) {
 					got = append(got, v)
 				}
 			}
-			want := append(append(append([]string{}, image...), "-XX:-AlwaysPreTouch"), operator)
-			assert.Equal(t, want, got)
+			want := append(append(imageLinesRendered(t, release), "-XX:+AlwaysPreTouch"), operator)
+			assert.Equal(t, want, got, "the image's lines less pre-touch, then the user's (opting in), then the operator's")
 			assert.NotContains(t, conf, "server.directories.import", "only the image's JVM lines come through")
 			value, _ := entrypointsim.Setting(conf, "db.tx_log.rotation.size")
 			assert.Equal(t, "256M", value)

@@ -77,9 +77,10 @@ Every server runs, in this order:
 
 1. **The Neo4j image's own JVM arguments**: the `server.jvm.additional` lines of
    the image's `neo4j.conf` (20 on 5.26 and 2025.01, 23 from 2026.03, 24 from
-   2026.08: `-XX:+UseG1GC`, `-XX:+AlwaysPreTouch`, the `--add-opens` flags,
+   2026.08: `-XX:+UseG1GC`, the `--add-opens` flags,
    `--enable-native-access=ALL-UNNAMED`, and from 2026.08
-   `--add-modules=jdk.incubator.vector`, among others). The image's entrypoint
+   `--add-modules=jdk.incubator.vector`, among others), less
+   `-XX:+AlwaysPreTouch` (below). The image's entrypoint
    replaces that file with the operator's, so the server's startup script reads
    the image's lines from it first, at each start, and puts them at the top of
    the server's `neo4j.conf`. They are always there: the `--add-opens`,
@@ -92,8 +93,16 @@ Every server runs, in this order:
    rather than replacing it).
 
 The JVM takes the last of two conflicting flags, so what comes later wins: turn
-an image flag off with its `-XX:-` form (`-XX:-AlwaysPreTouch`), or override a
-property with its own `-D`.
+an image flag off with its `-XX:-` form (`-XX:-DisableExplicitGC`), or override
+a property with its own `-D`.
+
+One image line is left out: `-XX:+AlwaysPreTouch`. It writes every page of
+the heap when the JVM starts, and the operator sets the initial heap to its
+maximum, so a server would hold its whole heap from the start: on a 3-server
+2026.08.1 cluster at the documented minimum (1536Mi, heap 768M, page cache
+384M) a server's idle memory doubled (from about 560Mi to about 1150Mi), and
+under write load a server was OOMKilled and crash-looped. Add it in
+`spec.config` if you size memory for it.
 
 The operator's default list is `-XX:+UseG1GC`,
 `-XX:MaxGCPauseMillis=200`, `-XX:+ParallelRefProcEnabled`, G1 sizing

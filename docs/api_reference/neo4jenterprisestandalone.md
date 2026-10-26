@@ -158,9 +158,10 @@ config:
 **JVM arguments (`server.jvm.additional`).** A standalone runs the Neo4j
 image's own JVM arguments: the 20 `server.jvm.additional` lines of the image's
 `neo4j.conf` on 5.26 and 2025.01, 23 from 2026.03 and 24 from 2026.08
-(`-XX:+UseG1GC`, `-XX:+AlwaysPreTouch`, the `--add-opens` flags,
+(`-XX:+UseG1GC`, the `--add-opens` flags,
 `--enable-native-access=ALL-UNNAMED`, and from 2026.08
-`--add-modules=jdk.incubator.vector`, among others). The image's entrypoint
+`--add-modules=jdk.incubator.vector`, among others), less
+`-XX:+AlwaysPreTouch` (below). The image's entrypoint
 replaces its `neo4j.conf` with the one the operator renders (the ConfigMap
 mounted at `/conf`), so the operator writes the image's lines into that file
 itself, from a list it keeps per Neo4j release: they come first, between
@@ -174,10 +175,15 @@ the operator knows gets that release's list (best effort). Then come your own:
 
 and the truststore flags when `spec.trustedCASecrets` or `spec.auth.trustStore`
 is set. The JVM takes the last of two conflicting flags, so yours win: turn an
-image flag off with its `-XX:-` form (`-XX:-AlwaysPreTouch`), or override a
+image flag off with its `-XX:-` form (`-XX:-DisableExplicitGC`), or override a
 property with its own `-D`. The image's lines are always rendered — the
 `--add-opens`, `--enable-native-access` and vector-module flags are what Neo4j's
-runtime needs, not tuning. To see the list of the image you run:
+runtime needs, not tuning. One image line is left out: `-XX:+AlwaysPreTouch`. It writes every page of
+the heap when the JVM starts, so with the initial heap at its maximum (as
+the operator sets it on a cluster) a server holds its whole heap from the
+start: on a 3-server 2026.08.1 cluster at the documented minimum (1536Mi) a
+server's idle memory doubled, and under write load a server was OOMKilled.
+Add it in `spec.config` if you size memory for it. To see the list of the image you run:
 `docker run --rm --entrypoint grep neo4j:<tag> '^server.jvm.additional' /var/lib/neo4j/conf/neo4j.conf`.
 
 The image's lines are left out of the decision to restart the pod: a

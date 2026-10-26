@@ -37,6 +37,9 @@ package resources
 // — the user's spec.config and spec.env, and on a cluster the operator's own
 // list — wins a conflicting flag, as the JVM takes the last one given; a flag
 // is turned off with its -XX:- form, a property overridden with its own -D.
+//
+// One of the image's lines is left out on both kinds: -XX:+AlwaysPreTouch
+// (leftOutImageJVMArgument).
 
 import (
 	"strings"
@@ -136,11 +139,23 @@ var imageJVMArgumentLists = []struct {
 	}},
 }
 
+// leftOutImageJVMArgument is the one image line the operator does not render
+// on either kind. -XX:+AlwaysPreTouch writes every page of the heap at the
+// JVM's start, and the operator sets the heap's initial size to its maximum,
+// so a server holds its whole heap from the moment it starts. On a 3-server
+// 2026.08.1 cluster at the documented minimum (1536Mi, heap 768M, page cache
+// 384M) a server's idle memory went from 529-589Mi to 1136-1167Mi, and under a
+// write load the writer was OOMKilled and crash-looped; without the flag the
+// same load passed, and startup time was the same either way (round 9 live
+// walk of #598). A user who wants it adds it in spec.config.
+const leftOutImageJVMArgument = "-XX:+AlwaysPreTouch"
+
 // ImageJVMArguments returns the server.jvm.additional values the Neo4j image
-// tagged tag sets in its own neo4j.conf (imageJVMArgumentLists): the list of
-// the newest known release at or below its version. A tag without a patch
-// (5.26-enterprise, 2026.09-enterprise) reads as the line's first release. A
-// tag that is not a supported Neo4j version gets none.
+// tagged tag sets in its own neo4j.conf (imageJVMArgumentLists), less
+// leftOutImageJVMArgument: the list of the newest known release at or below
+// its version. A tag without a patch (5.26-enterprise, 2026.09-enterprise)
+// reads as the line's first release. A tag that is not a supported Neo4j
+// version gets none.
 func ImageJVMArguments(tag string) []string {
 	v, err := neo4j.ParseVersion(tag)
 	if err != nil || !v.IsSupported() {
@@ -148,7 +163,13 @@ func ImageJVMArguments(tag string) []string {
 	}
 	for _, list := range imageJVMArgumentLists {
 		if v.Compare(&list.from) >= 0 {
-			return list.values
+			out := make([]string, 0, len(list.values))
+			for _, value := range list.values {
+				if value != leftOutImageJVMArgument {
+					out = append(out, value)
+				}
+			}
+			return out
 		}
 	}
 	return nil
@@ -156,7 +177,7 @@ func ImageJVMArguments(tag string) []string {
 
 // imageJVMArgumentsComment opens the image's lines in a server's neo4j.conf.
 const imageJVMArgumentsComment = "# The Neo4j image's own JVM arguments (server.jvm.additional), which its neo4j.conf\n" +
-	"# sets and this file replaces. Later server.jvm.additional lines win a conflicting flag."
+	"# sets and this file replaces, less " + leftOutImageJVMArgument + ". Later server.jvm.additional lines win a conflicting flag."
 
 // StandaloneImageJVMArgumentsBlock renders, for a standalone's neo4j.conf, the
 // image's own server.jvm.additional lines (ImageJVMArguments) between the
@@ -178,7 +199,8 @@ func StandaloneImageJVMArgumentsBlock(tag string) string {
 
 // buildImageJVMArgumentsBlock renders the cluster startup script's
 // restart-neutral block that puts the image's own server.jvm.additional
-// lines first in /conf/neo4j.conf. The script runs before the entrypoint,
+// lines, less leftOutImageJVMArgument (matched as a whole line), first in
+// /conf/neo4j.conf. The script runs before the entrypoint,
 // while ${NEO4J_HOME}/conf/neo4j.conf is still the image's file, so the lines
 // are the image's own on every release, with no table. They go before the
 // operator's rendered conf, so the user's spec.config lines, and the
@@ -191,7 +213,7 @@ func buildImageJVMArgumentsBlock() string {
 ` + strings.ReplaceAll(imageJVMArgumentsComment, "this file replaces", "the entrypoint replaces with /conf") + `
 OPERATOR_IMAGE_CONF_DIR="${NEO4J_HOME:-/var/lib/neo4j}/conf"
 if [ "$OPERATOR_IMAGE_CONF_DIR" != /conf ] && [ -f "$OPERATOR_IMAGE_CONF_DIR/neo4j.conf" ] && [ -f /conf/neo4j.conf ]; then
-    { grep '^server.jvm.additional=' "$OPERATOR_IMAGE_CONF_DIR/neo4j.conf" || true; cat /conf/neo4j.conf; } > /conf/neo4j.conf.image-jvm
+    { grep '^server.jvm.additional=' "$OPERATOR_IMAGE_CONF_DIR/neo4j.conf" | grep -v -x -F 'server.jvm.additional=` + leftOutImageJVMArgument + `' || true; cat /conf/neo4j.conf; } > /conf/neo4j.conf.image-jvm
     mv /conf/neo4j.conf.image-jvm /conf/neo4j.conf
 fi
 ` + RestartNeutralEnd + `
