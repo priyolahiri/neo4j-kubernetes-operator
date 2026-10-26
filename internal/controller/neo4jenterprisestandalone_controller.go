@@ -537,9 +537,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 			// before the conf is written (#466); see applyStandaloneConfLive.
 			// Settings deferred to the next restart (#469) are neither applied
 			// live nor a reason to restart.
-			if oldConf := withoutDeferredConfKeys(configMap.Data["neo4j.conf"]); oldConf != "" &&
-				normalizeNeo4jConfForRestart(oldConf) != normalizeNeo4jConfForRestart(withoutDeferredConfKeys(merged)) {
-				r.applyStandaloneConfLive(ctx, standalone, oldConf, withoutDeferredConfKeys(merged))
+			if oldConf := withoutDeferredConf(configMap.Data["neo4j.conf"]); oldConf != "" &&
+				normalizeNeo4jConfForRestart(oldConf) != normalizeNeo4jConfForRestart(withoutDeferredConf(merged)) {
+				r.applyStandaloneConfLive(ctx, standalone, oldConf, withoutDeferredConf(merged))
 			}
 
 			if configMap.Data == nil {
@@ -602,12 +602,29 @@ const standaloneConfigSemanticHashAnnotation = "neo4j.com/config-semantic-hash"
 // single-line settings belong here.
 var standaloneDeferredConfKeys = []string{resources.TLSReloadSetting}
 
-// withoutDeferredConfKeys returns conf without the lines that set a
-// standaloneDeferredConfKeys setting, byte for byte otherwise.
-func withoutDeferredConfKeys(conf string) string {
+// withoutDeferredConf returns conf without what the operator adds for the
+// pod's next restart instead of restarting it: the lines that set a
+// standaloneDeferredConfKeys setting (#469), and the restart-neutral block,
+// markers included — the image's own JVM arguments, several lines of a key the
+// user may set too (StandaloneImageJVMArgumentsBlock, operations.md id 212).
+// Byte for byte otherwise, so a conf an earlier operator rendered without
+// them hashes as it did.
+func withoutDeferredConf(conf string) string {
 	lines := strings.SplitAfter(conf, "\n")
 	kept := lines[:0]
+	inBlock := false
 	for _, line := range lines {
+		switch strings.TrimSpace(line) {
+		case resources.RestartNeutralBegin:
+			inBlock = true
+			continue
+		case resources.RestartNeutralEnd:
+			inBlock = false
+			continue
+		}
+		if inBlock {
+			continue
+		}
 		deferred := false
 		for _, k := range standaloneDeferredConfKeys {
 			if strings.HasPrefix(strings.TrimSpace(line), k+"=") {
@@ -624,7 +641,7 @@ func withoutDeferredConfKeys(conf string) string {
 
 // standaloneConfSemanticHash hashes the parts of neo4j.conf a restart depends on.
 func standaloneConfSemanticHash(conf string) string {
-	sum := sha256.Sum256([]byte(normalizeNeo4jConfForRestart(withoutDeferredConfKeys(conf))))
+	sum := sha256.Sum256([]byte(normalizeNeo4jConfForRestart(withoutDeferredConf(conf))))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -710,7 +727,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) renderedConfStamp(ctx context.Cont
 		// still counts as current when the conf differs from what it stamped
 		// only by operator-added deferred settings — the same upgrade may add
 		// one (#469), and must not restart the pod for it.
-		case !hasRecord && liveStamp == standaloneConfHash(withoutDeferredConfKeys(conf)):
+		case !hasRecord && liveStamp == standaloneConfHash(withoutDeferredConf(conf)):
 			stamp = liveStamp
 		}
 	}
@@ -1492,6 +1509,17 @@ func renderStandaloneConfigMap(standalone *neo4jv1beta1.Neo4jEnterpriseStandalon
 	// Add header comment
 	configLines = append(configLines, "# Neo4j Standalone Configuration (5.26+ / 2025.x.x)")
 	configLines = append(configLines, "")
+
+	// The image's own JVM arguments, which this file replaces, first: the
+	// user's server.jvm.additional lines and the truststore flags below come
+	// after them and win a conflicting flag. Restart-neutral: the block is
+	// left out of the restart decision (withoutDeferredConf), so a running
+	// pod gets it at its next start (operations.md id 212).
+	if block := resources.StandaloneImageJVMArgumentsBlock(standalone.Spec.Image.Tag); block != "" {
+		// No blank line after it: without the block (withoutDeferredConf) the
+		// conf is byte for byte what an operator before it rendered.
+		configLines = append(configLines, strings.Split(block, "\n")...)
+	}
 
 	// Add basic server configuration
 	configLines = append(configLines, "# Basic Server Configuration")

@@ -20,8 +20,10 @@ limitations under the License.
 // install_neo4j_plugins (apply_plugin_default_configuration), then the
 // environment pass (add_env_setting_to_conf). testdata/entrypoint-excerpt.sh
 // holds those functions, copied verbatim from the images (5.26.32 and
-// 2026.09.0, which agree), and testdata/neo4j-plugins-<release>.json the
-// images' plugin tables (docs/knowledge/operations.md ids 179, 192, 193).
+// 2026.09.0, which agree), testdata/neo4j-plugins-<release>.json the images'
+// plugin tables (docs/knowledge/operations.md ids 179, 192, 193), and
+// testdata/neo4j-conf-jvm-<release>.txt the server.jvm.additional lines of
+// the images' own neo4j.conf (id 212).
 //
 // It is test support: nothing outside tests imports it.
 package entrypointsim
@@ -35,7 +37,7 @@ import (
 	"testing"
 )
 
-//go:embed testdata/entrypoint-excerpt.sh testdata/neo4j-plugins-*.json
+//go:embed testdata/entrypoint-excerpt.sh testdata/neo4j-plugins-*.json testdata/neo4j-conf-jvm-*.txt
 var files embed.FS
 
 // The releases whose /startup/neo4j-plugins.json is vendored, read from the
@@ -52,6 +54,34 @@ const (
 
 // Releases lists the vendored releases, oldest first.
 var Releases = []string{Release5260, Release52632, Release2026090, Release2026100}
+
+// JVMReleases lists the releases whose own neo4j.conf server.jvm.additional
+// lines are vendored, oldest first: every image on the workstation on
+// 2026-10-26, read with
+//
+//	docker run --rm --entrypoint sh neo4j:<release>-enterprise -c \
+//	  'grep "^server.jvm.additional=" /var/lib/neo4j/conf/neo4j.conf'
+//
+// (the 2026.04 and 2026.06 tags run 2026.04.0 and 2026.06.0). Three lists:
+// one for 5.26.0 to 5.26.32 and 2025.01.0, a longer one from 2026.03.1 to
+// 2026.06.0, and the longest from 2026.08.1.
+var JVMReleases = []string{
+	"5.26.0", "5.26.11", "5.26.12", "5.26.21", "5.26.31", "5.26.32",
+	"2025.01.0", "2026.03.1", "2026.04.0", "2026.06.0", "2026.08.1", "2026.09.0",
+}
+
+// ImageJVMArguments returns the values of the server.jvm.additional lines of
+// release's own neo4j.conf, in their order.
+func ImageJVMArguments(t testing.TB, release string) []string {
+	t.Helper()
+	var out []string
+	for _, line := range strings.Split(read(t, "testdata/neo4j-conf-jvm-"+release+".txt"), "\n") {
+		if value, ok := strings.CutPrefix(line, "server.jvm.additional="); ok {
+			out = append(out, value)
+		}
+	}
+	return out
+}
 
 // PluginTable returns the vendored /startup/neo4j-plugins.json of release.
 func PluginTable(t testing.TB, release string) []byte {
@@ -73,10 +103,18 @@ type Image struct {
 	// products/ has none; the table still names the plugin, without a
 	// versions URL, so the entrypoint cannot install it.
 	FleetJAR bool
+	// Conf is the image's own ${NEO4J_HOME}/conf/neo4j.conf. When set, the
+	// conf Start is given is the mounted /conf/neo4j.conf instead, and Start
+	// runs the prelude, then the entrypoint's copy of /conf over the image's
+	// conf directory (apply_mounted_conf), as a pod does. When empty, the two
+	// are one file (the prelude edits the conf the server reads).
+	Conf string
 }
 
 // Start runs prelude — the operator's startup-script lines that run before
-// the entrypoint; "" for none — then the entrypoint's plugin install (when
+// the entrypoint; "" for none — then, with image.Conf, the entrypoint's copy
+// of the mounted /conf over the image's conf directory, then the
+// entrypoint's plugin install (when
 // NEO4J_PLUGINS is set), its docker defaults (an Enterprise image's) and its
 // environment pass, over conf with env set, and
 // returns the neo4j.conf the server reads. The prelude's references to the
@@ -110,12 +148,22 @@ func Start(t testing.TB, image Image, conf, prelude string, env map[string]strin
 	tablePath := filepath.Join(root, "neo4j-plugins.json")
 	write(t, tablePath, strings.ReplaceAll(read(t, table), "/var/lib/neo4j", home))
 	confPath := filepath.Join(home, "conf", "neo4j.conf")
-	write(t, confPath, conf)
+	preludeConf, mounted := confPath, ""
+	if image.Conf != "" {
+		write(t, confPath, image.Conf)
+		mounted = filepath.Join(root, "conf")
+		mkdir(t, mounted)
+		preludeConf = filepath.Join(mounted, "neo4j.conf")
+	}
+	write(t, preludeConf, conf)
 
 	excerpt := strings.ReplaceAll(read(t, "testdata/entrypoint-excerpt.sh"), "/startup/neo4j-plugins.json", tablePath)
 	script := "set -eu\n" + excerpt + "\nNEO4J_HOME=" + home + "\n" +
-		strings.ReplaceAll(strings.ReplaceAll(prelude, ConfPath, confPath), "/startup/neo4j-plugins.json", tablePath) + "\n" +
-		"if [[ -n \"${NEO4J_PLUGINS:-}\" ]]; then install_neo4j_plugins; fi\n" +
+		strings.ReplaceAll(strings.ReplaceAll(prelude, ConfPath, preludeConf), "/startup/neo4j-plugins.json", tablePath) + "\n"
+	if mounted != "" {
+		script += "apply_mounted_conf " + mounted + "\n"
+	}
+	script += "if [[ -n \"${NEO4J_PLUGINS:-}\" ]]; then install_neo4j_plugins; fi\n" +
 		"apply_docker_defaults\n" +
 		"apply_environment_settings\n"
 	cmd := exec.CommandContext(t.Context(), "bash", "-c", script)
