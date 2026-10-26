@@ -123,7 +123,9 @@ spec:
     #
     # On a cluster this REPLACES the operator's built-in JVM flags (G1GC with a
     # 200ms pause target, compressed oops, ExitOnOutOfMemoryError, …) rather
-    # than adding to them, so repeat any you want to keep.
+    # than adding to them, so repeat any you want to keep. A standalone has no
+    # built-in flags: this is its whole list. Neither kind runs the Neo4j
+    # image's own JVM flags (its neo4j.conf is replaced by the operator's).
     server.jvm.additional: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:G1HeapRegionSize=32m -XX:+ParallelRefProcEnabled -XX:+UseStringDeduplication -XX:+ExitOnOutOfMemoryError"
 ```
 
