@@ -5179,7 +5179,10 @@ requested the finalizer is released, with one Warning that says
 <code>Released the finalizer without removing …</code>, names what is still in Neo4j,
 and gives the statement to run by hand, for example
 <code>DROP USER `alice`</code>. <code>deletionPolicy: Retain</code> releases at once and
-removes nothing.</p>
+removes nothing. A statement Neo4j refuses with an error it asks to be
+retried — a deadlock between the DROPs of a bulk delete — is not a wait:
+it is retried a few seconds later with nothing on status and no event,
+and named in the release Warning only if it lasts the 5 minutes.</p>
 <p>What a deletion removes lives on the target's volumes, so when the
 cluster or standalone itself is being deleted or is gone, its
 <code>spec.storage.retentionPolicy</code> decides:</p>
