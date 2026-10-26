@@ -695,7 +695,7 @@ If the errors are persistent — not transient — check that `dbms.routing.getR
 
 ## Limits and non-goals
 
-- **Cluster admin user safety**: the operator refuses to manage usernames matching reserved keywords (`system`). The bootstrap admin user (defined by `cluster.spec.auth.adminSecret`) is technically manageable, but doing so is risky — a misconfigured `Neo4jUser` could lock the operator out of its own cluster. Prefer leaving it alone.
+- **Cluster admin user safety**: the operator refuses to manage usernames matching reserved keywords (`system`). The bootstrap admin user (defined by `cluster.spec.auth.adminSecret`) is technically manageable, but doing so is risky — a misconfigured `Neo4jUser` could lock the operator out of its own cluster. Prefer leaving it alone. If you do manage it, list `admin` in its `roles`: they are authoritative, and without `admin` the operator revokes it from the login it signs in with (a `ValidationWarning` says so).
 - **Auto-generated passwords**: not supported; you must provide a Secret.
 - **Cypher-injection of role/user names**: the operator quotes all identifiers with backticks and uses parameters for password and provider IDs. Special characters in names are safe.
 - **Cross-cluster role reuse via a single CR**: not supported. Use Kustomize / Helm to template the same `Neo4jRole` into multiple namespaces.

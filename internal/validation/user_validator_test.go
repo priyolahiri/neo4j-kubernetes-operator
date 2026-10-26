@@ -276,3 +276,72 @@ func TestUserValidator_MissingSecretIsPendingNotFailed(t *testing.T) {
 		t.Fatalf("missing Secret must be reported via Pending; got: %v", res.Pending)
 	}
 }
+
+// The pre-release journey's "drop Neo4j refuses" recipe applied a Neo4jUser
+// for neo4j with no roles: the operator, whose spec.roles are authoritative,
+// revoked admin from the login it uses itself, and every CR on the target went
+// Forbidden. A Neo4jUser that names the operator's admin user — the username in
+// the target's admin Secret, else neo4j — with spec.roles that leave out admin
+// now draws a warning (rule 102: an advisory, never a refusal).
+func TestUserValidator_OperatorAdminWithoutAdminRoleWarns(t *testing.T) {
+	const lockout = "would revoke admin from its own login"
+	warns := func(res *UserValidationResult) bool {
+		for _, w := range res.Warnings {
+			if strings.Contains(w, lockout) {
+				return true
+			}
+		}
+		return false
+	}
+	adminSecret := func(data map[string]string) *corev1.Secret {
+		s := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "neo4j-admin-secret", Namespace: "ns"}, Data: map[string][]byte{}}
+		for k, val := range data {
+			s.Data[k] = []byte(val)
+		}
+		return s
+	}
+	user := func(username string, roles ...string) *neo4jv1beta1.Neo4jUser {
+		return &neo4jv1beta1.Neo4jUser{
+			ObjectMeta: metav1.ObjectMeta{Name: "u", Namespace: "ns"},
+			Spec: neo4jv1beta1.Neo4jUserSpec{
+				ClusterRef: "c", Username: username, Roles: roles,
+				PasswordSecretRef: &neo4jv1beta1.SecretKeyRef{Name: "creds"},
+			},
+		}
+	}
+	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{ObjectMeta: metav1.ObjectMeta{Name: "c", Namespace: "ns"}}
+	adminRoleCR := &neo4jv1beta1.Neo4jRole{
+		ObjectMeta: metav1.ObjectMeta{Name: "built-in-admin", Namespace: "ns"},
+		Spec:       neo4jv1beta1.Neo4jRoleSpec{ClusterRef: "c", Name: "admin"},
+	}
+
+	cases := []struct {
+		name  string
+		objs  []client.Object
+		user  *neo4jv1beta1.Neo4jUser
+		warns bool
+	}{
+		{"neo4j with no roles (the recipe)", []client.Object{sampleCluster()}, user("neo4j"), true},
+		{"neo4j with other roles", []client.Object{sampleCluster()}, user("neo4j", "reader", "architect"), true},
+		{"neo4j with admin", []client.Object{sampleCluster()}, user("neo4j", "admin"), false},
+		{"neo4j with a Neo4jRole CR for admin", []client.Object{sampleCluster(), adminRoleCR}, user("neo4j", "built-in-admin"), false},
+		{"the admin Secret's username", []client.Object{sampleCluster(), adminSecret(map[string]string{"username": "ops", "password": "x"})}, user("ops"), true},
+		{"the admin Secret's NEO4J_AUTH user", []client.Object{sampleCluster(), adminSecret(map[string]string{"NEO4J_AUTH": "ops/x"})}, user("ops", "reader"), true},
+		{"neo4j when the Secret names another admin", []client.Object{sampleCluster(), adminSecret(map[string]string{"username": "ops", "password": "x"})}, user("neo4j"), false},
+		{"on a standalone", []client.Object{standalone}, user("neo4j"), true},
+		{"another user", []client.Object{sampleCluster()}, user("alice"), false},
+		{"a target that does not exist yet", nil, user("neo4j"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			objs := append([]client.Object{samplePasswordSecret("creds")}, tc.objs...)
+			res := NewUserValidator(newUserValidatorClient(t, objs...)).Validate(context.Background(), tc.user)
+			if len(res.Errors) != 0 {
+				t.Fatalf("a warning, never an error: %v", res.Errors)
+			}
+			if got := warns(res); got != tc.warns {
+				t.Errorf("lockout warning = %v, want %v; warnings: %v", got, tc.warns, res.Warnings)
+			}
+		})
+	}
+}

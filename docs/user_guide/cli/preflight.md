@@ -41,7 +41,7 @@ A manifest that names its own `metadata.namespace` is checked **there** — that
 | A Ready node can fit the memory request | The top pod-startup failure, invisible to any manifest-level check |
 | `spec.image.pullSecrets` exist | Otherwise every pod sits in `ImagePullBackOff` |
 
-Capacity is compared against a **single node's** allocatable memory, never the cluster total: the scheduler places a pod on one node, so three nodes with 1Gi each cannot run one 2Gi pod however the total reads.
+Capacity is compared against a **single node's** allocatable memory, never the cluster total: the scheduler places a pod on one node, so three nodes with 1Gi each cannot run one 2Gi pod however the total reads. The largest node's allocatable memory is printed in the largest binary unit it reaches, rounded down to one decimal (`62.2Gi`), rather than as the node reports it (`65230168Ki`).
 
 **Backups**
 

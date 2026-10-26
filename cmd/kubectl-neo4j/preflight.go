@@ -49,6 +49,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -578,7 +579,7 @@ func checkNodeCapacity(ctx context.Context, c client.Client, res *corev1.Resourc
 		return []symptom{{
 			mark: markProblem, subject: "node capacity",
 			what:   fmt.Sprintf("no Ready node can fit a %s memory request", want.String()),
-			detail: fmt.Sprintf("largest Ready node has %s allocatable", largest.String()),
+			detail: fmt.Sprintf("largest Ready node has %s allocatable", humanMemory(largest)),
 			action: "Every pod will stay Pending as Unschedulable. Add capacity, or lower " +
 				"spec.resources.requests.memory — but Neo4j Enterprise will not start below " +
 				"1.5Gi, so that has a floor.",
@@ -594,6 +595,32 @@ func checkNodeCapacity(ctx context.Context, c client.Client, res *corev1.Resourc
 		}}
 	}
 	return nil
+}
+
+// humanMemory renders a memory quantity in the largest binary unit it reaches,
+// to one decimal rounded down (62.2Gi, 1Gi, 512Mi), so a node just short of a
+// request never reads as large enough for it. A node reports its allocatable
+// memory as the kubelet computes it, in Ki (65230168Ki), which the check
+// printed as it was — beside a request the user wrote as 2Gi.
+func humanMemory(q resource.Quantity) string {
+	units := []string{"Ki", "Mi", "Gi", "Ti", "Pi"}
+	value := float64(q.Value())
+	unit := ""
+	for _, u := range units {
+		if value < 1024 {
+			break
+		}
+		value /= 1024
+		unit = u
+	}
+	if unit == "" {
+		return q.String()
+	}
+	tenths := math.Floor(value * 10)
+	if math.Mod(tenths, 10) == 0 {
+		return fmt.Sprintf("%d%s", int64(tenths/10), unit)
+	}
+	return fmt.Sprintf("%.1f%s", tenths/10, unit)
 }
 
 func nodeReady(n *corev1.Node) bool {
