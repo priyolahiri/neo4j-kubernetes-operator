@@ -3966,7 +3966,7 @@
 </tr>
 </tbody>
 </table>
-<p>Capacity is compared against a <strong>single node's</strong> allocatable memory, never the cluster total: the scheduler places a pod on one node, so three nodes with 1Gi each cannot run one 2Gi pod however the total reads.</p>
+<p>Capacity is compared against a <strong>single node's</strong> allocatable memory, never the cluster total: the scheduler places a pod on one node, so three nodes with 1Gi each cannot run one 2Gi pod however the total reads. The largest node's allocatable memory is printed in the largest binary unit it reaches, rounded down to one decimal (<code>62.2Gi</code>), rather than as the node reports it (<code>65230168Ki</code>).</p>
 <p><strong>Backups</strong></p>
 <table>
 <thead>

@@ -4561,7 +4561,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RestoreDatabaseFailed</code></td>
 <td>Warning</td>
-<td>One database of an all-databases restore could not be restored (it exists and <code>spec.options.replaceExisting</code> is not set, Neo4j refused the create or recreate, the backup recorded no artifact for it); the others carry on, and the restore ends <code>Failed</code> with <code>RestoreFailed</code>. Once per database, from the source <code>neo4j-restore-progress</code></td>
+<td>One database of an all-databases restore could not be restored (it exists and <code>spec.options.replaceExisting</code> is not set, Neo4j refused the create or recreate, the backup recorded no artifact for it); the others carry on, and the restore ends <code>Failed</code> with <code>RestoreFailed</code>. Once per database, from the source <code>neo4j-restore-progress</code>; client-go folds the eleventh and later within ten minutes into one <code>(combined from similar events)</code> event, and <code>status.databaseResults</code> names each</td>
 </tr>
 <tr>
 <td><code>RestoreSeedProgress</code></td>
