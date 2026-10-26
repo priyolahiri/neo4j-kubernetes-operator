@@ -183,6 +183,7 @@ func TestStandalone_ASpecEnvListJoinsTheConf(t *testing.T) {
 		{Name: "NEO4J_dbms_security_procedures_denylist", ValueFrom: &corev1.EnvVarSource{
 			SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "s"}, Key: "k"}}},
 		{Name: "NEO4J_server_memory_heap_max__size", Value: "1G"},
+		{Name: "NEO4J_server_unmanaged__extension__classes", Value: ""},
 	}
 	genai := pluginCR("genai-plugin", "genai", "sa", true, nil)
 	genai.Spec.Security = &neo4jv1beta1.PluginSecurity{AllowedProcedures: []string{"genai.*", "ai.*"}}
@@ -207,6 +208,9 @@ func TestStandalone_ASpecEnvListJoinsTheConf(t *testing.T) {
 	assert.False(t, names[unrestrictedVar], "the conf holds it")
 	assert.True(t, names["NEO4J_dbms_security_procedures_denylist"], "a variable from a Secret stays a variable")
 	assert.True(t, names["NEO4J_server_memory_heap_max__size"], "any other variable stays")
+	assert.False(t, names["NEO4J_server_unmanaged__extension__classes"], "an empty list adds nothing, and is left off as a cluster's is (id 209)")
+	_, emptyInConf := settings["server.unmanaged_extension_classes"]
+	assert.False(t, emptyInConf)
 
 	started := standaloneServer(t, entrypointsim.Image{Release: entrypointsim.Release52632, FleetJAR: true}, conf, []string{"genai"}, env)
 	allow, _ := entrypointsim.Setting(started, resources.AllowlistSetting)
@@ -285,7 +289,7 @@ func TestStandalone_ASpecEnvAllowlistKeepsFleetManagement(t *testing.T) {
 		[]string{"fleet-management"}, nil)
 	allow, lines := entrypointsim.Setting(started, resources.AllowlistSetting)
 	assert.Equal(t, 1, lines)
-	assert.Equal(t, []string{"apoc.*", "fleetManagement.*"}, tokensOf(allow))
+	assert.Equal(t, "fleetManagement.*,apoc.*", allow, "Aura Fleet Management's line first, then the variable's (the verification row)")
 }
 
 // The operator upgrade's transient (v1.22.0 → this release, re-walk): the

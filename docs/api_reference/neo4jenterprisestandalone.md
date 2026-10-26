@@ -128,6 +128,8 @@ env:
   # Use the Neo4jPlugin CRD for plugin management instead of NEO4J_PLUGINS.
 ```
 
+A procedure or extension list set here (`NEO4J_dbms_security_procedures_allowlist`, `…_unrestricted`, `…_denylist`, `NEO4J_dbms_security_http__auth__allowlist`, `NEO4J_server_unmanaged__extension__classes`) goes into the standalone's `neo4j.conf`, joined with the same key of `spec.config`, Aura Fleet Management's entries and its plugins', not onto its StatefulSet. One read from a Secret or ConfigMap stays a variable, which Neo4j writes in place of the whole list (a `ValidationWarning` says so).
+
 #### `config` (map[string]string)
 Custom Neo4j configuration. The operator uses unified clustering infrastructure for standalone deployments (Neo4j 5.26+ approach).
 

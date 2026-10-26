@@ -59,7 +59,7 @@ The `Neo4jEnterpriseClusterSpec` defines the desired state of a Neo4j Enterprise
 | Field | Type | Description |
 |---|---|---|
 | `resources` | `*corev1.ResourceRequirements` | CPU and memory resources |
-| `env` | `[]corev1.EnvVar` | Environment variables for Neo4j pods |
+| `env` | `[]corev1.EnvVar` | Environment variables for Neo4j pods. A procedure or extension list set here (`NEO4J_dbms_security_procedures_allowlist`, `…_unrestricted`, `…_denylist`, `NEO4J_dbms_security_http__auth__allowlist`, `NEO4J_server_unmanaged__extension__classes`) goes into the cluster's `neo4j.conf`, joined with the same key of `spec.config`, not onto the StatefulSet, so its Neo4jPlugins' entries join it on the servers. One read from a Secret or ConfigMap stays a variable the plugins cannot add to (a `ValidationWarning` says so) |
 | `nodeSelector` | `map[string]string` | Node selector constraints |
 | `tolerations` | `[]corev1.Toleration` | Pod tolerations |
 | `affinity` | `*corev1.Affinity` | Pod affinity rules |

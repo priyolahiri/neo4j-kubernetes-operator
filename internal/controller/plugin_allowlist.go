@@ -180,14 +180,16 @@ func (r *Neo4jPluginReconciler) effectiveAllowlist(ctx context.Context, deployme
 
 // folded reports whether the variable name, on a standalone's StatefulSet, is
 // a list of its own spec.env that its neo4j.conf holds instead
-// (foldedStandaloneEnv, operations.md id 193).
+// (resources.SpecEnvListKey, operations.md ids 193, 209). A cluster's is not
+// skipped: there the variable is the plugins' once its controller has written
+// the StatefulSet, and before that holds what its conf holds now.
 func folded(deployment *DeploymentInfo, name string) bool {
 	standalone, ok := deployment.Object.(*neo4jv1beta1.Neo4jEnterpriseStandalone)
 	if !ok {
 		return false
 	}
 	for _, e := range standalone.Spec.Env {
-		if e.Name == name && foldedStandaloneEnv(e) {
+		if _, ok := resources.SpecEnvListKey(e); ok && e.Name == name {
 			return true
 		}
 	}

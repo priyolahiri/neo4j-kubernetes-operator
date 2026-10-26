@@ -2594,10 +2594,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) buildEnvVars(standalone *neo4jv1be
 	// cluster path): license acceptance comes from spec.acceptLicenseAgreement,
 	// and NEO4J_AUTH is managed from the admin Secret. A procedure or extension
 	// list set as a variable is in neo4j.conf instead, joined with the
-	// standalone's own and its plugins' (standaloneEnvLists, operations.md id
-	// 193): the entrypoint writes a variable in place of the conf's line.
+	// standalone's own and its plugins' (resources.SpecEnvLists, operations.md
+	// ids 193, 209): the entrypoint writes a variable in place of the conf's
+	// line.
 	for _, e := range standalone.Spec.Env {
-		if e.Name == "NEO4J_ACCEPT_LICENSE_AGREEMENT" || e.Name == "NEO4J_AUTH" || foldedStandaloneEnv(e) {
+		if _, folded := resources.SpecEnvListKey(e); folded || e.Name == "NEO4J_ACCEPT_LICENSE_AGREEMENT" || e.Name == "NEO4J_AUTH" {
 			continue
 		}
 		envVars = append(envVars, e)

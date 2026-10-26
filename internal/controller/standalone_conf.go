@@ -51,7 +51,8 @@ import (
 //   - the procedure and extension lists its spec.env sets as variables,
 //     joined with those: the entrypoint writes a variable in place of the
 //     conf's line, which on a standalone held its own and its plugins' entries
-//     (standaloneEnvLists, id 193; a cluster's startup script joins them);
+//     (resources.SpecEnvLists, ids 193, 209; a cluster's are in its
+//     neo4j.conf too);
 //   - Neo4j's default allowlist, *, where the image's entrypoint would set an
 //     allowlist of fleetManagement.* alone (id 192);
 //   - the image's entry for each plugin NEO4J_PLUGINS installs, in an
@@ -61,7 +62,11 @@ import (
 //
 // A plugin listing error is returned, never taken for "no plugins".
 func desiredStandaloneConfigMap(ctx context.Context, c client.Reader, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (*corev1.ConfigMap, error) {
-	envLists := standaloneEnvLists(standalone)
+	// The lists its spec.env sets as variables, joined here and left off its
+	// StatefulSet: the entrypoint writes such a variable in place of the
+	// conf's line, so one set by hand replaced every other entry of the list
+	// (resources.SpecEnvLists; operations.md ids 193, 209).
+	envLists := resources.SpecEnvLists(standalone.Spec.Env)
 	_, envAllowlist := envLists[resources.AllowlistSetting]
 	pluginConf, fleetPlugin, installs, err := collectStandalonePluginConf(ctx, c, standalone, envAllowlist)
 	if err != nil {
@@ -187,35 +192,6 @@ func standaloneNeo4jPlugins(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone, 
 		}
 	}
 	return names
-}
-
-// foldedStandaloneEnv reports whether e, a variable of a standalone's
-// spec.env, is a procedure or extension list (resources.IsAdditiveConfEnvName)
-// whose value is in neo4j.conf instead (standaloneEnvLists): one with a value
-// of its own. A variable from a Secret or ConfigMap stays a variable, which
-// the entrypoint writes in place of the conf's line; an empty one is not
-// written at all.
-func foldedStandaloneEnv(e corev1.EnvVar) bool {
-	return e.ValueFrom == nil && strings.TrimSpace(e.Value) != "" && resources.IsAdditiveConfEnvName(e.Name)
-}
-
-// standaloneEnvLists returns, by setting, the procedure and extension lists
-// the standalone's spec.env sets as variables with a value of their own
-// (foldedStandaloneEnv). The standalone's neo4j.conf joins them with its own
-// and its plugins' lists, and the variables are left off its StatefulSet: the
-// entrypoint writes such a variable in place of the conf's line, so one set
-// by hand used to replace every other entry of the list (operations.md id
-// 193). On a cluster the startup script joins them (id 179).
-func standaloneEnvLists(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) map[string]string {
-	lists := map[string]string{}
-	for _, e := range standalone.Spec.Env {
-		if !foldedStandaloneEnv(e) {
-			continue
-		}
-		key, _ := resources.AdditiveConfKeyForEnvName(e.Name)
-		lists[key] = resources.MergeConfListValues(lists[key], e.Value)
-	}
-	return lists
 }
 
 // withImageUnrestrictedDefaults adds to conf's unrestricted list the image's

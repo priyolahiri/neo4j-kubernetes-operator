@@ -88,8 +88,8 @@ func routeNoEffectWarnings(service *neo4jv1beta1.ServiceSpec, mcp *neo4jv1beta1.
 }
 
 // NoEffectWarnings reports cluster spec fields that are set but not read, plus
-// the advisory AuthProviderWarnings, which share the same ValidationWarning
-// channel.
+// the advisory AuthProviderWarnings and SpecEnvListWarnings, which share the
+// same ValidationWarning channel.
 func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
 	warnings := tlsNoEffectWarnings(cluster.Spec.TLS, cluster.Name)
 	warnings = append(warnings, routeNoEffectWarnings(cluster.Spec.Service, cluster.Spec.MCP)...)
@@ -123,6 +123,7 @@ func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpris
 				"cluster, so the operator restarts one server at a time and waits for its databases to catch "+
 				"up before the next, and the cluster stays available. Remove it, or set it to RollingUpgrade"))
 	}
+	warnings = append(warnings, SpecEnvListWarnings(cluster.Spec.Env, false)...)
 	return append(warnings, AuthProviderWarnings(cluster.Spec.Auth, field.NewPath("spec", "auth"))...)
 }
 
@@ -163,6 +164,7 @@ func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnt
 		warnings = append(warnings, w)
 	}
 	warnings = append(warnings, standaloneUpgradeTimeoutWarnings(standalone.Spec.UpgradeStrategy)...)
+	warnings = append(warnings, SpecEnvListWarnings(standalone.Spec.Env, true)...)
 	return append(warnings, AuthProviderWarnings(standalone.Spec.Auth, field.NewPath("spec", "auth"))...)
 }
 

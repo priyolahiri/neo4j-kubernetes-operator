@@ -1234,6 +1234,11 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 				// Skip duplicate - already set by operator
 				continue
 			}
+			if _, folded := SpecEnvListKey(e); folded {
+				// A procedure or extension list: in neo4j.conf instead
+				// (SpecEnvLists, operations.md id 209).
+				continue
+			}
 			env = append(env, e)
 		}
 	}
@@ -1916,16 +1921,30 @@ server.metrics.csv.enabled=false
 		}
 	}
 
+	// The procedure and extension lists the cluster's spec.env sets as
+	// NEO4J_<setting> variables join its own (operations.md id 209): written
+	// here, and left off the StatefulSet (BuildPodSpecForEnterprise), so the
+	// variable is free for the plugins' tokens and the servers' startup script
+	// joins the two (id 179). On the StatefulSet the cluster controller owned
+	// it, put its own value back over the plugins' and the servers lost
+	// theirs. DedupeNeo4jConf below unions it with the same key of
+	// spec.config.
+	envLists := SpecEnvLists(cluster.Spec.Env)
+	for _, key := range sortedKeys(envLists) {
+		config += fmt.Sprintf("%s=%s\n", key, sanitizeConfValue(envLists[key]))
+	}
+
 	// Aura Fleet Management configuration. Its procedures always go in the
 	// unrestricted list, and in the allowlist only when the cluster's own
-	// spec.config sets one: an allowlist of fleetManagement.* alone would load
-	// nothing else (FleetAllowlistNeeded, operations.md id 192). When a plugin
-	// sets the allowlist instead, the startup script adds the entry
-	// (buildPluginListMergeBlock).
+	// spec.config or spec.env sets one: an allowlist of fleetManagement.* alone
+	// would load nothing else (FleetAllowlistNeeded, operations.md id 192).
+	// When a plugin sets the allowlist instead, the startup script adds the
+	// entry (buildPluginListMergeBlock).
 	if cluster.Spec.AuraFleetManagement != nil && cluster.Spec.AuraFleetManagement.Enabled {
 		config += "\n# Aura Fleet Management\n"
 		config += "dbms.security.procedures.unrestricted=" + FleetManagementProcedures + "\n"
-		if _, own := cluster.Spec.Config[AllowlistSetting]; own {
+		_, own := cluster.Spec.Config[AllowlistSetting]
+		if _, env := envLists[AllowlistSetting]; own || env {
 			config += AllowlistSetting + "=" + FleetManagementProcedures + "\n"
 		}
 	}
@@ -2007,6 +2026,45 @@ func AdditiveConfKeyForEnvName(name string) (key string, ok bool) {
 		}
 	}
 	return "", false
+}
+
+// SpecEnvListKey reports whether e, a variable of a deployment's spec.env, is
+// a procedure or extension list (IsAdditiveConfEnvName) that the deployment's
+// neo4j.conf holds instead of its StatefulSet — one with a value of its own —
+// and returns the setting. A variable from a Secret or ConfigMap cannot be
+// read and stays a variable (validation.SpecEnvListWarnings says what that
+// costs). An empty one adds nothing to the conf; it is left off the
+// StatefulSet all the same (operations.md ids 193, 209).
+func SpecEnvListKey(e corev1.EnvVar) (key string, folded bool) {
+	if e.ValueFrom != nil {
+		return "", false
+	}
+	return AdditiveConfKeyForEnvName(e.Name)
+}
+
+// SpecEnvLists returns, by setting, the lists a deployment's spec.env sets as
+// variables its neo4j.conf holds instead (SpecEnvListKey), each the union of
+// every such variable of that setting; an empty value adds nothing.
+func SpecEnvLists(env []corev1.EnvVar) map[string]string {
+	lists := map[string]string{}
+	for _, e := range env {
+		key, folded := SpecEnvListKey(e)
+		if !folded || strings.TrimSpace(e.Value) == "" {
+			continue
+		}
+		lists[key] = MergeConfListValues(lists[key], e.Value)
+	}
+	return lists
+}
+
+// sortedKeys returns m's keys, sorted.
+func sortedKeys(m map[string]string) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // MergeConfListValues returns the comma-separated union of two list values,

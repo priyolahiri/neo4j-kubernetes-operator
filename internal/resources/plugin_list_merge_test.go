@@ -249,9 +249,10 @@ func TestServerProcedureList_AgreesWithTheBlock(t *testing.T) {
 		{UnrestrictedSetting, r5, false, "-", "bloom.*", `["bloom","apoc"]`, []string{"bloom.*", "apoc.*"}},
 		{UnrestrictedSetting, r5, true, "custom.*,fleetManagement.*", "-", `["fleet-management","apoc"]`, nil},
 		{UnrestrictedSetting, r5, true, "custom.*", "gds.*", `["graph-data-science"]`, nil},
-		// ownEnv: the variable is the cluster's spec.env (the plugins' tokens joined).
-		{UnrestrictedSetting, r5, true, "fleetManagement.*", "custom.*", `["fleet-management","apoc"]`, []string{"ownEnv"}},
-		{UnrestrictedSetting, r10, true, "-", "custom.*,gds.*", `["apoc","graph-data-science","genai"]`, []string{"ownEnv"}},
+		// ownEnv: the cluster's spec.env sets the list (custom.*), which its
+		// conf holds (id 209); the variable is the plugins'.
+		{UnrestrictedSetting, r5, true, "custom.*,fleetManagement.*", "-", `["fleet-management","apoc"]`, []string{"ownEnv"}},
+		{UnrestrictedSetting, r10, true, "custom.*", "gds.*", `["apoc","graph-data-science","genai"]`, []string{"ownEnv"}},
 		{UnrestrictedSetting, r0, false, "-", "gds.*", `["apoc","graph-data-science"]`, []string{"apoc.*", "gds.*"}},
 		{UnrestrictedSetting, r9, false, "fleetManagement.*", "-", `["fleet-management","apoc"]`, []string{"apoc.*"}},
 		{UnrestrictedSetting, r9, false, "-", "genai.vector.*", `["genai"]`, []string{"genai.*"}},
@@ -271,7 +272,7 @@ func TestServerProcedureList_AgreesWithTheBlock(t *testing.T) {
 		ownEnv := len(tc.defaults) == 1 && tc.defaults[0] == "ownEnv"
 		switch {
 		case ownEnv:
-			specEnv = []corev1.EnvVar{{Name: Neo4jSettingEnvVarName(tc.setting), Value: tc.env}}
+			specEnv = []corev1.EnvVar{{Name: Neo4jSettingEnvVarName(tc.setting), Value: "custom.*"}}
 		case tc.own:
 			config = map[string]string{tc.setting: tc.conf}
 		}
