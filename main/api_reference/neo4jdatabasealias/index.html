@@ -4083,7 +4083,7 @@
 <tr>
 <td><code>conditions[]</code></td>
 <td><code>metav1.Condition</code></td>
-<td><code>Ready</code>, <code>ClusterNotReady</code> (reason <code>ClusterNotReady</code> while the target is not Ready, <code>ClusterUnreachable</code> while it reads Ready but does not accept the connection, <code>ClusterReady</code> once a connection succeeded). A <code>Ready</code> alias stays <code>Ready</code> while its target restarts; one not yet <code>Ready</code> waits in <code>Pending</code>. A target that does not answer for more than 5 minutes makes it <code>Failed</code> (<code>ConnectionFailed</code>).</td>
+<td><code>Ready</code>, <code>ClusterNotReady</code> (reason <code>ClusterNotReady</code> while the target is not Ready, <code>ClusterUnreachable</code> while it reads Ready but does not accept the connection, or answers the statements with an error Neo4j asks to be retried — a cluster that lost the majority of its servers — <code>ClusterReady</code> once the target served the pass). A <code>Ready</code> alias stays <code>Ready</code> while its target restarts; one not yet <code>Ready</code> waits in <code>Pending</code>. A target that does not answer for more than 5 minutes makes it <code>Failed</code> (<code>ConnectionFailed</code>).</td>
 </tr>
 </tbody>
 </table>

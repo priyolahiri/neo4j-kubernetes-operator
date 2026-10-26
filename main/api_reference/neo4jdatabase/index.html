@@ -5222,7 +5222,7 @@
 <tr>
 <td><code>conditions</code></td>
 <td><code>[]metav1.Condition</code></td>
-<td>Current status conditions: <code>Ready</code>, and <code>ClusterNotReady</code> — <code>True</code> (reason <code>ClusterNotReady</code>) while the host is not Ready, <code>True</code> (reason <code>ClusterUnreachable</code>) while it reads Ready but does not accept the connection, <code>False</code> (reason <code>ClusterReady</code>) once a connection succeeded</td>
+<td>Current status conditions: <code>Ready</code>, and <code>ClusterNotReady</code> — <code>True</code> (reason <code>ClusterNotReady</code>) while the host is not Ready, <code>True</code> (reason <code>ClusterUnreachable</code>) while it reads Ready but does not accept the connection, or answers the statements with an error Neo4j asks to be retried (a cluster that lost the majority of its servers), <code>False</code> (reason <code>ClusterReady</code>) once the host served the pass. A <code>Ready</code> database stays <code>Ready</code> through either wait; one that lasts more than 5 minutes makes it <code>Failed</code> (<code>ConnectionFailed</code>)</td>
 </tr>
 <tr>
 <td><code>phase</code></td>

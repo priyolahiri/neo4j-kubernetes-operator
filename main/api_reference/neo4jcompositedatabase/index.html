@@ -4355,7 +4355,7 @@ name a composite reports <code>PrivilegesResolve=False</code>.</p>
 <tr>
 <td><code>ClusterNotReady</code></td>
 <td><code>ClusterNotReady</code>, <code>ClusterUnreachable</code>, <code>ClusterReady</code></td>
-<td>Mirrors the readiness of the referenced deployment: <code>ClusterUnreachable</code> while it reads <code>Ready</code> but does not accept the connection (reported as <code>ConnectionFailed</code> after 5 minutes). <code>ClusterReady</code> is written once a connection succeeds.</td>
+<td>Mirrors the readiness of the referenced deployment: <code>ClusterUnreachable</code> while it reads <code>Ready</code> but does not accept the connection, or answers the statements with an error Neo4j asks to be retried — a cluster that lost the majority of its servers (reported as <code>ConnectionFailed</code> after 5 minutes). <code>ClusterReady</code> is written once the target served the pass.</td>
 </tr>
 </tbody>
 </table>
