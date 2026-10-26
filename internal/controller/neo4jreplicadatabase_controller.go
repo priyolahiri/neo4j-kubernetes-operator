@@ -208,7 +208,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 
 	nc, err := r.neo4jClientFor(target)
 	if err != nil {
-		if targetUnreachable(err) {
+		if targetAway(err) {
 			return r.unreachable(ctx, replica, err, requeue)
 		}
 		withdrawReplicaLag(replica)
@@ -225,9 +225,17 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
-	// Only a target that answered serves this replica: written after the
-	// connection, so an unreachable one keeps the time its outage began.
-	r.setNamedCondition(ctx, replica, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
+	// Only a target that served the pass serves this replica: ClusterNotReady
+	// is cleared once its statements succeeded (targetServed), not on the
+	// connection alone — a cluster that lost its majority accepts the
+	// connection and refuses the statements, and clearing it after the
+	// connection restarted the outage's clock on every pass (knowledge rules
+	// 172, 210). Not after the lookup alone either: a create that keeps
+	// failing for now would restart the clock the same way. A pass that ends
+	// waiting on something other than the target clears it there.
+	targetServed := func() {
+		r.setNamedCondition(ctx, replica, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
+	}
 
 	// OBSERVE. Everything below branches on the live state, never on spec.
 	info, err := nc.GetDatabaseInfo(ctx, dbName)
@@ -260,7 +268,8 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				if !ok {
 					// Not found or not ready yet — status already set inside
 					// the helper; this is an ordinary transient state, not a
-					// terminal failure.
+					// terminal failure. The target answered the lookup.
+					targetServed()
 					return ctrl.Result{RequeueAfter: requeue}, nil
 				}
 				addresses = resolved
@@ -287,7 +296,8 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 				if !ok {
 					// Not found or not ready yet — status already set inside
 					// the helper; this is an ordinary transient state, not a
-					// terminal failure.
+					// terminal failure. The target answered the lookup.
+					targetServed()
 					return ctrl.Result{RequeueAfter: requeue}, nil
 				}
 				pullURI = resolved
@@ -317,6 +327,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 					r.announceSeeding(ctx, replica, fmt.Sprintf(
 						"waiting for %s to restart with the credentials from Secret %q",
 						replica.Spec.ClusterRef, src.CredentialsSecretRef))
+					targetServed()
 					return ctrl.Result{RequeueAfter: requeue}, nil
 				}
 			}
@@ -354,6 +365,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 					EventReasonReplicaObjectStoreEnvMissing, msg, nil) {
 					r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonReplicaObjectStoreEnvMissing, msg)
 				}
+				targetServed()
 				return ctrl.Result{RequeueAfter: permanentRejectionRequeue}, nil
 			}
 			r.announceSeeding(ctx, replica, fmt.Sprintf("creating replica %q from %s", dbName, pullURI))
@@ -363,6 +375,7 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 		r.Recorder.Eventf(replica, corev1.EventTypeNormal, EventReasonReplicaCreated,
 			"Replica database %q created from %q", dbName, replica.Spec.UpstreamDatabase)
+		targetServed()
 		return ctrl.Result{RequeueAfter: requeue}, nil
 
 	case info.Type != neo4jclient.DatabaseTypeReplica:
@@ -373,12 +386,14 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		//
 		// Whatever the cause, correcting the "drift" would mean dropping a
 		// live read-write database. Go terminal instead.
+		targetServed()
 		return r.markPromoted(ctx, replica, info, "out-of-band")
 
 	default:
 		// Still a replica. Report observed state; do not attempt to re-point
 		// replicaConfig (spec.source is immutable and Neo4j offers no way to
 		// change it in place).
+		targetServed()
 		r.reportReplicating(ctx, replica, dbName, info)
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
@@ -1055,7 +1070,7 @@ func missingObjectStoreEnv(target ResolvedTarget, live serverEnvironment, uris .
 }
 
 func (r *Neo4jReplicaDatabaseReconciler) fail(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, label string, err error, requeue time.Duration) (ctrl.Result, error) {
-	if targetUnreachable(err) {
+	if targetAway(err) {
 		// The target went away mid-pass: an outage, not this replica's
 		// failure (knowledge rule 183). The deletion does not come through here.
 		return r.unreachable(ctx, replica, err, requeue)
@@ -1212,14 +1227,16 @@ func (r *Neo4jReplicaDatabaseReconciler) waitForTarget(ctx context.Context, repl
 	return lasting
 }
 
-// unreachable handles a downstream target that reads Ready but cannot be
+// unreachable handles a downstream target that cannot serve the replica for
+// now (targetAway: unreachable, or a transient error from a cluster that lost
+// its majority; knowledge rule 210) while it reads Ready, or cannot be
 // reached: waitForTarget with reason ClusterUnreachable, logged at info and
 // retried on the fixed interval. Only an outage that outlasts
 // targetUnreachableGrace is this replica's failure: Failed, ConnectionFailed,
 // announced once (knowledge rules 172 and 183).
 func (r *Neo4jReplicaDatabaseReconciler) unreachable(ctx context.Context, replica *neo4jv1beta1.Neo4jReplicaDatabase, err error, requeue time.Duration) (ctrl.Result, error) {
 	withdrawReplicaLag(replica)
-	if r.waitForTarget(ctx, replica, ConditionReasonClusterUnreachable, targetUnreachableMessage(replica.Spec.ClusterRef, err)) {
+	if r.waitForTarget(ctx, replica, ConditionReasonClusterUnreachable, targetAwayMessage(replica.Spec.ClusterRef, err)) {
 		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
 		if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhaseFailed, metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil) {
 			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)

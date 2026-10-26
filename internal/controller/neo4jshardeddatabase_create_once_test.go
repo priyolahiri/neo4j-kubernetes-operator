@@ -44,9 +44,13 @@ type shardedServer struct {
 	name       string
 	exists     bool
 	statements []string
+	err        error // what every SHOW DATABASES answers, when set
 }
 
 func (s *shardedServer) GetDatabases(context.Context) ([]neo4j.DatabaseInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	out := []neo4j.DatabaseInfo{{Name: "system", Status: "online", RequestedStatus: "online"}}
 	if s.exists {
 		for _, name := range []string{s.name, s.name + "-g000", s.name + "-p000", s.name + "-p001"} {

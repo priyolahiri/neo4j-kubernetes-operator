@@ -43,6 +43,7 @@ import (
 type databaseServer struct {
 	rows       []neo4j.DatabaseInfo
 	statements []string
+	err        error // what every SHOW DATABASES answers, when set
 }
 
 func (s *databaseServer) DatabaseExists(ctx context.Context, name string) (bool, error) {
@@ -54,6 +55,9 @@ func (s *databaseServer) DatabaseExists(ctx context.Context, name string) (bool,
 }
 
 func (s *databaseServer) GetDatabases(context.Context) ([]neo4j.DatabaseInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	return append([]neo4j.DatabaseInfo{{Name: "system", Status: "online", RequestedStatus: "online", Address: "server-0:7687"}}, s.rows...), nil
 }
 

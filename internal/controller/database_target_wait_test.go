@@ -31,17 +31,23 @@ package controller
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/go-logr/logr"
+	neo4jdriver "github.com/neo4j/neo4j-go-driver/v5/neo4j"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/tools/record"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/log"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
@@ -81,6 +87,30 @@ type targetWaitCase struct {
 	// backdateWait moves the start of the recorded target wait to before
 	// targetUnreachableGrace (Neo4jDatabase only).
 	backdateWait func()
+	// failStatements makes the kind's first statement of a pass answer err
+	// (nil: it answers), with the connection itself made.
+	failStatements func(error)
+	// errorLogs returns the ERROR lines the passes logged.
+	errorLogs func() []string
+}
+
+// backdateWaitOf moves the ClusterNotReady condition of the object at key to
+// before targetUnreachableGrace, as an outage that began long ago left it.
+func backdateWaitOf[T client.Object](t *testing.T, c client.Client, key client.ObjectKey, obj T, conditions func(T) []metav1.Condition) func() {
+	return func() {
+		t.Helper()
+		require.NoError(t, c.Get(context.Background(), key, obj))
+		cond := findCondition(conditions(obj), ConditionTypeClusterNotReady)
+		require.NotNil(t, cond, "the wait is recorded")
+		cond.LastTransitionTime = metav1.NewTime(time.Now().Add(-targetUnreachableGrace - time.Minute))
+		require.NoError(t, c.Status().Update(context.Background(), obj))
+	}
+}
+
+// loggedPass reconciles key once with a context whose logger is sink.
+func loggedPass(sink levelCaptureSink, r reconcile.Reconciler, key client.ObjectKey) error {
+	_, err := r.Reconcile(log.IntoContext(context.Background(), logr.New(sink)), ctrl.Request{NamespacedName: key})
+	return err
 }
 
 func clusterNotReadyCondition(t *testing.T, conditions []metav1.Condition) *metav1.Condition {
@@ -177,9 +207,12 @@ func databaseTargetWaitCase(t *testing.T) targetWaitCase {
 	}
 	r := newReconciler()
 	key := client.ObjectKeyFromObject(db)
+	sink := newLevelCaptureSink()
 	return targetWaitCase{
-		readyReason: EventReasonDatabaseReady, readyPhase: neo4jv1beta1.PhaseReady,
-		reconcile: func() error { return reconcileTimes(t, r, key, 1)[0] },
+		failStatements: func(err error) { server.err = err },
+		errorLogs:      sink.errors,
+		readyReason:    EventReasonDatabaseReady, readyPhase: neo4jv1beta1.PhaseReady,
+		reconcile: func() error { return loggedPass(sink, r, key) },
 		restarted: func() error { return reconcileTimes(t, newReconciler(), key, 1)[0] },
 		setReady:  func(ready bool) { setStandaloneReady(t, base, ready) },
 		refuse:    func(err error) { refuse = err },
@@ -190,22 +223,22 @@ func databaseTargetWaitCase(t *testing.T) targetWaitCase {
 			return got.Status.Phase, got.Status.Conditions
 		},
 		events: func() []string { return drainEvents(rec) },
-		backdateWait: func() {
-			got := &neo4jv1beta1.Neo4jDatabase{}
-			require.NoError(t, base.Get(ctx, key, got))
-			c := findCondition(got.Status.Conditions, ConditionTypeClusterNotReady)
-			require.NotNil(t, c)
-			c.LastTransitionTime = metav1.NewTime(time.Now().Add(-targetUnreachableGrace - time.Minute))
-			require.NoError(t, base.Status().Update(ctx, got))
-		},
+		backdateWait: backdateWaitOf(t, base, key, &neo4jv1beta1.Neo4jDatabase{},
+			func(o *neo4jv1beta1.Neo4jDatabase) []metav1.Condition { return o.Status.Conditions }),
 	}
 }
 
 // compositeServer is a scripted Neo4j for the Neo4jCompositeDatabase reconcile:
 // one composite with no constituents.
-type compositeServer struct{ exists bool }
+type compositeServer struct {
+	exists bool
+	err    error // what every SHOW DATABASE answers, when set
+}
 
 func (s *compositeServer) ShowCompositeDatabase(_ context.Context, name string) (*neo4jclient.CompositeInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
 	if !s.exists {
 		return nil, nil
 	}
@@ -273,9 +306,12 @@ func compositeTargetWaitCase(t *testing.T) targetWaitCase {
 	}
 	r := newReconciler()
 	key := client.ObjectKeyFromObject(cd)
+	sink := newLevelCaptureSink()
 	return targetWaitCase{
-		readyReason: EventReasonCompositeReady, readyPhase: neo4jv1beta1.PhaseReady,
-		reconcile: func() error { return reconcileTimes(t, r, key, 1)[0] },
+		failStatements: func(err error) { server.err = err },
+		errorLogs:      sink.errors,
+		readyReason:    EventReasonCompositeReady, readyPhase: neo4jv1beta1.PhaseReady,
+		reconcile: func() error { return loggedPass(sink, r, key) },
 		restarted: func() error { return reconcileTimes(t, newReconciler(), key, 1)[0] },
 		setReady:  func(ready bool) { setStandaloneReady(t, base, ready) },
 		refuse:    func(err error) { refuse = err },
@@ -286,14 +322,26 @@ func compositeTargetWaitCase(t *testing.T) targetWaitCase {
 			return got.Status.Phase, got.Status.Conditions
 		},
 		events: func() []string { return drainEvents(rec) },
+		backdateWait: backdateWaitOf(t, base, key, &neo4jv1beta1.Neo4jCompositeDatabase{},
+			func(o *neo4jv1beta1.Neo4jCompositeDatabase) []metav1.Condition { return o.Status.Conditions }),
 	}
 }
 
 // aliasServer is a scripted Neo4j for the Neo4jDatabaseAlias reconcile: every
 // target database exists, and one alias.
-type aliasServer struct{ alias *neo4jclient.AliasInfo }
+type aliasServer struct {
+	alias     *neo4jclient.AliasInfo
+	err       error // what every SHOW DATABASE answers, when set
+	noTargets bool  // no target database exists
+}
 
 func (s *aliasServer) GetDatabaseInfo(_ context.Context, name string) (*neo4jclient.DatabaseInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	if s.noTargets {
+		return nil, nil
+	}
 	return &neo4jclient.DatabaseInfo{Name: name}, nil
 }
 
@@ -337,9 +385,12 @@ func aliasTargetWaitCase(t *testing.T) targetWaitCase {
 	}
 	r := newReconciler()
 	key := client.ObjectKeyFromObject(alias)
+	sink := newLevelCaptureSink()
 	return targetWaitCase{
-		readyReason: EventReasonAliasReady, readyPhase: neo4jv1beta1.PhaseReady,
-		reconcile: func() error { return reconcileTimes(t, r, key, 1)[0] },
+		failStatements: func(err error) { server.err = err },
+		errorLogs:      sink.errors,
+		readyReason:    EventReasonAliasReady, readyPhase: neo4jv1beta1.PhaseReady,
+		reconcile: func() error { return loggedPass(sink, r, key) },
 		restarted: func() error { return reconcileTimes(t, newReconciler(), key, 1)[0] },
 		setReady:  func(ready bool) { setStandaloneReady(t, base, ready) },
 		refuse:    func(err error) { refuse = err },
@@ -350,6 +401,8 @@ func aliasTargetWaitCase(t *testing.T) targetWaitCase {
 			return got.Status.Phase, got.Status.Conditions
 		},
 		events: func() []string { return drainEvents(rec) },
+		backdateWait: backdateWaitOf(t, base, key, &neo4jv1beta1.Neo4jDatabaseAlias{},
+			func(o *neo4jv1beta1.Neo4jDatabaseAlias) []metav1.Condition { return o.Status.Conditions }),
 	}
 }
 
@@ -363,9 +416,18 @@ func replicaTargetWaitCase(t *testing.T, ns string) targetWaitCase {
 	h.r.Client = c
 	rec, ok := h.r.Recorder.(*record.FakeRecorder)
 	require.True(t, ok)
+	sink := newLevelCaptureSink()
+	key := client.ObjectKey{Namespace: h.ns, Name: h.name}
 	return targetWaitCase{
+		failStatements: func(err error) {
+			h.server.infoErr = err
+			if err == nil {
+				h.server.replicating(lagTestDB, 3)
+			}
+		},
+		errorLogs:   sink.errors,
 		readyReason: EventReasonReplicaReady, readyPhase: neo4jv1beta1.ReplicaPhaseReplicating,
-		reconcile: h.reconcile,
+		reconcile: func() error { return loggedPass(sink, h.r, key) },
 		restarted: func() error {
 			saved := h.r
 			defer func() { h.r = saved }()
@@ -381,6 +443,8 @@ func replicaTargetWaitCase(t *testing.T, ns string) targetWaitCase {
 			return got.Status.Phase, got.Status.Conditions
 		},
 		events: func() []string { return drainEvents(rec) },
+		backdateWait: backdateWaitOf(t, h.c, key, &neo4jv1beta1.Neo4jReplicaDatabase{},
+			func(o *neo4jv1beta1.Neo4jReplicaDatabase) []metav1.Condition { return o.Status.Conditions }),
 	}
 }
 
@@ -418,9 +482,12 @@ func shardedTargetWaitCase(t *testing.T) targetWaitCase {
 	r.Client = c
 	r.APIReader = base
 	key := client.ObjectKeyFromObject(sd)
+	sink := newLevelCaptureSink()
 	return targetWaitCase{
-		readyReason: EventReasonShardedDatabaseReady, readyPhase: neo4jv1beta1.PhaseReady,
-		reconcile: func() error { return reconcileSharded(t, r, sd) },
+		failStatements: func(err error) { server.err = err },
+		errorLogs:      sink.errors,
+		readyReason:    EventReasonShardedDatabaseReady, readyPhase: neo4jv1beta1.PhaseReady,
+		reconcile: func() error { return loggedPass(sink, r, key) },
 		restarted: func() error {
 			again := &Neo4jShardedDatabaseReconciler{Client: c, Scheme: r.Scheme, Recorder: rec,
 				APIReader: base, newNeo4jClient: r.newNeo4jClient}
@@ -435,6 +502,8 @@ func shardedTargetWaitCase(t *testing.T) targetWaitCase {
 			return got.Status.Phase, got.Status.Conditions
 		},
 		events: func() []string { return drainEvents(rec) },
+		backdateWait: backdateWaitOf(t, base, key, &neo4jv1beta1.Neo4jShardedDatabase{},
+			func(o *neo4jv1beta1.Neo4jShardedDatabase) []metav1.Condition { return o.Status.Conditions }),
 	}
 }
 
@@ -542,4 +611,169 @@ func TestDatabaseReconcile_AnUnreachableHostIsReportedAfterTheGrace(t *testing.T
 	phase, _ = tc.status()
 	assert.Equal(t, neo4jv1beta1.PhaseReady, phase)
 	assert.Len(t, eventsWithReason(tc.events(), EventReasonDatabaseReady), 1, "back from its own failure: announced")
+}
+
+// errLostMajority is what a cluster that has lost the majority of its servers,
+// and still reads Ready, answers a statement (the v1.23 pre-release journey,
+// on 2026.08.1 and 5.26.21).
+var errLostMajority = &neo4jdriver.Neo4jError{Code: "Neo.TransientError.Statement.RemoteExecutionTransientError",
+	Msg: "Failed to obtain connection towards READ server"}
+
+// errNotALeader is a statement Neo4j asks to be retried whose code is not a
+// Neo.TransientError.
+var errNotALeader = &neo4jdriver.Neo4jError{Code: "Neo.ClientError.Cluster.NotALeader",
+	Msg: "No write operations are allowed directly on this database"}
+
+// passBound is the longest a pass against a scripted server may take: the
+// sharded database's readiness loop once held the worker thirty seconds a pass
+// while its cluster could not serve it.
+const passBound = 5 * time.Second
+
+// checkATransientIsAWait: the target reads Ready, the connection is made, and
+// the kind's statements answer an error Neo4j asks to be retried. The object
+// stays Ready with ClusterNotReady=True (ClusterUnreachable); the pass returns
+// no error, logs no ERROR and emits nothing; Ready is not announced when the
+// statements answer again.
+func checkATransientIsAWait(t *testing.T, tc targetWaitCase, transient error) {
+	t.Helper()
+	require.NoError(t, tc.reconcile())
+	require.Len(t, eventsWithReason(tc.events(), tc.readyReason), 1)
+
+	for range targetRestarts {
+		tc.failStatements(transient)
+		for range 3 {
+			start := time.Now()
+			require.NoError(t, tc.reconcile(), "a transient is waited out, not returned as an error")
+			assert.Less(t, time.Since(start), passBound, "the wait is a requeue, not a pass that holds the worker")
+		}
+		phase, conditions := tc.status()
+		assert.Equal(t, tc.readyPhase, phase, "a Ready object stays Ready")
+		ready := meta.FindStatusCondition(conditions, ConditionTypeReady)
+		require.NotNil(t, ready)
+		assert.Equal(t, metav1.ConditionTrue, ready.Status)
+		c := clusterNotReadyCondition(t, conditions)
+		assert.Equal(t, metav1.ConditionTrue, c.Status)
+		assert.Equal(t, ConditionReasonClusterUnreachable, c.Reason)
+		assert.Empty(t, tc.events(), "no Warning and no event while the cluster cannot serve")
+
+		tc.failStatements(nil)
+		require.NoError(t, tc.reconcile())
+		_, conditions = tc.status()
+		assert.Equal(t, metav1.ConditionFalse, clusterNotReadyCondition(t, conditions).Status)
+		assert.Empty(t, tc.events(), "the recovery is not a transition")
+	}
+	assert.Empty(t, tc.errorLogs(), "a cluster that lost its majority is not an ERROR")
+}
+
+// The v1.23 pre-release journey: a cluster that lost two of its three
+// servers still read Ready, and every database, alias and composite on it
+// logged an ERROR about ten times a second, emitted CreationFailed,
+// AliasFailed or CompositeDatabaseFailed in bursts, and announced its Ready
+// again after recovery (knowledge rule 210).
+func TestDatabaseKinds_ATransientFromAClusterThatLostItsMajorityIsAWait(t *testing.T) {
+	t.Run("Neo4jDatabase", func(t *testing.T) { checkATransientIsAWait(t, databaseTargetWaitCase(t), errLostMajority) })
+	t.Run("Neo4jCompositeDatabase", func(t *testing.T) {
+		checkATransientIsAWait(t, compositeTargetWaitCase(t), errLostMajority)
+	})
+	t.Run("Neo4jDatabaseAlias", func(t *testing.T) { checkATransientIsAWait(t, aliasTargetWaitCase(t), errLostMajority) })
+	t.Run("Neo4jReplicaDatabase", func(t *testing.T) {
+		checkATransientIsAWait(t, replicaTargetWaitCase(t, "tw-replica-transient"), errLostMajority)
+	})
+	t.Run("Neo4jShardedDatabase", func(t *testing.T) { checkATransientIsAWait(t, shardedTargetWaitCase(t), errLostMajority) })
+	t.Run("Neo4jShardedDatabase/NotALeader", func(t *testing.T) {
+		checkATransientIsAWait(t, shardedTargetWaitCase(t), errNotALeader)
+	})
+}
+
+// checkATransientThatLastsIsReported: a transient that outlasts
+// targetUnreachableGrace is the object's failure, announced once with the
+// kind's reason, as an unreachable target's is.
+func checkATransientThatLastsIsReported(t *testing.T, tc targetWaitCase, transient error, reason string) {
+	t.Helper()
+	require.NoError(t, tc.reconcile())
+	tc.events()
+
+	tc.failStatements(transient)
+	require.NoError(t, tc.reconcile())
+	phase, _ := tc.status()
+	require.Equal(t, tc.readyPhase, phase, "within the grace the object stays Ready")
+	tc.backdateWait()
+	for range 3 {
+		start := time.Now()
+		require.NoError(t, tc.reconcile())
+		assert.Less(t, time.Since(start), passBound, "a failed object waits by requeue too")
+	}
+	phase, _ = tc.status()
+	assert.Equal(t, "Failed", phase)
+	events := tc.events()
+	assert.Len(t, eventsWithReason(events, reason), 1, "announced once: %v", events)
+}
+
+func TestDatabaseKinds_ATransientThatLastsIsReportedAfterTheGrace(t *testing.T) {
+	t.Run("Neo4jDatabase", func(t *testing.T) {
+		checkATransientThatLastsIsReported(t, databaseTargetWaitCase(t), errLostMajority, EventReasonConnectionFailed)
+	})
+	t.Run("Neo4jCompositeDatabase", func(t *testing.T) {
+		checkATransientThatLastsIsReported(t, compositeTargetWaitCase(t), errLostMajority, EventReasonConnectionFailed)
+	})
+	t.Run("Neo4jDatabaseAlias", func(t *testing.T) {
+		checkATransientThatLastsIsReported(t, aliasTargetWaitCase(t), errLostMajority, EventReasonConnectionFailed)
+	})
+	t.Run("Neo4jReplicaDatabase", func(t *testing.T) {
+		checkATransientThatLastsIsReported(t, replicaTargetWaitCase(t, "tw-replica-lasting"), errLostMajority, EventReasonConnectionFailed)
+	})
+	t.Run("Neo4jShardedDatabase", func(t *testing.T) {
+		checkATransientThatLastsIsReported(t, shardedTargetWaitCase(t), errLostMajority, EventReasonClientCreationFailed)
+	})
+}
+
+// A pass whose statements answered and that then waits on something other
+// than the target — an alias whose target database does not exist yet — clears
+// the target wait: the target served it. Written after the connection, as
+// before rule 210, this came for free; written only before the Ready write, a
+// wait that followed an outage kept ClusterNotReady=True.
+func TestAliasReconcile_AWaitOnTheDatabaseIsNotATargetWait(t *testing.T) {
+	ctx := context.Background()
+	server := &aliasServer{}
+	alias := &neo4jv1beta1.Neo4jDatabaseAlias{
+		ObjectMeta: repeatedWarningsMeta("latest", Neo4jDatabaseAliasFinalizer),
+		Spec:       neo4jv1beta1.Neo4jDatabaseAliasSpec{ClusterRef: "sa", Name: "latest", TargetDatabase: "orders"},
+	}
+	c := fake.NewClientBuilder().WithScheme(noEffectTestScheme(t)).WithObjects(alias.DeepCopy(), authTargetStandalone()).
+		WithStatusSubresource(alias, &neo4jv1beta1.Neo4jEnterpriseStandalone{}).Build()
+	r := &Neo4jDatabaseAliasReconciler{Client: c, Scheme: c.Scheme(), Recorder: record.NewFakeRecorder(100),
+		newNeo4jClient: func(ResolvedTarget) (aliasNeo4jClient, error) { return server, nil }}
+	key := client.ObjectKeyFromObject(alias)
+	conditions := func() []metav1.Condition {
+		got := &neo4jv1beta1.Neo4jDatabaseAlias{}
+		require.NoError(t, c.Get(ctx, key, got))
+		return got.Status.Conditions
+	}
+
+	server.err = errLostMajority
+	reconcileTimes(t, r, key, 1)
+	require.Equal(t, metav1.ConditionTrue, clusterNotReadyCondition(t, conditions()).Status)
+
+	server.err, server.noTargets = nil, true
+	reconcileTimes(t, r, key, 1)
+	assert.Equal(t, metav1.ConditionFalse, clusterNotReadyCondition(t, conditions()).Status,
+		"the target answered; the alias waits on its database")
+}
+
+func TestTargetAway(t *testing.T) {
+	for _, err := range []error{
+		errRefusedBolt, errLostMajority, errNotALeader,
+		fmt.Errorf("failed to create database: %w", errLostMajority),
+		errors.New("Neo.TransientError.Statement.RemoteExecutionTransientError: Failed to obtain connection towards READ server"),
+	} {
+		assert.True(t, targetAway(err), "%v", err)
+	}
+	for _, err := range []error{
+		nil,
+		errors.New("Neo.ClientError.Statement.SyntaxError: Invalid input"),
+		errors.New("Neo.TransientError.Transaction.Terminated: the transaction was terminated"),
+		&neo4jdriver.Neo4jError{Code: "Neo.ClientError.Security.Forbidden", Msg: "Permission denied"},
+	} {
+		assert.False(t, targetAway(err), "%v", err)
+	}
 }
