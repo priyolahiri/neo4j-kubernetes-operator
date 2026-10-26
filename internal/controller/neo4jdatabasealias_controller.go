@@ -157,7 +157,7 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 
 	nc, err := r.connect(target)
 	if err != nil {
-		if targetUnreachable(err) {
+		if targetAway(err) {
 			return r.unreachable(ctx, alias, err, requeue)
 		}
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
@@ -173,9 +173,6 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
-	// Only a target that answered serves this alias: written after the
-	// connection, so an unreachable one keeps the time its outage began.
-	r.setNamedCondition(ctx, alias, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// The target database does not have to exist yet. An alias and the replica
 	// it fronts are typically applied together, and CREATE ALIAS against a
@@ -187,6 +184,8 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 	if dbInfo == nil {
 		msg := fmt.Sprintf("target database %q does not exist yet", alias.Spec.TargetDatabase)
 		r.setStatus(ctx, alias, "Pending", metav1.ConditionFalse, ConditionReasonClusterNotReady, msg, "")
+		// A wait on the database, not the target, which answered.
+		r.setNamedCondition(ctx, alias, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 		return ctrl.Result{RequeueAfter: requeue}, nil
 	}
 
@@ -213,6 +212,12 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 			"Alias %q re-pointed from %q to %q", aliasName, existing.Database, alias.Spec.TargetDatabase)
 	}
 
+	// Only a target that served the pass serves this alias: written once its
+	// statements succeeded, not on the connection alone — a cluster that lost
+	// its majority accepts the connection and refuses the statements, and
+	// writing it after the connection restarted the outage's clock on every
+	// pass (knowledge rules 172, 210).
+	r.setNamedCondition(ctx, alias, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 	// Announced from the write that moves the alias into Ready, never from
 	// this pass's copy, which may predate the last write (knowledge rules 145
 	// and 183).
@@ -290,7 +295,7 @@ func (r *Neo4jDatabaseAliasReconciler) requeueAfter() time.Duration {
 }
 
 func (r *Neo4jDatabaseAliasReconciler) fail(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, label string, err error, requeue time.Duration) (ctrl.Result, error) {
-	if targetUnreachable(err) {
+	if targetAway(err) {
 		// The target went away mid-pass: an outage, not this alias's failure
 		// (knowledge rule 183). The deletion does not come through here.
 		return r.unreachable(ctx, alias, err, requeue)
@@ -405,13 +410,15 @@ func (r *Neo4jDatabaseAliasReconciler) waitForTarget(ctx context.Context, alias 
 	return lasting
 }
 
-// unreachable handles a target that reads Ready but cannot be reached:
+// unreachable handles a target that reads Ready but cannot be reached, or
+// cannot serve the statement for now (targetAway: a cluster that lost its
+// majority answers a transient error; knowledge rule 210):
 // waitForTarget with reason ClusterUnreachable, logged at info and retried on
 // the fixed interval. Only an outage that outlasts targetUnreachableGrace is
 // this alias's failure: Failed, ConnectionFailed, announced once (knowledge
 // rules 172 and 183).
 func (r *Neo4jDatabaseAliasReconciler) unreachable(ctx context.Context, alias *neo4jv1beta1.Neo4jDatabaseAlias, err error, requeue time.Duration) (ctrl.Result, error) {
-	if r.waitForTarget(ctx, alias, ConditionReasonClusterUnreachable, targetUnreachableMessage(alias.Spec.ClusterRef, err)) {
+	if r.waitForTarget(ctx, alias, ConditionReasonClusterUnreachable, targetAwayMessage(alias.Spec.ClusterRef, err)) {
 		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
 		if r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonConnectionFailed, msg, "") {
 			r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)

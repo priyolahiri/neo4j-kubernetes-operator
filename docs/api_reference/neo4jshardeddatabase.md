@@ -276,7 +276,7 @@ The controller sets no other phases (for example there is no `Initializing` or `
 
 #### Conditions
 
-A standard `Ready` condition, derived from `phase` (`Ready` → `True`; `Failed` → `False`; every other phase → `Unknown`), and `ClusterNotReady`: `True` (reason `ClusterNotReady`) while the cluster is not `Ready` with property sharding operational, `True` (reason `ClusterUnreachable`) while it reads `Ready` but does not accept the connection, `False` (reason `ClusterReady`) once a connection succeeded. There are no per-shard or virtual-database condition types.
+A standard `Ready` condition, derived from `phase` (`Ready` → `True`; `Failed` → `False`; every other phase → `Unknown`), and `ClusterNotReady`: `True` (reason `ClusterNotReady`) while the cluster is not `Ready` with property sharding operational, `True` (reason `ClusterUnreachable`) while it reads `Ready` but does not accept the connection, or answers the statements with an error Neo4j asks to be retried (a cluster that lost the majority of its servers; a `Ready` sharded database stays `Ready`, and `Failed` with `ClientCreationFailed` only after 5 minutes), `False` (reason `ClusterReady`) once the cluster served the pass. There are no per-shard or virtual-database condition types.
 
 ### ShardStatus
 

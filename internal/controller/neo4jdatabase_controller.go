@@ -216,7 +216,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	})
 
 	if err != nil {
-		if targetUnreachable(err) {
+		if targetAway(err) {
 			// The host reads Ready but does not answer yet: the rest of its
 			// restart, not a failure of this database (knowledge rule 183).
 			return r.hostUnreachable(ctx, database, err)
@@ -231,9 +231,6 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			logger.Error(err, "Failed to close Neo4j client")
 		}
 	}()
-	// Only a host that answered serves this database: written after the
-	// connection, so an unreachable one keeps the time its outage began.
-	r.hostAnswered(ctx, database)
 
 	// Phase 2b: ensure the host (cluster OR standalone) has seed credentials
 	// projected onto its server pods when this database uses seedURI +
@@ -263,6 +260,8 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			if announced {
 				r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonSeedCredsMissing, credsErr.Error())
 			}
+			// A wait on the Secret, not the host: nothing is asked of it.
+			r.hostAnswered(ctx, database)
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 		if autoInherited {
@@ -271,6 +270,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 			msg := fmt.Sprintf("Patched %q spec.extraEnvFrom with %q; waiting for rolling restart", targetName, database.Spec.SeedCredentials.SecretRef)
 			r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonSeedCredsAutoInherited, msg)
 			r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonSeedCredsAutoInherited, msg)
+			r.hostAnswered(ctx, database)
 			return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 		}
 	}
@@ -280,8 +280,10 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	dbCreateStart := time.Now()
 	observed, err := r.ensureDatabase(ctx, neo4jClient, database, databaseHostImageTag(cluster, standalone, isStandalone), isStandalone)
 	if err != nil {
-		if targetUnreachable(err) {
-			// The host went away mid-pass (knowledge rule 183).
+		if targetAway(err) {
+			// The host went away mid-pass, or cannot serve the statement for
+			// now — a cluster that lost its majority answers a transient
+			// error while it still reads Ready (knowledge rules 183, 210).
 			return r.hostUnreachable(ctx, database, err)
 		}
 		duration := time.Since(dbCreateStart)
@@ -300,7 +302,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	// Import initial data if specified (skip if using seed URI since data comes from the seed)
 	if database.Spec.InitialData != nil && database.Spec.SeedURI == "" && database.Status.DataImported == nil {
 		if err := r.importInitialData(ctx, neo4jClient, database); err != nil {
-			if targetUnreachable(err) {
+			if targetAway(err) {
 				// Retried, as a failed import is, once the host answers.
 				return r.hostUnreachable(ctx, database, err)
 			}
@@ -332,6 +334,12 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDataSeeded, "Database seeded from URI successfully")
 	}
 
+	// Only a host that served the pass serves this database: written once
+	// its statements succeeded, not on the connection alone — a cluster that
+	// lost its majority accepts the connection and refuses the statements,
+	// and writing it after the connection restarted the outage's clock on
+	// every pass (knowledge rules 172, 210).
+	r.hostAnswered(ctx, database)
 	r.reportDatabaseReady(ctx, database, observed)
 
 	logger.Info("Successfully reconciled Neo4jDatabase")
@@ -660,7 +668,11 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client dat
 	// Non-fatal: the status keeps its last reading when this one fails.
 	databases, err := client.GetDatabases(ctx)
 	if err != nil {
-		logger.Error(err, "Failed to read the database's state and servers")
+		if targetAway(err) {
+			logger.Info("Could not read the database's state and servers; keeping the last reading", "error", err.Error())
+		} else {
+			logger.Error(err, "Failed to read the database's state and servers")
+		}
 		return databaseObservation{}, nil
 	}
 	return observeDatabase(database.Spec.Name, databases), nil
@@ -885,13 +897,15 @@ func (r *Neo4jDatabaseReconciler) waitForHost(ctx context.Context, database *neo
 
 // hostUnreachable handles a host that reads Ready but cannot be reached — a
 // standalone a few seconds after it reads Ready, or one a stopCluster restore
-// stopped: waitForHost with reason ClusterUnreachable, logged at info and
+// stopped — or cannot serve the statement for now (targetAway: a cluster that
+// lost its majority answers a transient error; knowledge rule 210):
+// waitForHost with reason ClusterUnreachable, logged at info and
 // retried on the fixed interval, not as an error (which controller-runtime
 // logs at ERROR and retries within milliseconds). Only an outage that
 // outlasts targetUnreachableGrace is this database's failure: Failed,
 // ConnectionFailed, announced once (knowledge rules 172 and 183).
 func (r *Neo4jDatabaseReconciler) hostUnreachable(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase, err error) (ctrl.Result, error) {
-	if r.waitForHost(ctx, database, ConditionReasonClusterUnreachable, targetUnreachableMessage(database.Spec.ClusterRef, err)) {
+	if r.waitForHost(ctx, database, ConditionReasonClusterUnreachable, targetAwayMessage(database.Spec.ClusterRef, err)) {
 		msg := fmt.Sprintf("Failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
 		if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonConnectionFailed, msg) {
 			r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)
@@ -903,11 +917,10 @@ func (r *Neo4jDatabaseReconciler) hostUnreachable(ctx context.Context, database 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
-// hostAnswered writes ClusterNotReady=False once a connection to the host
-// succeeded, when that changes the condition. The pass's own copy takes the
-// written status and resourceVersion: the data-import marker below is written
-// from that copy, and a conflict there would import the initial data again on
-// the retry.
+// hostAnswered writes ClusterNotReady=False once the host served the pass,
+// when that changes the condition. The pass's own copy takes the written
+// status and resourceVersion, so a write from that copy after it cannot
+// conflict.
 func (r *Neo4jDatabaseReconciler) hostAnswered(ctx context.Context, database *neo4jv1beta1.Neo4jDatabase) {
 	update := func() error {
 		latest := &neo4jv1beta1.Neo4jDatabase{}

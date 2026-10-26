@@ -191,7 +191,7 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 
 	nc, err := r.connect(target)
 	if err != nil {
-		if targetUnreachable(err) {
+		if targetAway(err) {
 			return r.unreachable(ctx, cd, err, requeue)
 		}
 		msg := fmt.Sprintf("failed to connect to Neo4j: %v", err)
@@ -208,9 +208,6 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 			logger.Error(err, "failed to close Neo4j client")
 		}
 	}()
-	// Only a target that answered serves this composite: written after the
-	// connection, so an unreachable one keeps the time its outage began.
-	r.setNamedCondition(ctx, cd, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 
 	// The DEFAULT LANGUAGE clause exists only on CalVer. On the 5.26 LTS a
 	// requested "5" is left out (every database there runs Cypher 5 already).
@@ -230,6 +227,8 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 	if info == nil {
 		if blocker := r.namespaceBlocker(ctx, nc, name); blocker != "" {
 			r.reportNameBlocked(ctx, cd, name, blocker)
+			// A wait on the name, not the target, which answered.
+			r.setNamedCondition(ctx, cd, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 			return ctrl.Result{RequeueAfter: requeue}, nil
 		}
 		r.setStatus(ctx, cd, neo4jv1beta1.PhaseCreating, metav1.ConditionFalse,
@@ -266,6 +265,12 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 			"this composite and so not managed by it: %s",
 			len(lookalikes), strings.Join(lookalikes, ", "))
 	}
+	// Only a target that served the pass serves this composite: written once
+	// its statements succeeded, not on the connection alone — a cluster that
+	// lost its majority accepts the connection and refuses the statements, and
+	// writing it after the connection restarted the outage's clock on every
+	// pass (knowledge rules 172, 210).
+	r.setNamedCondition(ctx, cd, ConditionTypeClusterNotReady, metav1.ConditionFalse, "ClusterReady", "")
 	// Announced from the write that moves the composite into Ready, never from
 	// this pass's copy, which may predate the last write (knowledge rules 145
 	// and 183).
@@ -706,7 +711,7 @@ func (r *Neo4jCompositeDatabaseReconciler) failPass(
 	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase,
 	label string, err error, requeue time.Duration,
 ) (ctrl.Result, error) {
-	if targetUnreachable(err) {
+	if targetAway(err) {
 		return r.unreachable(ctx, cd, err, requeue)
 	}
 	return r.fail(ctx, cd, label, err, requeue)
@@ -745,7 +750,9 @@ func (r *Neo4jCompositeDatabaseReconciler) waitForTarget(
 	return lasting
 }
 
-// unreachable handles a target that reads Ready but cannot be reached:
+// unreachable handles a target that reads Ready but cannot be reached, or
+// cannot serve the statement for now (targetAway: a cluster that lost its
+// majority answers a transient error; knowledge rule 210):
 // waitForTarget with reason ClusterUnreachable, logged at info and retried on
 // the fixed interval. Only an outage that outlasts targetUnreachableGrace is
 // this composite's failure: Failed, ConnectionFailed, announced once
@@ -753,7 +760,7 @@ func (r *Neo4jCompositeDatabaseReconciler) waitForTarget(
 func (r *Neo4jCompositeDatabaseReconciler) unreachable(
 	ctx context.Context, cd *neo4jv1beta1.Neo4jCompositeDatabase, err error, requeue time.Duration,
 ) (ctrl.Result, error) {
-	if r.waitForTarget(ctx, cd, ConditionReasonClusterUnreachable, targetUnreachableMessage(cd.Spec.ClusterRef, err)) {
+	if r.waitForTarget(ctx, cd, ConditionReasonClusterUnreachable, targetAwayMessage(cd.Spec.ClusterRef, err)) {
 		msg := fmt.Sprintf("failed to connect to Neo4j for more than %s: %v", targetUnreachableGrace, err)
 		if r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, EventReasonConnectionFailed, msg, nil) {
 			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonConnectionFailed, msg)

@@ -74,7 +74,7 @@ Same same-Kubernetes-cluster-only constraint as `upstreamClusterRef`, for the sa
 | `replicationLag` | `int64` | Transactions behind — the data loss that promoting right now would make permanent. |
 | `promotedAt` | `metav1.Time` | When the replica was promoted. |
 | `promotedBy` | `string` | The `Neo4jReplicaPromotion` that promoted it, or `out-of-band`. |
-| `conditions[]` | `metav1.Condition` | `Ready`, `ClusterNotReady` (reason `ClusterNotReady` while the downstream target is not Ready, `ClusterUnreachable` while it reads Ready but does not accept the connection, `ClusterReady` once a connection succeeded). A `Replicating` replica stays `Replicating` while its target restarts (its lag series is withdrawn meanwhile); one not yet `Replicating` waits in `Pending`. A target that does not answer for more than 5 minutes makes it `Failed` (`ConnectionFailed`). |
+| `conditions[]` | `metav1.Condition` | `Ready`, `ClusterNotReady` (reason `ClusterNotReady` while the downstream target is not Ready, `ClusterUnreachable` while it reads Ready but does not accept the connection, or answers the statements with an error Neo4j asks to be retried — a cluster that lost the majority of its servers — `ClusterReady` once the target served the pass). A `Replicating` replica stays `Replicating` while its target restarts (its lag series is withdrawn meanwhile); one not yet `Replicating` waits in `Pending`. A target that does not answer for more than 5 minutes makes it `Failed` (`ConnectionFailed`). |
 
 ## Promotion behaviour
 

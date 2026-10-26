@@ -173,3 +173,36 @@ func targetUnreachable(err error) bool {
 func targetUnreachableMessage(clusterRef string, err error) string {
 	return fmt.Sprintf("%s reads Ready but cannot be reached: %v", targetRefDisplay(clusterRef), err)
 }
+
+// targetAway reports an error that says the target cannot serve a database
+// kind's request for now: it cannot be reached (targetUnreachable), or Neo4j
+// answered with an error it asks to be retried (statementTransient) — what a
+// cluster that has lost the majority of its servers, and still reads Ready,
+// answers: Neo.TransientError.Statement.RemoteExecutionTransientError,
+// "Failed to obtain connection towards READ server". A Neo.TransientError
+// whose type a wrap lost still counts, by its code, except the two the driver
+// reclassifies as client errors (Transaction.Terminated, LockClientStopped).
+// The Neo4jDatabase, Neo4jDatabaseAlias, Neo4jCompositeDatabase,
+// Neo4jReplicaDatabase and Neo4jShardedDatabase wait such an error out as they
+// wait out an unreachable target (knowledge rules 183, 210).
+func targetAway(err error) bool {
+	if err == nil {
+		return false
+	}
+	if targetUnreachable(err) || statementTransient(err) {
+		return true
+	}
+	msg := err.Error()
+	return strings.Contains(msg, "Neo.TransientError.") &&
+		!strings.Contains(msg, "Neo.TransientError.Transaction.Terminated") &&
+		!strings.Contains(msg, "Neo.TransientError.Transaction.LockClientStopped")
+}
+
+// targetAwayMessage is the ClusterNotReady (and, for an object not yet Ready,
+// the status) message while the target cannot serve the object (targetAway).
+func targetAwayMessage(clusterRef string, err error) string {
+	if targetUnreachable(err) {
+		return targetUnreachableMessage(clusterRef, err)
+	}
+	return fmt.Sprintf("%s reads Ready but cannot serve the request: %v", targetRefDisplay(clusterRef), err)
+}
