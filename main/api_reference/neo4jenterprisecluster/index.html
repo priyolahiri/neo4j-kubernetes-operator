@@ -5968,8 +5968,36 @@
 </tbody>
 </table>
 <h4 id="jvm-arguments">JVM arguments<a class="headerlink" href="#jvm-arguments" title="Anchor link to this section">&para;</a></h4>
-<p>The operator gives every server a default list of extra JVM arguments, as the
-variable <code>NEO4J_server_jvm_additional</code>: <code>-XX:+UseG1GC</code>,
+<p>Every server runs, in this order:</p>
+<ol>
+<li><strong>The Neo4j image's own JVM arguments</strong>: the <code>server.jvm.additional</code> lines of
+   the image's <code>neo4j.conf</code> (20 on 5.26 and 2025.01, 23 from 2026.03, 24 from
+   2026.08: <code>-XX:+UseG1GC</code>, the <code>--add-opens</code> flags,
+   <code>--enable-native-access=ALL-UNNAMED</code>, and from 2026.08
+   <code>--add-modules=jdk.incubator.vector</code>, among others), less
+   <code>-XX:+AlwaysPreTouch</code> (below). The image's entrypoint
+   replaces that file with the operator's, so the server's startup script reads
+   the image's lines from it first, at each start, and puts them at the top of
+   the server's <code>neo4j.conf</code>. They are always there: the <code>--add-opens</code>,
+   <code>--enable-native-access</code> and vector-module flags are what Neo4j's runtime
+   needs, not tuning.</li>
+<li><strong>Your <code>spec.config["server.jvm.additional"]</code></strong>, if set (one line, flags
+   separated by spaces).</li>
+<li><strong>The operator's list</strong>, as the variable <code>NEO4J_server_jvm_additional</code>,
+   which the entrypoint appends last (it adds to <code>server.jvm.additional</code>
+   rather than replacing it).</li>
+</ol>
+<p>The JVM takes the last of two conflicting flags, so what comes later wins: turn
+an image flag off with its <code>-XX:-</code> form (<code>-XX:-DisableExplicitGC</code>), or override
+a property with its own <code>-D</code>.</p>
+<p>One image line is left out: <code>-XX:+AlwaysPreTouch</code>. It writes every page of
+the heap when the JVM starts, and the operator sets the initial heap to its
+maximum, so a server would hold its whole heap from the start: on a 3-server
+2026.08.1 cluster at the documented minimum (1536Mi, heap 768M, page cache
+384M) a server's idle memory doubled (from about 560Mi to about 1150Mi), and
+under write load a server was OOMKilled and crash-looped. Add it in
+<code>spec.config</code> if you size memory for it.</p>
+<p>The operator's default list is <code>-XX:+UseG1GC</code>,
 <code>-XX:MaxGCPauseMillis=200</code>, <code>-XX:+ParallelRefProcEnabled</code>, G1 sizing
 (<code>-XX:+UnlockExperimentalVMOptions</code>, <code>-XX:+UnlockDiagnosticVMOptions</code>,
 <code>-XX:G1NewSizePercent=2</code>, <code>-XX:G1MaxNewSizePercent=10</code>,
@@ -5978,15 +6006,16 @@ variable <code>NEO4J_server_jvm_additional</code>: <code>-XX:+UseG1GC</code>,
 <code>-XX:+UseCompressedClassPointers</code>, <code>-XX:+UseStringDeduplication</code> and
 <code>-XX:+ExitOnOutOfMemoryError</code>, plus the truststore flags when
 <code>spec.trustedCASecrets</code> or <code>spec.auth.trustStore</code> is set. Setting
-<code>server.jvm.additional</code> replaces that list: <code>spec.env</code>
+<code>server.jvm.additional</code> replaces that list, not the image's lines: <code>spec.env</code>
 <code>NEO4J_server_jvm_additional</code> is used as it is, and
-<code>spec.config["server.jvm.additional"]</code> (one line, flags separated by spaces)
-takes its place. Repeat the defaults you want to keep.</p>
-<p>The Neo4j image's own <code>server.jvm.additional</code> lines (20 on 5.26, 24 on CalVer,
-among them the <code>--add-opens</code> flags and on CalVer
-<code>--add-modules=jdk.incubator.vector</code>) do not apply: the image's entrypoint
-replaces its <code>neo4j.conf</code> with the one the operator renders. A
-<code>Neo4jEnterpriseStandalone</code> has no default list at all (see
+<code>spec.config["server.jvm.additional"]</code> takes its place. Repeat the defaults
+you want to keep. The operator's list repeats three of the image's flags
+(<code>-XX:+UseG1GC</code> and the two <code>Unlock…VMOptions</code>); repeating a flag is harmless.</p>
+<p>The image's lines are restart-neutral: a server running without them (a
+cluster created by an operator before v1.23.0) gets them at its next restart,
+and the operator upgrade restarts nothing. A <code>Neo4jEnterpriseStandalone</code> runs
+the image's lines too, from a list the operator keeps per release, and has no
+default list of the operator's (see
 <a href="../neo4jenterprisestandalone/#config-mapstringstring">its JVM arguments</a>).</p>
 <h3 id="operations">Operations<a class="headerlink" href="#operations" title="Anchor link to this section">&para;</a></h3>
 <table>
