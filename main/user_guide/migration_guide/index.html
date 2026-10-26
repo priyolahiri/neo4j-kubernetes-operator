@@ -967,6 +967,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v122x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.22.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.22.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#act-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Act now
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#newly-refused-check-your-manifests-first_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Newly refused — check your manifests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restarts-after-the-upgrade_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restarts after the upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4544,6 +4616,78 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v122x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.22.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.22.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#act-now" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Act now
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#newly-refused-check-your-manifests-first_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Newly refused — check your manifests first
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fixes_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fixes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restarts-after-the-upgrade_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restarts after the upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5234,6 +5378,164 @@ behaviour changes below take effect on the first reconcile.</p>
 <li>A cluster whose stored spec names authorization providers but no authentication providers, or names its providers only in <code>spec.config</code>, now gets those providers instead of <code>native</code>, and its servers restart. Such a spec exists only if the stored lists were removed after the first pass (for example by <code>kubectl replace</code>).</li>
 <li>New StatefulSet annotations (<code>neo4j.com/cluster-controller-init-containers</code>, <code>-volumes</code>) are written at the next template apply; writing them restarts nothing.</li>
 <li>Each <code>Neo4jPlugin</code> records on its target's StatefulSet the variables it sets (<code>neo4j.com/plugin-env-vars.&lt;plugin name&gt;</code>) at its first reconcile after the upgrade; writing it restarts nothing. It removes nothing then: a variable left behind by a <code>spec.config</code> key removed before the upgrade is not attributed to the plugin and stays — remove it from the StatefulSet by hand (<code>kubectl edit statefulset &lt;cluster&gt;-server</code>, one rolling restart). Keys you remove after the upgrade take their variables with them.</li>
+</ul>
+<h2 id="upgrading-from-v122x">Upgrading from v1.22.x<a class="headerlink" href="#upgrading-from-v122x" title="Anchor link to this section">&para;</a></h2>
+<p>Apply the new CRDs before upgrading the operator. They add the <code>Disabled</code> phase for <code>Neo4jPlugin</code>, the <code>TopologyChangeDeferred</code> condition and the status field <code>status.upgradeStatus.startedTargetVersion</code> for clusters, and change field descriptions. Upgrading the operator restarts no server by itself, except as listed under <a href="#restarts-after-the-upgrade-1">Restarts after the upgrade</a>.</p>
+<h3 id="act-now">Act now<a class="headerlink" href="#act-now" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>Argo CD: re-apply <code>docs/gitops/argocd-health-checks.yaml</code>.</strong> A stopped upgrade no longer changes the cluster's phase (see below); the new check reads <code>status.upgradeStatus.phase</code> and reports a <code>Failed</code> upgrade as Degraded and a <code>Paused</code> one as Suspended (which, unlike Degraded, does not hold a sync wave). With the old check both show Healthy. The new checks also report a refused <code>Neo4jDatabase</code> (<code>ValidationFailed</code>, or <code>Error</code> while a deletion retries) as Degraded, a <code>Disabled</code> plugin as Healthy, and a resource waiting for its cluster as Progressing.</li>
+<li><strong>Custom RBAC: add <code>get</code> on <code>apps/controllerrevisions</code>.</strong> Helm, kustomize and the bundle carry it. Without it, a StatefulSet a storage expansion recreates after an operator restart is built from the spec, as before.</li>
+<li><strong>Plugins stored with <code>enabled: false</code> come off their target</strong> on the first pass after the upgrade (one rolling restart), and stay as CRs in the new phase <code>Disabled</code>. A <code>false</code> you have not re-applied since v1.22.0 is still stored as <code>true</code>, so nothing changes until you re-apply it. Set <code>enabled: true</code> (or drop the field) to keep a plugin installed.</li>
+<li><strong>A role listed in a <code>Neo4jUser</code>'s <code>spec.roles</code> that exists in Neo4j but has no <code>Neo4jRole</code> is now granted.</strong> It used to wait in <code>PendingDependencies</code> forever. Remove any such role you did not mean to grant before upgrading.</li>
+<li><strong>Scripts and alerts that read a cluster's phase for upgrades</strong>: a cluster whose upgrade is <code>Paused</code> or <code>Failed</code> now stays <code>Ready</code>; read <code>status.upgradeStatus.phase</code> or the new <code>Stalled</code> condition. The <code>ServersPendingDrain</code> reason <code>ScaleDownDeferredByUpgrade</code> is gone. A formed cluster short of a server now reads "Neo4j cluster is serving. 2 of 3 servers available; unavailable: …" or "Neo4j still lists 3 of 3 servers available; server pods not ready: …", not "Cluster formation in progress" or "Waiting for every server pod to be updated".</li>
+</ul>
+<h3 id="newly-refused-check-your-manifests-first_1">Newly refused — check your manifests first<a class="headerlink" href="#newly-refused-check-your-manifests-first_1" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>A Managed plugin the target's image cannot install.</strong> The Neo4j entrypoint exits on a <code>NEO4J_PLUGINS</code> name its image does not list: <code>graphql</code> on every supported release, <code>n10s</code> on CalVer from 2025.05, <code>fleet-management</code> before 5.26.11 and 2025.08, and any custom name. <code>n10s</code> is also refused from 5.26.22 and on 2025.01–2025.04, where the entrypoint lists it but its JAR stops the server (<code>NoSuchMethodError</code> from Jackson 2.21); it still installs on 5.26.0–5.26.21. Such a <code>Neo4jPlugin</code> is <code>Failed</code> with one <code>PluginUnknownToImage</code> Warning naming <code>installMode: VerifiedDownload</code>; servers crash-looping on a name an earlier operator wrote get it taken off (at once, with one <code>PluginSettingsFailing</code> Warning, or once the target is <code>Ready</code>). Move such plugins to <code>VerifiedDownload</code> (<code>source.url</code> + <code>source.checksum</code>); see the plugins guide for n10s on CalVer. In <code>Managed</code> mode <code>source.url</code> was never used.</li>
+<li><strong>An image change a Managed plugin cannot follow</strong> — for example a 5.26 cluster with Managed n10s going to CalVer or to 5.26.22+ — is refused (<code>Failed</code>, one <code>ValidationFailed</code> naming the plugin; nothing rolls). Change the plugin first (<code>VerifiedDownload</code>, disabled or deleted) and leave the new tag: the first restarted server may fail once and is then repaired automatically. Do not set the tag back to put a new-release JAR on the old image.</li>
+<li><strong><code>spec.auraFleetManagement.enabled</code> on 5.26.0–5.26.10 or 2025.01–2025.07</strong>, whose entrypoint cannot install <code>fleet-management</code>, is <code>Failed</code> with <code>ValidationFailed</code>. Such a deployment's restarted servers were already failing on it; it is left as it is until you raise <code>spec.image.tag</code>, or remove <code>spec.auraFleetManagement</code> and take <code>fleet-management</code> out of the StatefulSet's <code>NEO4J_PLUGINS</code> by hand.</li>
+</ul>
+<h3 id="behaviour-changes_5">Behaviour changes<a class="headerlink" href="#behaviour-changes_5" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Upgrades</strong></p>
+<ul>
+<li><strong>A stopped upgrade leaves the cluster <code>Ready</code>.</strong> A refused start, or an upgrade that turns <code>Paused</code> or <code>Failed</code> part-way, keeps the cluster <code>Ready</code> — it serves — with <code>status.message</code> naming the stopped upgrade, <code>UpgradeFailed</code> or <code>UpgradePaused</code> once per target and cause, and the new condition <code>Stalled=True</code> (reason <code>UpgradeFailed</code> or <code>UpgradePaused</code>; <code>False</code>, <code>UpgradeNotStopped</code>, once it goes on). Dependents keep working while an upgrade is held. Flux needs nothing: kstatus reads <code>Stalled=True</code> as failed, as it read v1.22.0's <code>Failed</code> phase. <code>kubectl neo4j status --problems</code> lists such a cluster as <code>Ready (upgrade Failed)</code>; <code>diagnose</code> reports it and exits 1. A <code>Failed</code> upgrade is retried, without a reconcile error, once every server pod is <code>Ready</code> and not within a minute of a refused retry; a server down meanwhile shows as <code>Degraded=True</code>, then phase <code>Degraded</code> after the grace period.</li>
+<li><strong>A held upgrade can go on to a new tag, or back.</strong> A <code>Paused</code> upgrade whose restarted server cannot start (image pull failure, crash loop) continues when you set a new <code>spec.image.tag</code>, replacing that server first. The operator records the version a server's container actually started on (<code>status.upgradeStatus.startedTargetVersion</code>) and holds the tag to that rather than to the target, so a typo or an unpublished tag no longer forces you forward; a server that crash-looped on the target counts as started. An upgrade an earlier operator paused keeps the earlier rule.</li>
+<li><strong>Redirecting an upgrade never brings a server back on the version before it.</strong> A new <code>spec.image.tag</code> set mid-walk, or on a held upgrade, after servers moved onto the earlier target, is staged at the lowest of those servers: Kubernetes moves them on to the new target at once, highest first, each once the one before is <code>Ready</code>, and the upgrade's own checks walk the rest. It waits until every other server is <code>Ready</code>. One <code>UpgradeRetargeted</code> event per new target.</li>
+<li><strong>Topology waits for an upgrade.</strong> A change of <code>spec.topology.servers</code> made while an upgrade is in flight, or <code>Paused</code>/<code>Failed</code> part-way, waits for it to complete (condition <code>TopologyChangeDeferred</code>). A scale-down in the same apply as an image change no longer removes servers without a drain.</li>
+<li><strong>A storage expansion restarts nothing.</strong> The StatefulSet is recreated as it was — its template with everything plugins and other controllers wrote, its replicas, strategy, partition and template hash — with the new claim templates, in the same pass that deleted it. Before, it was rebuilt from the cluster's spec alone, and every server restarted without its plugins. During a <code>Paused</code> or <code>Failed</code> upgrade it is created in two steps, so the servers below the partition keep their version if they restart; the StatefulSet carries <code>neo4j.com/recreate-restore-partition</code> and <code>neo4j.com/recreate-restore-revision</code> between them.</li>
+<li>
+<p><strong>Image tags pinned to a digest</strong> (<code>2026.08.1-enterprise@sha256:…</code>) work: labels carry the tag without the digest, and an image change that is held back splits the reference correctly.</p>
+</li>
+<li>
+<p><strong>On Kubernetes 1.35.0–1.35.3</strong> (<code>MaxUnavailableStatefulSet</code> on by default) the StatefulSet controller replaces no pod while one is unavailable, so a repair of a cluster with a server that cannot start used to wait for ever. The operator now replaces such a server pod itself — at or above the partition, on the revision being left, failing to start — with one Normal <code>ServerPodReplaced</code>. The server StatefulSet carries <code>updateStrategy.rollingUpdate.maxUnavailable: 1</code>, which restarts nothing. Upgrade steps read the stored upgrade record and StatefulSet uncached where they move the partition.</p>
+</li>
+</ul>
+<p><strong>Clusters</strong></p>
+<ul>
+<li><strong>A cluster server pod is <code>Ready</code> only once its server is available in the cluster</strong> — <code>system</code> available on it, no database failing, a primary back in its Raft groups — for at most 5 minutes after its container starts. Rolls the StatefulSet paces (plugin installs, configuration and TLS changes) now restart the next server only after the previous one rejoined. Upgrading the operator restarts nothing for this; each server gets the new check at its next restart. A pod may take longer to turn <code>Ready</code> after a restart, and a wrong admin password in the cluster's Secret holds every restart for the full 5 minutes.</li>
+<li><strong>A standalone is <code>Pending</code> while it restarts onto a new pod template</strong>, so databases, users, roles and plugins wait for that roll.</li>
+<li><strong>The operator no longer rewrites Routes on every pass.</strong> It keeps what it does not render — <code>wildcardPolicy</code>, a generated host, a certificate added by hand. Removing <code>host</code> from the spec keeps the Route's current host; delete the Route to have OpenShift generate a new one.</li>
+<li>
+<p><strong>Events:</strong> <code>ClusterFormationFailed</code> is gone (it was never emitted; use <code>ConnectivityDegraded</code> and <code>status.message</code>). <code>TopologyPlacementCalculated</code> names the zones and is raised when they change; <code>UpgradeDeferred</code> once per held change; <code>ClusterFormationStarted</code> once per new cluster; <code>ScaleDownBlocked</code> once per cause. A diagnostics query refused with a Neo4j transient error (<code>Neo.TransientError.*</code>, <code>NotALeader</code>) during a restart is logged at info, and a refused spec once at info, not as an ERROR on every pass.</p>
+</li>
+<li>
+<p><strong>JVM arguments (documented, unchanged):</strong> the servers do not run the Neo4j image's own <code>server.jvm.additional</code> list — the image's conf directory is replaced by the operator's. A cluster runs the operator's list (see the cluster API reference); a standalone runs none of its own. Set <code>server.jvm.additional</code> in <code>spec.config</code> or <code>NEO4J_server_jvm_additional</code> in <code>spec.env</code> to change them; either replaces the list.</p>
+</li>
+</ul>
+<p><strong>Plugins</strong></p>
+<ul>
+<li><strong>A plugin's procedure lists join the cluster's own.</strong> On a cluster, a plugin's <code>dbms.security.procedures.*</code> list used to replace the cluster's own <code>spec.config</code> list and Aura Fleet Management's <code>fleetManagement.*</code> entry; the servers now load the union. Security-relevant: procedures the cluster's own list allows load again. Affected clusters get it at the servers' next restart (<code>kubectl rollout restart statefulset/&lt;cluster&gt;-server</code> applies it now); a plain-valued procedure or extension list variable in the cluster's <code>spec.env</code> (<code>NEO4J_dbms_security_procedures_allowlist</code> / <code>_unrestricted</code> / <code>_denylist</code>, <code>NEO4J_dbms_security_http__auth__allowlist</code>, <code>NEO4J_server_unmanaged__extension__classes</code>) now moves into its <code>neo4j.conf</code> and is joined too — before, it replaced the plugins' list on the StatefulSet and procedures such as <code>gds.util.*</code> ran sandboxed. A list read from a Secret or ConfigMap cannot be joined and raises a <code>ValidationWarning</code>; give it as a value or in <code>spec.config</code>.</li>
+<li><strong>Plugins write only what they ask for.</strong> Each plugin's write adds only its own tokens to a cluster's procedure lists, which hold exactly what the enabled plugins request: tokens left by an older <code>spec.security</code> go, a list key in a plugin's <code>spec.config</code> adds to the list instead of replacing it, and installing a plugin beside others costs one roll and raises no <code>PluginMissing</code> on the others. <code>NEO4J_PLUGINS</code> names are recorded per plugin (<code>neo4j.com/plugin-entries.&lt;plugin&gt;</code>, a metadata patch, no restart), so a dropped dependency or a switch away from Managed mode is cleaned up; names dropped before the upgrade stay until removed by hand. Nothing calls <code>dbms.setConfigValue</code> any more, so a plugin stuck <code>Failed</code> on a static <code>spec.config</code> key goes <code>Ready</code>.</li>
+<li><strong>A plugin hidden by another plugin's allowlist says so</strong>: condition <code>ProceduresHidden</code> and one <code>PluginProceduresHidden</code> Warning (once more at an operator restart). The allowlist is not widened.</li>
+<li><strong>A plugin waits for its target.</strong> One applied before its cluster or standalone is <code>Pending</code> with one <code>ClusterNotFound</code>, then installs (it used to be <code>Failed</code> until edited). One whose target's StatefulSet does not exist yet, or while a storage expansion creates it again, waits with no event and no ERROR, and a <code>Ready</code> plugin stays <code>Ready</code>.</li>
+<li>
+<p><strong>Deleting a plugin whose standalone pod keeps failing on it replaces that pod</strong>: the finalizer waits up to five minutes for it.</p>
+</li>
+<li>
+<p><strong>Plugins keep their image's unrestricted defaults.</strong> Neo4j's image gives each installed plugin an unrestricted entry (<code>apoc.*</code>, <code>gds.*</code>, <code>genai.*</code> — <code>genai.*,ai.*</code> from 2026.10 — <code>bloom.*</code>) only when nothing else sets <code>dbms.security.procedures.unrestricted</code>; Aura Fleet Management, another plugin (GDS, Bloom) or a plugin's <code>spec.security</code> used to wipe them, leaving APOC procedures that need unrestricted access restricted. The servers now keep them, unless the deployment sets the list itself — in <code>spec.config</code>, or as <code>NEO4J_dbms_security_procedures_unrestricted</code> in <code>spec.env</code> — where, as in Neo4j, the explicit setting wins. Clusters take it at each server's next start; see the restarts below for standalones.</p>
+</li>
+<li><strong>A standalone's <code>spec.env</code> list variable joins its <code>neo4j.conf</code></strong> (a plain-valued <code>NEO4J_dbms_security_procedures_*</code> and the other shared lists) instead of replacing its <code>spec.config</code> and plugin entries; one restart. A variable from a Secret or ConfigMap is unchanged.</li>
+<li><strong>Duplicate plugins:</strong> an enabled <code>Neo4jPlugin</code> wins over a disabled one with the same <code>clusterRef</code> and <code>spec.name</code> (the disabled one is <code>Disabled</code> and names it); handing a plugin over between duplicates restarts nothing, and a held-back duplicate takes over as soon as the other is disabled or deleted. A <code>Disabled</code> plugin clears <code>status.installedVersion</code> and <code>status.installationTime</code>.</li>
+<li><code>PluginProceduresHidden</code> is judged against what the servers will start with: no transient Warning while the operator upgrade rewrites ConfigMaps, and a newly applied hiding list is reported before the roll.</li>
+</ul>
+<p><strong>Aura Fleet Management</strong></p>
+<ul>
+<li><strong>It no longer narrows the allowlist.</strong> Fleet Management (and a fleet-management <code>Neo4jPlugin</code>) used to set the servers' allowlist to <code>fleetManagement.*</code> alone — through the operator's configuration and through the Neo4j image's own plugin defaults — which hid APOC and every plugin without <code>allowedProcedures</code>. It now joins the allowlist only beside one something else sets; otherwise the servers keep Neo4j's default <code>*</code>.</li>
+<li><strong>It is built into Neo4j from 2026.03</strong>, so the operator no longer adds <code>fleet-management</code> to <code>NEO4J_PLUGINS</code> there. Deployments that already list it keep it and restart nothing; their servers log a harmless <code>ERROR: could not query null</code> at start (remove the entry by hand at a restart of your choosing). A <code>Neo4jPlugin</code> named fleet-management on 2026.03+ is <code>Ready</code> and installs nothing. Before 2026.03, a new deployment with <code>spec.auraFleetManagement.enabled</code> starts with <code>fleet-management</code> and does not restart for it.</li>
+<li>
+<p><code>AuraFleetManagementPluginPatchFailed</code> is announced and logged once per cause.</p>
+</li>
+<li>
+<p><code>AuraFleetManagementPluginPatchFailed</code> says "Failed to add fleet-management to NEO4J_PLUGINS" only when the StatefulSet write fails; a failed read or check says "Could not check the server StatefulSet's NEO4J_PLUGINS for fleet-management". Alerts matching the old text need updating.</p>
+</li>
+</ul>
+<p><strong>Users, roles, bindings and auth rules</strong></p>
+<ul>
+<li><strong>A target restart is not a transition.</strong> A <code>Ready</code> user, role, binding or auth rule stays <code>Ready</code> while its cluster or standalone is down, or reads <code>Ready</code> but refuses Bolt, with <code>ClusterNotReady=True</code> (reason <code>ClusterNotReady</code> or <code>ClusterUnreachable</code>), logged at info; <code>UserReady</code>, <code>RoleReady</code> and <code>BindingCreated</code> are not re-announced. One that failed keeps its failure, and the same failure is not announced again. <code>ConnectionFailed</code> is raised only after 5 minutes of a target that refuses the connection. An auth rule its <code>Ready</code> target refuses (version, OIDC) reads <code>ClusterNotReady=False</code>.</li>
+<li><strong>Learn mode resolves a statement that names a database in capitals</strong> on the first reconcile after the upgrade, without a grant. Out-of-band rows it absorbed into <code>status.unattributedPrivileges</code> stay there until removed by hand.</li>
+<li>
+<p><strong>Password events:</strong> <code>PasswordRotated</code> once per password Secret version; a user whose password Neo4j already holds (the admin <code>neo4j</code> user) emits only "password already matches spec".</p>
+</li>
+<li>
+<p>A <code>Neo4jUser</code> applied before both its cluster and its password Secret reports <code>ClusterNotFound</code> first and <code>SecretPending</code> after.</p>
+</li>
+<li>
+<p><strong>A Neo4j error that asks to be retried</strong> (a deadlock in a bulk change, a leader switch: <code>Neo.TransientError.*</code>, <code>NotALeader</code>) on a user's, role's, binding's or auth rule's statements, or in any deletion's cleanup, is retried every few seconds at info — no <code>Failed</code> phase, no <code>…SyncFailed</code> / <code>…DeletionFailed</code> Warning, no ERROR — and reported only if it lasts more than 5 minutes.</p>
+</li>
+<li>
+<p>A <code>Neo4jUser</code> for the operator's own login (its admin Secret's user, or <code>neo4j</code>) whose <code>spec.roles</code> leave out <code>admin</code> raises a <code>ValidationWarning</code>: the operator would revoke <code>admin</code> from itself. Behaviour is unchanged — add <code>admin</code>.</p>
+</li>
+</ul>
+<p><strong>Deletion</strong></p>
+<ul>
+<li><strong>Deleting during a restart no longer leaves access behind.</strong> Deleting a <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jDatabase</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code> or <code>Neo4jReplicaDatabase</code> while its target is down, refusing connections or being replaced keeps the CR <code>Terminating</code> (status <code>deletion waits to remove …</code>, one Warning) until the target answers, for at most 5 minutes; it is then released with a Warning naming what is left in Neo4j and the statement to run. A failed <code>DROP</code> or <code>REVOKE</code> sets the object to <code>Failed</code>, announced once, and is retried for the same 5 minutes. A target CR that is gone still releases at once; <code>deletionPolicy: Retain</code> is unchanged.</li>
+<li><strong>Aura deletion needs credentials only to call Aura.</strong> A terminating <code>AuraInstance</code>, <code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>, <code>AuraInvite</code>, <code>AuraOrganizationMember</code> or <code>AuraProjectMember</code> with <code>deletionPolicy: Orphan</code> is removed even after its Secret or provider config is gone. With <code>Delete</code> and no credentials it waits 5 minutes, then is removed with a Warning (<code>…Orphaned</code>, or the new <code>AuraMemberOrphaned</code>); delete what was left in the Aura console. A <code>Delete</code> CR already stuck <code>Terminating</code> for longer is released on the upgraded operator's first pass, and the cloud resource stays.</li>
+<li>
+<p><strong>A finalizer release never logs an ERROR</strong>: on an object already gone it is success, and it no longer fails with a Conflict on a stale copy; another controller's finalizer is kept.</p>
+</li>
+<li>
+<p><strong>A deleted target's retention policy decides its dependents.</strong> When the cluster or standalone itself is being deleted with <code>spec.storage.retentionPolicy: Delete</code> (the default), its users, roles, bindings, auth rules, databases, composites, aliases and replicas are released at once, without a Warning — a namespace teardown no longer waits on them. With <code>Retain</code>, a dependent whose target CR is gone while its volumes remain waits up to 5 minutes for a deployment re-created from them, then is released with a Warning naming what the volumes still hold; before, it was released silently and a re-created deployment brought those users and grants back.</p>
+</li>
+<li><strong>Aura deletions Aura refuses are bounded.</strong> A <code>deletionPolicy: Delete</code> that Aura refuses (not a 409, 429, 5xx or network error) waits with phase <code>Error</code>, reason <code>DeletionRefused</code>, then after 5 minutes is removed with the kind's <code>…Orphaned</code> Warning; a customer-managed key still in use is bounded the same way (<code>AuraCustomerManagedKeyOrphaned</code>). An <code>AuraDatabase</code> whose <code>AuraInstance</code> CR is already gone is removed at once with a Warning <code>AuraDatabaseOrphaned</code> (delete databases before their instance); one whose credentials are missing waits up to 5 minutes.</li>
+<li>Adding a finalizer no longer logs a Conflict or <code>Reconciler error</code> when the operator's copy is out of date.</li>
+</ul>
+<p><strong>Databases</strong></p>
+<ul>
+<li><strong>Database kinds stay <code>Ready</code> through a target restart.</strong> A <code>Neo4jDatabase</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jShardedDatabase</code> (<code>Ready</code>) or <code>Neo4jReplicaDatabase</code> (<code>Replicating</code>) keeps its phase while its target restarts, rolls out or refuses Bolt, with <code>ClusterNotReady=True</code>; its Ready event is not repeated. A target that does not answer for 5 minutes makes it <code>Failed</code> with <code>ConnectionFailed</code> (<code>ClientCreationFailed</code> for a sharded database). Each <code>Neo4jDatabase</code> gets <code>ClusterNotReady=False</code> on its first pass after the upgrade: one status write, no event. <code>Neo4jDatabase</code> never reports phase <code>Unknown</code>.</li>
+<li>
+<p><strong>A missing cluster is a wait on every kind.</strong> A <code>Neo4jDatabase</code>, <code>Neo4jShardedDatabase</code>, <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code> or <code>Neo4jAuthRule</code> applied before its cluster or standalone waits in <code>Pending</code> with one <code>ClusterNotFound</code> Warning and goes on once it exists, instead of going <code>ValidationFailed</code>/<code>Failed</code> with a <code>ValidationFailed</code> Warning; every spec error is still reported at once. Composites, aliases and replicas raise that one Warning too.</p>
+</li>
+<li>
+<p>"Database validation failed" and the database kinds' other refusals and waits are logged once at info per cause, not as an ERROR on every requeue.</p>
+</li>
+<li>
+<p><strong>Losing a cluster's majority is a wait for its databases.</strong> While a cluster that lost its majority still reads <code>Ready</code> and answers with a transient error (<code>Neo.TransientError.*</code>), the <code>Neo4jDatabase</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jReplicaDatabase</code> and <code>Neo4jShardedDatabase</code> keep their phase with <code>ClusterNotReady=True</code> (reason <code>ClusterUnreachable</code>), log at info and raise no <code>CreationFailed</code> / <code>AliasFailed</code> / <code>CompositeDatabaseFailed</code> / <code>ReplicaFailed</code> Warning; only a wait over 5 minutes makes them <code>Failed</code> with one <code>ConnectionFailed</code> (<code>ClientCreationFailed</code> for a sharded database). Their Ready event is not repeated on recovery, and <code>ClusterNotReady</code> turns <code>False</code> once their statements answer.</p>
+</li>
+</ul>
+<p><strong>Backups and restores</strong></p>
+<ul>
+<li><strong>Sharded backups name only their shards</strong>: the Job runs <code>neo4j-admin database backup "&lt;name&gt;-g*" "&lt;name&gt;-p*"</code> (name lower-cased) instead of <code>"&lt;name&gt;*"</code>, so a database that only begins with the name (a restored copy) is no longer taken along or blocks the backup, and <code>shardArtifacts[].shardName</code> is lower-cased. A backup of a capitalised <code>spec.name</code> now records each shard's file; runs taken earlier recorded none and cannot seed — take a new backup. A one-time backup that is <code>Completed</code> stays so; <code>status.lastRunTime</code> is set when a run starts and no longer rewritten on every pass.</li>
+<li><strong>Restore attempts:</strong> restore Jobs carry <code>neo4j.com/restore-attempt</code>. Re-running a restore by editing its spec deletes the previous attempt's Job first — a completed one still within its TTL too — and waits in <code>Pending</code> until it is gone; a retry never adopts a terminating Job.</li>
+<li><strong>Restore events:</strong> an offline restore emits one <code>RestoreStarted</code> ("Restore job … started: restoring offline with neo4j-admin, …"). An all-databases restore emits one <code>RestoreStarted</code> naming the databases, from <code>neo4j-restore-controller</code>, one <code>RestoreDatabaseFailed</code> Warning per database it cannot restore and one <code>RestoreSeedProgress</code> summary ("N of M database(s) restored, F failed; seeding "db": …, unchanged for …") at the first seed poll and every 10 minutes after, from <code>neo4j-restore-progress</code> — no longer one event per database change, so alerts matching <code>database "x": …</code> need updating, and ends with one <code>RestoreCompleted</code> or <code>RestoreFailed</code>.</li>
+<li>
+<p><strong>A PVC <code>backupPath</code> is relative to the PVC's root</strong>; one starting with <code>/backup/</code> raises a <code>ValidationWarning</code>.</p>
+</li>
+<li>
+<p><strong>A backup or restore whose target does not exist yet</strong> raises one <code>ClusterNotFound</code> Warning; the backup stays in phase <code>Waiting</code>, the restore in <code>Pending</code>. A <code>Neo4jRestore</code> that is <code>Completed</code> or <code>Failed</code> at its generation stays so when its target is deleted — before, it went <code>Pending</code> and could run again when a target of the same name was created.</p>
+</li>
+<li>
+<p><strong>An all-databases restore waits through a target that is briefly unavailable</strong> (for example while <code>neo4j</code> is recreated with <code>replaceExisting</code>): it keeps its phase and results with <code>ClusterNotReady=True</code> and resumes, instead of logging an ERROR, dropping back to <code>Pending</code> and announcing <code>RestoreStarted</code> again; a wait over 5 minutes raises one <code>ConnectionFailed</code> and it keeps waiting.</p>
+</li>
+</ul>
+<p><strong>Aura</strong></p>
+<ul>
+<li><strong>Status and events.</strong> <code>AuraInstance</code>, <code>AuraCustomerManagedKey</code> and <code>AuraSnapshot</code> show phase <code>Error</code> while they fail (<code>AuraSnapshotFailed</code> once; a finished snapshot is not polled again). Aura status messages no longer contain <code>request-id=…</code> (the Warning event still does), so a repeated refusal is one write and one Warning. <code>status.lastSyncedTime</code> is refreshed at least every 15 minutes, not on every poll. <code>…Ready</code> and <code>AuraCredentialsValidated</code> fire on transitions only. A 429, 5xx or network failure on an Aura create or backup no longer sets <code>Error</code> or raises a Warning. Alerts that relied on these recurring, or on <code>lastSyncedTime</code> being younger than 15 minutes, need adjusting.</li>
+<li><strong>An <code>AuraProviderConfig</code> revalidates every 10 minutes</strong> instead of every 30 seconds.</li>
+</ul>
+<p><strong><code>kubectl neo4j</code></strong></p>
+<ul>
+<li><code>validate</code> applies each CRD's defaults before judging a manifest, for every kind (a manifest it passed may now report what the operator would refuse after apply, such as a standalone <code>tls: {}</code> without <code>issuerRef</code>). With <code>--connect</code> it reports a missing deployment as pending, not as an error, may warn that <code>spec.storage.className</code> has no effect on existing volumes, and compares versions only with the operator that is running (or prints <code>version skew not checked: …</code>).</li>
+<li><code>preflight</code> prints node capacity in readable units; <code>diagnose</code> marks only Warnings that describe the current state and counts the earlier ones in one line; <code>status</code> and <code>explain</code> know <code>PendingDependencies</code>, <code>Disabled</code> and a stopped upgrade.</li>
+</ul>
+<p><strong>New advisory <code>ValidationWarning</code>s</strong> (no restart): a standalone's <code>spec.upgradeStrategy</code> timeouts set to anything but their default; <code>spec.storage.className</code> naming a class the existing data volumes do not use; <code>spec.service.route.tls.secretName</code> (and the MCP Route's), which never had an effect; a PVC restore <code>backupPath</code> under <code>/backup/</code>; <code>storage.path</code> on a PVC backup or restore storage, which nothing reads.</p>
+<h3 id="fixes_2">Fixes<a class="headerlink" href="#fixes_2" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li><strong>Restore from a PVC directory</strong> finds the source database's artifacts whatever case <code>spec.database</code> or <code>sourceDatabase</code> uses (neo4j-admin writes them lower-cased), and never takes another database whose name begins with it plus a dash (<code>orders-eu</code> for <code>orders</code>).</li>
+<li><strong><code>Neo4jShardedDatabase</code> with capitals in <code>spec.name</code></strong> sends seed shard keys lower-cased, as Neo4j requires; one that failed with "entry is missing for '<name>-g000'" seeds on its next retry.</li>
+<li><strong><code>chainFromBackup</code></strong> accepts a chain whose two backups spell the database differently.</li>
+<li><strong>A <code>VerifiedDownload</code> plugin on a target using the legacy <code>spec.auth.trustStore</code></strong> trusts that CA.</li>
+<li><strong>A <code>Neo4jCompositeDatabase</code> whose DROP Neo4j refuses</strong> releases its finalizer after 5 minutes instead of staying <code>Terminating</code>.</li>
+</ul>
+<h3 id="restarts-after-the-upgrade_1">Restarts after the upgrade<a class="headerlink" href="#restarts-after-the-upgrade_1" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li>A plugin stored with <code>enabled: false</code> is removed: one rolling restart.</li>
+<li>A Managed plugin whose name the target's image does not list is taken off its servers: one rolling restart (servers that were crash-looping on it recover).</li>
+<li>A <code>VerifiedDownload</code> plugin on a target that uses the legacy <code>spec.auth.trustStore</code> updates its <code>plugin-ca</code> volume: one rolling restart, no <code>PluginMissing</code>.</li>
+<li>A cluster or standalone with Aura Fleet Management whose allowlist was fleet's entry alone (no allowlist of its own): one rolling restart, after which APOC and other plugins load again. A cluster with Fleet Management and a plugin's allowlist: one rolling restart, after which the servers list both.</li>
+<li><code>neo4j.com/plugin-entries.*</code> and the other new records are metadata patches; writing them restarts nothing.</li>
+<li>The new readiness check and the plugin-list union reach each server at its next restart; upgrading the operator restarts nothing for them.</li>
+<li>A standalone whose <code>neo4j.conf</code> sets the unrestricted list and runs Managed plugins (Aura Fleet Management beside a plugin, GDS or Bloom beside APOC, a plugin with <code>spec.security</code>): one restart, after which it keeps the plugins' image entries. Clusters take the same change at each server's next start and restart nothing for it.</li>
+<li>A cluster or standalone whose <code>spec.env</code> sets a shared-list variable with a plain value: one rolling restart, moving it into <code>neo4j.conf</code> (a cluster hands the StatefulSet variable to its plugins in the same write).</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
