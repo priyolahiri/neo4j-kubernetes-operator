@@ -2584,6 +2584,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Neo4j Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#jvm-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JVM arguments
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -4859,6 +4876,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Neo4j Configuration">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#jvm-arguments" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JVM arguments
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
           <li class="md-nav__item">
@@ -5933,6 +5967,27 @@
 </tr>
 </tbody>
 </table>
+<h4 id="jvm-arguments">JVM arguments<a class="headerlink" href="#jvm-arguments" title="Anchor link to this section">&para;</a></h4>
+<p>The operator gives every server a default list of extra JVM arguments, as the
+variable <code>NEO4J_server_jvm_additional</code>: <code>-XX:+UseG1GC</code>,
+<code>-XX:MaxGCPauseMillis=200</code>, <code>-XX:+ParallelRefProcEnabled</code>, G1 sizing
+(<code>-XX:+UnlockExperimentalVMOptions</code>, <code>-XX:+UnlockDiagnosticVMOptions</code>,
+<code>-XX:G1NewSizePercent=2</code>, <code>-XX:G1MaxNewSizePercent=10</code>,
+<code>-XX:+G1UseAdaptiveIHOP</code>, <code>-XX:InitiatingHeapOccupancyPercent=45</code>),
+<code>-XX:+UseCompressedOops</code>,
+<code>-XX:+UseCompressedClassPointers</code>, <code>-XX:+UseStringDeduplication</code> and
+<code>-XX:+ExitOnOutOfMemoryError</code>, plus the truststore flags when
+<code>spec.trustedCASecrets</code> or <code>spec.auth.trustStore</code> is set. Setting
+<code>server.jvm.additional</code> replaces that list: <code>spec.env</code>
+<code>NEO4J_server_jvm_additional</code> is used as it is, and
+<code>spec.config["server.jvm.additional"]</code> (one line, flags separated by spaces)
+takes its place. Repeat the defaults you want to keep.</p>
+<p>The Neo4j image's own <code>server.jvm.additional</code> lines (20 on 5.26, 24 on CalVer,
+among them the <code>--add-opens</code> flags and on CalVer
+<code>--add-modules=jdk.incubator.vector</code>) do not apply: the image's entrypoint
+replaces its <code>neo4j.conf</code> with the one the operator renders. A
+<code>Neo4jEnterpriseStandalone</code> has no default list at all (see
+<a href="../neo4jenterprisestandalone/#config-mapstringstring">its JVM arguments</a>).</p>
 <h3 id="operations">Operations<a class="headerlink" href="#operations" title="Anchor link to this section">&para;</a></h3>
 <table>
 <thead>

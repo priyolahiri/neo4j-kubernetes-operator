@@ -5709,13 +5709,14 @@ license on your behalf — you must hold your own valid Neo4j Enterprise license
 <h4 id="env-envvar"><code>env</code> ([]EnvVar)<a class="headerlink" href="#env-envvar" title="Anchor link to this section">&para;</a></h4>
 <p>Environment variables for the Neo4j container.</p>
 <div class="language-yaml highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nt">env</span><span class="p">:</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="c1"># server.jvm.additional: the image appends it to the JVM arguments</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="c1"># neo4j.conf already sets.</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_server_jvm_additional</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">    </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"-XX:+ExitOnOutOfMemoryError"</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">  </span><span class="c1"># Note: NEO4J_ACCEPT_LICENSE_AGREEMENT and NEO4J_AUTH are operator-managed and</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="c1"># ignored here — set spec.acceptLicenseAgreement and spec.auth instead.</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="c1"># Use the Neo4jPlugin CRD for plugin management instead of NEO4J_PLUGINS.</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span><span class="c1"># server.jvm.additional. On a standalone these are ALL the extra JVM</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">  </span><span class="c1"># arguments the server gets: none of the image's own defaults apply (see</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">  </span><span class="c1"># "JVM arguments" below), so list every flag you want.</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">name</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">NEO4J_server_jvm_additional</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="w">    </span><span class="nt">value</span><span class="p">:</span><span class="w"> </span><span class="s">"-XX:+UseG1GC</span><span class="nv"> </span><span class="s">-XX:+ExitOnOutOfMemoryError"</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">  </span><span class="c1"># Note: NEO4J_ACCEPT_LICENSE_AGREEMENT and NEO4J_AUTH are operator-managed and</span>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">  </span><span class="c1"># ignored here — set spec.acceptLicenseAgreement and spec.auth instead.</span>
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">  </span><span class="c1"># Use the Neo4jPlugin CRD for plugin management instead of NEO4J_PLUGINS.</span>
 </span></code></pre></div>
 <h4 id="config-mapstringstring"><code>config</code> (map[string]string)<a class="headerlink" href="#config-mapstringstring" title="Anchor link to this section">&para;</a></h4>
 <p>Custom Neo4j configuration. The operator uses unified clustering infrastructure for standalone deployments (Neo4j 5.26+ approach).</p>
@@ -5739,6 +5740,28 @@ license on your behalf — you must hold your own valid Neo4j Enterprise license
 <li><code>NEO4J_AUTH</code> - Authentication setup (when using adminSecret)</li>
 </ul>
 <p><strong>Critical for Standalone</strong>: The operator automatically configures clustering infrastructure but ensures single-node operation.</p>
+<p><strong>JVM arguments (<code>server.jvm.additional</code>).</strong> A standalone gets no extra JVM
+arguments unless you set them. The Neo4j image's own <code>neo4j.conf</code> sets 20
+<code>server.jvm.additional</code> lines on 5.26 and 24 on CalVer (<code>-XX:+UseG1GC</code>,
+<code>-XX:-OmitStackTraceInFastThrow</code>, <code>-XX:+AlwaysPreTouch</code>, the <code>--add-opens</code>
+flags, and on CalVer <code>--add-modules=jdk.incubator.vector</code>, among others). They
+do not apply: the image's entrypoint replaces its <code>neo4j.conf</code> with the one the
+operator renders (the ConfigMap mounted at <code>/conf</code>), and that file carries no
+JVM arguments, only the truststore flags when <code>spec.trustedCASecrets</code> or
+<code>spec.auth.trustStore</code> is set. The JVM therefore starts with its own defaults
+plus what you set, in either of two ways:</p>
+<ul>
+<li><code>spec.config["server.jvm.additional"]</code>: one line, flags separated by spaces
+  (a multi-line value is rejected).</li>
+<li><code>spec.env</code> <code>NEO4J_server_jvm_additional</code>: the entrypoint adds it to the
+  rendered <code>neo4j.conf</code> as one more line.</li>
+</ul>
+<p>Either way, list every flag you want. To start from the image's own list, read
+it from the image you run:
+<code>docker run --rm --entrypoint grep neo4j:&lt;tag&gt; '^server.jvm.additional' /var/lib/neo4j/conf/neo4j.conf</code>.</p>
+<p>A <code>Neo4jEnterpriseCluster</code> differs: the operator gives its servers a default
+list of its own (see <a href="../neo4jenterprisecluster/#jvm-arguments">JVM arguments</a>),
+which <code>server.jvm.additional</code> then replaces. Neither kind runs the image's list.</p>
 <h4 id="tls-tlsspec"><code>tls</code> (TLSSpec)<a class="headerlink" href="#tls-tlsspec" title="Anchor link to this section">&para;</a></h4>
 <p>TLS/SSL configuration for secure connections. Same shape as
 <a href="../neo4jenterprisecluster/#tlsspec"><code>Neo4jEnterpriseCluster.spec.tls</code></a>.</p>
