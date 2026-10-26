@@ -2570,7 +2570,7 @@ export HOSTNAME="${HOSTNAME_FQDN}"
 for f in /operator-conf/*; do
   [ -f "$f" ] && cp -L "$f" /conf/
 done
-
+` + buildImageJVMArgumentsBlock() + `
 # Add FQDN-based advertised addresses
 # Port assignment (same for 5.26.x and all CalVer releases):
 #   5000 = tcp-discovery: legacy V1 discovery port (DEPRECATED, not used by this operator)

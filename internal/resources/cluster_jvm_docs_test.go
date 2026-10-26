@@ -28,12 +28,14 @@ import (
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
 
-// A cluster's servers get the operator's own JVM arguments (buildJVMSettings),
-// as NEO4J_server_jvm_additional, and server.jvm.additional set in spec.env or
-// spec.config replaces them; the image's own list never applies, as the
-// entrypoint replaces its neo4j.conf with the operator's (operations.md id
-// 208). The cluster API reference lists every default flag, so a flag added
-// or dropped here has to be added or dropped there.
+// A cluster's servers run the image's own JVM arguments first — the startup
+// script copies them from the image's neo4j.conf, which the entrypoint
+// replaces (buildImageJVMArgumentsBlock, operations.md id 212) — then the
+// user's spec.config, then the operator's list (buildJVMSettings), as
+// NEO4J_server_jvm_additional, which server.jvm.additional set in spec.env or
+// spec.config replaces (id 208). The cluster API reference says so and lists
+// every default flag, so a flag added or dropped here has to be added or
+// dropped there.
 func TestClusterJVMDefaultsAreDocumented(t *testing.T) {
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	flags := strings.Fields(buildJVMSettings(cluster))
@@ -51,6 +53,14 @@ func TestClusterJVMDefaultsAreDocumented(t *testing.T) {
 	for _, flag := range flags {
 		assert.Contains(t, section, "`"+flag+"`", "the documented default list names %s", flag)
 	}
+	flat := strings.Join(strings.Fields(section), " ")
+	for _, says := range []string{
+		"**The Neo4j image's own JVM arguments**",
+		"replaces that list, not the image's lines",
+	} {
+		assert.True(t, strings.Contains(flat, says), "the cluster API reference says: %s", says)
+	}
+	assert.False(t, strings.Contains(flat, "do not apply"), "the image's lines apply")
 
 	// Set in spec.env, the variable is the user's alone.
 	cluster.Spec.Env = []corev1.EnvVar{{Name: "NEO4J_server_jvm_additional", Value: "-XX:+UseZGC"}}

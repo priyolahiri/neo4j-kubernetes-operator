@@ -118,11 +118,10 @@ Environment variables for the Neo4j container.
 
 ```yaml
 env:
-  # server.jvm.additional. On a standalone these are ALL the extra JVM
-  # arguments the server gets: none of the image's own defaults apply (see
-  # "JVM arguments" below), so list every flag you want.
+  # server.jvm.additional: added after the image's own JVM arguments, which
+  # the operator renders first (see "JVM arguments" below); a later flag wins.
   - name: NEO4J_server_jvm_additional
-    value: "-XX:+UseG1GC -XX:+ExitOnOutOfMemoryError"
+    value: "-XX:+ExitOnOutOfMemoryError"
   # Note: NEO4J_ACCEPT_LICENSE_AGREEMENT and NEO4J_AUTH are operator-managed and
   # ignored here — set spec.acceptLicenseAgreement and spec.auth instead.
   # Use the Neo4jPlugin CRD for plugin management instead of NEO4J_PLUGINS.
@@ -156,29 +155,39 @@ config:
 
 **Critical for Standalone**: The operator automatically configures clustering infrastructure but ensures single-node operation.
 
-**JVM arguments (`server.jvm.additional`).** A standalone gets no extra JVM
-arguments unless you set them. The Neo4j image's own `neo4j.conf` sets 20
-`server.jvm.additional` lines on 5.26 and 24 on CalVer (`-XX:+UseG1GC`,
-`-XX:-OmitStackTraceInFastThrow`, `-XX:+AlwaysPreTouch`, the `--add-opens`
-flags, and on CalVer `--add-modules=jdk.incubator.vector`, among others). They
-do not apply: the image's entrypoint replaces its `neo4j.conf` with the one the
-operator renders (the ConfigMap mounted at `/conf`), and that file carries no
-JVM arguments, only the truststore flags when `spec.trustedCASecrets` or
-`spec.auth.trustStore` is set. The JVM therefore starts with its own defaults
-plus what you set, in either of two ways:
+**JVM arguments (`server.jvm.additional`).** A standalone runs the Neo4j
+image's own JVM arguments: the 20 `server.jvm.additional` lines of the image's
+`neo4j.conf` on 5.26 and 2025.01, 23 from 2026.03 and 24 from 2026.08
+(`-XX:+UseG1GC`, `-XX:+AlwaysPreTouch`, the `--add-opens` flags,
+`--enable-native-access=ALL-UNNAMED`, and from 2026.08
+`--add-modules=jdk.incubator.vector`, among others). The image's entrypoint
+replaces its `neo4j.conf` with the one the operator renders (the ConfigMap
+mounted at `/conf`), so the operator writes the image's lines into that file
+itself, from a list it keeps per Neo4j release: they come first, between
+`# operator:restart-neutral` markers. An image newer than the newest release
+the operator knows gets that release's list (best effort). Then come your own:
 
 - `spec.config["server.jvm.additional"]`: one line, flags separated by spaces
   (a multi-line value is rejected).
 - `spec.env` `NEO4J_server_jvm_additional`: the entrypoint adds it to the
-  rendered `neo4j.conf` as one more line.
+  rendered `neo4j.conf` as one more line, after everything else.
 
-Either way, list every flag you want. To start from the image's own list, read
-it from the image you run:
+and the truststore flags when `spec.trustedCASecrets` or `spec.auth.trustStore`
+is set. The JVM takes the last of two conflicting flags, so yours win: turn an
+image flag off with its `-XX:-` form (`-XX:-AlwaysPreTouch`), or override a
+property with its own `-D`. The image's lines are always rendered — the
+`--add-opens`, `--enable-native-access` and vector-module flags are what Neo4j's
+runtime needs, not tuning. To see the list of the image you run:
 `docker run --rm --entrypoint grep neo4j:<tag> '^server.jvm.additional' /var/lib/neo4j/conf/neo4j.conf`.
 
-A `Neo4jEnterpriseCluster` differs: the operator gives its servers a default
-list of its own (see [JVM arguments](neo4jenterprisecluster.md#jvm-arguments)),
-which `server.jvm.additional` then replaces. Neither kind runs the image's list.
+The image's lines are left out of the decision to restart the pod: a
+standalone that runs without them (created by an operator before v1.23.0)
+gets them at its next restart, and the operator upgrade restarts nothing.
+
+A `Neo4jEnterpriseCluster` runs the image's lines too, read from the image
+itself at each server's start, followed by a default list of the operator's
+own (see [JVM arguments](neo4jenterprisecluster.md#jvm-arguments)), which
+`server.jvm.additional` replaces.
 
 #### `tls` (TLSSpec)
 TLS/SSL configuration for secure connections. Same shape as

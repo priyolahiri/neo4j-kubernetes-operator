@@ -73,8 +73,29 @@ The `Neo4jEnterpriseClusterSpec` defines the desired state of a Neo4j Enterprise
 
 #### JVM arguments
 
-The operator gives every server a default list of extra JVM arguments, as the
-variable `NEO4J_server_jvm_additional`: `-XX:+UseG1GC`,
+Every server runs, in this order:
+
+1. **The Neo4j image's own JVM arguments**: the `server.jvm.additional` lines of
+   the image's `neo4j.conf` (20 on 5.26 and 2025.01, 23 from 2026.03, 24 from
+   2026.08: `-XX:+UseG1GC`, `-XX:+AlwaysPreTouch`, the `--add-opens` flags,
+   `--enable-native-access=ALL-UNNAMED`, and from 2026.08
+   `--add-modules=jdk.incubator.vector`, among others). The image's entrypoint
+   replaces that file with the operator's, so the server's startup script reads
+   the image's lines from it first, at each start, and puts them at the top of
+   the server's `neo4j.conf`. They are always there: the `--add-opens`,
+   `--enable-native-access` and vector-module flags are what Neo4j's runtime
+   needs, not tuning.
+2. **Your `spec.config["server.jvm.additional"]`**, if set (one line, flags
+   separated by spaces).
+3. **The operator's list**, as the variable `NEO4J_server_jvm_additional`,
+   which the entrypoint appends last (it adds to `server.jvm.additional`
+   rather than replacing it).
+
+The JVM takes the last of two conflicting flags, so what comes later wins: turn
+an image flag off with its `-XX:-` form (`-XX:-AlwaysPreTouch`), or override a
+property with its own `-D`.
+
+The operator's default list is `-XX:+UseG1GC`,
 `-XX:MaxGCPauseMillis=200`, `-XX:+ParallelRefProcEnabled`, G1 sizing
 (`-XX:+UnlockExperimentalVMOptions`, `-XX:+UnlockDiagnosticVMOptions`,
 `-XX:G1NewSizePercent=2`, `-XX:G1MaxNewSizePercent=10`,
@@ -83,16 +104,17 @@ variable `NEO4J_server_jvm_additional`: `-XX:+UseG1GC`,
 `-XX:+UseCompressedClassPointers`, `-XX:+UseStringDeduplication` and
 `-XX:+ExitOnOutOfMemoryError`, plus the truststore flags when
 `spec.trustedCASecrets` or `spec.auth.trustStore` is set. Setting
-`server.jvm.additional` replaces that list: `spec.env`
+`server.jvm.additional` replaces that list, not the image's lines: `spec.env`
 `NEO4J_server_jvm_additional` is used as it is, and
-`spec.config["server.jvm.additional"]` (one line, flags separated by spaces)
-takes its place. Repeat the defaults you want to keep.
+`spec.config["server.jvm.additional"]` takes its place. Repeat the defaults
+you want to keep. The operator's list repeats three of the image's flags
+(`-XX:+UseG1GC` and the two `Unlock…VMOptions`); repeating a flag is harmless.
 
-The Neo4j image's own `server.jvm.additional` lines (20 on 5.26, 24 on CalVer,
-among them the `--add-opens` flags and on CalVer
-`--add-modules=jdk.incubator.vector`) do not apply: the image's entrypoint
-replaces its `neo4j.conf` with the one the operator renders. A
-`Neo4jEnterpriseStandalone` has no default list at all (see
+The image's lines are restart-neutral: a server running without them (a
+cluster created by an operator before v1.23.0) gets them at its next restart,
+and the operator upgrade restarts nothing. A `Neo4jEnterpriseStandalone` runs
+the image's lines too, from a list the operator keeps per release, and has no
+default list of the operator's (see
 [its JVM arguments](neo4jenterprisestandalone.md#config-mapstringstring)).
 
 ### Operations

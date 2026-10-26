@@ -7,8 +7,9 @@
 # /startup/docker-entrypoint.sh, identical in both; read 2026-10-25), which is
 # github.com/neo4j/docker-neo4j at those release tags: from utilities.sh,
 # debugging_enabled, debug_msg and containsElement; from docker-entrypoint.sh,
-# load_plugin_from_location, apply_plugin_default_configuration,
-# install_neo4j_plugins, add_docker_default_to_conf, add_env_setting_to_conf,
+# check_mounted_folder_readable, load_plugin_from_location,
+# apply_plugin_default_configuration, install_neo4j_plugins,
+# add_docker_default_to_conf, add_env_setting_to_conf, the mounted /conf copy,
 # and the "DOCKER SPECIFIC DEFAULT CONFIGURATIONS" and "ENVIRONMENT VARIABLE
 # CONFIGURATIONS" passes. 5.26.0 has the same functions. The docker defaults
 # are 5.26.32's: from 2025.01 the image no longer adds
@@ -69,6 +70,15 @@ function load_plugin_from_url
 }
 
 # --- /startup/docker-entrypoint.sh ---
+function check_mounted_folder_readable
+{
+    local _directory=${1}
+    debug_msg "checking ${_directory} is readable"
+    if ! is_readable "${_directory}"; then
+        print_permissions_advice_and_fail "${_directory}" "${userid}" "${groupid}"
+    fi
+}
+
 function load_plugin_from_location
 {
   # Install a plugin from location at runtime.
@@ -266,4 +276,21 @@ for i in $( set | grep ^NEO4J_ | awk -F'=' '{print $1}' | sort -rn ); do
         fi
     fi
 done
+}
+
+# The mounted /conf (docker-entrypoint.sh lines 479-483 in both images, under
+# "CHECK FILE PERMISSIONS ON MOUNTED FOLDERS"), wrapped in a function to run
+# after the operator's startup script and before install_neo4j_plugins, as the
+# entrypoint does: it empties ${NEO4J_HOME}/conf, the image's own, and copies
+# the mounted directory into it. Verbatim but for the directory, the
+# function's argument here (/conf in the image).
+function apply_mounted_conf
+{
+local _mounted_conf=${1}
+if [ -d "${_mounted_conf}" ]; then
+    check_mounted_folder_readable "${_mounted_conf}"
+    rm -rf "${NEO4J_HOME}"/conf/*
+    debug_msg "Copying contents of ${_mounted_conf} to ${NEO4J_HOME}/conf/*"
+    find "${_mounted_conf}" -type f -exec cp --preserve=ownership,mode {} "${NEO4J_HOME}"/conf \;
+fi
 }

@@ -341,7 +341,7 @@ func TestStandaloneTLSReloadSetting(t *testing.T) {
 	if err := c.Get(ctx, types.NamespacedName{Name: "sa-config", Namespace: "default"}, cm); err != nil {
 		t.Fatal(err)
 	}
-	oldStamp := standaloneConfHash(withoutDeferredConfKeys(cm.Data["neo4j.conf"]))
+	oldStamp := standaloneConfHash(withoutDeferredConf(cm.Data["neo4j.conf"]))
 	if oldStamp == standaloneConfHash(cm.Data["neo4j.conf"]) {
 		t.Fatal("test premise: the conf carries the deferred setting")
 	}

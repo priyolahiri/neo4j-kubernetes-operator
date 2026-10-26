@@ -121,11 +121,12 @@ spec:
     # spaces — a multi-line value (YAML `|` or `>`) is rejected because it
     # ends in a newline.
     #
-    # On a cluster this REPLACES the operator's built-in JVM flags (G1GC with a
-    # 200ms pause target, compressed oops, ExitOnOutOfMemoryError, …) rather
-    # than adding to them, so repeat any you want to keep. A standalone has no
-    # built-in flags: this is its whole list. Neither kind runs the Neo4j
-    # image's own JVM flags (its neo4j.conf is replaced by the operator's).
+    # Both kinds run the Neo4j image's own JVM flags first (its --add-opens,
+    # and from 2026.08 the vector module, among them); these come after them
+    # and win a conflicting flag. On a cluster this REPLACES the operator's
+    # built-in flags (G1GC with a 200ms pause target, compressed oops,
+    # ExitOnOutOfMemoryError, …) rather than adding to them, so repeat any you
+    # want to keep; a standalone has no built-in flags of the operator's.
     server.jvm.additional: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:G1HeapRegionSize=32m -XX:+ParallelRefProcEnabled -XX:+UseStringDeduplication -XX:+ExitOnOutOfMemoryError"
 ```
 
