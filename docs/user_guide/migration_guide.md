@@ -697,7 +697,7 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 
 **Plugins**
 
-- **A plugin's procedure lists join the cluster's own.** On a cluster, a plugin's `dbms.security.procedures.*` list used to replace the cluster's own `spec.config` list and Aura Fleet Management's `fleetManagement.*` entry; the servers now load the union. Security-relevant: procedures the cluster's own list allows load again. Affected clusters get it at the servers' next restart (`kubectl rollout restart statefulset/<cluster>-server` applies it now); a `NEO4J_dbms_security_procedures_*` variable set by hand in the cluster's env is joined too.
+- **A plugin's procedure lists join the cluster's own.** On a cluster, a plugin's `dbms.security.procedures.*` list used to replace the cluster's own `spec.config` list and Aura Fleet Management's `fleetManagement.*` entry; the servers now load the union. Security-relevant: procedures the cluster's own list allows load again. Affected clusters get it at the servers' next restart (`kubectl rollout restart statefulset/<cluster>-server` applies it now); a plain-valued procedure or extension list variable in the cluster's `spec.env` (`NEO4J_dbms_security_procedures_allowlist` / `_unrestricted` / `_denylist`, `NEO4J_dbms_security_http__auth__allowlist`, `NEO4J_server_unmanaged__extension__classes`) now moves into its `neo4j.conf` and is joined too — before, it replaced the plugins' list on the StatefulSet and procedures such as `gds.util.*` ran sandboxed. A list read from a Secret or ConfigMap cannot be joined and raises a `ValidationWarning`; give it as a value or in `spec.config`.
 - **Plugins write only what they ask for.** Each plugin's write adds only its own tokens to a cluster's procedure lists, which hold exactly what the enabled plugins request: tokens left by an older `spec.security` go, a list key in a plugin's `spec.config` adds to the list instead of replacing it, and installing a plugin beside others costs one roll and raises no `PluginMissing` on the others. `NEO4J_PLUGINS` names are recorded per plugin (`neo4j.com/plugin-entries.<plugin>`, a metadata patch, no restart), so a dropped dependency or a switch away from Managed mode is cleaned up; names dropped before the upgrade stay until removed by hand. Nothing calls `dbms.setConfigValue` any more, so a plugin stuck `Failed` on a static `spec.config` key goes `Ready`.
 - **A plugin hidden by another plugin's allowlist says so**: condition `ProceduresHidden` and one `PluginProceduresHidden` Warning (once more at an operator restart). The allowlist is not widened.
 - **A plugin waits for its target.** One applied before its cluster or standalone is `Pending` with one `ClusterNotFound`, then installs (it used to be `Failed` until edited). One whose target's StatefulSet does not exist yet, or while a storage expansion creates it again, waits with no event and no ERROR, and a `Ready` plugin stays `Ready`.
@@ -726,6 +726,8 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 
 - **A Neo4j error that asks to be retried** (a deadlock in a bulk change, a leader switch: `Neo.TransientError.*`, `NotALeader`) on a user's, role's, binding's or auth rule's statements, or in any deletion's cleanup, is retried every few seconds at info — no `Failed` phase, no `…SyncFailed` / `…DeletionFailed` Warning, no ERROR — and reported only if it lasts more than 5 minutes.
 
+- A `Neo4jUser` for the operator's own login (its admin Secret's user, or `neo4j`) whose `spec.roles` leave out `admin` raises a `ValidationWarning`: the operator would revoke `admin` from itself. Behaviour is unchanged — add `admin`.
+
 **Deletion**
 
 - **Deleting during a restart no longer leaves access behind.** Deleting a `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias` or `Neo4jReplicaDatabase` while its target is down, refusing connections or being replaced keeps the CR `Terminating` (status `deletion waits to remove …`, one Warning) until the target answers, for at most 5 minutes; it is then released with a Warning naming what is left in Neo4j and the statement to run. A failed `DROP` or `REVOKE` sets the object to `Failed`, announced once, and is retried for the same 5 minutes. A target CR that is gone still releases at once; `deletionPolicy: Retain` is unchanged.
@@ -742,6 +744,8 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - **A missing cluster is a wait on every kind.** A `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding` or `Neo4jAuthRule` applied before its cluster or standalone waits in `Pending` with one `ClusterNotFound` Warning and goes on once it exists, instead of going `ValidationFailed`/`Failed` with a `ValidationFailed` Warning; every spec error is still reported at once. Composites, aliases and replicas raise that one Warning too.
 
 - "Database validation failed" and the database kinds' other refusals and waits are logged once at info per cause, not as an ERROR on every requeue.
+
+- **Losing a cluster's majority is a wait for its databases.** While a cluster that lost its majority still reads `Ready` and answers with a transient error (`Neo.TransientError.*`), the `Neo4jDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`, `Neo4jReplicaDatabase` and `Neo4jShardedDatabase` keep their phase with `ClusterNotReady=True` (reason `ClusterUnreachable`), log at info and raise no `CreationFailed` / `AliasFailed` / `CompositeDatabaseFailed` / `ReplicaFailed` Warning; only a wait over 5 minutes makes them `Failed` with one `ConnectionFailed` (`ClientCreationFailed` for a sharded database). Their Ready event is not repeated on recovery, and `ClusterNotReady` turns `False` once their statements answer.
 
 **Backups and restores**
 
@@ -762,7 +766,7 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 **`kubectl neo4j`**
 
 - `validate` applies each CRD's defaults before judging a manifest, for every kind (a manifest it passed may now report what the operator would refuse after apply, such as a standalone `tls: {}` without `issuerRef`). With `--connect` it reports a missing deployment as pending, not as an error, may warn that `spec.storage.className` has no effect on existing volumes, and compares versions only with the operator that is running (or prints `version skew not checked: …`).
-- `diagnose` marks only Warnings that describe the current state and counts the earlier ones in one line; `status` and `explain` know `PendingDependencies`, `Disabled` and a stopped upgrade.
+- `preflight` prints node capacity in readable units; `diagnose` marks only Warnings that describe the current state and counts the earlier ones in one line; `status` and `explain` know `PendingDependencies`, `Disabled` and a stopped upgrade.
 
 **New advisory `ValidationWarning`s** (no restart): a standalone's `spec.upgradeStrategy` timeouts set to anything but their default; `spec.storage.className` naming a class the existing data volumes do not use; `spec.service.route.tls.secretName` (and the MCP Route's), which never had an effect; a PVC restore `backupPath` under `/backup/`; `storage.path` on a PVC backup or restore storage, which nothing reads.
 
@@ -783,7 +787,7 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - `neo4j.com/plugin-entries.*` and the other new records are metadata patches; writing them restarts nothing.
 - The new readiness check and the plugin-list union reach each server at its next restart; upgrading the operator restarts nothing for them.
 - A standalone whose `neo4j.conf` sets the unrestricted list and runs Managed plugins (Aura Fleet Management beside a plugin, GDS or Bloom beside APOC, a plugin with `spec.security`): one restart, after which it keeps the plugins' image entries. Clusters take the same change at each server's next start and restart nothing for it.
-- A standalone whose `spec.env` sets a shared-list variable with a plain value: one restart, moving it into `neo4j.conf`.
+- A cluster or standalone whose `spec.env` sets a shared-list variable with a plain value: one rolling restart, moving it into `neo4j.conf` (a cluster hands the StatefulSet variable to its plugins in the same write).
 
 ## Upgrading between future releases
 
