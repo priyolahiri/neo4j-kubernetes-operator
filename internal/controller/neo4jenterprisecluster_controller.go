@@ -1192,6 +1192,12 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 							desiredEnv = updatedTemplate.Spec.Containers[0].Env
 						}
 						merged := mergeEnvVars(currentEnv, desiredEnv, owned.env)
+						// A shared list it stops owning (a spec.env list now
+						// in neo4j.conf) goes to the plugins in this write,
+						// so the servers roll once (operations.md id 209).
+						if cluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok {
+							merged = r.handOverSharedLists(ctx, cluster, sts, merged, currentEnv, desiredEnv, owned.env)
+						}
 						// Init containers and volumes the same way, by name: the
 						// plugin controller's VerifiedDownload init container and
 						// its auth/CA volumes are not the cluster's, and replacing
