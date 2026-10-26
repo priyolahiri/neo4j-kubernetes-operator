@@ -2,7 +2,7 @@
 
 Guidance to Claude Code (claude.ai/code) when working in this repository.
 
-Last updated: 2026-10-01
+Last updated: 2026-10-26
 
 This file is the **constitution + domain reference + index**. It holds the small set of
 non-negotiable invariants, the domain-knowledge sections an agent needs to make a change,
@@ -98,7 +98,7 @@ Ginkgo/Gomega, Kind only, **300-second timeouts** for all integration tests.
 
 **Property sharding tests**: CI-runnable smoke test (`property_sharding_ci_smoke_test.go`) runs only when the integration-tests workflow is dispatched with `neo4j-version: 2025.12-enterprise+` — gated by `isPropertyShardingCompatible()`. Uses `NEO4J_SHARDING_RELAX_MEMORY_MIN=true` (set only via `config/overlays/integration-test/`) to bypass the 4Gi/1-core floor on a 2×1.5Gi/500m cluster. Richer sharded tests (F3/F4/F5, Phase 2a/2c, multi-property-shard) stay local-only — they need the production 4Gi/server floor.
 
-**Pre-release verification journey** (manual + LLM, complements the automated suites): `docs/developer_guide/release_verification.md` is the canonical matrix — what we verify, on standalone vs. cluster(3) vs. sharding(2026.06), at what size, and why. Run it from `main` before cutting a release via the `verify-journey` skill (`.claude/skills/verify-journey/`). Two durable rules: **one Enterprise deployment in the cluster at a time** (sequential phases, teardown between — concurrent JVMs wedge Bolt on a laptop) and **restore is walked on BOTH standalone and cluster** — both restore online (in-place Cypher), but the standalone has its own target plumbing and the only offline `neo4j-admin` path (PITR on 5.26 or over an existing database, `source.type: storage`; rules 108, 112), so walk that path too, and online PITR on a CalVer cluster — and walk a PVC differential, which the seed proxy merges first (rule 109). When you add/change a capability, add its scenario to that doc in the same PR.
+**Pre-release verification journey** (manual + LLM, complements the automated suites): `docs/developer_guide/release_verification.md` is the canonical matrix — what we verify, on standalone vs. cluster(3) vs. sharding(2026.06), at what size, and why. Run it from `main` before cutting a release via the `verify-journey` skill (`.claude/skills/verify-journey/`). Two durable rules: **one Enterprise deployment in the cluster at a time** (sequential phases, teardown between — concurrent JVMs wedge Bolt on a laptop) and **restore is walked on BOTH standalone and cluster** — both restore online (in-place Cypher), but the standalone has its own target plumbing and the only offline `neo4j-admin` path (PITR on 5.26 or over an existing database, `source.type: storage`; rules 108, 112), so walk that path too, and online PITR on a CalVer cluster — and walk a PVC differential, which the seed proxy merges first (rule 109). When you add/change a capability, add its scenario to that doc in the same PR. **Phase 2c** runs on its own Kind cluster on `kindest/node:v1.35.1` (`make dev-up KIND_NODE_IMAGE=…`, pinned digest in the matrix), where `MaxUnavailableStatefulSet` is on and the StatefulSet controller replaces no pod while one is unavailable: walk it whenever a change touches how a cluster replaces a server that cannot start (plugin repairs, the upgrade repair, the update strategy; rule 204).
 
 **Troubleshooting**: timeout → image-pull delays. OOMKilled → Enterprise needs ≥ 1.5Gi. DB-create hangs → use `TOPOLOGY` not `OPTIONS`. Cluster won't form → check the pod FQDNs resolve through the `-headless` service (LIST discovery uses DNS, not the Kubernetes API).
 
@@ -107,8 +107,7 @@ Ginkgo/Gomega, Kind only, **300-second timeouts** for all integration tests.
 AfterEach(func() {
     if cluster != nil {
         if len(cluster.GetFinalizers()) > 0 {
-            cluster.SetFinalizers([]string{})
-            _ = k8sClient.Update(ctx, cluster)
+            _ = releaseFinalizers(ctx, cluster) // a merge patch, never a whole-object Update
         }
         _ = k8sClient.Delete(ctx, cluster)
         cluster = nil
@@ -118,6 +117,7 @@ AfterEach(func() {
     }
 })
 ```
+Specs write one of the operator's CRs with a merge patch (`patchCR`, `patchJSON`, `releaseFinalizers` in `spec_writes_test.go`; `patchObject` in the controller package's unit tests), never a whole-object `Update` — an Update leaves out a `false` the CRD defaults to `true` (`monitoring.enabled`, `enforcePrivileges`, a plugin's `enabled`) and it comes back `true`. `make check-test-cr-updates` reports new ones (advisory; `docs/knowledge/operations.md` id 205).
 
 ## CI/CD
 
@@ -161,9 +161,11 @@ Auto-generates SSL policies for `https`/`bolt`, certs at `/ssl/`. Cluster SSL de
 
 **APOC** (pre-bundled, no internet needed):
 - `NEO4J_PLUGINS=["apoc"]` → Docker entrypoint copies `/var/lib/neo4j/labs/apoc-*-core.jar` to `/plugins/` EmptyDir at startup.
-- APOC behavior → env vars (`NEO4J_APOC_EXPORT_FILE_ENABLED`, etc.), NOT `neo4j.conf`. Procedure allowlisting (`dbms.security.procedures.unrestricted`) → `neo4j.conf`. `apoc-extended` (not bundled) requires egress internet.
+- APOC behavior → env vars (`NEO4J_apoc_export_file_enabled`, etc. — the entrypoint keeps the variable name's case, so an upper-cased `NEO4J_APOC_*` sets a setting nothing reads), NOT `neo4j.conf`. Procedure allowlisting (`dbms.security.procedures.unrestricted`) → `neo4j.conf`. `apoc-extended` (not bundled) requires egress internet.
 
-**Other plugins:** GDS auto-adds `dbms.security.procedures.unrestricted=gds.*` + `allowlist=gds.*`. Bloom auto-adds `dbms.bloom.*`, `server.unmanaged_extension_classes`, HTTP auth allowlist. GenAI/N10s/GraphQL: standard handling.
+**Other plugins:** GDS auto-adds `dbms.security.procedures.unrestricted=gds.*,apoc.load.*`. Bloom auto-adds `bloom.*` to the unrestricted list, `server.unmanaged_extension_classes=com.neo4j.bloom.server=/bloom` and the HTTP auth allowlist. In `Managed` mode a name the target's image cannot install is refused — `graphql` on every supported release, `n10s` outside 5.26.0–5.26.21, `fleet-management` before 5.26.11/2025.08 (rule 170) — and Fleet Manager is built in from 2026.03, so nothing installs it there (rule 192).
+
+**Image plugin defaults:** the entrypoint gives each `NEO4J_PLUGINS` plugin its unrestricted entry only when nothing else sets the list. The operator keeps them unless the deployment sets `dbms.security.procedures.unrestricted` itself, in `spec.config` or `spec.env` (explicit wins; `resources.OwnsUnrestrictedList`): on a cluster the startup block reads the image's table, on a standalone a Go table pinned to the images is used (`docs/knowledge/operations.md` id 193). A plain-valued procedure or extension list in a deployment's `spec.env` is folded into its `neo4j.conf` and joined with its plugins' lists (id 209).
 
 **Validate plugin config:** cluster → StatefulSet env vars (`NEO4J_PLUGINS`); standalone → ConfigMap content.
 
