@@ -5926,7 +5926,7 @@
 <tr>
 <td><code>env</code></td>
 <td><code>[]corev1.EnvVar</code></td>
-<td>Environment variables for Neo4j pods</td>
+<td>Environment variables for Neo4j pods. A procedure or extension list set here (<code>NEO4J_dbms_security_procedures_allowlist</code>, <code>…_unrestricted</code>, <code>…_denylist</code>, <code>NEO4J_dbms_security_http__auth__allowlist</code>, <code>NEO4J_server_unmanaged__extension__classes</code>) goes into the cluster's <code>neo4j.conf</code>, joined with the same key of <code>spec.config</code>, not onto the StatefulSet, so its Neo4jPlugins' entries join it on the servers. One read from a Secret or ConfigMap stays a variable the plugins cannot add to (a <code>ValidationWarning</code> says so)</td>
 </tr>
 <tr>
 <td><code>nodeSelector</code></td>
