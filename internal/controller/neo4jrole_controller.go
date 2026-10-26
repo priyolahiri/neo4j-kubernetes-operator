@@ -80,6 +80,10 @@ type Neo4jRoleReconciler struct {
 	// connectTarget connects the reconcile to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests make the connection fail here.
 	connectTarget func(ResolvedTarget) (*neo4jclient.Client, error)
+
+	// transients is the quiet retry of a statement Neo4j asks to be
+	// retried (transient_retry.go).
+	transients transientStreaks
 }
 
 // roleDeletionClient is what the Neo4jRole deletion asks of Neo4j.
@@ -441,12 +445,12 @@ func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1b
 
 	nc, err := r.connectForDeletion(target)
 	if err != nil {
-		return cleanup.blocked(ctx, connectFailedCause(role.Spec.ClusterRef, err))
+		return cleanup.failed(ctx, connectFailedCause(role.Spec.ClusterRef, err), err)
 	}
 	defer func() { _ = nc.Close() }()
 
 	if err := nc.DropRoleIfExists(ctx, roleName); err != nil {
-		return cleanup.blocked(ctx, statementFailedCause(role.Spec.ClusterRef, "DROP ROLE", err))
+		return cleanup.failed(ctx, statementFailedCause(role.Spec.ClusterRef, "DROP ROLE", err), err)
 	}
 
 	r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleDeleted, "Role %q dropped", roleName)
@@ -748,6 +752,12 @@ func (r *Neo4jRoleReconciler) fail(ctx context.Context, role *neo4jv1beta1.Neo4j
 		// The target went away mid-pass: an outage, not this role's failure
 		// (knowledge rule 172).
 		return r.unreachable(ctx, role, err, requeue)
+	}
+	// A transient Neo4j asks to be retried — a deadlock with another write,
+	// a leader switch — is retried quietly while it lasts no longer than
+	// such errors do (knowledge rule 164).
+	if r.transients.quiet(ctx, role, label, err) {
+		return ctrl.Result{RequeueAfter: transientRetry}, nil
 	}
 	msg := label
 	if err != nil {

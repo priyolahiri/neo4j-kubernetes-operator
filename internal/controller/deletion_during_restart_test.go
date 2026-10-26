@@ -72,11 +72,19 @@ type deletionKind struct {
 	setup func(c client.Client, rec record.EventRecorder, connErr *error) (reconcile.Reconciler, func() int)
 }
 
+// errScriptedDrop is what every cleanup statement of the servers deletionKinds
+// sets up returns, read at each connection; nil by default. A test that sets
+// it resets it.
+var errScriptedDrop error
+
 func deletionKinds() []deletionKind {
 	authServer := func(connErr *error) (*fakeAuthServer, func() error) {
 		s := newFakeAuthServer()
 		s.users["alice"] = nil
-		return s, func() error { return *connErr }
+		return s, func() error {
+			s.dropErr = errScriptedDrop
+			return *connErr
+		}
 	}
 	return []deletionKind{
 		{
@@ -217,6 +225,7 @@ func deletionKinds() []deletionKind {
 						if *connErr != nil {
 							return nil, *connErr
 						}
+						s.dropErr = errScriptedDrop
 						return s, nil
 					}}, func() int { return s.drops }
 			},
@@ -237,6 +246,7 @@ func deletionKinds() []deletionKind {
 						if *connErr != nil {
 							return nil, *connErr
 						}
+						s.err = errScriptedDrop
 						return s, nil
 					}}, func() int { return s.drops }
 			},
