@@ -91,11 +91,10 @@ var reservedUsernames = map[string]struct{}{
 // and break anyone doing it on purpose. This matches the house precedent for
 // the same shape — a Neo4jDatabase named `neo4j` is allowed with a warning.
 //
-// Limitation, stated plainly: this matches the DEFAULT admin username only. A
-// cluster whose admin Secret sets a custom `username` carries the identical
-// risk under that name and will not be warned about here — checking it would
-// mean reading the target's admin Secret from the validator, which is more
-// machinery than a warning justifies.
+// Limitation, stated plainly: this warning matches the DEFAULT admin username
+// only. The roles check in Validate (operatorAdminUsername, grantsAdmin) reads
+// the target's admin Secret, so a custom admin `username` is warned about when
+// its spec.roles leave out admin (operations.md id 211).
 var riskyUsernames = map[string]struct{}{
 	"neo4j": {},
 }
@@ -187,9 +186,65 @@ func (v *UserValidator) Validate(ctx context.Context, user *neo4jv1beta1.Neo4jUs
 	}
 
 	// clusterRef must resolve.
-	v.validateClusterRef(ctx, user, result)
+	auth, found := v.validateClusterRef(ctx, user, result)
+
+	// The user the operator signs in as keeps admin.
+	if found {
+		if admin := v.operatorAdminUsername(ctx, user.Namespace, auth); username == admin && !v.grantsAdmin(ctx, user) {
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"%q is the user this operator signs in to %q as, and spec.roles leaves out admin: the operator "+
+					"would revoke admin from its own login, and every Neo4jUser, Neo4jRole, Neo4jDatabase and other "+
+					"CR on that target would then fail with Forbidden. Add \"admin\" to spec.roles, or manage a different user.",
+				username, user.Spec.ClusterRef))
+		}
+	}
 
 	return result
+}
+
+// operatorAdminUsername is the user the operator signs in to a target as: the
+// username in the target's admin Secret, read as the operator's client reads it
+// (NEO4J_AUTH as user/password first, then the username key), and neo4j when
+// the Secret names none or cannot be read.
+func (v *UserValidator) operatorAdminUsername(ctx context.Context, namespace string, auth *neo4jv1beta1.AuthSpec) string {
+	const defaultAdmin = "neo4j"
+	if v.client == nil {
+		return defaultAdmin
+	}
+	secret := &corev1.Secret{}
+	if err := v.client.Get(ctx, types.NamespacedName{Name: resolveAdminSecretName(auth), Namespace: namespace}, secret); err != nil {
+		return defaultAdmin
+	}
+	if parts := strings.Split(string(secret.Data["NEO4J_AUTH"]), "/"); len(parts) == 2 && parts[0] != "" {
+		return parts[0]
+	}
+	if username := string(secret.Data["username"]); username != "" {
+		return username
+	}
+	return defaultAdmin
+}
+
+// grantsAdmin reports whether the user's spec.roles grants the built-in admin
+// role: by its name, or by the metadata.name of a Neo4jRole of the same target
+// whose Neo4j role name (spec.name, else metadata.name) is admin.
+func (v *UserValidator) grantsAdmin(ctx context.Context, user *neo4jv1beta1.Neo4jUser) bool {
+	for _, role := range user.Spec.Roles {
+		if role == "admin" {
+			return true
+		}
+		if v.client == nil {
+			continue
+		}
+		cr := &neo4jv1beta1.Neo4jRole{}
+		if err := v.client.Get(ctx, types.NamespacedName{Name: role, Namespace: user.Namespace}, cr); err != nil ||
+			cr.Spec.ClusterRef != user.Spec.ClusterRef {
+			continue
+		}
+		if name := cr.Spec.Name; name == "admin" || (name == "" && cr.Name == "admin") {
+			return true
+		}
+	}
+	return false
 }
 
 func (v *UserValidator) validatePasswordSecret(ctx context.Context, user *neo4jv1beta1.Neo4jUser, result *UserValidationResult) {
@@ -237,35 +292,38 @@ func (v *UserValidator) validatePasswordSecret(ctx context.Context, user *neo4jv
 	}
 }
 
-func (v *UserValidator) validateClusterRef(ctx context.Context, user *neo4jv1beta1.Neo4jUser, result *UserValidationResult) {
+// validateClusterRef checks that spec.clusterRef names a cluster or a
+// standalone, and returns that target's spec.auth and whether it was found.
+func (v *UserValidator) validateClusterRef(ctx context.Context, user *neo4jv1beta1.Neo4jUser, result *UserValidationResult) (*neo4jv1beta1.AuthSpec, bool) {
 	if v.client == nil {
-		return
+		return nil, false
 	}
 	clusterRefPath := field.NewPath("spec", "clusterRef")
 	if user.Spec.ClusterRef == "" {
 		result.Errors = append(result.Errors, field.Required(clusterRefPath, "clusterRef is required"))
-		return
+		return nil, false
 	}
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	clusterKey := types.NamespacedName{Name: user.Spec.ClusterRef, Namespace: user.Namespace}
 	if err := v.client.Get(ctx, clusterKey, cluster); err == nil {
-		return
+		return cluster.Spec.Auth, true
 	} else if !errors.IsNotFound(err) {
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("could not verify clusterRef %q: %v", user.Spec.ClusterRef, err))
-		return
+		return nil, false
 	}
 
 	standalone := &neo4jv1beta1.Neo4jEnterpriseStandalone{}
 	if err := v.client.Get(ctx, clusterKey, standalone); err == nil {
-		return
+		return standalone.Spec.Auth, true
 	} else if !errors.IsNotFound(err) {
 		result.Warnings = append(result.Warnings,
 			fmt.Sprintf("could not verify clusterRef %q: %v", user.Spec.ClusterRef, err))
-		return
+		return nil, false
 	}
 	// Not there yet: the reconciler waits for it (operations.md id 182).
 	result.TargetPending = DeploymentPending(clusterRefPath, user.Spec.ClusterRef, user.Namespace)
+	return nil, false
 }
 
 func validateUsername(name string, path *field.Path) field.ErrorList {

@@ -83,7 +83,7 @@ Configures a single non-native authentication provider for the user. The provide
 
 - `clusterRef` must resolve to a `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace.
 - `username` (or `metadata.name` fallback) matches `^[a-zA-Z][a-zA-Z0-9_.@\-]*$` (the at-sign supports email-style SSO/LDAP usernames), max 65 characters.
-- The reserved name `system` is rejected. The default bootstrap admin name `neo4j` is allowed with a warning: the operator authenticates as it, so managing it rewrites the credential in the cluster's admin Secret and can lock the operator out.
+- The reserved name `system` is rejected. The default bootstrap admin name `neo4j` is allowed with a warning: the operator authenticates as it, so managing it rewrites the credential in the cluster's admin Secret and can lock the operator out. A `Neo4jUser` for the user the operator signs in as — the username in the target's admin Secret, else `neo4j` — whose `roles` leave out `admin` draws a second warning: `spec.roles` is authoritative, so the operator would revoke `admin` from its own login and every CR on that target would fail with `Forbidden`. List `admin` in its `roles`.
 - At least one of `passwordSecretRef` or `externalAuth` must be set (Neo4j requires ≥1 auth provider per user).
 - `passwordSecretRef`: the Secret must contain a non-empty value at the named key. A Secret that does not exist yet is not an error — the user waits in phase `Pending` (reason `SecretPending`) and retries. A missing `clusterRef` deployment is reported first (`ClusterNotFound`, knowledge rule 182); the Secret wait follows once the deployment exists. Values shorter than 8 characters produce a warning (Neo4j's default minimum is 8).
 - `externalAuth[].provider` cannot be `native`.

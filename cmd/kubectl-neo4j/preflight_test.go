@@ -111,6 +111,34 @@ func TestPreflight_NoNodeLargeEnoughIsAProblem(t *testing.T) {
 	assert.Contains(t, out, "1.5Gi", "the floor must be named so the user does not chase it down")
 }
 
+// A node reports its allocatable memory in Ki, as the kubelet computes it: the
+// pre-release journey's capacity line read "largest Ready node has 65230168Ki
+// allocatable" beside a request of 2Gi, where the docs show 1Gi. The check
+// names it in the largest binary unit it reaches, rounded down so a node just
+// short of the request never reads as large enough.
+func TestPreflight_LargestNodeIsNamedInTheUnitTheRequestUses(t *testing.T) {
+	c := testClient(t,
+		&storagev1.StorageClass{ObjectMeta: metav1.ObjectMeta{Name: "fast-ssd"}, AllowVolumeExpansion: boolPtr(true)},
+		node("n1", "1945600Ki", true),
+	)
+	res := preflightObject(context.Background(), c, "neo4j", "f.yaml", []byte(clusterManifest))
+	out := joinChecks(res.checks)
+	assert.Contains(t, out, "largest Ready node has 1.8Gi allocatable")
+	assert.NotContains(t, out, "Ki allocatable")
+
+	for raw, want := range map[string]string{
+		"65230168Ki": "62.2Gi",
+		"1Gi":        "1Gi",
+		"1048576Ki":  "1Gi",
+		"2097151Ki":  "1.9Gi", // a Ki short of 2Gi is not 2.0Gi
+		"524288Ki":   "512Mi",
+		"1536Mi":     "1.5Gi",
+		"512":        "512",
+	} {
+		assert.Equal(t, want, humanMemory(apiresource.MustParse(raw)), raw)
+	}
+}
+
 // The scheduler places a pod on ONE node, so capacity must never be summed.
 func TestPreflight_CapacityIsPerNodeNotClusterTotal(t *testing.T) {
 	c := testClient(t,
