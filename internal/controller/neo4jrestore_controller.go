@@ -133,6 +133,11 @@ type Neo4jRestoreReconciler struct {
 	// newAllDatabasesClient builds the Neo4j client the all-databases restore
 	// loop uses. nil selects the real one; tests substitute a scripted server.
 	newAllDatabasesClient func(target restoreTarget) (allDatabasesRestoreClient, error)
+
+	// newOnlineRestoreClient builds the Neo4j client a single-database online
+	// restore uses. nil selects the real one; tests substitute a scripted
+	// server.
+	newOnlineRestoreClient func(target restoreTarget) (onlineRestoreClient, error)
 }
 
 // progressRecorder is where the per-database events of an all-databases
@@ -337,9 +342,10 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 
 	// Validate Neo4j version compatibility (5.26+ or 2025.01+)
 	if err := r.validateNeo4jVersion(targetCluster); err != nil {
-		logger.Error(err, "Neo4j version validation failed")
-		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Neo4j version not supported: %v", err))
-		return ctrl.Result{}, err
+		// A refusal, not the controller's error (knowledge id 215).
+		r.refuseRestore(ctx, restore, "Restore refused: Neo4j version not supported",
+			fmt.Sprintf("Neo4j version not supported: %v", err), err)
+		return ctrl.Result{}, nil
 	}
 
 	// Check if restore is running.
@@ -448,9 +454,16 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 
 	// Validate restore request
 	if err := r.validateRestore(ctx, restore); err != nil {
-		logger.Error(err, "Restore validation failed")
-		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Validation failed: %v", err))
-		return ctrl.Result{}, err
+		if apiReadFailure(err) {
+			// A read the validation could not make: the controller's error.
+			logger.Error(err, "Restore validation could not read what it checks")
+			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Validation failed: %v", err))
+			return ctrl.Result{}, err
+		}
+		// A refused spec is a status the user fixes, logged once at info,
+		// never an ERROR and a "Reconciler error" (knowledge id 215).
+		r.refuseRestore(ctx, restore, "Restore validation failed", fmt.Sprintf("Validation failed: %v", err), err)
+		return ctrl.Result{}, nil
 	}
 
 	// Pin the resolved backup location onto status BEFORE branching to either
@@ -514,6 +527,10 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	// options.replaceExisting via `--overwrite-destination` in the multi-database command.
 	if !restoreOverwriteConfirmed(restore) && !restore.Spec.AllDatabases && !r.restoreAlreadyStoppedInstance(ctx, restore, cluster) {
 		if err := r.checkDatabaseExists(ctx, restore, cluster); err != nil {
+			if isRestoreRefusal(err) {
+				r.refuseRestore(ctx, restore, "Restore refused: the database exists", fmt.Sprintf("Database check failed: %v", err), err)
+				return ctrl.Result{}, nil
+			}
 			logger.Error(err, "Database existence check failed")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Database check failed: %v", err))
 			return ctrl.Result{}, err
@@ -561,7 +578,11 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 		// silently writing the restore into a fresh PVC mount (or, worse
 		// pre-fix, into an EmptyDir) is invisible data loss (issue #117).
 		if err := r.refuseRestoreIfPodsRunning(ctx, restore, cluster); err != nil {
-			logger.Error(err, "Refusing restore against running cluster")
+			if isRestoreRefusal(err) {
+				r.refuseRestore(ctx, restore, "Restore refused: the standalone is running", err.Error(), err)
+				return ctrl.Result{}, nil
+			}
+			logger.Error(err, "Could not check whether the standalone is running")
 			r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
 			return ctrl.Result{}, err
 		}
@@ -610,6 +631,20 @@ func (r *Neo4jRestoreReconciler) startRestore(ctx context.Context, restore *neo4
 	}
 
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// onlineRestoreStartedMessage is the one RestoreStarted of an online restore.
+// A standalone restores online now, so stopCluster does not apply to it (only
+// a restore the server cannot seed itself runs the offline Job); the message
+// says so. It was an event of its own under the same reason, so an online
+// restore with stopCluster announced RestoreStarted twice (knowledge id 215).
+func onlineRestoreStartedMessage(target restoreTarget, restore *neo4jv1beta1.Neo4jRestore, exists bool, seedURI string) string {
+	msg := fmt.Sprintf("Online restore into %s %q: database %q (%s), seedURI=%s",
+		target.kind(), target.name(), restore.Spec.Database, ternaryString(exists, "recreate", "create"), seedURI)
+	if target.isStandalone() && restore.Spec.StopCluster {
+		msg += "; spec.stopCluster is ignored: the standalone is restored online and its other databases stay available (only a restore the server cannot seed itself stops the instance)"
+	}
+	return msg
 }
 
 // restoreJobStartedMessage is the one RestoreStarted of a restore that runs a
@@ -691,8 +726,11 @@ func (r *Neo4jRestoreReconciler) checkRestoreProgress(ctx context.Context, resto
 		// leaves the cluster scaled to 0 indefinitely (the cluster controller
 		// honours the restore-in-progress annotation until it is cleared).
 		r.restoreClusterAfterFailure(ctx, restore, cluster)
-		r.updateRestoreStatus(ctx, restore, StatusFailed, "Restore job failed")
-		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, "Restore job failed")
+		// Why it failed, from the Job and its pod: "Restore job failed" alone
+		// sent the reader to a pod its TTL removes (knowledge id 215).
+		msg := r.restoreJobFailure(ctx, job)
+		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
+		r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
 		return ctrl.Result{}, nil
 	default:
 		// Job still running, or retrying within BackoffLimit.
@@ -1104,6 +1142,8 @@ func (r *Neo4jRestoreReconciler) validateRestore(ctx context.Context, restore *n
 	return nil
 }
 
+// checkDatabaseExists refuses (restoreRefusal) a restore over a database that
+// exists without replaceExisting; a failure to ask is the controller's error.
 func (r *Neo4jRestoreReconciler) checkDatabaseExists(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, _ *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	// Job-path restore is standalone-only (rule 75); connect via the
 	// standalone's `<name>-service` (#187).
@@ -1124,7 +1164,7 @@ func (r *Neo4jRestoreReconciler) checkDatabaseExists(ctx context.Context, restor
 	}
 
 	if exists && (restore.Spec.Options == nil || !restore.Spec.Options.ReplaceExisting) {
-		return fmt.Errorf("database %s already exists. Use replaceExisting option or force flag to overwrite", restore.Spec.Database)
+		return restoreRefusal(fmt.Errorf("database %s already exists. Use replaceExisting option or force flag to overwrite", restore.Spec.Database))
 	}
 
 	return nil
@@ -1257,11 +1297,14 @@ func (r *Neo4jRestoreReconciler) createRestoreJob(ctx context.Context, restore *
 					ImagePullSecrets: resources.ImagePullSecretsFromNames(cluster.Spec.Image.PullSecrets),
 					Containers: []corev1.Container{
 						{
-							Name:            "neo4j-restore",
+							Name:            restoreContainerName,
 							Image:           fmt.Sprintf("%s:%s", cluster.Spec.Image.Repo, cluster.Spec.Image.Tag),
 							SecurityContext: hardenedRestoreContainerSecurityContext(),
-							Command:         []string{"/bin/sh"},
-							Args:            []string{"-c", restoreCmd},
+							// A failure's termination message is the tail of
+							// the log, which restoreJobFailure reports.
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+							Command:                  []string{"/bin/sh"},
+							Args:                     []string{"-c", restoreCmd},
 							Env: func() []corev1.EnvVar {
 								envs := []corev1.EnvVar{
 									{
@@ -2664,6 +2707,8 @@ func (r *Neo4jRestoreReconciler) resolveStatefulSetName(ctx context.Context, clu
 // running a restore against a live cluster (which holds the database file
 // lock and would either fail neo4j-admin restore or, worse, write the result
 // into a non-PVC volume that's discarded when the pod exits — issue #117).
+// The running standalone is a refusal (restoreRefusal), logged at info; a
+// pod list that fails is the controller's error.
 func (r *Neo4jRestoreReconciler) refuseRestoreIfPodsRunning(ctx context.Context, restore *neo4jv1beta1.Neo4jRestore, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	pods := &corev1.PodList{}
 	if err := r.List(ctx, pods,
@@ -2678,8 +2723,8 @@ func (r *Neo4jRestoreReconciler) refuseRestoreIfPodsRunning(ctx context.Context,
 		if reason := standaloneOfflineReason(restore, r.restoreStandalone(ctx, restore)); reason != "" {
 			why = fmt.Sprintf(" (it restores offline: %s)", reason)
 		}
-		return fmt.Errorf("restore %q cannot run against a running standalone%s: %d server pod(s) of %q are still present. Set spec.stopCluster=true to let the operator stop the instance for the restore, or scale it to 0 manually before applying this restore",
-			restore.Name, why, len(pods.Items), cluster.Name)
+		return restoreRefusal(fmt.Errorf("restore %q cannot run against a running standalone%s: %d server pod(s) of %q are still present. Set spec.stopCluster=true to let the operator stop the instance for the restore, or scale it to 0 manually before applying this restore",
+			restore.Name, why, len(pods.Items), cluster.Name))
 	}
 	return nil
 }
@@ -3225,8 +3270,9 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 	}
 	if restore.Spec.Source.Type == "storage" {
 		if restore.Spec.Source.Storage == nil {
-			r.updateRestoreStatus(ctx, restore, StatusFailed, "source.storage is required when type=storage")
-			return ctrl.Result{}, fmt.Errorf("source.storage required for type=storage")
+			r.refuseRestore(ctx, restore, "Restore validation failed", "source.storage is required when type=storage",
+				fmt.Errorf("source.storage required for type=storage"))
+			return ctrl.Result{}, nil
 		}
 		storage = *restore.Spec.Source.Storage
 		backupPath = restore.Spec.Source.BackupPath
@@ -3274,8 +3320,8 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			seedURI = strings.TrimRight(seedURI, "/")
 			if !strings.HasSuffix(seedURI, ".backup") {
 				msg := fmt.Sprintf("cluster restore with source.type=storage requires source.backupPath to be the exact .backup file (e.g. '<chain-root>/<dbname>-<timestamp>.backup'); got a non-file path resolving to %q. CloudSeedProvider cannot seed a single database from a directory.", seedURI)
-				r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-				return ctrl.Result{}, fmt.Errorf("%s", msg)
+				r.refuseRestore(ctx, restore, "Restore validation failed", msg, fmt.Errorf("%s", msg))
+				return ctrl.Result{}, nil
 			}
 		}
 		// The SERVER pods fetch the seed, so they need cloud credentials AND
@@ -3350,12 +3396,12 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		seedURI = uri
 	default:
 		err := fmt.Errorf("online restore does not support storage type %q (expected s3, gcs, azure, or pvc)", storage.Type)
-		r.updateRestoreStatus(ctx, restore, StatusFailed, err.Error())
-		return ctrl.Result{}, err
+		r.refuseRestore(ctx, restore, "Restore validation failed", err.Error(), err)
+		return ctrl.Result{}, nil
 	}
 
 	// Open a Bolt connection to the cluster or standalone.
-	neo4jClient, err := r.targetClient(target)
+	neo4jClient, err := r.onlineClient(target)
 	if err != nil {
 		logger.Error(err, "Failed to create Neo4j client for the online restore")
 		r.updateRestoreStatus(ctx, restore, StatusFailed, fmt.Sprintf("Failed to connect to %s %q: %v", target.kind(), target.name(), err))
@@ -3397,17 +3443,8 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 		}
 	}
 
-	// A standalone restores online now; stopCluster no longer applies to it
-	// (only a point-in-time restore still runs the offline Job). Say so once
-	// instead of silently ignoring the field.
-	if target.isStandalone() && restore.Spec.StopCluster {
-		r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-			fmt.Sprintf("spec.stopCluster is ignored: standalone %q is restored online and its other databases stay available (only a restore the server cannot seed itself stops the instance)", target.name()))
-	}
-
 	r.Recorder.Event(restore, corev1.EventTypeNormal, EventReasonRestoreStarted,
-		fmt.Sprintf("Online restore into %s %q: database %q (%s), seedURI=%s",
-			target.kind(), target.name(), restore.Spec.Database, ternaryString(exists, "recreate", "create"), seedURI))
+		onlineRestoreStartedMessage(target, restore, exists, seedURI))
 
 	if exists && restore.Spec.Source.PointInTime != nil {
 		// Decided online because the database was absent; it has appeared
@@ -3429,9 +3466,12 @@ func (r *Neo4jRestoreReconciler) startClusterCypherRestore(
 			msg := fmt.Sprintf(
 				"database %q already exists on the target %s; a restore would WIPE and replace it. Set spec.options.replaceExisting=true to confirm, or restore to a different database",
 				restore.Spec.Database, target.kind())
-			r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-			r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
-			return ctrl.Result{}, fmt.Errorf("%s", msg)
+			// A refusal: announced once, logged at info, no reconcile error
+			// (knowledge id 215).
+			if r.refuseRestore(ctx, restore, "Restore refused: the database exists", msg, fmt.Errorf("%s", msg)) {
+				r.Recorder.Event(restore, corev1.EventTypeWarning, EventReasonRestoreFailed, msg)
+			}
+			return ctrl.Result{}, nil
 		}
 		// `dbms.recreateDatabase` is ASYNCHRONOUS — it returns as soon as the
 		// recreate is scheduled, long before the per-server seed-from-URI
@@ -4325,7 +4365,7 @@ func (r *Neo4jRestoreReconciler) transitionRestoreStatus(ctx context.Context, re
 		if phase == StatusCompleted {
 			populateRestoreProvenance(latest)
 		}
-		condStatus, condReason := PhaseToConditionStatus(phase)
+		condStatus, condReason := restoreReadyCondition(phase)
 		SetReadyCondition(&latest.Status.Conditions, latest.Generation, condStatus, condReason, message)
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err

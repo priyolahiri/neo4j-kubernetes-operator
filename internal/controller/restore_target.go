@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -138,6 +139,28 @@ func (r *Neo4jRestoreReconciler) targetClient(t restoreTarget) (*neo4j.Client, e
 		return neo4j.NewClientForEnterpriseStandalone(t.standalone, r.Client, getStandaloneAdminSecretName(t.standalone))
 	}
 	return neo4j.NewClientForEnterprise(t.cluster, r.Client, restoreAdminSecretName(t.cluster))
+}
+
+// onlineRestoreClient is the part of the Neo4j client a single-database online
+// restore uses, so tests can drive startClusterCypherRestore against a
+// scripted server; production always uses a *neo4j.Client.
+type onlineRestoreClient interface {
+	allDatabasesRestoreClient
+	CreateDatabaseWithSeedURIUntil(ctx context.Context, databaseName, seedURI string, until time.Time) error
+	DatabaseSeedFailureMessage(ctx context.Context, databaseName string) (string, error)
+}
+
+// onlineClient connects to the restore's target for a single-database online
+// restore.
+func (r *Neo4jRestoreReconciler) onlineClient(target restoreTarget) (onlineRestoreClient, error) {
+	if r.newOnlineRestoreClient != nil {
+		return r.newOnlineRestoreClient(target)
+	}
+	c, err := r.targetClient(target)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // updateTargetSpec refetches the target's CR and applies mutate to its
