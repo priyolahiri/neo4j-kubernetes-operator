@@ -481,7 +481,9 @@ kubectl get neo4jreplicadatabase -n dr
 # foo-replica   dr-cluster   foo        Replicating   3     12m
 ```
 
-`LAG` is a count of **transactions** behind the upstream, not a duration. The
+`LAG` is a count of **transactions** behind the upstream, not a duration: `0`
+once the replica has caught up, blank only until the operator first reads it
+(a replica still being created or seeded). The
 operator also exports it as `neo4j_operator_replica_lag_transactions`, and counts
 promotions in `neo4j_operator_replica_promotions_total` — see the
 [replication metrics](monitoring.md#cross-cluster-replication-metrics).
@@ -639,8 +641,8 @@ kubectl get neo4jreplicapromotion -n dr
 ```
 
 `status.observedLagTxIds` records the RPO the promotion actually took, so it is
-auditable after the incident. The operator records it; it never blocks a
-failover on it.
+auditable after the incident — `0` when the replica was not behind. The
+operator records it; it never blocks a failover on it.
 
 ### Why promotion is a separate CR, not a field
 

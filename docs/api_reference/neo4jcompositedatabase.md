@@ -45,7 +45,7 @@ A `composite: true` flag would leave most of that spec silently inert.
 | Field | Type | Description |
 |---|---|---|
 | `clusterRef` | `string` | **Required.** The `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace that hosts this composite and its constituents. |
-| `name` | `string` | The composite database name in Neo4j. Defaults to `metadata.name`. 3–63 characters matching `^[a-zA-Z][a-zA-Z0-9\-]*$` (letters, digits and dashes, starting with a letter) — the CRD schema refuses anything else at apply time. **Underscores are rejected by the server**, and **dots are rejected here** although Neo4j allows them in a database name: `<composite>.<constituent>` is how constituents are addressed, so a dotted composite name could never have any. `system` is reserved (the inline validator refuses it at reconcile; a schema pattern cannot express it). When `name` is empty and `metadata.name` is used instead, the schema pattern does not apply to it, but the inline validator still refuses dots and underscores. |
+| `name` | `string` | The composite database name in Neo4j. Defaults to `metadata.name`. 3–63 characters matching `^[a-zA-Z][a-zA-Z0-9\-]*$` (letters, digits and dashes, starting with a letter) — the CRD schema refuses anything else at apply time. **Underscores are rejected by the server**, and **dots are rejected here** although Neo4j allows them in a database name: `<composite>.<constituent>` is how constituents are addressed, so a dotted composite name could never have any. `system` is reserved (the inline validator refuses it at reconcile; a schema pattern cannot express it). When `name` is empty and `metadata.name` is used instead, the schema pattern does not apply to it, but the inline validator still refuses dots and underscores. Neo4j reads the name ignoring case: two `Neo4jCompositeDatabase` resources on one target whose names differ only by case are one composite, owned by the older (by `creationTimestamp`); the other is `Failed` with reason `DuplicateName` (see [Deletion](#deletion)). |
 | `constituents` | [`[]CompositeConstituent`](#compositeconstituent) | **Required, at least one.** The databases this composite exposes. Each becomes an alias `<composite>.<name>`. |
 | `enforceConstituents` | `bool` | Default `true`. Makes `constituents` authoritative: a **constituent** of this composite that is absent from spec is dropped. Set `false` to leave out-of-band constituents alone, in which case this CR only ever adds. Same posture as `Neo4jRole.enforcePrivileges`. An ordinary alias that merely *looks* like a constituent (`<composite>.<x>` with no composite behind it — Neo4j's `composite` column is `NULL`) is never dropped: it is not a constituent, and it is reported in `status.message` instead. |
 | `defaultCypherLanguage` | `string` | `"5"` or `"25"`. The `DEFAULT LANGUAGE CYPHER` clause **exists only on CalVer** — it does not parse on the 5.26 LTS — so the value is checked against the target's image, the same way [`Neo4jDatabase.spec.defaultCypherLanguage`](neo4jdatabase.md) is. On the LTS `"25"` is **rejected** by validation (`spec.defaultCypherLanguage`) rather than letting the server emit a raw syntax error, and `"5"` is accepted with a warning but has **no effect**: every LTS database already runs Cypher 5, and the operator leaves the clause out of `CREATE COMPOSITE DATABASE` and `ALTER DATABASE`. On CalVer both values are applied. This is the **only** property of a composite that can be altered after creation. |
@@ -116,6 +116,11 @@ they target are untouched.
 
 `deletionPolicy: Retain` leaves everything in Neo4j and releases the finalizer.
 
+While another `Neo4jCompositeDatabase` on the same target gives the same name, ignoring case, the
+deletion drops nothing either: it releases the finalizer with one `DuplicateNameKept` event naming
+that resource, which keeps the composite. (Before v1.23.0 both resources managed the one composite, and
+deleting either dropped it.)
+
 If the referenced deployment is gone at deletion time, the finalizer is
 released at once: the composite went with it — unless its volumes were kept
 (`storage.retentionPolicy: Retain`): then the deletion waits, as below, for a
@@ -162,7 +167,7 @@ name a composite reports `PrivilegesResolve=False`.
 
 | Type | Reasons | Meaning |
 |---|---|---|
-| `Ready` | `CompositeDatabaseReady`, `CompositeDatabaseFailed`, `CompositeDatabaseNameBlocked`, `ClusterNotFound` (phase `Pending`), `ClusterNotReady` / `ClusterUnreachable` (phase `Pending`, for a composite not yet `Ready`), `Creating` (phase `Creating`), `ConnectionFailed`, `ValidationFailed` | True when the composite exists and its constituents match spec. A `Ready` composite stays `Ready` while its target restarts. |
+| `Ready` | `CompositeDatabaseReady`, `CompositeDatabaseFailed`, `CompositeDatabaseNameBlocked`, `DuplicateName` (phase `Failed`: an older resource gives the name), `ClusterNotFound` (phase `Pending`), `ClusterNotReady` / `ClusterUnreachable` (phase `Pending`, for a composite not yet `Ready`), `Creating` (phase `Creating`), `ConnectionFailed`, `ValidationFailed` | True when the composite exists and its constituents match spec. A `Ready` composite stays `Ready` while its target restarts. |
 | `ClusterNotReady` | `ClusterNotReady`, `ClusterUnreachable`, `ClusterReady` | Mirrors the readiness of the referenced deployment: `ClusterUnreachable` while it reads `Ready` but does not accept the connection, or answers the statements with an error Neo4j asks to be retried — a cluster that lost the majority of its servers (reported as `ConnectionFailed` after 5 minutes). `ClusterReady` is written once the target served the pass. |
 
 ## Limitations

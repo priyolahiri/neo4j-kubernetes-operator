@@ -153,7 +153,7 @@
     "id": "su-neo4jdatabase",
     "name": "Neo4jDatabase Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jDatabase CRD: creates/verifies a single logical database (with optional topology and seedURI) against a resolved cluster or standalone, imports initial Cypher data, and drops the database on CR deletion. A Ready database stays Ready while its host restarts or does not answer, with ClusterNotReady=True (operations.md id 183), and it writes only its documented phases, never Unknown (id 190).",
+    "description": "Reconciler for the Neo4jDatabase CRD: creates/verifies a single logical database (with optional topology and seedURI) against a resolved cluster or standalone, imports initial Cypher data, and drops the database on CR deletion. A Ready database stays Ready while its host restarts or does not answer, with ClusterNotReady=True (operations.md id 183), and it writes only its documented phases, never Unknown (id 190). Of two CRs of its kind that give one name on one target, ignoring case, the older owns it and the other is Failed with one DuplicateName Warning (duplicate_names.go, shared with the composite controller; operations.md id 217).",
     "entityIds": [
       "ent-neo4jdatabase"
     ],
@@ -162,14 +162,15 @@
     ],
     "moduleId": "mod-database",
     "paths": [
-      "internal/controller/neo4jdatabase_controller.go"
+      "internal/controller/neo4jdatabase_controller.go",
+      "internal/controller/duplicate_names.go"
     ]
   },
   {
     "id": "su-neo4jdatabasealias",
     "name": "Neo4jDatabaseAlias Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jDatabaseAlias CRD: creates, retargets, and drops Neo4j database aliases (CREATE/ALTER/DROP ALIAS) against a resolved cluster or standalone. A Ready alias stays Ready while its target restarts or does not answer, with ClusterNotReady=True, and announces AliasReady from the write that enters Ready (operations.md id 183).",
+    "description": "Reconciler for the Neo4jDatabaseAlias CRD: creates, retargets, and drops Neo4j database aliases (CREATE/ALTER/DROP ALIAS) against a resolved cluster or standalone. A Ready alias stays Ready while its target restarts or does not answer, with ClusterNotReady=True, and announces AliasReady from the write that enters Ready (operations.md id 183). Of two CRs of its kind that give one name on one target, ignoring case, the older owns it and the other is Failed with one DuplicateName Warning (duplicate_names.go, shared with the composite controller; operations.md id 217).",
     "entityIds": [
       "ent-neo4jdatabasealias"
     ],
@@ -185,7 +186,7 @@
     "id": "su-neo4jshardeddatabase",
     "name": "Neo4jShardedDatabase Controller",
     "kind": "controller",
-    "description": "Reconciler for the Neo4jShardedDatabase CRD: issues Cypher 25 CREATE DATABASE ... SET GRAPH SHARD / SET PROPERTY SHARDS, resolves seedBackupRef into per-shard seed URIs, and manages a PVC seed-proxy Deployment/Service for PVC-backed seeds. A Ready sharded database stays Ready while its cluster rolls, restarts or does not answer, with ClusterNotReady=True (operations.md id 183).",
+    "description": "Reconciler for the Neo4jShardedDatabase CRD: issues Cypher 25 CREATE DATABASE ... SET GRAPH SHARD / SET PROPERTY SHARDS, resolves seedBackupRef into per-shard seed URIs, and manages a PVC seed-proxy Deployment/Service for PVC-backed seeds. A Ready sharded database stays Ready while its cluster rolls, restarts or does not answer, with ClusterNotReady=True (operations.md id 183). Of two CRs of its kind that give one name on one target, ignoring case, the older owns it and the other is Failed with one DuplicateName Warning (duplicate_names.go, shared with the composite controller; operations.md id 217).",
     "entityIds": [
       "ent-neo4jshardeddatabase"
     ],

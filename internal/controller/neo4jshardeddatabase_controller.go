@@ -177,6 +177,25 @@ func (r *Neo4jShardedDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		}
 	}
 
+	// An older Neo4jShardedDatabase that gives this name on this cluster owns
+	// it: Neo4j lower-cases the family's names, so both would adopt one
+	// family (operations.md id 217).
+	duplicate, err := shardedDatabaseNames.duplicate(ctx, r.Client, &shardedDatabase)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if duplicate != "" {
+		failed, statusErr := r.transitionStatus(ctx, &shardedDatabase, "Failed", duplicate, nil)
+		if statusErr != nil {
+			logger.Error(statusErr, "Failed to update status for a duplicate name")
+		}
+		// Announced when it starts, not on every pass (knowledge rule 136).
+		if failed {
+			r.Recorder.Event(&shardedDatabase, corev1.EventTypeWarning, EventReasonDuplicateName, duplicate)
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Get the referenced cluster. A cluster that does not exist (yet) is a
 	// wait, as for a Neo4jDatabase: Pending, announced once, and the sharded
 	// database is created once the cluster is there. Any other read error is
@@ -1128,6 +1147,10 @@ func (r *Neo4jShardedDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) erro
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jShardedDatabase{}).
+		// The other CRs of a name, when one comes, goes or is renamed
+		// (operations.md id 217).
+		Watches(&neo4jv1beta1.Neo4jShardedDatabase{}, shardedDatabaseNames.othersOfTheName(mgr.GetClient()),
+			shardedDatabaseNames.onClaimChange()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: maxConcurrentReconciles,
 		}).

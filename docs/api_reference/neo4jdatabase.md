@@ -36,7 +36,7 @@ The `Neo4jDatabase` Custom Resource Definition (CRD) provides declarative databa
 | Field | Type | Description |
 |---|---|---|
 | `clusterRef` | `string` | **Required.** Name of the target `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace. For databases on a Neo4j Aura instance, use the `AuraDatabase` CRD instead. |
-| `name` | `string` | **Required**. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. `system` is reserved; `neo4j` is allowed with a warning (it shadows the default database). Neo4j names are case-insensitive and stored lower-cased, so `Sales` creates the database `SHOW DATABASES` lists as `sales`, and the operator finds it by either spelling |
+| `name` | `string` | **Required**. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. `system` is reserved; `neo4j` is allowed with a warning (it shadows the default database). Neo4j names are case-insensitive and stored lower-cased, so `Sales` creates the database `SHOW DATABASES` lists as `sales`, and the operator finds it by either spelling. Two `Neo4jDatabase` resources that give one name on one target, in any case, are one database: the older owns it and the other is `Failed` (reason `DuplicateName`, see [Two resources for one name](#two-resources-for-one-name)) |
 | `wait` | `boolean` | Wait for database creation to complete (default: `true`) |
 | `ifNotExists` | `boolean` | Create only if database doesn't exist - prevents reconciliation errors (default: `true`) |
 | `topology` | [`DatabaseTopology`](#databasetopology) | Database distribution topology (cluster only; ignored, with a warning, for a standalone target). Applied at `CREATE DATABASE` only — an existing database is observed, not altered |
@@ -172,7 +172,7 @@ Advanced configuration for creating databases from seed URIs using Neo4j's Cloud
 | Field | Type | Description |
 |---|---|---|
 | `conditions` | `[]metav1.Condition` | Current status conditions: `Ready`, and `ClusterNotReady` — `True` (reason `ClusterNotReady`) while the host is not Ready, `True` (reason `ClusterUnreachable`) while it reads Ready but does not accept the connection, or answers the statements with an error Neo4j asks to be retried (a cluster that lost the majority of its servers), `False` (reason `ClusterReady`) once the host served the pass. A `Ready` database stays `Ready` through either wait; one that lasts more than 5 minutes makes it `Failed` (`ConnectionFailed`) |
-| `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found — one `ClusterNotFound` Warning, never a validation failure — or not ready or not answering, or waiting for the seed credentials on the target — `SeedCredsMissing`, `SeedCredsAutoInherited`), `Failed` (connection, creation or data-import failure, or anything else Neo4j refused), `ValidationFailed` (the spec was refused; `kubectl neo4j status --problems` lists it), or `Error` (a deletion whose `DROP DATABASE` failed and is being retried; reason `DeletionFailed`). A database that is `Ready` stays `Ready` while its host restarts — the `ClusterNotReady` condition says it waits — so the host's return announces nothing; a host that does not answer for more than 5 minutes makes it `Failed` (`ConnectionFailed`). Operators up to v1.21 also wrote `Unknown` (a host without the seed credentials Secret); none is written now |
+| `phase` | `string` | Current phase of the database: `Ready`, `Pending` (target not found — one `ClusterNotFound` Warning, never a validation failure — or not ready or not answering, or waiting for the seed credentials on the target — `SeedCredsMissing`, `SeedCredsAutoInherited`), `Failed` (connection, creation or data-import failure, anything else Neo4j refused, or reason `DuplicateName`: an older `Neo4jDatabase` gives the same name on the same target, ignoring case), `ValidationFailed` (the spec was refused; `kubectl neo4j status --problems` lists it), or `Error` (a deletion whose `DROP DATABASE` failed and is being retried; reason `DeletionFailed`). A database that is `Ready` stays `Ready` while its host restarts — the `ClusterNotReady` condition says it waits — so the host's return announces nothing; a host that does not answer for more than 5 minutes makes it `Failed` (`ConnectionFailed`). Operators up to v1.21 also wrote `Unknown` (a host without the seed credentials Secret); none is written now |
 | `message` | `string` | Human-readable status message |
 | `observedGeneration` | `int64` | Generation observed by the controller |
 | `dataImported` | `*bool` | `true` once `spec.initialData.cypherStatements` have run, or, for a `seedURI` database, once it was created from the seed. Set once; the statements are not run again |
@@ -605,6 +605,16 @@ while its pod is replaced) or Neo4j refuses the drop — the deletion waits: pha
 naming the database still in Neo4j and the `DROP DATABASE` that removes it. Whether the cluster or
 standalone is gone is read from its CR, never from DNS. Before, a connection that failed, or a server name
 that did not resolve, released the finalizer at once and left the database, and its data, in Neo4j.
+
+#### Two resources for one name
+
+Neo4j reads database names ignoring case, so two `Neo4jDatabase` resources in one namespace whose
+`spec.name` is the same on the same `clusterRef`, in any case (`Sales` and `sales`), are one database. The
+older resource (by `creationTimestamp`) owns it. The other is `Failed` with reason `DuplicateName` and one
+`DuplicateName` Warning naming the older one, and sends Neo4j nothing; it carries on by itself once the
+older one is deleted or renamed. Deleting either drops nothing while the other still gives the name: the
+finalizer is released with one `DuplicateNameKept` event naming the resource that keeps the database.
+Before v1.23.0 both reported `Ready` on the one database, and deleting either dropped it.
 
 ## Best Practices
 

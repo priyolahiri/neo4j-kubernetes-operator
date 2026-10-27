@@ -410,7 +410,11 @@ spec:
               replicationLag:
                 description: |-
                   ReplicationLag is how many transactions the replica is behind, and
-                  therefore the data loss that promoting right now would make permanent.
+                  therefore the data loss that promoting right now would make permanent:
+                  0 at zero lag. Absent until the operator has read it (a replica being
+                  created or seeded). It keeps the last reading while the operator cannot
+                  read it (the ClusterNotReady condition says why; the lag metric is
+                  withdrawn meanwhile).
                 format: int64
                 type: integer
             type: object

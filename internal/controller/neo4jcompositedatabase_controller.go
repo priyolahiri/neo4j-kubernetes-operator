@@ -170,6 +170,20 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		}
 	}
 
+	// An older Neo4jCompositeDatabase that gives this name on this target
+	// owns it: Neo4j's names ignore case (operations.md id 217).
+	duplicate, err := compositeDatabaseNames.duplicate(ctx, r.Client, cd)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if duplicate != "" {
+		// Announced when it starts, not on every pass (knowledge rule 136).
+		if r.setStatus(ctx, cd, neo4jv1beta1.PhaseFailed, metav1.ConditionFalse, EventReasonDuplicateName, duplicate, nil) {
+			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonDuplicateName, duplicate)
+		}
+		return ctrl.Result{}, nil
+	}
+
 	target, err := ResolveClusterRef(ctx, r.Client, cd.Namespace, cd.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve cluster ref")
@@ -568,6 +582,16 @@ func (r *Neo4jCompositeDatabaseReconciler) handleDeletion(
 		log.FromContext(ctx).Info("deletionPolicy Retain — leaving the composite in place", "composite", name)
 		return ctrl.Result{}, release()
 	}
+	// A composite another Neo4jCompositeDatabase still gives is left to it
+	// (operations.md id 217).
+	kept, err := compositeDatabaseNames.keptFor(ctx, r.Client, cd)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if kept != "" {
+		r.Recorder.Event(cd, corev1.EventTypeNormal, EventReasonDuplicateNameKept, kept)
+		return ctrl.Result{}, release()
+	}
 
 	target, err := ResolveClusterRef(ctx, r.Client, cd.Namespace, cd.Spec.ClusterRef)
 	if err != nil {
@@ -849,6 +873,10 @@ func compositeEnforce(cd *neo4jv1beta1.Neo4jCompositeDatabase) bool {
 func (r *Neo4jCompositeDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.Neo4jCompositeDatabase{}).
+		// The other CRs of a name, when one comes, goes or is renamed
+		// (operations.md id 217).
+		Watches(&neo4jv1beta1.Neo4jCompositeDatabase{}, compositeDatabaseNames.othersOfTheName(mgr.GetClient()),
+			compositeDatabaseNames.onClaimChange()).
 		Watches(
 			&neo4jv1beta1.Neo4jEnterpriseCluster{},
 			EnqueueDependentsForClusterChange(

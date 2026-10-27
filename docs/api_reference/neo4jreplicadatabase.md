@@ -71,7 +71,7 @@ Same same-Kubernetes-cluster-only constraint as `upstreamClusterRef`, for the sa
 | `observedGeneration` | `int64` | `metadata.generation` observed at the last successful reconcile. |
 | `databaseType` | `string` | Live `type` column from `SHOW DATABASES` — `replica` while replicating, a standard type after promotion. This, not `phase`, is the operator's authoritative signal. |
 | `lastCommittedTxn` | `int64` | Last transaction ID the replica has applied. |
-| `replicationLag` | `int64` | Transactions behind — the data loss that promoting right now would make permanent. |
+| `replicationLag` | `*int64` | Transactions behind — the data loss that promoting right now would make permanent. `0` when the replica has caught up (the `LAG` column shows `0`). Absent until the operator first reads it (a replica being created or seeded). While the operator cannot read it (`ClusterNotReady=True`) it keeps the last reading, and the lag metric is withdrawn. |
 | `promotedAt` | `metav1.Time` | When the replica was promoted. |
 | `promotedBy` | `string` | The `Neo4jReplicaPromotion` that promoted it, or `out-of-band`. |
 | `conditions[]` | `metav1.Condition` | `Ready`, `ClusterNotReady` (reason `ClusterNotReady` while the downstream target is not Ready, `ClusterUnreachable` while it reads Ready but does not accept the connection, or answers the statements with an error Neo4j asks to be retried — a cluster that lost the majority of its servers — `ClusterReady` once the target served the pass). A `Replicating` replica stays `Replicating` while its target restarts (its lag series is withdrawn meanwhile); one not yet `Replicating` waits in `Pending`. A target that does not answer for more than 5 minutes makes it `Failed` (`ConnectionFailed`). |

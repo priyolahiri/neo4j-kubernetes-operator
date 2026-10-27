@@ -137,6 +137,20 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 		}
 	}
 
+	// An older Neo4jDatabaseAlias that gives this name on this target owns
+	// it: Neo4j's names ignore case (operations.md id 217).
+	duplicate, err := aliasNames.duplicate(ctx, r.Client, alias)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if duplicate != "" {
+		// Announced when it starts, not on every pass (knowledge rule 136).
+		if r.setStatus(ctx, alias, "Failed", metav1.ConditionFalse, EventReasonDuplicateName, duplicate, "") {
+			r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonDuplicateName, duplicate)
+		}
+		return ctrl.Result{}, nil
+	}
+
 	target, err := ResolveClusterRef(ctx, r.Client, alias.Namespace, alias.Spec.ClusterRef)
 	if err != nil {
 		logger.Error(err, "failed to resolve cluster ref")
@@ -253,6 +267,16 @@ func (r *Neo4jDatabaseAliasReconciler) handleDeletion(ctx context.Context, alias
 	release := func() error { return removeFinalizer(ctx, r.Client, alias, Neo4jDatabaseAliasFinalizer) }
 
 	if strings.EqualFold(alias.Spec.DeletionPolicy, "Retain") {
+		return ctrl.Result{}, release()
+	}
+	// An alias another Neo4jDatabaseAlias still gives is left to it
+	// (operations.md id 217).
+	kept, err := aliasNames.keptFor(ctx, r.Client, alias)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if kept != "" {
+		r.Recorder.Event(alias, corev1.EventTypeNormal, EventReasonDuplicateNameKept, kept)
 		return ctrl.Result{}, release()
 	}
 
@@ -504,6 +528,9 @@ func (r *Neo4jDatabaseAliasReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		For(&neo4jv1beta1.Neo4jDatabaseAlias{}).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueue).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueue).
+		// The other CRs of a name, when one comes, goes or is renamed
+		// (operations.md id 217).
+		Watches(&neo4jv1beta1.Neo4jDatabaseAlias{}, aliasNames.othersOfTheName(mgr.GetClient()), aliasNames.onClaimChange()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
 		Complete(r)
 }

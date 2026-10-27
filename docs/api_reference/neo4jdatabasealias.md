@@ -32,7 +32,7 @@ Because an alias may target a database that is still a replica, **create it at r
 | Field | Type | Description |
 |---|---|---|
 | `clusterRef` | `string` | **Required.** `Neo4jEnterpriseCluster` or `Neo4jEnterpriseStandalone` in the same namespace hosting both alias and target. |
-| `name` | `string` | Alias name in Neo4j. Defaults to `metadata.name`. 3–63 chars, `^[a-zA-Z][a-zA-Z0-9_.\-]*$`. May not be `system`. |
+| `name` | `string` | Alias name in Neo4j. Defaults to `metadata.name`. 3–63 chars, `^[a-zA-Z][a-zA-Z0-9_.\-]*$`. May not be `system`. Neo4j reads it ignoring case: two `Neo4jDatabaseAlias` resources on one target whose names differ only by case are one alias, owned by the older (by `creationTimestamp`); the other is `Failed` with one `DuplicateName` Warning and sends Neo4j nothing (before v1.23.0 each pass re-pointed the one alias between their targets). |
 | `targetDatabase` | `string` | **Required.** Database the alias points at. May be a standard database or a cross-cluster replica; the alias survives promotion unchanged. May not be `system`, and may not equal the alias name in any case (Neo4j lower-cases both). |
 | `deletionPolicy` | `string` | `Delete` (default) drops the alias on CR deletion; `Retain` leaves it and only releases the finalizer. |
 
@@ -55,7 +55,9 @@ Dropping an alias never affects the database behind it.
 ## Deletion
 
 `deletionPolicy: Delete` runs `DROP ALIAS … FOR DATABASE`, then releases the finalizer; `Retain` only
-releases it. If the cluster or standalone CR no longer exists, or is being deleted with its volumes
+releases it. While another `Neo4jDatabaseAlias` on the same target gives the same name, ignoring case,
+`Delete` drops nothing either: it releases the finalizer with one `DuplicateNameKept` event naming that
+resource, which keeps the alias. If the cluster or standalone CR no longer exists, or is being deleted with its volumes
 (`storage.retentionPolicy: Delete`, the default), the finalizer is released at once; if its volumes
 were kept (`Retain`), the deletion waits, as below, for a deployment created again from them.
 

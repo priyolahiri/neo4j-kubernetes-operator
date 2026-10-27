@@ -192,8 +192,8 @@ gets them at its next restart, and the operator upgrade restarts nothing.
 
 A `Neo4jEnterpriseCluster` runs the image's lines too, read from the image
 itself at each server's start, followed by a default list of the operator's
-own (see [JVM arguments](neo4jenterprisecluster.md#jvm-arguments)), which
-`server.jvm.additional` replaces.
+own and then its own `server.jvm.additional` (see
+[JVM arguments](neo4jenterprisecluster.md#jvm-arguments)).
 
 #### `tls` (TLSSpec)
 TLS/SSL configuration for secure connections. Same shape as

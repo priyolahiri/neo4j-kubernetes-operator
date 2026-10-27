@@ -22,6 +22,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -190,14 +191,17 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 
 	var configChanged, restartRelevant bool
 	var oldConfigHash, newConfigHash string
+	// What the restart decision compares the desired ConfigMap with.
+	restartBase := existingConfigMap
 
 	if configMapExists {
+		restartBase = withoutMovedJVMLines(existingConfigMap, desiredConfigMap)
 		// Two separate questions. The hash, over a normalised rendering that
 		// ignores comments and blank lines, decides whether the servers must
 		// restart. The raw content decides whether the ConfigMap is written:
 		// a change that does not restart anything (a reworded comment) is still
 		// written, so it is what each server reads at its next restart.
-		oldConfigHash = cm.calculateConfigMapHash(existingConfigMap)
+		oldConfigHash = cm.calculateConfigMapHash(restartBase)
 		newConfigHash = cm.calculateConfigMapHash(desiredConfigMap)
 		restartRelevant = oldConfigHash != newConfigHash
 		configChanged = !reflect.DeepEqual(existingConfigMap.Data, desiredConfigMap.Data)
@@ -214,7 +218,7 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 
 		if restartRelevant {
 			// Perform detailed analysis to understand what changed
-			changes := cm.analyzeConfigChanges(existingConfigMap, desiredConfigMap)
+			changes := cm.analyzeConfigChanges(restartBase, desiredConfigMap)
 			needsRestart := cm.requiresRestart(changes)
 
 			logger.Info("ConfigMap configuration changed, updating immediately",
@@ -267,7 +271,7 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 		// A scale that adds only system secondaries (or removes servers) is
 		// written for the next restart and restarts nothing (#467).
 		if configMapExists && restartRelevant {
-			if ok, oldServers := cm.scaleNeedsNoRestart(existingConfigMap, desiredConfigMap, cluster); ok {
+			if ok, oldServers := cm.scaleNeedsNoRestart(restartBase, desiredConfigMap, cluster); ok {
 				restartRelevant = false
 				logger.Info("Scaled without restarting the running servers",
 					"cluster", cluster.Name, "from", oldServers, "to", cluster.Spec.Topology.Servers)
@@ -286,8 +290,8 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 		// to the running servers instead of restarting them (#466). It runs
 		// BEFORE the write: written first, a failure here would leave the
 		// servers on the old values with no difference left to act on.
-		if configMapExists && restartRelevant && cm.onlyNeo4jConfChanged(existingConfigMap, desiredConfigMap) {
-			changes := neo4jConfChanges(existingConfigMap.Data["neo4j.conf"], desiredConfigMap.Data["neo4j.conf"])
+		if configMapExists && restartRelevant && cm.onlyNeo4jConfChanged(restartBase, desiredConfigMap) {
+			changes := neo4jConfChanges(restartBase.Data["neo4j.conf"], desiredConfigMap.Data["neo4j.conf"])
 			if applied, reason := cm.applyLive(ctx, cluster, changes); applied {
 				restartRelevant = false
 				logger.Info("Applied neo4j.conf changes to every server without a restart",
@@ -316,7 +320,7 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 			return nil
 		}
 		if configMapExists {
-			changes := cm.analyzeConfigChanges(existingConfigMap, desiredConfigMap)
+			changes := cm.analyzeConfigChanges(restartBase, desiredConfigMap)
 			needsRestart := cm.requiresRestart(changes)
 
 			if needsRestart {
@@ -491,6 +495,33 @@ func isCommentOrBlankLine(line string) bool {
 // normalizeNeo4jConf normalizes neo4j.conf content to remove duplicates and runtime values
 func (cm *ConfigMapManager) normalizeNeo4jConf(content string) string {
 	return normalizeNeo4jConfForRestart(content)
+}
+
+// withoutMovedJVMLines returns existing for the restart decision: as it is,
+// or, when desired's neo4j.conf has no server.jvm.additional line, with the
+// lines of existing's left out. v1.23.0 moved a cluster's own
+// server.jvm.additional out of neo4j.conf into NEO4J_server_jvm_additional,
+// after the operator's list (resources.buildJVMSettings); that variable's
+// change on the pod template rolls the servers, and the line's leaving
+// neo4j.conf is not a second roll. A conf that still carries the line (spec.env
+// takes the variable from a Secret or ConfigMap) is compared as it is, so a
+// change of the line restarts the servers, as before (operations.md id 208).
+func withoutMovedJVMLines(existing, desired *corev1.ConfigMap) *corev1.ConfigMap {
+	isJVMLine := func(line string) bool {
+		key, _, ok := strings.Cut(strings.TrimSpace(line), "=")
+		return ok && strings.TrimSpace(key) == resources.JVMAdditionalSetting
+	}
+	if slices.ContainsFunc(strings.Split(desired.Data["neo4j.conf"], "\n"), isJVMLine) {
+		return existing
+	}
+	lines := strings.Split(existing.Data["neo4j.conf"], "\n")
+	kept := slices.DeleteFunc(slices.Clone(lines), isJVMLine)
+	if len(kept) == len(lines) {
+		return existing
+	}
+	out := existing.DeepCopy()
+	out.Data["neo4j.conf"] = strings.Join(kept, "\n")
+	return out
 }
 
 // normalizeNeo4jConfForRestart is the neo4j.conf rendering a restart decision

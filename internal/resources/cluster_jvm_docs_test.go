@@ -23,7 +23,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 )
@@ -31,11 +30,10 @@ import (
 // A cluster's servers run the image's own JVM arguments first — the startup
 // script copies them from the image's neo4j.conf, which the entrypoint
 // replaces (buildImageJVMArgumentsBlock, operations.md id 212) — then the
-// user's spec.config, then the operator's list (buildJVMSettings), as
-// NEO4J_server_jvm_additional, which server.jvm.additional set in spec.env or
-// spec.config replaces (id 208). The cluster API reference says so and lists
-// every default flag, so a flag added or dropped here has to be added or
-// dropped there.
+// operator's list (buildJVMSettings) and after it the user's own
+// server.jvm.additional, both in NEO4J_server_jvm_additional (id 208). The
+// cluster API reference says so and lists every default flag, so a flag added
+// or dropped here has to be added or dropped there.
 func TestClusterJVMDefaultsAreDocumented(t *testing.T) {
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
 	flags := strings.Fields(buildJVMSettings(cluster))
@@ -56,17 +54,11 @@ func TestClusterJVMDefaultsAreDocumented(t *testing.T) {
 	flat := strings.Join(strings.Fields(section), " ")
 	for _, says := range []string{
 		"**The Neo4j image's own JVM arguments**",
-		"replaces that list, not the image's lines",
+		"adds to that list, after it; it no longer replaces it",
 	} {
 		assert.True(t, strings.Contains(flat, says), "the cluster API reference says: %s", says)
 	}
 	assert.False(t, strings.Contains(flat, "do not apply"), "the image's lines apply")
 
-	// Set in spec.env, the variable is the user's alone.
-	cluster.Spec.Env = []corev1.EnvVar{{Name: "NEO4J_server_jvm_additional", Value: "-XX:+UseZGC"}}
-	assert.Empty(t, buildJVMSettings(cluster))
-	// Set in spec.config, it takes the defaults' place.
-	cluster.Spec.Env = nil
-	cluster.Spec.Config = map[string]string{"server.jvm.additional": "-XX:+UseZGC"}
-	assert.Equal(t, "-XX:+UseZGC", buildJVMSettings(cluster))
+	assert.False(t, strings.Contains(flat, "replaces that list"), "a user's line no longer replaces the operator's list")
 }

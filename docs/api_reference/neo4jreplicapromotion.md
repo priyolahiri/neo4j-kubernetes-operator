@@ -35,7 +35,7 @@ A `promote: true` field in a level-triggered spec could be set back to `false`, 
 | `message` | `string` | Short human-readable explanation of `phase`. |
 | `observedGeneration` | `int64` | `metadata.generation` observed at the last reconcile. |
 | `completionTime` | `metav1.Time` | When the promotion reached a terminal phase. |
-| `observedLagTxIds` | `int64` | The replica's replication lag immediately **before** promotion — the recovery point this promotion made permanent. Recorded, never enforced. |
+| `observedLagTxIds` | `*int64` | The replica's replication lag immediately **before** promotion — the recovery point this promotion made permanent. `0` when the replica was not behind (the `LAGTAKEN` column shows `0`); absent until the promotion completes. Recorded, never enforced. |
 | `lastCommittedTxn` | `int64` | Last transaction the replica had applied at promotion time. |
 | `promotedDatabase` | `string` | The database name that was promoted. |
 | `conditions[]` | `metav1.Condition` | `Ready`. |

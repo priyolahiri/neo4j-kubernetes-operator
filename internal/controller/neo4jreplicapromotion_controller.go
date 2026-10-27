@@ -28,6 +28,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -239,7 +240,7 @@ func (r *Neo4jReplicaPromotionReconciler) complete(
 		latest.Status.Phase = neo4jv1beta1.PromotionPhaseCompleted
 		latest.Status.Message = msg
 		latest.Status.ObservedGeneration = latest.Generation
-		latest.Status.ObservedLagTxIds = info.ReplicationLag
+		latest.Status.ObservedLagTxIds = ptr.To(info.ReplicationLag)
 		latest.Status.LastCommittedTxn = info.LastCommittedTxn
 		latest.Status.PromotedDatabase = info.Name
 		if latest.Status.CompletionTime == nil {
@@ -270,7 +271,7 @@ func (r *Neo4jReplicaPromotionReconciler) complete(
 		latest.Status.Phase = neo4jv1beta1.ReplicaPhasePromoted
 		latest.Status.Message = msg
 		latest.Status.DatabaseType = info.Type
-		latest.Status.ReplicationLag = info.ReplicationLag
+		latest.Status.ReplicationLag = ptr.To(info.ReplicationLag)
 		latest.Status.LastCommittedTxn = info.LastCommittedTxn
 		if latest.Status.PromotedAt == nil {
 			now := metav1.Now()

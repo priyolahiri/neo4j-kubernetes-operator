@@ -1181,12 +1181,12 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 		},
 	}
 
-	// Add JVM settings for optimal performance
-	// These are production-ready defaults that can be overridden via cluster.Spec.Env
+	// JVM arguments: the operator's list, then the user's own
+	// server.jvm.additional (buildJVMSettings, operations.md id 208).
 	jvmSettings := buildJVMSettings(cluster)
 	if jvmSettings != "" {
 		env = append(env, corev1.EnvVar{
-			Name:  "NEO4J_server_jvm_additional",
+			Name:  JVMAdditionalEnv,
 			Value: jvmSettings,
 		})
 	}
@@ -1237,6 +1237,11 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 			if _, folded := SpecEnvListKey(e); folded {
 				// A procedure or extension list: in neo4j.conf instead
 				// (SpecEnvLists, operations.md id 209).
+				continue
+			}
+			if e.Name == JVMAdditionalEnv && e.ValueFrom == nil {
+				// Joined after the operator's list in the operator's variable
+				// (buildJVMSettings, operations.md id 208).
 				continue
 			}
 			env = append(env, e)
@@ -1908,6 +1913,16 @@ server.metrics.csv.enabled=false
 			// SSL policy — and the dedup collapses it to a single line, so even
 			// strict validation wouldn't flag it.
 			if strings.HasPrefix(key, "dbms.ssl.policy.") {
+				continue
+			}
+			// The JVM arguments reach the servers through
+			// NEO4J_server_jvm_additional, after the operator's list
+			// (buildJVMSettings); a conf line too would give them twice, and
+			// before the operator's, which then won a conflicting flag. Not
+			// when spec.env takes that variable from a Secret or ConfigMap:
+			// it is the user's then, and the line stays, as before
+			// (operations.md id 208).
+			if key == JVMAdditionalSetting && !userJVMVariableFromSource(cluster) {
 				continue
 			}
 			keys = append(keys, key)
@@ -3303,19 +3318,51 @@ func buildLivenessProbe(_ *neo4jv1beta1.Neo4jEnterpriseCluster) *corev1.Probe {
 	}
 }
 
-// buildJVMSettings builds optimized JVM settings for Neo4j
-func buildJVMSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
-	// Check if user has already set JVM settings via environment variable
+// JVMAdditionalSetting is Neo4j's list of extra JVM arguments, and
+// JVMAdditionalEnv the variable the Neo4j entrypoint adds to it: it appends
+// server.jvm.additional rather than replacing the conf's lines.
+const (
+	JVMAdditionalSetting = "server.jvm.additional"
+	JVMAdditionalEnv     = "NEO4J_server_jvm_additional"
+)
+
+// userJVMVariableFromSource reports whether the cluster's spec.env takes
+// NEO4J_server_jvm_additional from a Secret or ConfigMap (valueFrom): a value
+// the operator cannot join to its list.
+func userJVMVariableFromSource(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	for _, env := range cluster.Spec.Env {
-		if env.Name == "NEO4J_server_jvm_additional" {
-			// User has explicitly set JVM settings, don't override
-			return ""
+		if env.Name == JVMAdditionalEnv && env.ValueFrom != nil {
+			return true
 		}
 	}
+	return false
+}
 
-	// Check if user has set via config
-	if val, exists := cluster.Spec.Config["server.jvm.additional"]; exists && val != "" {
-		return val
+// buildJVMSettings renders a cluster's NEO4J_server_jvm_additional: the
+// operator's tuning list (and the truststore flags when trusted CAs are set),
+// then the user's own server.jvm.additional — spec.config's, then a plain
+// spec.env value — so a user flag comes last and wins a conflicting one, as
+// the JVM takes the last it is given: a user turns an operator flag off with
+// its -XX:- form (operations.md id 208). Until v1.23.0 either of the user's
+// replaced the operator's list, and spec.config's was also a conf line, so it
+// was given twice. A spec.env value from a Secret or ConfigMap (valueFrom)
+// cannot be joined to the operator's: as before, that variable is the user's,
+// the operator renders none, and spec.config's line stays in neo4j.conf.
+func buildJVMSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
+	if userJVMVariableFromSource(cluster) {
+		return ""
+	}
+	var userFlags []string
+	if v := strings.TrimSpace(cluster.Spec.Config[JVMAdditionalSetting]); v != "" {
+		userFlags = append(userFlags, v)
+	}
+	for _, env := range cluster.Spec.Env {
+		if env.Name != JVMAdditionalEnv {
+			continue
+		}
+		if v := strings.TrimSpace(env.Value); v != "" {
+			userFlags = append(userFlags, v)
+		}
 	}
 
 	// Build production-ready JVM settings
@@ -3365,7 +3412,7 @@ func buildJVMSettings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) string {
 	// Optional: Enable GC logging for debugging (commented out by default)
 	// jvmFlags = append(jvmFlags, "-Xlog:gc*:file=/logs/gc.log:time,uptime,level,tags:filecount=5,filesize=10m")
 
-	return strings.Join(jvmFlags, " ")
+	return strings.Join(append(jvmFlags, userFlags...), " ")
 }
 
 // buildStartupProbe creates a startup probe for initial cluster formation
