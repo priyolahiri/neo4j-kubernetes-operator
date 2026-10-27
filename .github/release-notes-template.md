@@ -48,7 +48,7 @@ helm install neo4j-operator oci://ghcr.io/priyolahiri/charts/neo4j-operator \
 | `ghcr.io/priyolahiri/neo4j-kubernetes-operator` | `__TAG__` |
 | `mcp/neo4j-cypher` | `latest` (official Docker Hub image) |
 
-Images are signed with [Sigstore Cosign](https://docs.sigstore.dev/cosign/overview/) keyless signing.
+Images are signed with [Sigstore Cosign](https://docs.sigstore.dev/cosign/signing/overview/) keyless signing.
 
 ```bash
 cosign verify ghcr.io/priyolahiri/neo4j-kubernetes-operator:__TAG__ \
