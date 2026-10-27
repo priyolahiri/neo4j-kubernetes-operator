@@ -657,7 +657,7 @@ Run `kubectl neo4j validate -f <manifests>` (add `--connect` to also check image
 
 ## Upgrading from v1.22.x
 
-Apply the new CRDs before upgrading the operator. They add the `Disabled` phase for `Neo4jPlugin`, the `TopologyChangeDeferred` condition and the status field `status.upgradeStatus.startedTargetVersion` for clusters, and change field descriptions. Upgrading the operator restarts no server by itself, except as listed under [Restarts after the upgrade](#restarts-after-the-upgrade-1).
+Apply the new CRDs before upgrading the operator. They add the `Disabled` phase for `Neo4jPlugin`, the `TopologyChangeDeferred` condition and the status field `status.upgradeStatus.startedTargetVersion` for clusters, and change field descriptions. Upgrading the operator restarts no server by itself, except as listed under [Restarts after the upgrade](#restarts-after-the-upgrade_1).
 
 ### Act now
 
@@ -816,7 +816,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.22.0/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.23.0/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:

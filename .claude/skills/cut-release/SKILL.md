@@ -34,6 +34,18 @@ explicit human go below. **NEVER auto-tag.**
    `ship-prep` mutates — the drift gate in `validate-release` will fail the
    release anyway.
 
+   **Bump the install pins to `X.Y.Z` in the release-prep PR, before the tag.**
+   Every PINNED row in `scripts/check-docs-release-pins.sh` (installation guide,
+   CLI install, multi-cluster `targetRevision`, the migration guide's CRD
+   refresh) must name the version you are about to tag:
+   ```bash
+   make check-docs-release-pins   # must say "ahead of the newest tag"
+   ```
+   Nothing else catches a missed bump: CI's shallow checkout has no tags, so the
+   check only compares the surfaces with each other, and the versioned docs
+   publish whatever main says. v1.23.0 shipped `/v1.23/` docs telling readers to
+   install 1.22.0 this way.
+
 2. **Extended integration suite GREEN on post-merge `main`.** Dispatch and
    poll to completion:
    ```bash
