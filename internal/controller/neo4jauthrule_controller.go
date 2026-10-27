@@ -89,6 +89,10 @@ type Neo4jAuthRuleReconciler struct {
 	// transients is the quiet retry of a statement Neo4j asks to be
 	// retried (transient_retry.go).
 	transients transientStreaks
+
+	// targetGone defers the ClusterNotFound Warning of a target that went
+	// away (target_gone.go).
+	targetGone targetGoneNotices
 }
 
 // authRuleDeletionClient is what the Neo4jAuthRule deletion asks of Neo4j.
@@ -164,7 +168,11 @@ func (r *Neo4jAuthRuleReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		msg := fmt.Sprintf("clusterRef %q not found", rule.Spec.ClusterRef)
 		// A wait, announced once: when it starts, not on every pass until the
 		// deployment exists (operations.md ids 145 and 182).
-		if r.setStatus(ctx, rule, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, nil) {
+		hadTarget := hadFoundTarget(rule.Status.Conditions)
+		entered := r.setStatus(ctx, rule, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, nil)
+		// A target that went away is announced only if the dependent outlasts
+		// it by a minute: a teardown deletes the dependent first (#594).
+		if r.targetGone.announce(rule, entered, hadTarget, time.Now()) {
 			r.Recorder.Event(rule, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: requeue}, nil

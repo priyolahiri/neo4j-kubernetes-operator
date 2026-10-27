@@ -373,11 +373,15 @@ const (
 	ConditionReasonClusterUnreachable = "ClusterUnreachable"
 	// ConditionReasonSecretPending: a Neo4jUser's password Secret is not
 	// there yet; a wait, not an outcome of the user (id 189).
-	ConditionReasonSecretPending     = "SecretPending"
-	ConditionReasonUserReady         = "UserReady"
-	ConditionReasonRoleReady         = "RoleReady"
-	ConditionReasonPrivilegesSynced  = "PrivilegesMatch"
-	ConditionReasonPrivilegesDrifted = "PrivilegesDrifted"
+	ConditionReasonSecretPending = "SecretPending"
+	ConditionReasonUserReady     = "UserReady"
+	ConditionReasonRoleReady     = "RoleReady"
+	// ConditionReasonPrivilegesWaitForDatabase: a Neo4jRole is Ready but has
+	// not been announced so: statements of its spec wait for their database
+	// (knowledge rule 216).
+	ConditionReasonPrivilegesWaitForDatabase = "PrivilegesWaitForDatabase"
+	ConditionReasonPrivilegesSynced          = "PrivilegesMatch"
+	ConditionReasonPrivilegesDrifted         = "PrivilegesDrifted"
 	// ConditionReasonPrivilegesUnattributed: learn mode holds rows it cannot
 	// attribute to a spec statement and so will not revoke (Neo4jRole
 	// status.unattributedPrivileges).

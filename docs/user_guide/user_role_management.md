@@ -485,7 +485,7 @@ PBAC privileges flow through the same drift-reconciliation loop as ordinary priv
 
 | Condition | Meaning |
 |---|---|
-| `Ready` | Role exists, privileges in sync |
+| `Ready` | Role exists, privileges in sync. Reason `PrivilegesWaitForDatabase`: a new role whose statements wait for their database is `Ready` and announces `RoleReady` only once they are applied |
 | `PrivilegesSynced` | Live privileges match `spec.privileges` and `spec.privilegeRules` (immutable extras excluded). `False`/`PrivilegesDrifted`: something could not be reconciled (see events). `Unknown`/`UnattributedPrivileges`: learn mode holds rows it cannot attribute and will not revoke — see [Learn mode](#learn-mode-default) |
 | `PrivilegesResolve` | Every database a privilege names exists. `False`/`DatabaseNotFound`: those privileges are skipped (Neo4j refuses a grant on a missing database) and the rest applied; the message names them, and the field for a `privilegeRules` entry. `False`/`GraphPrivilegeOnComposite`: a GRAPH privilege on a composite database, which Neo4j accepts and ignores |
 | `ClusterNotReady` | `spec.clusterRef` exists but is neither `Ready` nor `Degraded` (still forming, restarting, or has lost its majority) — reason `ClusterNotReady` — or reads `Ready` but cannot be reached yet (reason `ClusterUnreachable`). A role already `Ready` stays `Ready` meanwhile; see [Target restarts](#target-restarts) |

@@ -64,6 +64,10 @@ type Neo4jDatabaseAliasReconciler struct {
 	// newDeletionClient connects the deletion to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests script the server here.
 	newDeletionClient func(ResolvedTarget) (aliasDeletionClient, error)
+
+	// targetGone defers the ClusterNotFound Warning of a target that went
+	// away (target_gone.go).
+	targetGone targetGoneNotices
 }
 
 // aliasDeletionClient is what the Neo4jDatabaseAlias deletion asks of Neo4j.
@@ -142,7 +146,11 @@ func (r *Neo4jDatabaseAliasReconciler) Reconcile(ctx context.Context, req ctrl.R
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(alias.Spec.ClusterRef))
 		// A wait, announced once: when it starts, not on every pass until the
 		// deployment exists (operations.md ids 145 and 182).
-		if r.setStatus(ctx, alias, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, "") {
+		hadTarget := hadFoundTarget(alias.Status.Conditions)
+		entered := r.setStatus(ctx, alias, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, "")
+		// A target that went away is announced only if the dependent outlasts
+		// it by a minute: a teardown deletes the dependent first (#594).
+		if r.targetGone.announce(alias, entered, hadTarget, time.Now()) {
 			r.Recorder.Event(alias, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: requeue}, nil

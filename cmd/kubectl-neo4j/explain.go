@@ -155,7 +155,10 @@ var conditionGuidance = map[string]guidance{
 			"the role holds rows it had before the operator granted to it — every existing role after an upgrade — which it " +
 			"cannot attribute to a spec statement and so never revokes; status.unattributedPrivileges lists them. " +
 			"Remove unwanted ones by hand (learn mode then re-learns), recreate the Neo4jRole, or run the operator with " +
-			"--privilege-normalisation=probe.",
+			"--privilege-normalisation=probe. The same reason also names a statement whose own rows learn mode cannot " +
+			"tell, because granting it added none — typically a grant through an alias whose target database another " +
+			"statement already grants on; the message names the statement and the alias. Grant on the target database " +
+			"instead, or remove the statement the other one covers.",
 	},
 	controller.ConditionTypePrivilegesResolve: {
 		meaning: "every database named by a privilege exists on this cluster.",
@@ -165,7 +168,8 @@ var conditionGuidance = map[string]guidance{
 			"cluster the cause is usually the replica's name: a replica of \"foo\" is called " +
 			"\"foo-replica\", and privileges attach to the database, not to an alias. Rewrite the " +
 			"database name in spec.privileges or spec.privilegeRules. If the database is simply not " +
-			"created yet, this clears by itself — within seconds of its Neo4jDatabase appearing. " +
+			"created yet, this clears by itself — within seconds of its Neo4jDatabase appearing; a new role " +
+			"reads Ready with reason PrivilegesWaitForDatabase until then, and announces RoleReady once they are applied. " +
 			"Reason GraphPrivilegeOnComposite is a different failure on a " +
 			"composite database: a GRAPH privilege there is accepted and inert, because graph " +
 			"privileges attach to the constituents' target databases. Grant ACCESS on the " +
