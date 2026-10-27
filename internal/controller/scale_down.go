@@ -121,22 +121,72 @@ func serverIdentifier(s neo4jclient.ServerInfo) string {
 // initialRemovedServerIDs returns the serverIds to drain for a scale-down,
 // computed from servers whose pod ordinal is >= desiredServers (matched on the
 // still-present address/name). Dropped servers excluded. Used at detection time
-// while addresses are intact; thereafter the set is tracked by id.
+// while addresses are intact; thereafter the set is tracked by id. A server
+// that is down reports no address; the caller fills in the one it last
+// reported first (withKnownAddresses, operations.md id 213).
 func initialRemovedServerIDs(servers []neo4jclient.ServerInfo, clusterName string, desiredServers int) []string {
 	var ids []string
 	for _, s := range servers {
 		if strings.EqualFold(s.State, "dropped") {
 			continue
 		}
-		ord, ok := parseServerOrdinal(s.Address, clusterName)
-		if !ok {
-			ord, ok = parseServerOrdinal(s.Name, clusterName)
-		}
-		if ok && ord >= desiredServers {
+		if ord, ok := serverOrdinal(s, clusterName); ok && ord >= desiredServers {
 			ids = append(ids, serverIdentifier(s))
 		}
 	}
 	return ids
+}
+
+// serverOrdinal is the pod ordinal a SHOW SERVERS row names, by its address,
+// else its name.
+func serverOrdinal(s neo4jclient.ServerInfo, clusterName string) (int, bool) {
+	if ord, ok := parseServerOrdinal(s.Address, clusterName); ok {
+		return ord, true
+	}
+	return parseServerOrdinal(s.Name, clusterName)
+}
+
+// unidentifiedRemovedServerIDs returns the servers SHOW SERVERS lists, not
+// dropped, whose ordinal neither their address — as reported, or as last
+// reported — nor their name tells: a server that has been down since before
+// this operator saw its address (after an operator restart, with no
+// diagnostics recorded). When every server the scale-down keeps (ordinals
+// below desired) is named by another row, they are none of those, and are
+// drained with the removed ones. Otherwise it returns why it cannot tell, and
+// the drain keeps holding replicas until it can: one of them could be a server
+// the scale-down keeps (operations.md id 213).
+func unidentifiedRemovedServerIDs(servers []neo4jclient.ServerInfo, clusterName string, desired int) ([]string, string) {
+	kept := map[int]bool{}
+	var unknown []string
+	for _, s := range servers {
+		if strings.EqualFold(s.State, "dropped") {
+			continue
+		}
+		ord, ok := serverOrdinal(s, clusterName)
+		if !ok {
+			unknown = append(unknown, serverIdentifier(s))
+			continue
+		}
+		if ord < desired {
+			kept[ord] = true
+		}
+	}
+	if len(unknown) == 0 {
+		return nil, ""
+	}
+	sort.Strings(unknown)
+	var missing []string
+	for ord := 0; ord < desired; ord++ {
+		if !kept[ord] {
+			missing = append(missing, fmt.Sprintf("%s-server-%d", clusterName, ord))
+		}
+	}
+	if len(missing) > 0 {
+		return nil, fmt.Sprintf("SHOW SERVERS lists %s with no address this operator knows, and no server reports being %s: "+
+			"the drain waits until it can tell which servers the scale-down removes",
+			strings.Join(unknown, ", "), strings.Join(missing, ", "))
+	}
+	return unknown, ""
 }
 
 type scaleDownPhase int
@@ -276,18 +326,27 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		}
 	}
 
-	nc, err := r.createNeo4jClient(ctx, cluster)
+	nc, err := r.scaleDownClientFor(ctx, cluster)
 	if err != nil {
 		logger.Info("Scale-down drain: cannot connect yet, holding replicas", "error", err)
 		return nil
 	}
-	defer nc.Close()
+	defer func() { _ = nc.Close() }()
 
 	servers, err := nc.ListServersFromLeader(ctx)
 	if err != nil {
 		logger.Info("Scale-down drain: SHOW SERVERS failed, holding replicas", "error", err)
 		return nil
 	}
+	// A server that is down — its pod being replaced, say — is listed with no
+	// address, and its name is its id: its ordinal is not in the row. It comes
+	// from the address the server last reported (the address book and
+	// status.diagnostics), else by elimination. Matched on the address alone,
+	// the drain left it out: a 5→3 scale-down issued while server-3's pod was
+	// being replaced drained only server-4, released the hold, and server-3
+	// stayed Enabled/Unavailable for good (#594; operations.md id 213).
+	servers = withKnownAddresses(cluster, servers)
+	unidentified, undecided := unidentifiedRemovedServerIDs(servers, cluster.Name, desired)
 
 	live := map[string]neo4jclient.ServerInfo{}
 	for _, s := range servers {
@@ -304,12 +363,15 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	for _, id := range initialRemovedServerIDs(servers, cluster.Name, desired) {
 		idSet[id] = true
 	}
+	for _, id := range unidentified {
+		idSet[id] = true
+	}
 	for _, id := range drainServerIDsFromAnnotation(cluster) {
 		if s, ok := live[id]; ok && !strings.EqualFold(s.State, "dropped") {
 			idSet[id] = true
 		}
 	}
-	if len(idSet) == 0 {
+	if len(idSet) == 0 && undecided == "" {
 		return r.clearScaleDownState(ctx, cluster)
 	}
 
@@ -325,6 +387,13 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		active = append(active, s)
 	}
 
+	if len(active) == 0 && undecided != "" {
+		// Nothing left it can name, and a server it cannot: keep holding.
+		logger.Info("Scale-down drain: "+undecided, "desired", desired)
+		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonServersPendingDrain,
+			fmt.Sprintf("Scale-down to %d server(s) waits: %s", desired, undecided))
+		return r.setDrainServers(ctx, cluster, provisionalDrainHoldNames(cluster.Name, current, desired))
+	}
 	if len(active) == 0 {
 		logger.Info("Scale-down drain complete; releasing replica hold", "desired", desired)
 		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionFalse, ConditionReasonNoServersPendingDrain, "Scale-down drain complete")
@@ -435,6 +504,30 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonServersPendingDrain,
 		fmt.Sprintf("Scale-down to %d server(s) in progress: draining %d server(s)", desired, len(active)))
 	return nil
+}
+
+// scaleDownClient is what the drain asks Neo4j: *neo4jclient.Client in
+// production, a fake in tests (drainClient).
+type scaleDownClient interface {
+	ListServersFromLeader(ctx context.Context) ([]neo4jclient.ServerInfo, error)
+	MinimumSystemPrimaries(ctx context.Context) int
+	CordonServer(ctx context.Context, serverID string) error
+	DeallocateServers(ctx context.Context, serverIDs []string, dryRun bool) error
+	DropServer(ctx context.Context, serverID string) error
+	Close() error
+}
+
+// scaleDownClientFor is the drain's client: drainClient when a test set it,
+// else the cluster's own.
+func (r *Neo4jEnterpriseClusterReconciler) scaleDownClientFor(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (scaleDownClient, error) {
+	if r.drainClient != nil {
+		return r.drainClient(ctx, cluster)
+	}
+	c, err := r.createNeo4jClient(ctx, cluster)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // provisionalDrainHoldNames returns the StatefulSet pod names of the servers a

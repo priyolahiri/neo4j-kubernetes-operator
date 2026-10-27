@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -32,6 +33,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
+	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
 func formedCluster(name string) *neo4jv1beta1.Neo4jEnterpriseCluster {
@@ -114,4 +116,93 @@ func TestReconcile_CollectsDiagnosticsDuringAnUpgrade(t *testing.T) {
 	got := &appsv1.StatefulSet{}
 	require.NoError(t, fc.Get(context.Background(), types.NamespacedName{Name: "diag-server", Namespace: "default"}, got))
 	assert.Equal(t, int32(2), *got.Spec.UpdateStrategy.RollingUpdate.Partition, "the upgrade step ran and held the walk")
+}
+
+// The v1.23.0 journey (#594): server-2 sat in ImagePullBackOff for 30 minutes
+// during a Rolling step, and the Degraded condition said "All 3 servers are
+// available" while ServersHealthy said it was not. The pass during an upgrade
+// writes the Degraded condition from the SHOW SERVERS its diagnostics read,
+// and nothing else: the phase, the step and the partition stay as they are
+// (operations.md id 214).
+func TestReconcile_DegradedFollowsTheServersDuringAnUpgrade(t *testing.T) {
+	scheme := makeUpgradeScheme()
+	const replicas int32 = 3
+	cluster := formedCluster("rolling-short")
+	cluster.Spec.Storage.ClassName = ""
+	cluster.Finalizers = []string{ClusterFinalizer}
+	now := metav1.Now()
+	cluster.Status.Phase = neo4jv1beta1.PhaseReady
+	available := allServersAvailableCondition(replicas)
+	available.LastTransitionTime = now
+	cluster.Status.Conditions = append(cluster.Status.Conditions, available)
+	cluster.Status.UpgradeStatus = &neo4jv1beta1.UpgradeStatus{
+		Phase: upgradePhaseRolling, TargetVersion: "5.26.31-enterprise",
+		StartTime: &now, StepStartTime: &now, CurrentPartition: ptr.To(int32(2)),
+		Progress: &neo4jv1beta1.UpgradeProgress{Total: replicas, InProgress: 1, Pending: 2},
+	}
+	sts := serverSTSForUpgrade("rolling-short", "default", "neo4j:5.26.31-enterprise", replicas)
+	sts.Generation = 2
+	sts.Spec.UpdateStrategy.RollingUpdate.Partition = ptr.To(int32(2))
+	sts.Status = appsv1.StatefulSetStatus{ObservedGeneration: 2, ReadyReplicas: 2, UpdatedReplicas: 1}
+	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(cluster, sts).WithStatusSubresource(cluster).Build()
+	forgetServerAddresses(cluster)
+	t.Cleanup(func() { forgetServerAddresses(cluster) })
+
+	down := map[int]bool{}
+	rows := func() []neo4jclient.ServerInfo {
+		var out []neo4jclient.ServerInfo
+		for i := 0; i < int(replicas); i++ {
+			s := neo4jclient.ServerInfo{Name: fmt.Sprintf("uuid-%d", i), State: "Enabled", Health: "Available",
+				Address: fmt.Sprintf("rolling-short-server-%d.rolling-short-headless.default.svc.cluster.local:7687", i)}
+			if down[i] {
+				s.Health, s.Address = "Unavailable", "" // SHOW SERVERS: NULL
+			}
+			out = append(out, s)
+		}
+		return out
+	}
+	r := &Neo4jEnterpriseClusterReconciler{Client: fc, Scheme: scheme, Recorder: record.NewFakeRecorder(20), UpgradeGates: &upgradeGates{
+		serverAvailable: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, string, error) {
+			return !down[2], "", nil
+		},
+		databasesCaughtUp: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster, string) (bool, []string, error) {
+			return true, nil, nil
+		},
+		diagnostics: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster) error { return nil },
+		servers: func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster) ([]neo4jclient.ServerInfo, error) {
+			return rows(), nil
+		},
+	}}
+	ctx := context.Background()
+	key := types.NamespacedName{Name: "rolling-short", Namespace: "default"}
+	pass := func() *neo4jv1beta1.Neo4jEnterpriseCluster {
+		t.Helper()
+		_, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+		require.NoError(t, err)
+		got := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+		require.NoError(t, fc.Get(ctx, key, got))
+		return got
+	}
+
+	pass() // every server up: their addresses are known from here on
+	down[2] = true
+	got := pass()
+	degraded := findCondition(got.Status.Conditions, ConditionTypeDegraded)
+	require.NotNil(t, degraded)
+	assert.Equal(t, metav1.ConditionTrue, degraded.Status)
+	assert.Equal(t, ConditionReasonServersUnavailable, degraded.Reason)
+	assert.Contains(t, degraded.Message, "2 of 3 servers available")
+	assert.Contains(t, degraded.Message, "rolling-short-server-2 (Unavailable)")
+	assert.Equal(t, neo4jv1beta1.PhaseReady, got.Status.Phase, "the phase stays as the upgrade keeps it")
+	assert.Equal(t, upgradePhaseRolling, got.Status.UpgradeStatus.Phase)
+	stored := &appsv1.StatefulSet{}
+	require.NoError(t, fc.Get(ctx, types.NamespacedName{Name: "rolling-short-server", Namespace: "default"}, stored))
+	assert.Equal(t, int32(2), *stored.Spec.UpdateStrategy.RollingUpdate.Partition, "the step still waits for server-2")
+
+	down[2] = false
+	got = pass()
+	degraded = findCondition(got.Status.Conditions, ConditionTypeDegraded)
+	require.NotNil(t, degraded)
+	assert.Equal(t, metav1.ConditionFalse, degraded.Status)
+	assert.Equal(t, "All 3 servers are available", degraded.Message)
 }

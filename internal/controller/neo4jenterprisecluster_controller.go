@@ -103,6 +103,9 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// UpgradeGates replaces the network in rolling-upgrade tests (#488); nil
 	// in production.
 	UpgradeGates *upgradeGates
+	// drainClient replaces the scale-down drain's Neo4j client in tests; nil
+	// in production.
+	drainClient func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster) (scaleDownClient, error)
 	// Ignore, when set, makes Reconcile leave alone every cluster it returns
 	// true for. The envtest suite uses it for clusters that stand in for a
 	// Ready cluster in backup and restore specs: envtest runs no pods, so this
