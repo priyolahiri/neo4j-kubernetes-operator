@@ -5380,7 +5380,7 @@ behaviour changes below take effect on the first reconcile.</p>
 <li>Each <code>Neo4jPlugin</code> records on its target's StatefulSet the variables it sets (<code>neo4j.com/plugin-env-vars.&lt;plugin name&gt;</code>) at its first reconcile after the upgrade; writing it restarts nothing. It removes nothing then: a variable left behind by a <code>spec.config</code> key removed before the upgrade is not attributed to the plugin and stays — remove it from the StatefulSet by hand (<code>kubectl edit statefulset &lt;cluster&gt;-server</code>, one rolling restart). Keys you remove after the upgrade take their variables with them.</li>
 </ul>
 <h2 id="upgrading-from-v122x">Upgrading from v1.22.x<a class="headerlink" href="#upgrading-from-v122x" title="Anchor link to this section">&para;</a></h2>
-<p>Apply the new CRDs before upgrading the operator. They add the <code>Disabled</code> phase for <code>Neo4jPlugin</code>, the <code>TopologyChangeDeferred</code> condition and the status field <code>status.upgradeStatus.startedTargetVersion</code> for clusters, and change field descriptions. Upgrading the operator restarts no server by itself, except as listed under <a href="#restarts-after-the-upgrade-1">Restarts after the upgrade</a>.</p>
+<p>Apply the new CRDs before upgrading the operator. They add the <code>Disabled</code> phase for <code>Neo4jPlugin</code>, the <code>TopologyChangeDeferred</code> condition and the status field <code>status.upgradeStatus.startedTargetVersion</code> for clusters, and change field descriptions. Upgrading the operator restarts no server by itself, except as listed under <a href="#restarts-after-the-upgrade_1">Restarts after the upgrade</a>.</p>
 <h3 id="act-now">Act now<a class="headerlink" href="#act-now" title="Anchor link to this section">&para;</a></h3>
 <ul>
 <li><strong>Argo CD: re-apply <code>docs/gitops/argocd-health-checks.yaml</code>.</strong> A stopped upgrade no longer changes the cluster's phase (see below); the new check reads <code>status.upgradeStatus.phase</code> and reports a <code>Failed</code> upgrade as Degraded and a <code>Paused</code> one as Suspended (which, unlike Degraded, does not hold a sync wave). With the old check both show Healthy. The new checks also report a refused <code>Neo4jDatabase</code> (<code>ValidationFailed</code>, or <code>Error</code> while a deletion retries) as Degraded, a <code>Disabled</code> plugin as Healthy, and a resource waiting for its cluster as Progressing.</li>
@@ -5566,7 +5566,7 @@ behaviour changes below take effect on the first reconcile.</p>
    bundle for the version you are upgrading to (replace the tag):</li>
 </ol>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.22.0/neo4j-kubernetes-operator.yaml
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.23.0/neo4j-kubernetes-operator.yaml
 </span></code></pre></div>
 <ol>
 <li><strong>Upgrade the operator</strong> via Helm:</li>
