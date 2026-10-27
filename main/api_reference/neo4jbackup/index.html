@@ -5268,7 +5268,7 @@
 </tr>
 <tr>
 <td><code>Failed</code></td>
-<td>The one-shot backup Job failed terminally (Job <code>Failed</code> condition, after retries) or a non-transient error occurred (e.g. chain target/storage mismatch). Terminal for one-shot backups.</td>
+<td>The one-shot backup Job failed terminally (Job <code>Failed</code> condition, after retries) or a non-transient error occurred (e.g. chain target/storage mismatch). Terminal for one-shot backups. A failed Job's <code>status.message</code> and <code>BackupFailed</code> event say why — the Job's reason and the exit code and last lines of the backup container (e.g. <code>Backup job b-backup failed (BackoffLimitExceeded: Job has reached the specified backoff limit): backup exited with code 1: … Unable to connect to …</code>), as the run's <code>status.history[].error</code> does.</td>
 </tr>
 <tr>
 <td><code>Invalid</code></td>
@@ -5348,7 +5348,7 @@
 <tr>
 <td><code>error</code></td>
 <td><code>string</code></td>
-<td>Error message if the backup failed</td>
+<td>Why the run failed (set on <code>Failed</code> runs, one-shot and scheduled alike): "Backup job <job> failed (&lt;the Job's reason&gt;: <its message>): backup exited with code <n>: <the last lines the container wrote>" — the Job's <code>Failed</code> condition and the backup container's termination message, the tail of its log. A run recorded by an operator before v1.23 has none</td>
 </tr>
 <tr>
 <td><code>stats</code></td>

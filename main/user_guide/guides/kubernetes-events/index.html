@@ -4501,12 +4501,12 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>BackupFailed</code></td>
 <td>Warning</td>
-<td>Backup job failed (once, from the write that makes the backup <code>Failed</code>), or the spec is invalid (phase <code>Invalid</code>, once per refusal)</td>
+<td>Backup job failed (once, from the write that makes the backup <code>Failed</code>), saying why as <code>status.message</code> does: "Backup job <name> failed (&lt;the Job's reason&gt;: <its message>): backup exited with code <n>: <the last lines the container wrote>" (it was "Backup job failed" alone); a scheduled backup's failed run carries the same text in its <code>status.history[].error</code>. Or the spec is invalid (phase <code>Invalid</code>, once per refusal)</td>
 </tr>
 <tr>
 <td><code>RestoreStarted</code></td>
 <td>Normal</td>
-<td>Restore operation has started, once per attempt. A restore that runs a <code>neo4j-admin</code> Job announces it when the restore turns <code>Running</code> (never for a restore a check then refuses): "Restore job … started", and for a standalone restore that runs offline (a point in time, a <code>source.type: storage</code> path) why — with <code>stopCluster: true</code> it says the restore stops the standalone, with <code>stopCluster: false</code> that the standalone is stopped already. One event: the offline reason used to be a second <code>RestoreStarted</code> of its own. An all-databases restore announces its start once, naming how many databases it restores — once per attempt, not again after a wait mid-way (a target briefly unavailable, the seed proxy restarting); each database's progress is in <code>status.databaseResults</code></td>
+<td>Restore operation has started, once per attempt. A restore that runs a <code>neo4j-admin</code> Job announces it when the restore turns <code>Running</code> (never for a restore a check then refuses): "Restore job … started", and for a standalone restore that runs offline (a point in time, a <code>source.type: storage</code> path) why — with <code>stopCluster: true</code> it says the restore stops the standalone, with <code>stopCluster: false</code> that the standalone is stopped already. One event: the offline reason used to be a second <code>RestoreStarted</code> of its own. An online restore announces "Online restore into …" once; into a standalone with <code>stopCluster: true</code> the same event says <code>spec.stopCluster is ignored</code> (the standalone is restored online), which was a second <code>RestoreStarted</code> of its own. An all-databases restore announces its start once, naming how many databases it restores — once per attempt, not again after a wait mid-way (a target briefly unavailable, the seed proxy restarting); each database's progress is in <code>status.databaseResults</code></td>
 </tr>
 <tr>
 <td><code>RestoreCompleted</code></td>
@@ -4516,7 +4516,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>RestoreFailed</code></td>
 <td>Warning</td>
-<td>Restore operation failed. Also once at the end of an all-databases restore in which a database failed</td>
+<td>Restore operation failed. A failed restore Job says why, as <code>status.message</code> does: "Restore job <name> failed (&lt;the Job's reason&gt;: <its message>): neo4j-restore exited with code <n>: <the last lines the container wrote>" — the restore container's termination message, the tail of its log (it was "Restore job failed" alone). An online restore over a database that exists without <code>options.replaceExisting</code> raises it once. A spec the operator refuses before anything runs (<code>database: system</code>, an offline restore into a running standalone without <code>stopCluster</code>, a database that exists, a Neo4j version it does not support) is <code>Failed</code> with the reason in <code>status.message</code>, logged once at info, never as an ERROR. Also once at the end of an all-databases restore in which a database failed</td>
 </tr>
 <tr>
 <td><code>RestoreFromChainParent</code></td>
