@@ -236,6 +236,8 @@ Works with both cluster and standalone. `DatabaseValidator` tries cluster lookup
 
 **Standalone needs `NEO4J_AUTH`** env var for automatic password setup (required for Neo4jDatabase support).
 
+**Duplicate names:** two CRs of one database kind (`Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jCompositeDatabase`, `Neo4jDatabaseAlias`) that give one name on one target, ignoring case, are one object in Neo4j: the older owns it, the newer is `Failed` (`DuplicateName`) and takes over once the older goes, and deleting a CR whose name another still gives drops nothing (`DuplicateNameKept`; `docs/knowledge/operations.md` id 217).
+
 ## Neo4jUser, Neo4jRole & Neo4jRoleBinding CRDs
 
 Three CRDs, one design rule: **privileges live on `Neo4jRole`, not `Neo4jUser` or `Neo4jRoleBinding`**. Users carry only `roles: []`; roles carry `privileges: []` (and/or structured `privilegeRules: []`); bindings carry only `roles: []`. See `docs/user_guide/user_role_management.md`.
