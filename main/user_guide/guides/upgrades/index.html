@@ -4073,7 +4073,7 @@ operator restarts:</p>
 </tr>
 <tr>
 <td><code>Rolling</code></td>
-<td>Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (<code>SHOW SERVERS</code>) <strong>and</strong> that pod's databases (<code>dbms.cluster.statusCheck</code>, <code>SHOW DATABASES</code>) are verified before the partition is lowered</td>
+<td>Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (<code>SHOW SERVERS</code>) <strong>and</strong> that pod's databases (<code>dbms.cluster.statusCheck</code>, <code>SHOW DATABASES</code>) are verified before the partition is lowered. While a server is unavailable — the one restarting, or one that cannot start on the target — the cluster's <code>Degraded</code> condition is <code>True</code> and names it; the phase stays as it is</td>
 </tr>
 <tr>
 <td><code>Stabilizing</code></td>

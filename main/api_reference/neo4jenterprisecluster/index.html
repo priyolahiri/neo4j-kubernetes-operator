@@ -8774,6 +8774,13 @@ visible via <code>kubectl get svc</code>.</p>
 <td>unchanged</td>
 <td>pause</td>
 </tr>
+<tr>
+<td>A rolling image upgrade in progress, a server unavailable (the one restarting, or one that cannot start)</td>
+<td>as the upgrade keeps it (<code>Ready</code>)</td>
+<td>as the phase</td>
+<td><code>True</code>, naming it; <code>False</code> once every server is available</td>
+<td>proceed</td>
+</tr>
 </tbody>
 </table>
 <p>¹ <code>Neo4jUser</code>, <code>Neo4jRole</code>, <code>Neo4jRoleBinding</code>, <code>Neo4jAuthRule</code>, <code>Neo4jDatabase</code>, <code>Neo4jShardedDatabase</code>, <code>Neo4jDatabaseAlias</code>, <code>Neo4jCompositeDatabase</code>, <code>Neo4jReplicaDatabase</code>, <code>Neo4jReplicaPromotion</code> and <code>Neo4jBackup</code>. Whether a statement can run on the servers that are up is Neo4j's call, reported on that resource. Operations that restart every server — a rolling image upgrade, a <code>Neo4jPlugin</code> install — wait until every server is back.</p>
