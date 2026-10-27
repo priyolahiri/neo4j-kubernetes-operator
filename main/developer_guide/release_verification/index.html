@@ -4733,6 +4733,10 @@ standalone backup" as one of Phase 1's outputs.</p>
 <td>Repeat Phase 1's stored-form row on the 3-server cluster: <code>PrivilegesSynced=True</code>, stable across forced reconciles, drift repaired both ways. This is the row that proves learn mode's before/after reads (and, with the flag, probe's) are causally ordered with the grant when the write lands on a leader the read might not</td>
 </tr>
 <tr>
+<td>A role is announced once its privileges are applied; learn mode names an alias it cannot tell (rule 216)</td>
+<td>Apply a <code>Neo4jRole</code> granting on a database, together with that <code>Neo4jDatabase</code>, in one directory: <code>RoleCreated</code>, then <code>PrivilegesApplied</code>, then <strong>one</strong> <code>RoleReady</code> with the real count — no "(0 privileges in sync)". While the database is missing the role reads <code>Ready</code> with reason <code>PrivilegesWaitForDatabase</code>. Then create an alias <code>current</code> for a database another statement of the role already grants on, and add <code>GRANT ACCESS ON DATABASE current TO …</code>: <code>PrivilegesSynced=Unknown</code>/<code>UnattributedPrivileges</code> whose message names the statement and "<code>current</code> is an alias for database <code>…</code>" and says to grant on the target database — not "cannot attribute 0 privilege row(s)"</td>
+</tr>
+<tr>
 <td>Database <strong>with topology</strong></td>
 <td>e.g. <code>3 PRIMARIES</code>; <code>SHOW DATABASE &lt;db&gt;</code> shows the primaries <code>online</code></td>
 </tr>
@@ -4787,6 +4791,10 @@ standalone backup" as one of Phase 1's outputs.</p>
 <tr>
 <td>Deletions log no ERROR (rule 189)</td>
 <td>At the end of the phase, delete the <code>Neo4jPlugin</code>s (one at a time, then the rest together), the <code>Neo4jDatabase</code>s and the cluster itself, and count <code>kubectl logs &lt;operator&gt; \| grep -cE 'ERROR.*(finalizer\|Reconciler error)'</code>: <strong>0</strong>. Before, a cluster deletion logged "Failed to update cluster after removing finalizer … the object has been modified" (a Conflict from a copy older than its own status write) and about one plugin deletion in three "Failed to remove finalizer … not found", each with a "Reconciler error"</td>
+</tr>
+<tr>
+<td>A teardown that deletes the deployment first raises no ClusterNotFound (rule 216)</td>
+<td>Delete the cluster, then (within a minute) its users, roles, bindings, databases, composites and aliases, or delete the namespace: <code>kubectl get events --field-selector reason=ClusterNotFound</code> lists <strong>none</strong> for them. Delete a throwaway standalone alone and keep a <code>Neo4jUser</code> that names it: the user reads <code>Pending</code>/<code>ClusterNotFound</code> at once, and <strong>one</strong> <code>ClusterNotFound</code> Warning comes about a minute later</td>
 </tr>
 <tr>
 <td>Creations log no Conflict (rule 199)</td>

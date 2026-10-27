@@ -5044,7 +5044,7 @@ crash mid-probe; it holds one privilege, has no users, and is safe to drop.</p>
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td>Role exists, privileges in sync</td>
+<td>Role exists, privileges in sync. Reason <code>PrivilegesWaitForDatabase</code>: a new role whose statements wait for their database is <code>Ready</code> and announces <code>RoleReady</code> only once they are applied</td>
 </tr>
 <tr>
 <td><code>PrivilegesSynced</code></td>
