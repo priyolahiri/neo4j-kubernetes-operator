@@ -63,6 +63,10 @@ type Neo4jCompositeDatabaseReconciler struct {
 	// newNeo4jClient connects Reconcile to the resolved target; nil uses
 	// ResolvedTarget.NewClient. Tests script the server here.
 	newNeo4jClient func(ResolvedTarget) (compositeNeo4jClient, error)
+
+	// targetGone defers the ClusterNotFound Warning of a target that went
+	// away (target_gone.go).
+	targetGone targetGoneNotices
 }
 
 // compositeNeo4jClient is what the Neo4jCompositeDatabase reconcile asks of
@@ -175,8 +179,12 @@ func (r *Neo4jCompositeDatabaseReconciler) Reconcile(ctx context.Context, req ct
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(cd.Spec.ClusterRef))
 		// A wait, announced once: when it starts, not on every pass until the
 		// deployment exists (operations.md ids 145 and 182).
-		if r.setStatus(ctx, cd, neo4jv1beta1.PhasePending, metav1.ConditionFalse,
-			EventReasonClusterNotFound, msg, nil) {
+		hadTarget := hadFoundTarget(cd.Status.Conditions)
+		entered := r.setStatus(ctx, cd, neo4jv1beta1.PhasePending, metav1.ConditionFalse,
+			EventReasonClusterNotFound, msg, nil)
+		// A target that went away is announced only if the dependent outlasts
+		// it by a minute: a teardown deletes the dependent first (#594).
+		if r.targetGone.announce(cd, entered, hadTarget, time.Now()) {
 			r.Recorder.Event(cd, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: requeue}, nil

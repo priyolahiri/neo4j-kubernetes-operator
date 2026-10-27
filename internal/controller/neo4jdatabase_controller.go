@@ -77,6 +77,10 @@ type Neo4jDatabaseReconciler struct {
 	// cluster, or the standalone when cluster is nil. nil selects the real
 	// one; tests substitute a scripted server.
 	newNeo4jClient func(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (databaseNeo4jClient, error)
+
+	// targetGone defers the ClusterNotFound Warning of a target that went
+	// away (target_gone.go).
+	targetGone targetGoneNotices
 }
 
 const (
@@ -174,8 +178,12 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		ref := database.Spec.ClusterRef
 		// Announced when the wait starts, not on every RequeueAfter until the
 		// host exists (knowledge rule 145).
-		if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotFound,
-			fmt.Sprintf("Referenced host %s not found", ref)) {
+		hadTarget := hadFoundTarget(database.Status.Conditions)
+		entered := r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonClusterNotFound,
+			fmt.Sprintf("Referenced host %s not found", ref))
+		// A target that went away is announced only if the dependent outlasts
+		// it by a minute: a teardown deletes the dependent first (#594).
+		if r.targetGone.announce(database, entered, hadTarget, time.Now()) {
 			r.Recorder.Eventf(database, corev1.EventTypeWarning, EventReasonClusterNotFound,
 				"Referenced host %s not found", ref)
 		}

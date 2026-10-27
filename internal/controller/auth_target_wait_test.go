@@ -198,7 +198,7 @@ func TestRoleReconcile_ATargetRestartIsNotATransition(t *testing.T) {
 		return got
 	}
 
-	r.reportReady(ctx, live(), "analyst", `role "analyst" is in sync (2 privileges)`, []string{"a", "b"}, false)
+	r.reportReady(ctx, live(), "analyst", `role "analyst" is in sync (2 privileges)`, []string{"a", "b"}, false, 0)
 	require.Len(t, eventsWithReason(drainEvents(rec), EventReasonRoleReady), 1)
 
 	for range targetRestarts {
@@ -208,13 +208,13 @@ func TestRoleReconcile_ATargetRestartIsNotATransition(t *testing.T) {
 		setStandaloneReady(t, c, true)
 		// The pass that finds the target back, from a copy as old as the
 		// role itself: the write, not the copy, decides.
-		r.reportReady(ctx, role.DeepCopy(), "analyst", `role "analyst" is in sync (2 privileges)`, []string{"a", "b"}, false)
+		r.reportReady(ctx, role.DeepCopy(), "analyst", `role "analyst" is in sync (2 privileges)`, []string{"a", "b"}, false, 0)
 	}
 	assert.Empty(t, eventsWithReason(drainEvents(rec), EventReasonRoleReady))
 
 	// Back from a failure of its own: announced.
 	r.setStatus(ctx, role, "Failed", metav1.ConditionFalse, EventReasonRoleSyncFailed, "boom", nil, false)
-	r.reportReady(ctx, live(), "analyst", `role "analyst" is in sync (2 privileges)`, []string{"a", "b"}, false)
+	r.reportReady(ctx, live(), "analyst", `role "analyst" is in sync (2 privileges)`, []string{"a", "b"}, false, 0)
 	assert.Len(t, eventsWithReason(drainEvents(rec), EventReasonRoleReady), 1)
 }
 

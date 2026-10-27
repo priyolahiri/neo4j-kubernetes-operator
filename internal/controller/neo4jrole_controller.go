@@ -28,6 +28,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -84,6 +85,10 @@ type Neo4jRoleReconciler struct {
 	// transients is the quiet retry of a statement Neo4j asks to be
 	// retried (transient_retry.go).
 	transients transientStreaks
+
+	// targetGone defers the ClusterNotFound Warning of a target that went
+	// away (target_gone.go).
+	targetGone targetGoneNotices
 }
 
 // roleDeletionClient is what the Neo4jRole deletion asks of Neo4j.
@@ -167,7 +172,11 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(role.Spec.ClusterRef))
 		// A wait, announced once: when it starts, not on every pass until the
 		// deployment exists (operations.md ids 145 and 182).
-		if r.setStatus(ctx, role, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, false) {
+		hadTarget := hadFoundTarget(role.Status.Conditions)
+		entered := r.setStatus(ctx, role, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil, false)
+		// A target that went away is announced only if the dependent outlasts
+		// it by a minute: a teardown deletes the dependent first (#594).
+		if r.targetGone.announce(role, entered, hadTarget, time.Now()) {
 			r.Recorder.Event(role, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: requeue}, nil
@@ -240,7 +249,7 @@ func (r *Neo4jRoleReconciler) Reconcile(ctx context.Context, req ctrl.Request) (
 	stmts := rolePrivilegeStatements(role)
 	scope := roleRenderingScope(target, aliases, aliasesListed, stmts)
 	if r.learnMode() {
-		return r.reconcileLearned(ctx, nc, role, roleName, scope, resolves, requeue)
+		return r.reconcileLearned(ctx, nc, role, roleName, scope, aliases, resolves, requeue)
 	}
 
 	// Privilege diff, against the server's own rendering of each statement
@@ -387,23 +396,72 @@ func (r *Neo4jRoleReconciler) finishReconcile(
 		readyMsg = fmt.Sprintf("role %q is in sync (%d privileges; %d skipped until their database exists, see PrivilegesResolve)",
 			roleName, len(final), unresolved)
 	}
-	r.reportReady(ctx, role, roleName, readyMsg, final, drift)
+	r.reportReady(ctx, role, roleName, readyMsg, final, drift, unresolved)
 
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
-// reportReady writes the Ready status and announces RoleReady when that write
-// moves the persisted phase into Ready — never from this pass's copy, which
-// the informer cache may hold from before the last write, so it is once per
-// transition. A restart of the target is not one (waitForTarget; knowledge
-// rule 158).
+// reportReady writes the Ready status and announces RoleReady from that
+// write, never from this pass's copy, which the informer cache may hold from
+// before the last write, so it is once per transition. A restart of the target
+// is not one (waitForTarget; knowledge rule 158).
+//
+// waiting is how many spec statements were skipped because their database
+// does not exist yet. A role that has never been announced Ready records
+// that as Ready with reason PrivilegesWaitForDatabase, announcing nothing, and
+// RoleReady comes from the pass that applies them, with their count. A role
+// applied with the database it grants on announced "Role is ready (0
+// privileges in sync)" before its PrivilegesApplied (v1.23.0 journey, #594). A
+// role announced Ready keeps its reason when a database it grants on goes
+// away; PrivilegesResolve and PrivilegeTargetDropped say so.
 func (r *Neo4jRoleReconciler) reportReady(
-	ctx context.Context, role *neo4jv1beta1.Neo4jRole, roleName, readyMsg string, final []string, drift bool,
+	ctx context.Context, role *neo4jv1beta1.Neo4jRole, roleName, readyMsg string, final []string, drift bool, waiting int,
 ) {
-	if _, entered := r.writeStatus(ctx, role, "Ready", metav1.ConditionTrue, ConditionReasonRoleReady, readyMsg, final, drift); entered {
+	if r.writeReady(ctx, role, readyMsg, final, drift, waiting) {
 		r.Recorder.Eventf(role, corev1.EventTypeNormal, EventReasonRoleReady,
 			"Role %q is ready (%d privileges in sync)", roleName, len(final))
 	}
+}
+
+// writeReady writes phase Ready, and reports whether the write moved the role
+// into Ready with reason RoleReady from anything else — the transition
+// RoleReady announces. The reason is PrivilegesWaitForDatabase while waiting
+// statements keep a role that was not announced Ready from being so.
+func (r *Neo4jRoleReconciler) writeReady(
+	ctx context.Context, role *neo4jv1beta1.Neo4jRole, message string, appliedPrivileges []string, drift bool, waiting int,
+) (announce bool) {
+	update := func() error {
+		announce = false
+		latest := &neo4jv1beta1.Neo4jRole{}
+		if err := r.Get(ctx, client.ObjectKeyFromObject(role), latest); err != nil {
+			return err
+		}
+		prior := meta.FindStatusCondition(latest.Status.Conditions, ConditionTypeReady)
+		announced := latest.Status.Phase == "Ready" && prior != nil && prior.Status == metav1.ConditionTrue &&
+			prior.Reason == ConditionReasonRoleReady
+		reason := ConditionReasonRoleReady
+		if waiting > 0 && !announced {
+			reason = ConditionReasonPrivilegesWaitForDatabase
+		}
+		SetReadyCondition(&latest.Status.Conditions, latest.Generation, metav1.ConditionTrue, reason, message)
+		latest.Status.Phase = "Ready"
+		latest.Status.Message = message
+		latest.Status.ObservedGeneration = latest.Generation
+		if appliedPrivileges != nil {
+			latest.Status.AppliedPrivileges = appliedPrivileges
+		}
+		latest.Status.PrivilegeDrift = drift
+		if err := r.Status().Update(ctx, latest); err != nil {
+			return err
+		}
+		announce = reason == ConditionReasonRoleReady && !announced
+		return nil
+	}
+	if err := retry.RetryOnConflict(retry.DefaultBackoff, update); err != nil {
+		log.FromContext(ctx).Error(err, "failed to update Neo4jRole status")
+		return false
+	}
+	return announce
 }
 
 func (r *Neo4jRoleReconciler) handleDeletion(ctx context.Context, role *neo4jv1beta1.Neo4jRole, roleName string) (ctrl.Result, error) {

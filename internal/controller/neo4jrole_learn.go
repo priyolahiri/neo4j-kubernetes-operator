@@ -462,7 +462,7 @@ func sortedKeys(m map[string]bool) []string {
 // reconcileLearned is the privilege diff in learn mode.
 func (r *Neo4jRoleReconciler) reconcileLearned(
 	ctx context.Context, nc *neo4jclient.Client, role *neo4jv1beta1.Neo4jRole,
-	roleName, scope string, resolves func(string) bool, requeue time.Duration,
+	roleName, scope string, aliases []neo4jclient.AliasInfo, resolves func(string) bool, requeue time.Duration,
 ) (ctrl.Result, error) {
 	_, _, currentShown, err := r.fetchCurrentPrivileges(ctx, nc, roleName)
 	if err != nil {
@@ -564,27 +564,81 @@ func (r *Neo4jRoleReconciler) reconcileLearned(
 			"some privileges could not be reconciled (e.g. immutable). See events."
 	case len(unattributed) > 0 || len(lo.ambiguous) > 0:
 		syncedStatus, syncedReason = metav1.ConditionUnknown, ConditionReasonPrivilegesUnattributed
-		syncedMsg = unattributedMessage(unattributed, lo.ambiguous)
+		syncedMsg = unattributedMessage(unattributed, lo.ambiguous, aliases)
 	}
 	return r.finishReconcile(ctx, nc, role, roleName, applied, len(revoked), len(lo.unresolved), drift,
 		syncedStatus, syncedReason, syncedMsg, requeue)
 }
 
-func unattributedMessage(rows, ambiguous []string) string {
+// unattributedMessage is PrivilegesSynced's message in learn mode while it
+// cannot attribute every row: the rows it keeps, and the statements whose own
+// rows it cannot tell (ambiguous) — each with why and what clears it. A role
+// whose only problem was an ambiguous statement granted through an alias read
+// "cannot attribute 0 privilege row(s)", which named neither (#594).
+func unattributedMessage(rows, ambiguous []string, aliases []neo4jclient.AliasInfo) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "learn mode (--privilege-normalisation=learn) cannot attribute %d privilege row(s) on this role "+
-		"to a spec statement, so it does not revoke them", len(rows))
 	if len(rows) > 0 {
-		fmt.Fprintf(&b, ": %s", summarise(rows, 5))
+		fmt.Fprintf(&b, "learn mode (--privilege-normalisation=learn) cannot attribute %d privilege row(s) on this "+
+			"role to a spec statement, so it does not revoke them: %s. Remove unwanted rows by hand — learn mode "+
+			"re-learns once a row it could not attribute goes away.", len(rows), summarise(rows, 5))
 	}
-	b.WriteString(".")
 	if len(ambiguous) > 0 {
-		fmt.Fprintf(&b, " Statements whose stored rows are unknown, because everything they grant was already there: %s.",
-			summarise(ambiguous, 5))
+		if b.Len() > 0 {
+			b.WriteString(" ")
+		}
+		fmt.Fprintf(&b, "learn mode (--privilege-normalisation=learn) cannot tell which stored rows belong to %s: "+
+			"granting %s added no row, because the role already had everything %s grants",
+			summarise(ambiguous, 5), pluralThem(len(ambiguous)), pluralThey(len(ambiguous)))
+		var through []string
+		for _, stmt := range ambiguous {
+			through = append(through, aliasesNamedBy(stmt, aliases)...)
+		}
+		if len(through) > 0 {
+			fmt.Fprintf(&b, " — %s, and Neo4j stores a privilege on an alias as one on its target, which another "+
+				"privilege of the role already grants", strings.Join(through, "; "))
+		}
+		b.WriteString(". While that is so, no row the role has and no statement claims is revoked. To clear it, ")
+		if len(through) > 0 {
+			b.WriteString("grant on the target database instead of the alias, or ")
+		}
+		b.WriteString("remove the statement another one already covers.")
 	}
-	b.WriteString(" Remove unwanted rows by hand — learn mode re-learns once a row it could not attribute goes away — " +
-		"or run the operator with --privilege-normalisation=probe, which attributes every row exactly.")
+	b.WriteString(" Or run the operator with --privilege-normalisation=probe, which attributes every row exactly.")
 	return b.String()
+}
+
+// aliasesNamedBy describes each alias stmt names: "`latest` is an alias for
+// database `orders`".
+func aliasesNamedBy(stmt string, aliases []neo4jclient.AliasInfo) []string {
+	names, _ := neo4jclient.PrivilegeAliasDependence(stmt)
+	var out []string
+	for _, name := range names {
+		for _, a := range aliases {
+			if !strings.EqualFold(a.Name, name) {
+				continue
+			}
+			if a.URL != "" {
+				out = append(out, fmt.Sprintf("`%s` is a remote alias", a.Name))
+			} else {
+				out = append(out, fmt.Sprintf("`%s` is an alias for database `%s`", a.Name, a.Database))
+			}
+		}
+	}
+	return out
+}
+
+func pluralThem(n int) string {
+	if n == 1 {
+		return "it"
+	}
+	return "them"
+}
+
+func pluralThey(n int) string {
+	if n == 1 {
+		return "it"
+	}
+	return "they"
 }
 
 func summarise(items []string, max int) string {

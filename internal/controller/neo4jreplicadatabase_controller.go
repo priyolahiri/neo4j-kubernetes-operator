@@ -74,6 +74,10 @@ type Neo4jReplicaDatabaseReconciler struct {
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
 	advisoryWarnings advisoryWarnings
+
+	// targetGone defers the ClusterNotFound Warning of a target that went
+	// away (target_gone.go).
+	targetGone targetGoneNotices
 }
 
 // neo4jClientFor returns the Neo4j client for a resolved target.
@@ -177,8 +181,12 @@ func (r *Neo4jReplicaDatabaseReconciler) Reconcile(ctx context.Context, req ctrl
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(replica.Spec.ClusterRef))
 		// A wait, announced once: when it starts, not on every pass until the
 		// deployment exists (operations.md ids 145 and 182).
-		if r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
-			EventReasonClusterNotFound, msg, nil) {
+		hadTarget := hadFoundTarget(replica.Status.Conditions)
+		entered := r.setStatus(ctx, replica, neo4jv1beta1.ReplicaPhasePending, metav1.ConditionFalse,
+			EventReasonClusterNotFound, msg, nil)
+		// A target that went away is announced only if the dependent outlasts
+		// it by a minute: a teardown deletes the dependent first (#594).
+		if r.targetGone.announce(replica, entered, hadTarget, time.Now()) {
 			r.Recorder.Event(replica, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: requeue}, nil

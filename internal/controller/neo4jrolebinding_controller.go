@@ -75,6 +75,10 @@ type Neo4jRoleBindingReconciler struct {
 	// transients is the quiet retry of a statement Neo4j asks to be
 	// retried (transient_retry.go).
 	transients transientStreaks
+
+	// targetGone defers the ClusterNotFound Warning of a target that went
+	// away (target_gone.go).
+	targetGone targetGoneNotices
 }
 
 // roleBindingNeo4jClient is what the Neo4jRoleBinding reconciler asks of
@@ -159,7 +163,11 @@ func (r *Neo4jRoleBindingReconciler) Reconcile(ctx context.Context, req ctrl.Req
 		msg := fmt.Sprintf("%s not found", targetRefDisplay(rb.Spec.ClusterRef))
 		// A wait, announced once: when it starts, not on every pass until the
 		// deployment exists (operations.md ids 145 and 182).
-		if r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil) {
+		hadTarget := hadFoundTarget(rb.Status.Conditions)
+		entered := r.setStatus(ctx, rb, "Pending", metav1.ConditionFalse, EventReasonClusterNotFound, msg, nil)
+		// A target that went away is announced only if the dependent outlasts
+		// it by a minute: a teardown deletes the dependent first (#594).
+		if r.targetGone.announce(rb, entered, hadTarget, time.Now()) {
 			r.Recorder.Event(rb, corev1.EventTypeWarning, EventReasonClusterNotFound, msg)
 		}
 		return ctrl.Result{RequeueAfter: requeue}, nil

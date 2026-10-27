@@ -230,7 +230,7 @@
   {
     "id": "ev-cluster-not-found",
     "name": "ClusterNotFound",
-    "description": "The CR's clusterRef did not resolve to a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (a Neo4jShardedDatabase: a cluster) in the namespace. The resource waits in phase Pending and carries on once it exists: Neo4jDatabase, Neo4jShardedDatabase, Neo4jUser, Neo4jRole, Neo4jRoleBinding, Neo4jAuthRule, Neo4jCompositeDatabase, Neo4jDatabaseAlias, Neo4jReplicaDatabase, Neo4jPlugin (a Neo4jPlugin was Failed before, and installs as usual once its target exists), Neo4jRestore, and Neo4jBackup, which keeps its documented phase Waiting; the backup and the restore say \"Waiting for target to appear: …\" (operations.md id 198). A missing deployment is never a validation failure (operations.md id 182). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per wait, not on every retry, nor after an operator restart (id 145).",
+    "description": "The CR's clusterRef did not resolve to a Neo4jEnterpriseCluster or Neo4jEnterpriseStandalone (a Neo4jShardedDatabase: a cluster) in the namespace. The resource waits in phase Pending and carries on once it exists: Neo4jDatabase, Neo4jShardedDatabase, Neo4jUser, Neo4jRole, Neo4jRoleBinding, Neo4jAuthRule, Neo4jCompositeDatabase, Neo4jDatabaseAlias, Neo4jReplicaDatabase, Neo4jPlugin (a Neo4jPlugin was Failed before, and installs as usual once its target exists), Neo4jRestore, and Neo4jBackup, which keeps its documented phase Waiting; the backup and the restore say \"Waiting for target to appear: …\" (operations.md id 198). A missing deployment is never a validation failure (operations.md id 182). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per wait, not on every retry, nor after an operator restart (id 145). For an object whose target went away, only if the object outlasts the target by a minute; a teardown raises none (operations.md id 216).",
     "moduleId": "mod-database"
   },
   {
@@ -632,7 +632,7 @@
   {
     "id": "ev-role-ready",
     "name": "RoleReady",
-    "description": "Emitted when a Neo4jRole becomes Ready — privileges match spec.privileges — the first time, or back from a failure of its own (reportReady, neo4jrole_controller.go). Announced from the status write that moved the persisted phase into Ready, never from the pass's copy; a Ready role stays Ready while its target restarts (knowledge operations.md id 158).",
+    "description": "Emitted when a Neo4jRole becomes Ready — privileges match spec.privileges — the first time, or back from a failure of its own (reportReady, neo4jrole_controller.go). Announced from the status write that moved the persisted phase into Ready, never from the pass's copy; a Ready role stays Ready while its target restarts (knowledge operations.md id 158). A new role whose statements wait for their database announces it only once they are applied, after its PrivilegesApplied (operations.md id 216).",
     "moduleId": "mod-security"
   },
   {
