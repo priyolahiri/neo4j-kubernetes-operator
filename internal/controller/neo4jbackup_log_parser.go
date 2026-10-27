@@ -420,7 +420,7 @@ func (r *Neo4jBackupReconciler) fetchBackupPodLog(ctx context.Context, jobName, 
 		// Container name matters for log API since Pods could carry more
 		// than one container in theory; for the backup case it's always
 		// just the one.
-		Container: "backup",
+		Container: backupContainerName,
 	})
 	stream, err := req.Stream(ctx)
 	if err != nil {

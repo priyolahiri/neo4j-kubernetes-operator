@@ -403,7 +403,7 @@ func TestStartRestore_OfflineRestoreIsAnnouncedOnlyOnceItsChecksPass(t *testing.
 		r := statusRestoreReconciler(t, sa, pod, restore)
 
 		_, err := r.startRestore(context.Background(), restore, standaloneAsCluster(sa))
-		require.Error(t, err)
+		require.NoError(t, err, "a refusal is a status, not a reconcile error (knowledge id 215)")
 
 		got := &neo4jv1beta1.Neo4jRestore{}
 		require.NoError(t, r.Get(context.Background(), types.NamespacedName{Name: "r", Namespace: "ns"}, got))

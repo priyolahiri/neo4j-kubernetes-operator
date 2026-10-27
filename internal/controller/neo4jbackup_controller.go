@@ -458,6 +458,10 @@ func (r *Neo4jBackupReconciler) reconcileScheduledHistory(ctx context.Context, b
 			if backupRunAlreadyRecorded(latest.Status.History, run, string(job.UID)) {
 				continue
 			}
+			if run.Status == "Failed" {
+				// Why the run failed, in its history entry (knowledge id 215).
+				run.Error = jobFailureMessage(ctx, r.Client, "Backup job", job, backupContainerName)
+			}
 			// F3 / F4: augment with per-Job filename/size + validation
 			// from the Job's pod logs. Each CronJob child has its own Pod
 			// with its own log, so we fetch per-Job rather than once per
@@ -794,9 +798,12 @@ func (r *Neo4jBackupReconciler) handleExistingBackupJob(ctx context.Context, bac
 		// this, failed one-shot Jobs flipped phase=Failed but never appeared
 		// in history, so the only signal of past failures was the metrics
 		// counter and the transient Job object (which TTL'd out after 5
-		// minutes).
-		if r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, "Backup job failed") {
-			r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, "Backup job failed")
+		// minutes). The status, the event and the run's history entry say why:
+		// "Backup job failed" alone sent the reader to a pod the Job's TTL
+		// removes (knowledge id 215).
+		msg := jobFailureMessage(ctx, r.Client, "Backup job", job, backupContainerName)
+		if r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, msg) {
+			r.Recorder.Event(backup, corev1.EventTypeWarning, EventReasonBackupFailed, msg)
 			backupM.RecordBackup(ctx, false, jobDuration(job))
 		}
 		r.recordOneShotBackupRun(ctx, backup, job)
@@ -1315,14 +1322,17 @@ func (r *Neo4jBackupReconciler) createBackupJob(ctx context.Context, backup *neo
 					ImagePullSecrets: resources.ImagePullSecretsFromNames(cluster.Spec.Image.PullSecrets),
 					Containers: []corev1.Container{
 						{
-							Name:            "backup",
+							Name:            backupContainerName,
 							Image:           image,
 							Command:         []string{"/bin/sh"},
 							Args:            []string{"-c", backupCmd},
 							Env:             append([]corev1.EnvVar{backupRunIDEnvVar()}, r.buildCloudEnvVars(backup)...),
 							VolumeMounts:    r.buildVolumeMounts(backup),
 							SecurityContext: resources.DefaultNeo4jContainerSecurityContext(),
-							Resources:       resolveJobResources(backup.Spec.Options),
+							// A failure's termination message is the tail of
+							// the log, which jobFailureMessage reports.
+							TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+							Resources:                resolveJobResources(backup.Spec.Options),
 						},
 					},
 					Volumes: r.buildVolumes(backup),
@@ -1493,14 +1503,18 @@ func (r *Neo4jBackupReconciler) createBackupCronJob(ctx context.Context, backup 
 						ImagePullSecrets: resources.ImagePullSecretsFromNames(cluster.Spec.Image.PullSecrets),
 						Containers: []corev1.Container{
 							{
-								Name:            "backup",
+								Name:            backupContainerName,
 								Image:           image,
 								Command:         []string{"/bin/sh"},
 								Args:            []string{"-c", backupCmd},
 								Env:             append([]corev1.EnvVar{backupRunIDEnvVar()}, r.buildCloudEnvVars(backup)...),
 								VolumeMounts:    r.buildVolumeMounts(backup),
 								SecurityContext: resources.DefaultNeo4jContainerSecurityContext(),
-								Resources:       resolveJobResources(backup.Spec.Options),
+								// A failure's termination message is the
+								// tail of the log, which jobFailureMessage
+								// reports in the run's history entry.
+								TerminationMessagePolicy: corev1.TerminationMessageFallbackToLogsOnError,
+								Resources:                resolveJobResources(backup.Spec.Options),
 							},
 						},
 						Volumes: r.buildVolumes(backup),
@@ -2528,6 +2542,10 @@ func (r *Neo4jBackupReconciler) recordOneShotBackupRun(ctx context.Context, back
 		// handleExistingBackupJob only calls us once one branch is true, so
 		// reaching this is a programming error elsewhere, not user data.
 		return true
+	}
+	if run.Status == "Failed" {
+		// Why the run failed, in its history entry (knowledge id 215).
+		run.Error = jobFailureMessage(ctx, r.Client, "Backup job", job, backupContainerName)
 	}
 	// Phase 3: stamp the per-shard audit list onto the BackupRun. No-op for
 	// non-sharded kinds; failure to fetch the sharded DB CR is non-fatal.

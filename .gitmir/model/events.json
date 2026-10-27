@@ -458,7 +458,7 @@
   {
     "id": "ev-backup-failed",
     "name": "BackupFailed",
-    "description": "The Neo4jBackup spec was invalid, or the backup Job failed terminally (BackoffLimit exhausted or startup timeout). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145).",
+    "description": "The Neo4jBackup spec was invalid, or the backup Job failed terminally (BackoffLimit exhausted or startup timeout). Emitted after the status write that records it, and only when that write changed the phase, the message or the Ready condition: once per failure, not on every retry, nor after an operator restart (knowledge operations.md id 145). A failed backup Job's event says why: \"Backup job <name> failed (<Job reason>: <message>): backup exited with code <n>: <last lines>\", as status.message and the run's status.history[].error do; it was \"Backup job failed\" alone (operations.md id 215).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -500,7 +500,7 @@
   {
     "id": "ev-restore-started",
     "name": "RestoreStarted",
-    "description": "A restore attempt started, announced once: a restore Job was created — \"Restore job … started\", from the status write that made the restore Running, so a pass on a stale copy does not repeat it — carrying, for a standalone restore that runs offline with neo4j-admin, the reason and, with stopCluster true, that it stops the standalone (with stopCluster false, that it is stopped already); emitted only once the existence check, the pre-restore hooks and the stop (or the refusal of a running standalone) have passed. The reason used to be a RestoreStarted of its own, so one offline restore emitted two (#573; restoreJobStartedMessage; knowledge operations.md id 145). Also: a cluster-native Cypher recreate was issued, or an all-databases restore started — once, from the markDatabaseResult write that made it Running, naming how many databases it restores; a database starting is recorded in status.databaseResults only (operations.md id 166).",
+    "description": "A restore attempt started, announced once: a restore Job was created — \"Restore job … started\", from the status write that made the restore Running, so a pass on a stale copy does not repeat it — carrying, for a standalone restore that runs offline with neo4j-admin, the reason and, with stopCluster true, that it stops the standalone (with stopCluster false, that it is stopped already); emitted only once the existence check, the pre-restore hooks and the stop (or the refusal of a running standalone) have passed. The reason used to be a RestoreStarted of its own, so one offline restore emitted two (#573; restoreJobStartedMessage; knowledge operations.md id 145). Also: a cluster-native Cypher recreate was issued, or an all-databases restore started — once, from the markDatabaseResult write that made it Running, naming how many databases it restores; a database starting is recorded in status.databaseResults only (operations.md id 166). An online restore announces it once too, \"Online restore into …\", with \"spec.stopCluster is ignored …\" in the same message for a standalone restored online with stopCluster true; that notice was a RestoreStarted of its own (operations.md id 215).",
     "moduleId": "mod-backup-restore"
   },
   {
@@ -512,7 +512,7 @@
   {
     "id": "ev-restore-failed",
     "name": "RestoreFailed",
-    "description": "The restore Job, Cypher recreate/online-wait, or seed-proxy/seed-config setup failed terminally; for an all-databases restore once, when a database failed, from the status write.",
+    "description": "The restore Job, Cypher recreate/online-wait, or seed-proxy/seed-config setup failed terminally; for an all-databases restore once, when a database failed, from the status write. A failed restore Job's event says why: \"Restore job <name> failed (<Job reason>: <message>): neo4j-restore exited with code <n>: <last lines>\", as status.message does; it was \"Restore job failed\" alone. An online restore over a database that exists without replaceExisting raises it once, and returns no error (operations.md id 215).",
     "moduleId": "mod-backup-restore"
   },
   {

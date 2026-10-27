@@ -102,9 +102,13 @@ const (
 	// ConditionReasonDisabled — a Neo4jPlugin with spec.enabled: false, off
 	// its target as asked. Ready is False (the plugin is not installed), but
 	// nothing failed.
-	ConditionReasonDisabled        = "Disabled"
+	ConditionReasonDisabled = "Disabled"
+	// The Ready reasons of a Neo4jRestore (restoreReadyCondition): Completed,
+	// Failed and Running. It used the backup's BackupSucceeded and the generic
+	// ReconciliationFailed and Pending (knowledge id 215).
 	ConditionReasonRestoreComplete = "RestoreCompleted"
 	ConditionReasonRestoreFailed   = "RestoreFailed"
+	ConditionReasonRestoreRunning  = "RestoreRunning"
 	ConditionReasonPluginInstalled = "PluginInstalled"
 	ConditionReasonPluginFailed    = "PluginInstallFailed"
 

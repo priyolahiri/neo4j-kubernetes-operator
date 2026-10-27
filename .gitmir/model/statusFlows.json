@@ -483,17 +483,17 @@
       {
         "key": "Running",
         "name": "Running",
-        "description": "The restore Job is executing (standalone), or the cluster in-place Cypher recreate / all-databases loop is in progress."
+        "description": "The restore Job is executing (standalone), or the cluster in-place Cypher recreate / all-databases loop is in progress. The Ready condition reads Unknown with reason RestoreRunning (operations.md id 215)."
       },
       {
         "key": "Completed",
         "name": "Completed",
-        "description": "The restore Job succeeded (standalone) or the recreated database(s) were confirmed fully online (cluster / all-databases)."
+        "description": "The restore Job succeeded (standalone) or the recreated database(s) were confirmed fully online (cluster / all-databases). The Ready condition reads True with reason RestoreCompleted (operations.md id 215)."
       },
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "The restore Job failed terminally, was TTL-collected before completion was observed, or the online-wait deadline elapsed."
+        "description": "The restore Job failed terminally, was TTL-collected before completion was observed, or the online-wait deadline elapsed. Also a spec the operator refuses before anything runs (validation, an unsupported Neo4j version, a database that exists without replaceExisting, an offline restore into a running standalone without stopCluster), logged once at info. A failed Job's message carries its reason and the tail of its pod's output. The Ready condition reads False with reason RestoreFailed (operations.md id 215)."
       }
     ],
     "transitions": [
