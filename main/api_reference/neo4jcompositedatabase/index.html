@@ -4152,7 +4152,7 @@ A <code>composite: true</code> flag would leave most of that spec silently inert
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td>The composite database name in Neo4j. Defaults to <code>metadata.name</code>. 3–63 characters matching <code>^[a-zA-Z][a-zA-Z0-9\-]*$</code> (letters, digits and dashes, starting with a letter) — the CRD schema refuses anything else at apply time. <strong>Underscores are rejected by the server</strong>, and <strong>dots are rejected here</strong> although Neo4j allows them in a database name: <code>&lt;composite&gt;.&lt;constituent&gt;</code> is how constituents are addressed, so a dotted composite name could never have any. <code>system</code> is reserved (the inline validator refuses it at reconcile; a schema pattern cannot express it). When <code>name</code> is empty and <code>metadata.name</code> is used instead, the schema pattern does not apply to it, but the inline validator still refuses dots and underscores.</td>
+<td>The composite database name in Neo4j. Defaults to <code>metadata.name</code>. 3–63 characters matching <code>^[a-zA-Z][a-zA-Z0-9\-]*$</code> (letters, digits and dashes, starting with a letter) — the CRD schema refuses anything else at apply time. <strong>Underscores are rejected by the server</strong>, and <strong>dots are rejected here</strong> although Neo4j allows them in a database name: <code>&lt;composite&gt;.&lt;constituent&gt;</code> is how constituents are addressed, so a dotted composite name could never have any. <code>system</code> is reserved (the inline validator refuses it at reconcile; a schema pattern cannot express it). When <code>name</code> is empty and <code>metadata.name</code> is used instead, the schema pattern does not apply to it, but the inline validator still refuses dots and underscores. Neo4j reads the name ignoring case: two <code>Neo4jCompositeDatabase</code> resources on one target whose names differ only by case are one composite, owned by the older (by <code>creationTimestamp</code>); the other is <code>Failed</code> with reason <code>DuplicateName</code> (see <a href="#deletion">Deletion</a>).</td>
 </tr>
 <tr>
 <td><code>constituents</code></td>
@@ -4275,6 +4275,10 @@ ALIASES</code>. <code>CASCADE ALIASES</code> is <strong>not optional</strong>: a
 constituents exist. It removes the constituent <strong>aliases</strong> only — the databases
 they target are untouched.</p>
 <p><code>deletionPolicy: Retain</code> leaves everything in Neo4j and releases the finalizer.</p>
+<p>While another <code>Neo4jCompositeDatabase</code> on the same target gives the same name, ignoring case, the
+deletion drops nothing either: it releases the finalizer with one <code>DuplicateNameKept</code> event naming
+that resource, which keeps the composite. (Before v1.23.0 both resources managed the one composite, and
+deleting either dropped it.)</p>
 <p>If the referenced deployment is gone at deletion time, the finalizer is
 released at once: the composite went with it — unless its volumes were kept
 (<code>storage.retentionPolicy: Retain</code>): then the deletion waits, as below, for a
@@ -4349,7 +4353,7 @@ name a composite reports <code>PrivilegesResolve=False</code>.</p>
 <tbody>
 <tr>
 <td><code>Ready</code></td>
-<td><code>CompositeDatabaseReady</code>, <code>CompositeDatabaseFailed</code>, <code>CompositeDatabaseNameBlocked</code>, <code>ClusterNotFound</code> (phase <code>Pending</code>), <code>ClusterNotReady</code> / <code>ClusterUnreachable</code> (phase <code>Pending</code>, for a composite not yet <code>Ready</code>), <code>Creating</code> (phase <code>Creating</code>), <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
+<td><code>CompositeDatabaseReady</code>, <code>CompositeDatabaseFailed</code>, <code>CompositeDatabaseNameBlocked</code>, <code>DuplicateName</code> (phase <code>Failed</code>: an older resource gives the name), <code>ClusterNotFound</code> (phase <code>Pending</code>), <code>ClusterNotReady</code> / <code>ClusterUnreachable</code> (phase <code>Pending</code>, for a composite not yet <code>Ready</code>), <code>Creating</code> (phase <code>Creating</code>), <code>ConnectionFailed</code>, <code>ValidationFailed</code></td>
 <td>True when the composite exists and its constituents match spec. A <code>Ready</code> composite stays <code>Ready</code> while its target restarts.</td>
 </tr>
 <tr>

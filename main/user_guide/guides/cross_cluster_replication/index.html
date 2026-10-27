@@ -4858,7 +4858,9 @@ the CR instead if you need to.</p>
 </span><span id="__span-18-2"><a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="c1"># NAME          CLUSTER      UPSTREAM   PHASE         LAG   AGE</span>
 </span><span id="__span-18-3"><a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="c1"># foo-replica   dr-cluster   foo        Replicating   3     12m</span>
 </span></code></pre></div>
-<p><code>LAG</code> is a count of <strong>transactions</strong> behind the upstream, not a duration. The
+<p><code>LAG</code> is a count of <strong>transactions</strong> behind the upstream, not a duration: <code>0</code>
+once the replica has caught up, blank only until the operator first reads it
+(a replica still being created or seeded). The
 operator also exports it as <code>neo4j_operator_replica_lag_transactions</code>, and counts
 promotions in <code>neo4j_operator_replica_promotions_total</code> — see the
 <a href="../monitoring/#cross-cluster-replication-metrics">replication metrics</a>.</p>
@@ -5021,8 +5023,8 @@ Check <code>status.replicationLag</code> first if the upstream is still reachabl
 </span><span id="__span-24-3"><a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a><span class="c1"># failover-2026-08-07   foo-replica   Completed   3          2026-08-07T09:14:22Z</span>
 </span></code></pre></div>
 <p><code>status.observedLagTxIds</code> records the RPO the promotion actually took, so it is
-auditable after the incident. The operator records it; it never blocks a
-failover on it.</p>
+auditable after the incident — <code>0</code> when the replica was not behind. The
+operator records it; it never blocks a failover on it.</p>
 <h3 id="why-promotion-is-a-separate-cr-not-a-field">Why promotion is a separate CR, not a field<a class="headerlink" href="#why-promotion-is-a-separate-cr-not-a-field" title="Anchor link to this section">&para;</a></h3>
 <p>A <code>promote: true</code> field in a level-triggered spec could be set back to <code>false</code>,
 which would mean "make it a replica again" — impossible in Neo4j, and honourable

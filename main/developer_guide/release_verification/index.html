@@ -4782,7 +4782,7 @@ standalone backup" as one of Phase 1's outputs.</p>
 </tr>
 <tr>
 <td>Every server runs the image's own JVM arguments, then the operator's (rule 212)</td>
-<td>On each server: <code>grep -n '^server.jvm.additional=' /var/lib/neo4j/conf/neo4j.conf</code> shows the image's lines first, less <code>-XX:+AlwaysPreTouch</code> (19 on 5.26, 23 on 2026.08+), then any <code>spec.config</code> line, then the operator's list on one line last; at the documented minimum (1536Mi) an idle server's memory stays near its pre-#594 level (about 560Mi on 2026.08.1, not the ~1150Mi of a pre-touched heap) and a write load OOMKills no server; <code>ps -eo args</code> shows the <code>--add-opens</code> flags and, on 2026.08+, <code>--add-modules=jdk.incubator.vector</code>. In the upgrade row, the operator upgrade restarts no server (pod UIDs and the StatefulSet generation unchanged) and each server shows the image's lines after its next restart</td>
+<td>On each server: <code>grep -n '^server.jvm.additional=' /var/lib/neo4j/conf/neo4j.conf</code> shows the image's lines first, less <code>-XX:+AlwaysPreTouch</code> (19 on 5.26, 23 on 2026.08+), then the operator's list on one line last, ending with the cluster's own <code>server.jvm.additional</code> (<code>spec.config</code>, then <code>spec.env</code>) when it sets one — given once, with no <code>spec.config</code> line of its own (rule 208); at the documented minimum (1536Mi) an idle server's memory stays near its pre-#594 level (about 560Mi on 2026.08.1, not the ~1150Mi of a pre-touched heap) and a write load OOMKills no server; <code>ps -eo args</code> shows the <code>--add-opens</code> flags and, on 2026.08+, <code>--add-modules=jdk.incubator.vector</code>. In the upgrade row, the operator upgrade restarts no server (pod UIDs and the StatefulSet generation unchanged) and each server shows the image's lines after its next restart</td>
 </tr>
 <tr>
 <td>A deletion during a server's replacement leaves nothing behind (rule 178)</td>
@@ -5269,7 +5269,7 @@ Parts A/B.</p>
 </tr>
 <tr>
 <td>Promotion</td>
-<td><code>Neo4jReplicaPromotion</code> → <code>Completed</code>; <code>SHOW DATABASES</code> now shows a standard read-write type. <code>status.observedLagTxIds</code> is set only when there was lag to make permanent: at zero lag it is absent by design and the message says <em>"0 transactions of lag were made permanent"</em></td>
+<td><code>Neo4jReplicaPromotion</code> → <code>Completed</code>; <code>SHOW DATABASES</code> now shows a standard read-write type. <code>status.observedLagTxIds</code> is <code>0</code> at zero lag (until v1.23.0 it was absent then; operations.md id 218) and the message says <em>"0 transactions of lag were made permanent"</em>; before the promotion <code>kubectl get neo4jreplicadatabase</code> shows <code>LAG</code> <code>0</code>, not a blank column</td>
 </tr>
 <tr>
 <td>Alias survives promotion</td>

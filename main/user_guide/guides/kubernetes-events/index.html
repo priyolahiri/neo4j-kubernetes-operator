@@ -4596,6 +4596,16 @@ is met on many passes. It is announced once:</p>
 <td>Database was dropped</td>
 </tr>
 <tr>
+<td><code>DuplicateName</code></td>
+<td>Warning</td>
+<td>An older <code>Neo4jDatabase</code> on the same cluster or standalone gives the same database name, ignoring case (Neo4j lower-cases names, so <code>Sales</code> and <code>sales</code> are one database): this one is <code>Failed</code>, sends Neo4j nothing, and carries on by itself once the older one is deleted or renamed. Once per conflict. Also emitted, with the same rule, by <code>Neo4jShardedDatabase</code>, <code>Neo4jCompositeDatabase</code> and <code>Neo4jDatabaseAlias</code> against an older resource of their own kind</td>
+</tr>
+<tr>
+<td><code>DuplicateNameKept</code></td>
+<td>Normal</td>
+<td>A deleted <code>Neo4jDatabase</code> (or <code>Neo4jCompositeDatabase</code>, <code>Neo4jDatabaseAlias</code>) released its finalizer without dropping anything: another resource of its kind still gives the name, ignoring case, and keeps the database (composite, alias). The event names that resource</td>
+</tr>
+<tr>
 <td><code>DatabaseCreatedFromSeed</code></td>
 <td>Normal</td>
 <td>Database created from a seed URI</td>
@@ -4872,7 +4882,7 @@ is met on many passes. It is announced once:</p>
 </tr>
 </tbody>
 </table>
-<p>A <code>Neo4jShardedDatabase</code> also emits <code>ClusterNotFound</code> (the cluster does not exist yet: phase <code>Pending</code>), <code>ClusterNotReady</code>, <code>ClientCreationFailed</code>, <code>ReconcileFailed</code>, <code>SeedCredsMissing</code> (phase <code>Pending</code>) and <code>SeedCredsAutoInherited</code>, described above.</p>
+<p>A <code>Neo4jShardedDatabase</code> also emits <code>DuplicateName</code> (an older one gives the same name, ignoring case: phase <code>Failed</code>), <code>ClusterNotFound</code> (the cluster does not exist yet: phase <code>Pending</code>), <code>ClusterNotReady</code>, <code>ClientCreationFailed</code>, <code>ReconcileFailed</code>, <code>SeedCredsMissing</code> (phase <code>Pending</code>) and <code>SeedCredsAutoInherited</code>, described above.</p>
 <h3 id="users-roles-and-role-bindings">Users, Roles and Role Bindings<a class="headerlink" href="#users-roles-and-role-bindings" title="Anchor link to this section">&para;</a></h3>
 <p>Emitted on <code>Neo4jUser</code>, <code>Neo4jRole</code> and <code>Neo4jRoleBinding</code> objects.</p>
 <table>
@@ -5183,6 +5193,7 @@ is met on many passes. It is announced once:</p>
 </tr>
 </tbody>
 </table>
+<p>A composite or an alias also emits <code>DuplicateName</code> when an older resource of its kind gives the same name on its target, ignoring case, and <code>DuplicateNameKept</code> when its deletion leaves the name to such a resource (see <a href="#databases">Databases</a>).</p>
 <h3 id="aura-orchestration">Aura Orchestration<a class="headerlink" href="#aura-orchestration" title="Anchor link to this section">&para;</a></h3>
 <p>Emitted by the Aura CRDs (<code>AuraProviderConfig</code>, <code>AuraInstance</code>, <code>AuraSnapshot</code>, <code>AuraRestore</code>, <code>AuraCustomerManagedKey</code>, <code>AuraIPFilter</code>, <code>AuraDatabase</code>, <code>AuraDatabaseBackup</code>, <code>AuraDatabaseRestore</code>, <code>AuraOrganizationMember</code>, <code>AuraProjectMember</code>, <code>AuraInvite</code>). "Adopted" means the CR took over an existing Aura resource; "Orphaned" means the CR was deleted but the Aura resource was left in place. The <code>…Ready</code> events and <code>AuraCredentialsValidated</code> are raised when the state is reached, not on each periodic re-check while it holds. A 429, a 5xx or a network failure of a create or a backup is retried without an event, as for every other Aura call. A failure that repeats is one Warning however often it is retried: Aura gives every response its own request ID, which the Warning carries (quote it to Aura support) and the status message leaves out, so the same refusal reads the same on every retry.</p>
 <table>

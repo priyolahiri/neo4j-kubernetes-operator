@@ -5775,8 +5775,8 @@ standalone that runs without them (created by an operator before v1.23.0)
 gets them at its next restart, and the operator upgrade restarts nothing.</p>
 <p>A <code>Neo4jEnterpriseCluster</code> runs the image's lines too, read from the image
 itself at each server's start, followed by a default list of the operator's
-own (see <a href="../neo4jenterprisecluster/#jvm-arguments">JVM arguments</a>), which
-<code>server.jvm.additional</code> replaces.</p>
+own and then its own <code>server.jvm.additional</code> (see
+<a href="../neo4jenterprisecluster/#jvm-arguments">JVM arguments</a>).</p>
 <h4 id="tls-tlsspec"><code>tls</code> (TLSSpec)<a class="headerlink" href="#tls-tlsspec" title="Anchor link to this section">&para;</a></h4>
 <p>TLS/SSL configuration for secure connections. Same shape as
 <a href="../neo4jenterprisecluster/#tlsspec"><code>Neo4jEnterpriseCluster.spec.tls</code></a>.</p>

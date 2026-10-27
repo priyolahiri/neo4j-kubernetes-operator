@@ -4966,7 +4966,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 <td><code>string</code></td>
 <td>Yes</td>
 <td>-</td>
-<td>Name of the sharded database to create</td>
+<td>Name of the sharded database to create. Neo4j lower-cases it, so two <code>Neo4jShardedDatabase</code> resources on one cluster whose names differ only by case are one family: the older (by <code>creationTimestamp</code>) owns it and the other is <code>Failed</code> with one <code>DuplicateName</code> Warning naming it, and adopts nothing, until the older one is deleted or renamed (before v1.23.0 both adopted the family)</td>
 </tr>
 <tr>
 <td><code>defaultCypherLanguage</code></td>
@@ -5229,7 +5229,7 @@ operator always emits on the sharded <code>CREATE</code>.</p>
 </tr>
 <tr>
 <td><code>Failed</code></td>
-<td>Validation, seed resolution, client creation or database creation failed</td>
+<td>Validation, seed resolution, client creation or database creation failed, or an older <code>Neo4jShardedDatabase</code> on the cluster gives the same name, ignoring case (<code>DuplicateName</code>)</td>
 </tr>
 </tbody>
 </table>

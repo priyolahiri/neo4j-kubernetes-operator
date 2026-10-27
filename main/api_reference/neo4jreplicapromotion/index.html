@@ -4051,8 +4051,8 @@
 </tr>
 <tr>
 <td><code>observedLagTxIds</code></td>
-<td><code>int64</code></td>
-<td>The replica's replication lag immediately <strong>before</strong> promotion — the recovery point this promotion made permanent. Recorded, never enforced.</td>
+<td><code>*int64</code></td>
+<td>The replica's replication lag immediately <strong>before</strong> promotion — the recovery point this promotion made permanent. <code>0</code> when the replica was not behind (the <code>LAGTAKEN</code> column shows <code>0</code>); absent until the promotion completes. Recorded, never enforced.</td>
 </tr>
 <tr>
 <td><code>lastCommittedTxn</code></td>

@@ -4230,8 +4230,8 @@
 </tr>
 <tr>
 <td><code>replicationLag</code></td>
-<td><code>int64</code></td>
-<td>Transactions behind — the data loss that promoting right now would make permanent.</td>
+<td><code>*int64</code></td>
+<td>Transactions behind — the data loss that promoting right now would make permanent. <code>0</code> when the replica has caught up (the <code>LAG</code> column shows <code>0</code>). Absent until the operator first reads it (a replica being created or seeded). While the operator cannot read it (<code>ClusterNotReady=True</code>) it keeps the last reading, and the lag metric is withdrawn.</td>
 </tr>
 <tr>
 <td><code>promotedAt</code></td>

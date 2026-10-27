@@ -2944,6 +2944,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Deletion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-resources-for-one-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two resources for one name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -4678,6 +4695,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Deletion">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#two-resources-for-one-name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Two resources for one name
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
         
       </ul>
@@ -4869,7 +4903,7 @@
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td><strong>Required</strong>. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. <code>system</code> is reserved; <code>neo4j</code> is allowed with a warning (it shadows the default database). Neo4j names are case-insensitive and stored lower-cased, so <code>Sales</code> creates the database <code>SHOW DATABASES</code> lists as <code>sales</code>, and the operator finds it by either spelling</td>
+<td><strong>Required</strong>. Database name to create. Must start with a letter, contain only letters, digits, dots and dashes, and be 3 to 63 characters long, as Neo4j requires. <code>system</code> is reserved; <code>neo4j</code> is allowed with a warning (it shadows the default database). Neo4j names are case-insensitive and stored lower-cased, so <code>Sales</code> creates the database <code>SHOW DATABASES</code> lists as <code>sales</code>, and the operator finds it by either spelling. Two <code>Neo4jDatabase</code> resources that give one name on one target, in any case, are one database: the older owns it and the other is <code>Failed</code> (reason <code>DuplicateName</code>, see <a href="#two-resources-for-one-name">Two resources for one name</a>)</td>
 </tr>
 <tr>
 <td><code>wait</code></td>
@@ -5227,7 +5261,7 @@
 <tr>
 <td><code>phase</code></td>
 <td><code>string</code></td>
-<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found — one <code>ClusterNotFound</code> Warning, never a validation failure — or not ready or not answering, or waiting for the seed credentials on the target — <code>SeedCredsMissing</code>, <code>SeedCredsAutoInherited</code>), <code>Failed</code> (connection, creation or data-import failure, or anything else Neo4j refused), <code>ValidationFailed</code> (the spec was refused; <code>kubectl neo4j status --problems</code> lists it), or <code>Error</code> (a deletion whose <code>DROP DATABASE</code> failed and is being retried; reason <code>DeletionFailed</code>). A database that is <code>Ready</code> stays <code>Ready</code> while its host restarts — the <code>ClusterNotReady</code> condition says it waits — so the host's return announces nothing; a host that does not answer for more than 5 minutes makes it <code>Failed</code> (<code>ConnectionFailed</code>). Operators up to v1.21 also wrote <code>Unknown</code> (a host without the seed credentials Secret); none is written now</td>
+<td>Current phase of the database: <code>Ready</code>, <code>Pending</code> (target not found — one <code>ClusterNotFound</code> Warning, never a validation failure — or not ready or not answering, or waiting for the seed credentials on the target — <code>SeedCredsMissing</code>, <code>SeedCredsAutoInherited</code>), <code>Failed</code> (connection, creation or data-import failure, anything else Neo4j refused, or reason <code>DuplicateName</code>: an older <code>Neo4jDatabase</code> gives the same name on the same target, ignoring case), <code>ValidationFailed</code> (the spec was refused; <code>kubectl neo4j status --problems</code> lists it), or <code>Error</code> (a deletion whose <code>DROP DATABASE</code> failed and is being retried; reason <code>DeletionFailed</code>). A database that is <code>Ready</code> stays <code>Ready</code> while its host restarts — the <code>ClusterNotReady</code> condition says it waits — so the host's return announces nothing; a host that does not answer for more than 5 minutes makes it <code>Failed</code> (<code>ConnectionFailed</code>). Operators up to v1.21 also wrote <code>Unknown</code> (a host without the seed credentials Secret); none is written now</td>
 </tr>
 <tr>
 <td><code>message</code></td>
@@ -5649,6 +5683,14 @@ while its pod is replaced) or Neo4j refuses the drop — the deletion waits: pha
 naming the database still in Neo4j and the <code>DROP DATABASE</code> that removes it. Whether the cluster or
 standalone is gone is read from its CR, never from DNS. Before, a connection that failed, or a server name
 that did not resolve, released the finalizer at once and left the database, and its data, in Neo4j.</p>
+<h4 id="two-resources-for-one-name">Two resources for one name<a class="headerlink" href="#two-resources-for-one-name" title="Anchor link to this section">&para;</a></h4>
+<p>Neo4j reads database names ignoring case, so two <code>Neo4jDatabase</code> resources in one namespace whose
+<code>spec.name</code> is the same on the same <code>clusterRef</code>, in any case (<code>Sales</code> and <code>sales</code>), are one database. The
+older resource (by <code>creationTimestamp</code>) owns it. The other is <code>Failed</code> with reason <code>DuplicateName</code> and one
+<code>DuplicateName</code> Warning naming the older one, and sends Neo4j nothing; it carries on by itself once the
+older one is deleted or renamed. Deleting either drops nothing while the other still gives the name: the
+finalizer is released with one <code>DuplicateNameKept</code> event naming the resource that keeps the database.
+Before v1.23.0 both reported <code>Ready</code> on the one database, and deleting either dropped it.</p>
 <h2 id="best-practices">Best Practices<a class="headerlink" href="#best-practices" title="Anchor link to this section">&para;</a></h2>
 <h3 id="general-best-practices">General Best Practices<a class="headerlink" href="#general-best-practices" title="Anchor link to this section">&para;</a></h3>
 <ol>

@@ -4035,7 +4035,7 @@
 <tr>
 <td><code>name</code></td>
 <td><code>string</code></td>
-<td>Alias name in Neo4j. Defaults to <code>metadata.name</code>. 3–63 chars, <code>^[a-zA-Z][a-zA-Z0-9_.\-]*$</code>. May not be <code>system</code>.</td>
+<td>Alias name in Neo4j. Defaults to <code>metadata.name</code>. 3–63 chars, <code>^[a-zA-Z][a-zA-Z0-9_.\-]*$</code>. May not be <code>system</code>. Neo4j reads it ignoring case: two <code>Neo4jDatabaseAlias</code> resources on one target whose names differ only by case are one alias, owned by the older (by <code>creationTimestamp</code>); the other is <code>Failed</code> with one <code>DuplicateName</code> Warning and sends Neo4j nothing (before v1.23.0 each pass re-pointed the one alias between their targets).</td>
 </tr>
 <tr>
 <td><code>targetDatabase</code></td>
@@ -4091,7 +4091,9 @@
 <p>Dropping an alias never affects the database behind it.</p>
 <h2 id="deletion">Deletion<a class="headerlink" href="#deletion" title="Anchor link to this section">&para;</a></h2>
 <p><code>deletionPolicy: Delete</code> runs <code>DROP ALIAS … FOR DATABASE</code>, then releases the finalizer; <code>Retain</code> only
-releases it. If the cluster or standalone CR no longer exists, or is being deleted with its volumes
+releases it. While another <code>Neo4jDatabaseAlias</code> on the same target gives the same name, ignoring case,
+<code>Delete</code> drops nothing either: it releases the finalizer with one <code>DuplicateNameKept</code> event naming that
+resource, which keeps the alias. If the cluster or standalone CR no longer exists, or is being deleted with its volumes
 (<code>storage.retentionPolicy: Delete</code>, the default), the finalizer is released at once; if its volumes
 were kept (<code>Retain</code>), the deletion waits, as below, for a deployment created again from them.</p>
 <p>The alias keeps routing queries (a remote alias with the credentials stored on it) until it is dropped,

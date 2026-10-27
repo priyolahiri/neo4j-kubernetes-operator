@@ -5981,15 +5981,23 @@
    the server's <code>neo4j.conf</code>. They are always there: the <code>--add-opens</code>,
    <code>--enable-native-access</code> and vector-module flags are what Neo4j's runtime
    needs, not tuning.</li>
-<li><strong>Your <code>spec.config["server.jvm.additional"]</code></strong>, if set (one line, flags
-   separated by spaces).</li>
-<li><strong>The operator's list</strong>, as the variable <code>NEO4J_server_jvm_additional</code>,
-   which the entrypoint appends last (it adds to <code>server.jvm.additional</code>
-   rather than replacing it).</li>
+<li><strong>The operator's list</strong> (below).</li>
+<li><strong>Your own <code>server.jvm.additional</code></strong>: <code>spec.config["server.jvm.additional"]</code>
+   (one line, flags separated by spaces), then a <code>spec.env</code>
+   <code>NEO4J_server_jvm_additional</code>.</li>
 </ol>
+<p>The operator's list and yours are one variable, <code>NEO4J_server_jvm_additional</code>,
+yours after the operator's, which the entrypoint appends after the image's
+lines (it adds to <code>server.jvm.additional</code> rather than replacing it). Your
+<code>spec.config</code> line is not also written into <code>neo4j.conf</code>, so each of your flags
+is given once. A <code>spec.env</code> value taken from a Secret or ConfigMap
+(<code>valueFrom</code>) cannot be joined to the operator's: as before v1.23.0, that
+variable is used as it is, the operator's list is left out, and a
+<code>spec.config</code> line stays in <code>neo4j.conf</code>, before it.</p>
 <p>The JVM takes the last of two conflicting flags, so what comes later wins: turn
-an image flag off with its <code>-XX:-</code> form (<code>-XX:-DisableExplicitGC</code>), or override
-a property with its own <code>-D</code>.</p>
+an image or operator flag off with its <code>-XX:-</code> form (<code>-XX:-DisableExplicitGC</code>,
+<code>-XX:-UseStringDeduplication</code>), or override a property or a value with your
+own (<code>-XX:MaxGCPauseMillis=100</code>).</p>
 <p>One image line is left out: <code>-XX:+AlwaysPreTouch</code>. It writes every page of
 the heap when the JVM starts, and the operator sets the initial heap to its
 maximum, so a server would hold its whole heap from the start: on a 3-server
@@ -6005,15 +6013,19 @@ under write load a server was OOMKilled and crash-looped. Add it in
 <code>-XX:+UseCompressedOops</code>,
 <code>-XX:+UseCompressedClassPointers</code>, <code>-XX:+UseStringDeduplication</code> and
 <code>-XX:+ExitOnOutOfMemoryError</code>, plus the truststore flags when
-<code>spec.trustedCASecrets</code> or <code>spec.auth.trustStore</code> is set. Setting
-<code>server.jvm.additional</code> replaces that list, not the image's lines: <code>spec.env</code>
-<code>NEO4J_server_jvm_additional</code> is used as it is, and
-<code>spec.config["server.jvm.additional"]</code> takes its place. Repeat the defaults
-you want to keep. The operator's list repeats three of the image's flags
+<code>spec.trustedCASecrets</code> or <code>spec.auth.trustStore</code> is set. Your
+<code>server.jvm.additional</code> adds to that list, after it; it no longer replaces it
+(until v1.23.0 it did, and a <code>spec.config</code> line also left out the truststore
+flags). The operator's list repeats three of the image's flags
 (<code>-XX:+UseG1GC</code> and the two <code>Unlock…VMOptions</code>); repeating a flag is harmless.</p>
 <p>The image's lines are restart-neutral: a server running without them (a
 cluster created by an operator before v1.23.0) gets them at its next restart,
-and the operator upgrade restarts nothing. A <code>Neo4jEnterpriseStandalone</code> runs
+and the operator upgrade restarts nothing for them. A cluster that sets
+<code>server.jvm.additional</code> itself (<code>spec.config</code>, or a plain <code>spec.env</code> value)
+rolls once at that upgrade, as its variable gains the operator's list; the
+line leaving <code>neo4j.conf</code> restarts nothing more. One whose <code>spec.env</code> takes the
+variable from a Secret or ConfigMap renders as before and does not roll. A
+<code>Neo4jEnterpriseStandalone</code> runs
 the image's lines too, from a list the operator keeps per release, and has no
 default list of the operator's (see
 <a href="../neo4jenterprisestandalone/#config-mapstringstring">its JVM arguments</a>).</p>
