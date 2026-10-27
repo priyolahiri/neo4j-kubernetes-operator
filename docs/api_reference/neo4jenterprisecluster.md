@@ -86,15 +86,24 @@ Every server runs, in this order:
    the server's `neo4j.conf`. They are always there: the `--add-opens`,
    `--enable-native-access` and vector-module flags are what Neo4j's runtime
    needs, not tuning.
-2. **Your `spec.config["server.jvm.additional"]`**, if set (one line, flags
-   separated by spaces).
-3. **The operator's list**, as the variable `NEO4J_server_jvm_additional`,
-   which the entrypoint appends last (it adds to `server.jvm.additional`
-   rather than replacing it).
+2. **The operator's list** (below).
+3. **Your own `server.jvm.additional`**: `spec.config["server.jvm.additional"]`
+   (one line, flags separated by spaces), then a `spec.env`
+   `NEO4J_server_jvm_additional`.
+
+The operator's list and yours are one variable, `NEO4J_server_jvm_additional`,
+yours after the operator's, which the entrypoint appends after the image's
+lines (it adds to `server.jvm.additional` rather than replacing it). Your
+`spec.config` line is not also written into `neo4j.conf`, so each of your flags
+is given once. A `spec.env` value taken from a Secret or ConfigMap
+(`valueFrom`) cannot be joined to the operator's: as before v1.23.0, that
+variable is used as it is, the operator's list is left out, and a
+`spec.config` line stays in `neo4j.conf`, before it.
 
 The JVM takes the last of two conflicting flags, so what comes later wins: turn
-an image flag off with its `-XX:-` form (`-XX:-DisableExplicitGC`), or override
-a property with its own `-D`.
+an image or operator flag off with its `-XX:-` form (`-XX:-DisableExplicitGC`,
+`-XX:-UseStringDeduplication`), or override a property or a value with your
+own (`-XX:MaxGCPauseMillis=100`).
 
 One image line is left out: `-XX:+AlwaysPreTouch`. It writes every page of
 the heap when the JVM starts, and the operator sets the initial heap to its
@@ -112,16 +121,20 @@ The operator's default list is `-XX:+UseG1GC`,
 `-XX:+UseCompressedOops`,
 `-XX:+UseCompressedClassPointers`, `-XX:+UseStringDeduplication` and
 `-XX:+ExitOnOutOfMemoryError`, plus the truststore flags when
-`spec.trustedCASecrets` or `spec.auth.trustStore` is set. Setting
-`server.jvm.additional` replaces that list, not the image's lines: `spec.env`
-`NEO4J_server_jvm_additional` is used as it is, and
-`spec.config["server.jvm.additional"]` takes its place. Repeat the defaults
-you want to keep. The operator's list repeats three of the image's flags
+`spec.trustedCASecrets` or `spec.auth.trustStore` is set. Your
+`server.jvm.additional` adds to that list, after it; it no longer replaces it
+(until v1.23.0 it did, and a `spec.config` line also left out the truststore
+flags). The operator's list repeats three of the image's flags
 (`-XX:+UseG1GC` and the two `Unlock…VMOptions`); repeating a flag is harmless.
 
 The image's lines are restart-neutral: a server running without them (a
 cluster created by an operator before v1.23.0) gets them at its next restart,
-and the operator upgrade restarts nothing. A `Neo4jEnterpriseStandalone` runs
+and the operator upgrade restarts nothing for them. A cluster that sets
+`server.jvm.additional` itself (`spec.config`, or a plain `spec.env` value)
+rolls once at that upgrade, as its variable gains the operator's list; the
+line leaving `neo4j.conf` restarts nothing more. One whose `spec.env` takes the
+variable from a Secret or ConfigMap renders as before and does not roll. A
+`Neo4jEnterpriseStandalone` runs
 the image's lines too, from a list the operator keeps per release, and has no
 default list of the operator's (see
 [its JVM arguments](neo4jenterprisestandalone.md#config-mapstringstring)).

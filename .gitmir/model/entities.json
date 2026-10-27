@@ -1186,7 +1186,7 @@
         "name": "status.replicationLag",
         "type": "bigint",
         "isNullable": true,
-        "note": "Transactions behind upstream; the data loss a promotion right now would make permanent."
+        "note": "Transactions behind upstream; the data loss a promotion right now would make permanent. A pointer: 0 at zero lag (the LAG column shows 0), absent until the operator first reads it; kept at the last reading while the target cannot be read (operations.md id 218)."
       },
       {
         "id": "f-neo4jreplicadatabase-status-promoted-at",
@@ -1295,7 +1295,7 @@
         "name": "status.observedLagTxIds",
         "type": "bigint",
         "isNullable": true,
-        "note": "Replica's replicationLag immediately before promotion — the RPO recorded (never enforced) for audit."
+        "note": "Replica's replicationLag immediately before promotion — the RPO recorded (never enforced) for audit. A pointer: 0 when the replica was not behind, absent until the promotion completes (operations.md id 218)."
       },
       {
         "id": "f-neo4jreplicapromotion-status-last-committed-txn",

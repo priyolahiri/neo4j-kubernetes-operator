@@ -4060,6 +4060,11 @@ func (in *Neo4jReplicaDatabaseStatus) DeepCopyInto(out *Neo4jReplicaDatabaseStat
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.ReplicationLag != nil {
+		in, out := &in.ReplicationLag, &out.ReplicationLag
+		*out = new(int64)
+		**out = **in
+	}
 	if in.PromotedAt != nil {
 		in, out := &in.PromotedAt, &out.PromotedAt
 		*out = (*in).DeepCopy()
@@ -4168,6 +4173,11 @@ func (in *Neo4jReplicaPromotionStatus) DeepCopyInto(out *Neo4jReplicaPromotionSt
 	if in.CompletionTime != nil {
 		in, out := &in.CompletionTime, &out.CompletionTime
 		*out = (*in).DeepCopy()
+	}
+	if in.ObservedLagTxIds != nil {
+		in, out := &in.ObservedLagTxIds, &out.ObservedLagTxIds
+		*out = new(int64)
+		**out = **in
 	}
 }
 

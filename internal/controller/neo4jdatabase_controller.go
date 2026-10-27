@@ -167,6 +167,22 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		}
 	}
 
+	// An older Neo4jDatabase that gives this name on this target owns it:
+	// Neo4j's names ignore case, so both would act on one database. The
+	// watch on the CRs of the name (databaseNames.othersOfTheName) wakes this
+	// one when that changes (operations.md id 217).
+	duplicate, err := databaseNames.duplicate(ctx, r.Client, database)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if duplicate != "" {
+		// Announced when it starts, not on every pass (knowledge rule 136).
+		if r.updateDatabaseStatus(ctx, database, metav1.ConditionFalse, EventReasonDuplicateName, duplicate) {
+			r.Recorder.Event(database, corev1.EventTypeWarning, EventReasonDuplicateName, duplicate)
+		}
+		return ctrl.Result{}, nil
+	}
+
 	// Get referenced cluster or standalone (shared with handleDeletion via
 	// resolveDatabaseHost so the create and delete paths can't drift).
 	cluster, standalone, isStandalone, found, err := r.resolveDatabaseHost(ctx, database)
@@ -381,6 +397,17 @@ func (r *Neo4jDatabaseReconciler) handleDeletion(ctx context.Context, database *
 	}
 
 	logger.Info("Starting deletion handler", "finalizers", database.Finalizers, "deletionTimestamp", database.DeletionTimestamp)
+
+	// A database another Neo4jDatabase still gives is left to it: dropping it
+	// took the data of the CR that stays (operations.md id 217).
+	kept, err := databaseNames.keptFor(ctx, r.Client, database)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	if kept != "" {
+		r.Recorder.Event(database, corev1.EventTypeNormal, EventReasonDuplicateNameKept, kept)
+		return ctrl.Result{}, removeFinalizer(ctx, r.Client, database, DatabaseFinalizer)
+	}
 
 	// Resolve the referenced host — cluster first, then standalone. A
 	// standalone-targeted database previously failed to drop here because this
@@ -983,6 +1010,9 @@ func (r *Neo4jDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&neo4jv1beta1.Neo4jDatabase{}).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueueDatabasesForCluster).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueueDatabasesForCluster).
+		// The other CRs of a name, when one comes, goes or is renamed
+		// (operations.md id 217).
+		Watches(&neo4jv1beta1.Neo4jDatabase{}, databaseNames.othersOfTheName(mgr.GetClient()), databaseNames.onClaimChange()).
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).

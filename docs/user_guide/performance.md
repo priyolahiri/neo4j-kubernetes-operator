@@ -123,10 +123,12 @@ spec:
     #
     # Both kinds run the Neo4j image's own JVM flags first (its --add-opens,
     # and from 2026.08 the vector module, among them); these come after them
-    # and win a conflicting flag. On a cluster this REPLACES the operator's
-    # built-in flags (G1GC with a 200ms pause target, compressed oops,
-    # ExitOnOutOfMemoryError, …) rather than adding to them, so repeat any you
-    # want to keep; a standalone has no built-in flags of the operator's.
+    # and win a conflicting flag. On a cluster the operator's built-in flags
+    # (G1GC with a 200ms pause target, compressed oops, string deduplication,
+    # ExitOnOutOfMemoryError, …) come between the two and stay: give only the
+    # flags you change, and turn one of the operator's off with its -XX:-
+    # form. A standalone has no built-in flags of the operator's, so give it
+    # every flag you want.
     server.jvm.additional: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:G1HeapRegionSize=32m -XX:+ParallelRefProcEnabled -XX:+UseStringDeduplication -XX:+ExitOnOutOfMemoryError"
 ```
 

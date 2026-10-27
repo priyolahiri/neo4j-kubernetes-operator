@@ -153,7 +153,7 @@ spec:
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `clusterRef` | `string` | Yes | - | Reference to Neo4j cluster hosting this sharded database |
-| `name` | `string` | Yes | - | Name of the sharded database to create |
+| `name` | `string` | Yes | - | Name of the sharded database to create. Neo4j lower-cases it, so two `Neo4jShardedDatabase` resources on one cluster whose names differ only by case are one family: the older (by `creationTimestamp`) owns it and the other is `Failed` with one `DuplicateName` Warning naming it, and adopts nothing, until the older one is deleted or renamed (before v1.23.0 both adopted the family) |
 | `defaultCypherLanguage` | `string` | Yes | - | Must be "25" for property sharding |
 | `propertySharding` | `PropertyShardingConfiguration` | Yes | - | Property sharding configuration |
 | `wait` | `boolean` | No | true | Wait for database creation to complete |
@@ -270,7 +270,7 @@ status:
 | `Waiting` | The target cluster is not yet `Ready` (or `Degraded`) with property sharding operational, or reads `Ready` but does not accept the connection (reconciler requeues). A sharded database that is already `Ready` stays `Ready` while its cluster rolls or restarts, with the condition `ClusterNotReady=True`; a cluster that does not answer for more than 5 minutes makes it `Failed` (`ClientCreationFailed`) |
 | `Pending` | Waiting on a `clusterRef` that names no cluster yet (one `ClusterNotFound` event), a `seedBackupRef` whose backup has no Succeeded run yet, the PVC seed proxy, or seed credentials being projected onto the cluster (reconciler requeues) |
 | `Ready` | Sharded database created and operational |
-| `Failed` | Validation, seed resolution, client creation or database creation failed |
+| `Failed` | Validation, seed resolution, client creation or database creation failed, or an older `Neo4jShardedDatabase` on the cluster gives the same name, ignoring case (`DuplicateName`) |
 
 The controller sets no other phases (for example there is no `Initializing` or `Mixed` phase).
 

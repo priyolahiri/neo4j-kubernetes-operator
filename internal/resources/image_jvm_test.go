@@ -108,10 +108,10 @@ func TestStandaloneImageJVMArgumentsBlock(t *testing.T) {
 // over the image's own neo4j.conf, then the entrypoint's copy of /conf over
 // the image's conf directory and its environment pass. The server's
 // neo4j.conf starts with the image's lines less -XX:+AlwaysPreTouch, then the
-// user's own (spec.config, here opting into pre-touch), then the operator's
-// list the entrypoint appends from NEO4J_server_jvm_additional
-// (append-not-replace), so a later flag wins; the image's other settings do
-// not come through. Without the block the image's lines were gone; with the
+// line the entrypoint appends from NEO4J_server_jvm_additional
+// (append-not-replace): the operator's list with the user's own after it
+// (spec.config, here opting into pre-touch; operations.md id 208), so a later
+// flag wins; the image's other settings do not come through. Without the block the image's lines were gone; with the
 // image's pre-touch copied, a server at the documented minimum held its whole
 // heap from the start and was OOMKilled under write load.
 func TestImageJVMArgumentsBlock_PutsTheImagesLinesFirst(t *testing.T) {
@@ -122,8 +122,11 @@ func TestImageJVMArgumentsBlock_PutsTheImagesLinesFirst(t *testing.T) {
 				imageConf += "server.jvm.additional=" + v + "\n"
 			}
 			require.Contains(t, imageConf, "server.jvm.additional=-XX:+AlwaysPreTouch\n", "test premise")
-			mounted := "server.jvm.additional=-XX:+AlwaysPreTouch\ndb.tx_log.rotation.size=256M\n"
-			operator := buildJVMSettings(&neo4jv1beta1.Neo4jEnterpriseCluster{})
+			mounted := "db.tx_log.rotation.size=256M\n"
+			cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+			cluster.Spec.Config = map[string]string{JVMAdditionalSetting: "-XX:+AlwaysPreTouch"}
+			operator := buildJVMSettings(cluster)
+			require.True(t, strings.HasSuffix(operator, " -XX:+AlwaysPreTouch"), "test premise: the user's flag ends the variable")
 
 			conf := entrypointsim.Start(t, entrypointsim.Image{Release: release, Conf: imageConf}, mounted,
 				buildImageJVMArgumentsBlock(), map[string]string{"NEO4J_server_jvm_additional": operator})
@@ -134,8 +137,8 @@ func TestImageJVMArgumentsBlock_PutsTheImagesLinesFirst(t *testing.T) {
 					got = append(got, v)
 				}
 			}
-			want := append(append(imageLinesRendered(t, release), "-XX:+AlwaysPreTouch"), operator)
-			assert.Equal(t, want, got, "the image's lines less pre-touch, then the user's (opting in), then the operator's")
+			want := append(imageLinesRendered(t, release), operator)
+			assert.Equal(t, want, got, "the image's lines less pre-touch, then the operator's with the user's (opting in) after it")
 			assert.NotContains(t, conf, "server.directories.import", "only the image's JVM lines come through")
 			value, _ := entrypointsim.Setting(conf, "db.tx_log.rotation.size")
 			assert.Equal(t, "256M", value)

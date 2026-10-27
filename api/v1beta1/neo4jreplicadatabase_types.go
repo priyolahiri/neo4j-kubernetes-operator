@@ -296,9 +296,13 @@ type Neo4jReplicaDatabaseStatus struct {
 	LastCommittedTxn int64 `json:"lastCommittedTxn,omitempty"`
 
 	// ReplicationLag is how many transactions the replica is behind, and
-	// therefore the data loss that promoting right now would make permanent.
+	// therefore the data loss that promoting right now would make permanent:
+	// 0 at zero lag. Absent until the operator has read it (a replica being
+	// created or seeded). It keeps the last reading while the operator cannot
+	// read it (the ClusterNotReady condition says why; the lag metric is
+	// withdrawn meanwhile).
 	// +optional
-	ReplicationLag int64 `json:"replicationLag,omitempty"`
+	ReplicationLag *int64 `json:"replicationLag,omitempty"`
 
 	// PromotedAt is when this replica was promoted to a standard database.
 	// +optional

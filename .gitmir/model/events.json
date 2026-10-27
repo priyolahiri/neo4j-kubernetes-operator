@@ -1180,5 +1180,17 @@
     "name": "AuraMemberOrphaned",
     "description": "Emitted when an AuraOrganizationMember or AuraProjectMember deletion leaves the person in Aura: a Normal event under deletionPolicy=Orphan; a Warning when deletionPolicy=Delete could not resolve the credentials, the organization (or, for a project member, the project) within finalizerDeletionGracePeriod, so the finalizer is released and they keep their role (operations.md ids 157, 178). Also a Warning when Aura kept refusing the DELETE for finalizerDeletionGracePeriod (operations.md id 201).",
     "moduleId": "mod-aura-rbac"
+  },
+  {
+    "id": "ev-duplicate-name",
+    "name": "DuplicateName",
+    "description": "Warning on a Neo4jDatabase, Neo4jShardedDatabase, Neo4jCompositeDatabase or Neo4jDatabaseAlias when an older live CR of its kind in the same namespace gives the same name in Neo4j on the same clusterRef, ignoring case: Neo4j lower-cases database, composite and alias names (and a sharded family's), so \"Sales\" and \"sales\" are one object. The oldest creationTimestamp owns the name, then the lower UID; the other is Failed (\"duplicate <Kind>: \"<owner>\" (older) already gives <what> \"<name>\" on clusterRef \"<target>\", and Neo4j's names ignore case; delete or rename one of them before this one can reconcile\") and sends Neo4j nothing. A watch on the kind reconciles it when the owner is deleted or renamed (operations.md id 217). Emitted after the status write that enters it: once per conflict, not on every pass (operations.md id 136).",
+    "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-duplicate-name-kept",
+    "name": "DuplicateNameKept",
+    "description": "Normal event on a Neo4jDatabase, Neo4jCompositeDatabase or Neo4jDatabaseAlias being deleted while another live CR of its kind still gives its name on the same clusterRef, ignoring case: the deletion drops nothing and releases the finalizer (\"<what> \"<name>\" kept, not dropped: <Kind> \"<other>\" still gives it\"), so the database, composite or alias stays for the CR that remains. Before, deleting either of two such CRs dropped the object the other still named (operations.md id 217).",
+    "moduleId": "mod-database"
   }
 ]

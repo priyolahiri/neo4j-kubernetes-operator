@@ -164,6 +164,16 @@ const (
 	// credentials (and endpoint) onto the opted-in hosting deployment and
 	// waits for its rolling restart.
 	EventReasonSeedCredsAutoInherited = "SeedCredsAutoInherited"
+	// EventReasonDuplicateName — Warning on a Neo4jDatabase,
+	// Neo4jShardedDatabase, Neo4jCompositeDatabase or Neo4jDatabaseAlias whose
+	// name another CR of its kind, older, already gives on the same target,
+	// as Neo4j reads names: ignoring case. The newer CR is Failed and acts on
+	// nothing until the older one is gone or renamed (operations.md id 217).
+	EventReasonDuplicateName = "DuplicateName"
+	// EventReasonDuplicateNameKept — a deleted CR whose name another live CR
+	// of its kind still gives on the same target: the database, composite or
+	// alias is left for that CR, not dropped (operations.md id 217).
+	EventReasonDuplicateNameKept = "DuplicateNameKept"
 )
 
 // Plugin events

@@ -86,8 +86,9 @@ type Neo4jReplicaPromotionStatus struct {
 	// wrong default: during a real outage the operator does not get to
 	// second-guess the human. But the RPO actually taken must be auditable
 	// afterwards.
+	// 0 when the replica was not behind; absent until the promotion completes.
 	// +optional
-	ObservedLagTxIds int64 `json:"observedLagTxIds,omitempty"`
+	ObservedLagTxIds *int64 `json:"observedLagTxIds,omitempty"`
 
 	// LastCommittedTxn is the last transaction the replica had applied at
 	// promotion time.

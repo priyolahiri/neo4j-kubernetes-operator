@@ -263,10 +263,11 @@ spec:
 
     # JVM tuning (Neo4j 5.26+ and 2025.x). One line, space-separated: a
     # multi-line value is rejected. It comes after the Neo4j image's own JVM
-    # flags, which both kinds run, and wins a conflicting one. On a cluster it
-    # REPLACES the operator's default JVM flags, so it repeats the ones worth
-    # keeping.
-    server.jvm.additional: "-XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ParallelRefProcEnabled -XX:+UnlockExperimentalVMOptions -XX:+UnlockDiagnosticVMOptions -XX:G1NewSizePercent=2 -XX:G1MaxNewSizePercent=10 -XX:+G1UseAdaptiveIHOP -XX:InitiatingHeapOccupancyPercent=45 -XX:+UseCompressedOops -XX:+UseCompressedClassPointers -XX:+ExitOnOutOfMemoryError"
+    # flags, which both kinds run, and on a cluster after the operator's
+    # default ones (G1 with a 200 ms pause target, string deduplication, …),
+    # which stay; it wins a conflicting flag. Give only what you change: here
+    # a shorter GC pause target for a latency-sensitive workload.
+    server.jvm.additional: "-XX:MaxGCPauseMillis=100"
 
     # Bolt thread pool tuning (Neo4j 5.26+ format)
     server.bolt.thread_pool_min_size: "10"

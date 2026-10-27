@@ -30,6 +30,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/retry"
+	"k8s.io/utils/ptr"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -480,7 +481,7 @@ func (r *Neo4jReplicaDatabaseReconciler) markPromoted(
 		latest.Status.ObservedGeneration = latest.Generation
 		latest.Status.DatabaseType = info.Type
 		latest.Status.LastCommittedTxn = info.LastCommittedTxn
-		latest.Status.ReplicationLag = info.ReplicationLag
+		latest.Status.ReplicationLag = ptr.To(info.ReplicationLag)
 		if latest.Status.PromotedAt == nil {
 			now := metav1.Now()
 			latest.Status.PromotedAt = &now
@@ -1178,7 +1179,7 @@ func (r *Neo4jReplicaDatabaseReconciler) writeStatus(
 		if info != nil {
 			latest.Status.DatabaseType = info.Type
 			latest.Status.LastCommittedTxn = info.LastCommittedTxn
-			latest.Status.ReplicationLag = info.ReplicationLag
+			latest.Status.ReplicationLag = ptr.To(info.ReplicationLag)
 		}
 		if err := r.Status().Update(ctx, latest); err != nil {
 			return err

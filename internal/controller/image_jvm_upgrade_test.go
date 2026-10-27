@@ -20,6 +20,8 @@ import (
 	"strings"
 	"testing"
 
+	corev1 "k8s.io/api/core/v1"
+
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
@@ -71,5 +73,49 @@ func TestUpgrade_ImageJVMBlockRestartsNothing(t *testing.T) {
 				t.Error("the new script must still be written for the next restart")
 			}
 		})
+	}
+}
+
+// A cluster that sets spec.config server.jvm.additional: its ConfigMap from
+// before v1.23.0 carries the line, the new one does not — the line now
+// reaches the servers in NEO4J_server_jvm_additional, after the operator's
+// list (operations.md id 208). The ConfigMap change restarts nothing; the
+// variable's change on the pod template is the cluster's one roll.
+func TestUpgrade_UserJVMLineLeavingTheConfRestartsNothingMore(t *testing.T) {
+	cluster := scaledCluster("ujvm", "2026.08.1-enterprise", 3)
+	cluster.Spec.Config = map[string]string{resources.JVMAdditionalSetting: "-XX:-UseStringDeduplication"}
+	old := resources.BuildConfigMapForEnterprise(cluster)
+	if strings.Contains(old.Data["neo4j.conf"], resources.JVMAdditionalSetting+"=") {
+		t.Fatal("the new conf must not carry the line")
+	}
+	old.Data["neo4j.conf"] += "\n" + resources.JVMAdditionalSetting + "=-XX:-UseStringDeduplication\n"
+	restarted, written, _ := reconcileScale(t, cluster, cluster, old)
+	if restarted {
+		t.Error("the line leaving neo4j.conf must not restart the servers: the variable's change rolls them once")
+	}
+	if strings.Contains(written.Data["neo4j.conf"], resources.JVMAdditionalSetting+"=") {
+		t.Error("the new conf is written without the line")
+	}
+}
+
+// A cluster whose spec.env takes NEO4J_server_jvm_additional from a Secret
+// keeps spec.config's line in neo4j.conf (the operator cannot join the two),
+// and a change of that line restarts the servers, as it always did.
+func TestUpgrade_AJVMLineKeptInTheConfStillRestartsWhenItChanges(t *testing.T) {
+	cluster := scaledCluster("ujvmsrc", "2026.08.1-enterprise", 3)
+	cluster.Spec.Env = []corev1.EnvVar{{Name: resources.JVMAdditionalEnv, ValueFrom: &corev1.EnvVarSource{
+		SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "jvm"}, Key: "flags"}}}}
+	cluster.Spec.Config = map[string]string{resources.JVMAdditionalSetting: "-XX:+HeapDumpOnOutOfMemoryError"}
+	old := resources.BuildConfigMapForEnterprise(cluster)
+	if !strings.Contains(old.Data["neo4j.conf"], resources.JVMAdditionalSetting+"=-XX:+HeapDumpOnOutOfMemoryError") {
+		t.Fatal("test premise: the conf keeps the line")
+	}
+	if restarted, _, _ := reconcileScale(t, cluster, cluster, old.DeepCopy()); restarted {
+		t.Error("the same line restarts nothing")
+	}
+	changed := cluster.DeepCopy()
+	changed.Spec.Config[resources.JVMAdditionalSetting] = "-XX:+HeapDumpOnOutOfMemoryError -XX:MaxGCPauseMillis=100"
+	if restarted, _, _ := reconcileScale(t, cluster, changed, old.DeepCopy()); !restarted {
+		t.Error("a changed JVM line in neo4j.conf restarts the servers")
 	}
 }

@@ -202,6 +202,7 @@ spec:
                   wrong default: during a real outage the operator does not get to
                   second-guess the human. But the RPO actually taken must be auditable
                   afterwards.
+                  0 when the replica was not behind; absent until the promotion completes.
                 format: int64
                 type: integer
               phase:
