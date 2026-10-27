@@ -64,6 +64,9 @@ type upgradeGates struct {
 	databasesCaughtUp func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, podName string) (bool, []string, error)
 	// diagnostics replaces CollectDiagnostics during an upgrade.
 	diagnostics func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error
+	// servers replaces the SHOW SERVERS the Degraded condition is written
+	// from during an upgrade (recordShortfallDuringUpgrade).
+	servers func(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) ([]neo4jclient.ServerInfo, error)
 	// preUpgrade replaces the pre-upgrade check of startRollingUpgrade:
 	// ValidateUpgradeSafety, then SHOW SERVERS, whose versions the target is
 	// held to (preUpgradeCheck).

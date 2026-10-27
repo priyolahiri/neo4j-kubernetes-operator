@@ -50,7 +50,7 @@ operator restarts:
 | Phase | What's happening |
 |---|---|
 | `Staging` | StatefulSet frozen (partition = replica count), new image applied to the template. Before it, the version check and the pre-upgrade health check; if one refuses, nothing changes on the servers (see [When an upgrade stops](#when-an-upgrade-stops-paused-and-failed)) |
-| `Rolling` | Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (`SHOW SERVERS`) **and** that pod's databases (`dbms.cluster.statusCheck`, `SHOW DATABASES`) are verified before the partition is lowered |
+| `Rolling` | Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (`SHOW SERVERS`) **and** that pod's databases (`dbms.cluster.statusCheck`, `SHOW DATABASES`) are verified before the partition is lowered. While a server is unavailable — the one restarting, or one that cannot start on the target — the cluster's `Degraded` condition is `True` and names it; the phase stays as it is |
 | `Stabilizing` | All pods updated; the operator waits for consistently stable cluster health and consensus |
 | `Verifying` | Every server's reported version is checked against the target before the upgrade is declared done |
 | `Completed` | Every server verified on the target; `status.version` is the target |

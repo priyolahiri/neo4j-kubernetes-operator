@@ -1146,6 +1146,7 @@ A cluster is `Forming` until every server has joined it once. After that, a miss
 | A majority available, short for longer than the grace period | `Degraded` | `False` (`ClusterDegraded`) | `True` | proceed |
 | Half or fewer available | `Forming` | `Unknown` | `True` | pause |
 | First formation, a scale-up, or a rollout of the server StatefulSet | `Forming` | `Unknown` | unchanged | pause |
+| A rolling image upgrade in progress, a server unavailable (the one restarting, or one that cannot start) | as the upgrade keeps it (`Ready`) | as the phase | `True`, naming it; `False` once every server is available | proceed |
 
 ¹ `Neo4jUser`, `Neo4jRole`, `Neo4jRoleBinding`, `Neo4jAuthRule`, `Neo4jDatabase`, `Neo4jShardedDatabase`, `Neo4jDatabaseAlias`, `Neo4jCompositeDatabase`, `Neo4jReplicaDatabase`, `Neo4jReplicaPromotion` and `Neo4jBackup`. Whether a statement can run on the servers that are up is Neo4j's call, reported on that resource. Operations that restart every server — a rolling image upgrade, a `Neo4jPlugin` install — wait until every server is back.
 
