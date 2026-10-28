@@ -108,9 +108,10 @@ func (r *Neo4jEnterpriseClusterReconciler) collectDiagnosticsDuringUpgrade(ctx c
 }
 
 // recordShortfallDuringUpgrade writes the Degraded condition from SHOW
-// SERVERS during an upgrade: True (ServersUnavailable) naming each Enabled
-// server that is not Available, False (AllServersAvailable) once every one of
-// the StatefulSet's servers is; a server not yet Enabled leaves it as it is.
+// SERVERS during an upgrade: True (ServersUnavailable) naming each member
+// (Enabled or Cordoned) that is not Available, False (AllServersAvailable)
+// once every one of the StatefulSet's servers is; a server not yet a member
+// leaves it as it is.
 // Only that condition is written, and only when it changes.
 func (r *Neo4jEnterpriseClusterReconciler) recordShortfallDuringUpgrade(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, servers []neo4jclient.ServerInfo) {
 	servers = withKnownAddresses(cluster, servers)
@@ -122,7 +123,7 @@ func (r *Neo4jEnterpriseClusterReconciler) recordShortfallDuringUpgrade(ctx cont
 	a := shortfallAssessment{Expected: expected}
 	enabled := 0
 	for _, s := range servers {
-		if s.State != "Enabled" {
+		if !serverIsMember(s) { // Enabled or Cordoned, as the normal pass counts (id 224)
 			continue
 		}
 		enabled++

@@ -24,6 +24,10 @@ const (
 	EventReasonReconcileFailed               = "ReconcileFailed"
 	EventReasonScaleDownDraining             = "ScaleDownDraining"
 	EventReasonScaleDownBlocked              = "ScaleDownBlocked"
+	// EventReasonScaleDownSetBack — a scale-down set back before its drain
+	// ended enabled the servers the drain had cordoned (ENABLE SERVER); one
+	// cordoned by hand is left cordoned (operations.md id 224).
+	EventReasonScaleDownSetBack = "ScaleDownSetBack"
 	// EventReasonConnectivityDegraded — the operator has failed to reach the
 	// cluster's Bolt endpoint for a sustained streak of reconciles (#263).
 	EventReasonConnectivityDegraded = "ConnectivityDegraded"

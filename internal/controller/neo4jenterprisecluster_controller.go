@@ -2772,14 +2772,11 @@ func (r *Neo4jEnterpriseClusterReconciler) verifyNeo4jClusterFormation(ctx conte
 		return formationCheck{message: analysis.ErrorMessage, servers: servers}
 	}
 
-	// Verify we have the expected number of servers across all views
+	// Verify we have the expected number of servers across all views. A
+	// cordoned server counts: it is a member and keeps its databases
+	// (serverServes, operations.md id 224).
 	if len(analysis.ClusterViews) > 0 && analysis.LargestCluster.ConnectionError == nil {
-		availableServers := 0
-		for _, server := range analysis.LargestCluster.Servers {
-			if server.State == "Enabled" && server.Health == "Available" {
-				availableServers++
-			}
-		}
+		availableServers := countAvailableServers(analysis.LargestCluster.Servers)
 
 		if availableServers >= expectedServers {
 			r.recordCleanSplitBrainCheck(cluster, podsFingerprint, time.Now())
@@ -2815,6 +2812,8 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 		if formation.servers == nil {
 			in.ReadyServerPods = r.readyServerPods(ctx, cluster)
 			in.UnreachableSince = r.unreachableSince(cluster)
+		} else {
+			in.NotReadyPods = r.notReadyServerPods(ctx, cluster)
 		}
 	}
 	a := assessServerShortfall(in)
@@ -2832,12 +2831,17 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 	var shortfall string
 	switch a.Verdict {
 	case verdictQuorumLost, verdictWithinGrace, verdictDegraded:
-		shortfall = outageDetail(a, r.notReadyServerPods(ctx, cluster))
+		shortfall = outageDetail(a, in.NotReadyPods)
 	}
 	switch a.Verdict {
 	case verdictUnmeasured:
 		// Nothing is known to have changed, so nothing is written; the next
 		// pass asks Neo4j again.
+
+	case verdictNoneShort:
+		// No server is short: the phase and the conditions stay as they are,
+		// and the pass that finds the check whole writes Ready (operations.md
+		// id 225).
 
 	case verdictQuorumLost:
 		if r.firstAnnouncement(cluster, a.Verdict, false) {
@@ -2929,13 +2933,10 @@ func (r *Neo4jEnterpriseClusterReconciler) legacyClusterFormationCheck(ctx conte
 			}
 		}
 
-		// Count available servers
-		availableServers := 0
-		for _, server := range servers {
-			if server.State == "Enabled" && server.Health == "Available" {
-				availableServers++
-			}
-		}
+		// Count the members available, a cordoned server among them: one
+		// cordoned by hand, or by a scale-down set back, kept a cluster
+		// Forming with "Cluster formation verification incomplete" (#608).
+		availableServers := countAvailableServers(servers)
 
 		logger.Info("Cluster formation status",
 			"attempt", attempt,

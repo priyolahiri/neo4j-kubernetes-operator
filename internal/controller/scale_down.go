@@ -75,6 +75,14 @@ func parseServerOrdinal(s, clusterName string) (int, bool) {
 // restart.
 const ScaleDownDrainingServersAnnotation = "neo4j.com/scale-down-draining-servers"
 
+// ScaleDownCordonedServersAnnotation holds the comma-separated Neo4j serverIds
+// the drain itself cordoned, written before the CORDON runs. It is what a
+// scale-down set back before its drain ended gives back with ENABLE SERVER,
+// and nothing else: SHOW SERVERS does not say who cordoned a server, and the
+// drain set alone would include a server cordoned by hand, which the drain
+// deallocates without cordoning it (operations.md id 224).
+const ScaleDownCordonedServersAnnotation = "neo4j.com/scale-down-cordoned-servers"
+
 func scaleDownDrainInProgress(owner client.Object) bool {
 	if owner == nil {
 		return false
@@ -83,11 +91,21 @@ func scaleDownDrainInProgress(owner client.Object) bool {
 }
 
 func drainServerIDsFromAnnotation(owner client.Object) []string {
+	return annotationIDs(owner, ScaleDownDrainingServersAnnotation)
+}
+
+// cordonedByDrain is the record of the servers the drain cordoned.
+func cordonedByDrain(owner client.Object) []string {
+	return annotationIDs(owner, ScaleDownCordonedServersAnnotation)
+}
+
+// annotationIDs splits a comma-separated id list annotation.
+func annotationIDs(owner client.Object, key string) []string {
 	if owner == nil {
 		return nil
 	}
 	var ids []string
-	for _, p := range strings.Split(owner.GetAnnotations()[ScaleDownDrainingServersAnnotation], ",") {
+	for _, p := range strings.Split(owner.GetAnnotations()[key], ",") {
 		if p = strings.TrimSpace(p); p != "" {
 			ids = append(ids, p)
 		}
@@ -304,11 +322,10 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	}
 
 	if current <= desired {
-		// Not scaling down (or scaled back up mid-drain) — cancel any hold so
-		// replicas reconcile normally, and reset a stale ServersPendingDrain
-		// condition (e.g. a prior ScaleDownBlocked) so aborting clears it.
-		// Servers not yet cordoned are untouched.
-		return r.clearScaleDownState(ctx, cluster)
+		// Not scaling down, or a scale-down set back before its drain ended:
+		// the drain gives back what it took, or refuses the set-back when
+		// Neo4j cannot undo it (setBackScaleDown, operations.md id 224).
+		return r.setBackScaleDown(ctx, cluster, current)
 	}
 
 	// Engage the replica hold THIS reconcile, before we touch Neo4j. The hold is
@@ -333,7 +350,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	}
 	defer func() { _ = nc.Close() }()
 
-	servers, err := nc.ListServersFromLeader(ctx)
+	reported, err := nc.ListServersFromLeader(ctx)
 	if err != nil {
 		logger.Info("Scale-down drain: SHOW SERVERS failed, holding replicas", "error", err)
 		return nil
@@ -345,12 +362,22 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	// the drain left it out: a 5→3 scale-down issued while server-3's pod was
 	// being replaced drained only server-4, released the hold, and server-3
 	// stayed Enabled/Unavailable for good (#594; operations.md id 213).
-	servers = withKnownAddresses(cluster, servers)
+	servers := withKnownAddresses(cluster, reported)
 	unidentified, undecided := unidentifiedRemovedServerIDs(servers, cluster.Name, desired)
 
 	live := map[string]neo4jclient.ServerInfo{}
 	for _, s := range servers {
 		live[serverIdentifier(s)] = s
+	}
+
+	// A scale-down set back part of the way (5→3, then 4) keeps servers the
+	// drain had taken. One Neo4j can no longer give back — deallocating, or
+	// dropped and still running in a pod the StatefulSet keeps — refuses the
+	// set-back: the replicas stay held and nothing more is drained until the
+	// spec lets the drain finish it (operations.md id 224).
+	if past := serversPastUndoing(servers, reported, cluster.Name, desired, drainTouched(cluster), false); len(past) > 0 {
+		r.blockScaleDown(ctx, cluster, setBackRefusal(past, cluster.Name, current))
+		return nil
 	}
 
 	// Drain-target id set = (currently removable by ordinal) ∪ (persisted ids
@@ -359,6 +386,8 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	// covers a Deallocating server whose address went NULL (initialRemoved can't
 	// derive its ordinal, but its id row persists) AND evicts both the
 	// provisional pod-name hold seeded above and servers already Dropped + gone.
+	// A persisted server whose ordinal the spec now keeps leaves the set: the
+	// drain gives it back (keptByTheSpec).
 	idSet := map[string]bool{}
 	for _, id := range initialRemovedServerIDs(servers, cluster.Name, desired) {
 		idSet[id] = true
@@ -366,9 +395,22 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	for _, id := range unidentified {
 		idSet[id] = true
 	}
+	owners := reportedOrdinals(reported, cluster.Name)
+	var keep []string
 	for _, id := range drainServerIDsFromAnnotation(cluster) {
-		if s, ok := live[id]; ok && !strings.EqualFold(s.State, "dropped") {
-			idSet[id] = true
+		s, ok := live[id]
+		if !ok || strings.EqualFold(s.State, "dropped") {
+			continue
+		}
+		if keptByTheSpec(s, owners, cluster.Name, desired) {
+			keep = append(keep, id)
+			continue
+		}
+		idSet[id] = true
+	}
+	if len(keep) > 0 {
+		if err := r.giveBackCordoned(ctx, cluster, nc, servers, keep); err != nil {
+			return nil // retried next pass; the replicas stay held
 		}
 	}
 	if len(idSet) == 0 && undecided == "" {
@@ -382,7 +424,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		// empty (#606).
 		logger.Info("Scale-down drain complete; releasing replica hold", "desired", desired)
 		r.settleScaleDownCondition(ctx, cluster, scaleDownDrainCompleteMessage)
-		return r.setDrainServers(ctx, cluster, nil)
+		return r.clearDrainRecords(ctx, cluster)
 	}
 
 	var active []neo4jclient.ServerInfo
@@ -460,6 +502,14 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	step := planScaleDownStep(active)
 	switch step.phase {
 	case scaleDownCordon:
+		// Recorded before Neo4j is asked, so an operator restart between
+		// the two cannot leave a server cordoned with no record of it; a
+		// server the record lists that is not cordoned is left as it is
+		// when given back (operations.md id 224).
+		if err := r.setScaleDownIDs(ctx, cluster, ScaleDownCordonedServersAnnotation,
+			unionIDs(cordonedByDrain(cluster), step.serverIDs)); err != nil {
+			return err
+		}
 		for _, id := range step.serverIDs {
 			if cerr := nc.CordonServer(ctx, id); cerr != nil {
 				logger.Error(cerr, "Scale-down drain: cordon failed", "server", id)
@@ -517,6 +567,7 @@ type scaleDownClient interface {
 	ListServersFromLeader(ctx context.Context) ([]neo4jclient.ServerInfo, error)
 	MinimumSystemPrimaries(ctx context.Context) int
 	CordonServer(ctx context.Context, serverID string) error
+	EnableServer(ctx context.Context, serverID string) error
 	DeallocateServers(ctx context.Context, serverIDs []string, dryRun bool) error
 	DropServer(ctx context.Context, serverID string) error
 	Close() error
@@ -555,14 +606,246 @@ const (
 	scaleDownNotInProgressMessage = "Scale-down not in progress"
 )
 
-// clearScaleDownState releases the replica hold (clears the draining annotation)
-// and, when the ServersPendingDrain condition is True (e.g. a prior
-// ScaleDownBlocked or in-progress), resets it to False — so aborting a
-// scale-down (scaling back up, or a no-op) never leaves a stale Blocked/InProgress
-// status. Both halves are no-ops when already clear, so it is safe to call every
-// reconcile; a drain's "complete" stays as it is.
-func (r *Neo4jEnterpriseClusterReconciler) clearScaleDownState(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
+// setBackScaleDown is the drain's pass while the StatefulSet runs no more
+// servers than the spec asks for: every pass of a cluster that is not scaling
+// down, and the pass that finds a scale-down set back before its drain ended.
+//
+// With no drain on record — the steady state of every cluster — it asks Neo4j
+// nothing, and settles a ServersPendingDrain condition left True, as before.
+// A drain on record is resolved against SHOW SERVERS:
+//   - a server the drain took that Neo4j cannot give back (deallocating,
+//     deallocated, or dropped and still running in a pod the StatefulSet
+//     keeps) refuses the set-back: the records and the replica hold stay, and
+//     ServersPendingDrain is True (ScaleDownBlocked) naming them and the spec
+//     that lets the drain finish them;
+//   - otherwise each server the drain itself cordoned that is still Cordoned
+//     is enabled again (ENABLE SERVER), never one cordoned by hand, the
+//     records go, and the condition reads "Scale-down not in progress".
+//
+// It used to release the hold and reset the condition without asking Neo4j:
+// a 3→5→3→5 set-back within a second left server-3 and server-4 Cordoned, and
+// the cluster Forming until a later scale-down dropped them (#608). While
+// Neo4j cannot be asked, the records stay and the next pass asks again; a
+// pass that finds nothing left to give back leaves Neo4j as it is, so the
+// passes after a set-back, or one on a copy of the cluster from before its
+// writes, enable nothing twice (operations.md id 224).
+func (r *Neo4jEnterpriseClusterReconciler) setBackScaleDown(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, current int) error {
+	drained := drainServerIDsFromAnnotation(cluster)
+	if len(drained) == 0 && len(cordonedByDrain(cluster)) == 0 {
+		r.settleScaleDownCondition(ctx, cluster, scaleDownNotInProgressMessage)
+		return nil
+	}
+	logger := log.FromContext(ctx)
+	nc, err := r.scaleDownClientFor(ctx, cluster)
+	if err != nil {
+		logger.Info("Scale-down set back: cannot connect yet; the drain's records stay until Neo4j can be asked", "error", err)
+		return nil
+	}
+	defer func() { _ = nc.Close() }()
+	reported, err := nc.ListServersFromLeader(ctx)
+	if err != nil {
+		logger.Info("Scale-down set back: SHOW SERVERS failed; the drain's records stay until Neo4j can be asked", "error", err)
+		return nil
+	}
+	servers := withKnownAddresses(cluster, reported)
+	if past := serversPastUndoing(servers, reported, cluster.Name, current, drainTouched(cluster), true); len(past) > 0 {
+		r.blockScaleDown(ctx, cluster, setBackRefusal(past, cluster.Name, current))
+		return nil
+	}
+	if err := r.giveBackCordoned(ctx, cluster, nc, servers, cordonedByDrain(cluster)); err != nil {
+		return nil // retried next pass
+	}
 	r.settleScaleDownCondition(ctx, cluster, scaleDownNotInProgressMessage)
+	return r.clearDrainRecords(ctx, cluster)
+}
+
+// giveBackCordoned enables again each server of ids that the drain's record
+// says it cordoned and SHOW SERVERS lists Cordoned, then takes ids out of the
+// record. A server of ids the drain did not cordon — one cordoned by hand,
+// which the drain deallocates without cordoning it — is left as Neo4j has it,
+// and so is one the record lists that is no longer Cordoned. It announces one
+// ScaleDownSetBack for the servers it enabled, none when it enabled none.
+func (r *Neo4jEnterpriseClusterReconciler) giveBackCordoned(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
+	nc scaleDownClient, servers []neo4jclient.ServerInfo, ids []string) error {
+	record := map[string]bool{}
+	for _, id := range cordonedByDrain(cluster) {
+		record[id] = true
+	}
+	byID := map[string]neo4jclient.ServerInfo{}
+	for _, s := range servers {
+		byID[serverIdentifier(s)] = s
+	}
+	sorted := append([]string(nil), ids...)
+	sort.Strings(sorted)
+	given := map[string]bool{}
+	var enabled []string
+	for _, id := range sorted {
+		given[id] = true
+		if !record[id] {
+			continue
+		}
+		s, ok := byID[id]
+		if !ok || !strings.EqualFold(s.State, "cordoned") {
+			continue
+		}
+		if err := nc.EnableServer(ctx, id); err != nil {
+			log.FromContext(ctx).Info("Scale-down set back: ENABLE SERVER failed; the next pass tries again", "server", id, "error", err.Error())
+			return err
+		}
+		enabled = append(enabled, serverLabel(s, cluster.Name))
+	}
+	var remaining []string
+	for _, id := range cordonedByDrain(cluster) {
+		if !given[id] {
+			remaining = append(remaining, id)
+		}
+	}
+	if err := r.setScaleDownIDs(ctx, cluster, ScaleDownCordonedServersAnnotation, remaining); err != nil {
+		return err
+	}
+	if len(enabled) > 0 {
+		r.Recorder.Eventf(cluster, corev1.EventTypeNormal, EventReasonScaleDownSetBack,
+			"Scale-down set back: enabled %d server(s) the drain had cordoned: %s", len(enabled), strings.Join(enabled, ", "))
+	}
+	return nil
+}
+
+// serverPastUndoing reports a SHOW SERVERS row a drain cannot give back:
+// deallocating or deallocated — "This state is irreversible" (Operations
+// Manual, "Managing servers in a cluster", 5.x and current) — or dropped,
+// which "cannot rejoin a cluster".
+func serverPastUndoing(s neo4jclient.ServerInfo) bool {
+	switch strings.ToLower(s.State) {
+	case "deallocating", "deallocated", "dropped":
+		return true
+	}
+	return false
+}
+
+// reportedOrdinals maps each pod ordinal to the id of the row whose own
+// reported address (not one filled in from memory) names it: the server that
+// runs in that pod now.
+func reportedOrdinals(reported []neo4jclient.ServerInfo, clusterName string) map[int]string {
+	owners := map[int]string{}
+	for _, s := range reported {
+		if ord, ok := parseServerOrdinal(s.Address, clusterName); ok {
+			if _, taken := owners[ord]; !taken {
+				owners[ord] = serverIdentifier(s)
+			}
+		}
+	}
+	return owners
+}
+
+// runsInOrdinal reports whether a row whose ordinal is ord can be the server
+// in that pod: no other row reports the pod's address as its own. An earlier
+// identity of a pod (its volume replaced) is listed with no address, and the
+// one it last reported fills it in; the pod's server now reports it.
+func runsInOrdinal(owners map[int]string, ord int, id string) bool {
+	owner, ok := owners[ord]
+	return !ok || owner == id
+}
+
+// keptByTheSpec reports whether a server of the drain set is one the spec now
+// keeps: its pod's ordinal is below spec.topology.servers, and it is that
+// pod's server.
+func keptByTheSpec(s neo4jclient.ServerInfo, owners map[int]string, clusterName string, desired int) bool {
+	ord, ok := serverOrdinal(s, clusterName)
+	return ok && ord < desired && runsInOrdinal(owners, ord, serverIdentifier(s))
+}
+
+// drainTouched is every server the drain on record took: its drain set and
+// the servers it cordoned (which keeps one it dropped since, and the drain
+// set no longer lists).
+func drainTouched(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) map[string]bool {
+	touched := map[string]bool{}
+	for _, id := range drainServerIDsFromAnnotation(cluster) {
+		touched[id] = true
+	}
+	for _, id := range cordonedByDrain(cluster) {
+		touched[id] = true
+	}
+	return touched
+}
+
+// serversPastUndoing returns the servers the drain took (touched) past
+// undoing — deallocating, deallocated or dropped — that the StatefulSet keeps:
+// those that run in a pod below keptBelow, or, with no ordinal known, any of
+// them when every pod is kept (allKept: a full set-back). A server the drain
+// never touched — one deallocated by hand — is not the set-back's to refuse.
+func serversPastUndoing(servers, reported []neo4jclient.ServerInfo, clusterName string, keptBelow int,
+	touched map[string]bool, allKept bool) []neo4jclient.ServerInfo {
+	owners := reportedOrdinals(reported, clusterName)
+	var past []neo4jclient.ServerInfo
+	for _, s := range servers {
+		id := serverIdentifier(s)
+		if !serverPastUndoing(s) || !touched[id] {
+			continue
+		}
+		if ord, ok := serverOrdinal(s, clusterName); ok {
+			if ord < keptBelow && runsInOrdinal(owners, ord, id) {
+				past = append(past, s)
+			}
+			continue
+		}
+		if allKept {
+			past = append(past, s)
+		}
+	}
+	return past
+}
+
+// setBackRefusal is the ServersPendingDrain message of a set-back that comes
+// too late for some servers: it names them and the spec that lets the drain
+// finish them.
+func setBackRefusal(past []neo4jclient.ServerInfo, clusterName string, replicas int) string {
+	names := make([]string, 0, len(past))
+	lowest := -1
+	for _, s := range past {
+		names = append(names, fmt.Sprintf("%s (%s)", serverLabel(s, clusterName), s.State))
+		if ord, ok := serverOrdinal(s, clusterName); ok && (lowest < 0 || ord < lowest) {
+			lowest = ord
+		}
+	}
+	sort.Strings(names)
+	advice := "Lower spec.topology.servers again so the drain can finish them, then raise it to add new servers in their place."
+	if lowest >= 0 {
+		advice = fmt.Sprintf("Set spec.topology.servers to %d so the drain can finish them, then raise it to add new servers in their place.", lowest)
+	}
+	return fmt.Sprintf("Scale-down set back too late for %s: Neo4j cannot enable a server again once it deallocates, and a dropped server cannot rejoin. %s Replicas are held at %d.",
+		strings.Join(names, ", "), advice, replicas)
+}
+
+// serverLabel names a server by its pod, with its id, when its ordinal is
+// known; else by its id.
+func serverLabel(s neo4jclient.ServerInfo, clusterName string) string {
+	if ord, ok := serverOrdinal(s, clusterName); ok {
+		return fmt.Sprintf("%s-server-%d (%s)", clusterName, ord, serverIdentifier(s))
+	}
+	return serverIdentifier(s)
+}
+
+// unionIDs is a and b together, sorted, each once.
+func unionIDs(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, id := range append(append([]string(nil), a...), b...) {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// clearDrainRecords releases the replica hold and drops the record of the
+// servers the drain cordoned: a drain that ended, or a set-back that gave
+// back what it took.
+func (r *Neo4jEnterpriseClusterReconciler) clearDrainRecords(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
+	if err := r.setScaleDownIDs(ctx, cluster, ScaleDownCordonedServersAnnotation, nil); err != nil {
+		return err
+	}
 	return r.setDrainServers(ctx, cluster, nil)
 }
 
@@ -633,17 +916,24 @@ func (r *Neo4jEnterpriseClusterReconciler) setDrainServers(ctx context.Context, 
 		// No drain holds an upgrade back any more.
 		r.deferredUpgradeTargets.Delete(drainDeferralKey(cluster))
 	}
+	return r.setScaleDownIDs(ctx, cluster, ScaleDownDrainingServersAnnotation, ids)
+}
+
+// setScaleDownIDs sets (or removes, when ids is empty) one of the drain's id
+// list annotations on the cluster CR, in memory and persisted, as a patch of
+// that annotation alone (operations.md id 150).
+func (r *Neo4jEnterpriseClusterReconciler) setScaleDownIDs(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, key string, ids []string) error {
 	val := strings.Join(ids, ",")
-	if cluster.GetAnnotations()[ScaleDownDrainingServersAnnotation] == val {
+	if cluster.GetAnnotations()[key] == val {
 		return nil
 	}
 	if cluster.Annotations == nil {
 		cluster.Annotations = map[string]string{}
 	}
 	if val == "" {
-		delete(cluster.Annotations, ScaleDownDrainingServersAnnotation)
+		delete(cluster.Annotations, key)
 	} else {
-		cluster.Annotations[ScaleDownDrainingServersAnnotation] = val
+		cluster.Annotations[key] = val
 	}
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
@@ -655,9 +945,9 @@ func (r *Neo4jEnterpriseClusterReconciler) setDrainServers(ctx context.Context, 
 				latest.Annotations = map[string]string{}
 			}
 			if val == "" {
-				delete(latest.Annotations, ScaleDownDrainingServersAnnotation)
+				delete(latest.Annotations, key)
 			} else {
-				latest.Annotations[ScaleDownDrainingServersAnnotation] = val
+				latest.Annotations[key] = val
 			}
 		})
 	})

@@ -41,12 +41,14 @@ import (
 )
 
 // drainNeo4j plays the system database the drain talks to: servers by id,
-// each reporting its address only while it is available.
+// each reporting its address only while it is available — and, with
+// noDeallocatingAddress, not while it deallocates either.
 type drainNeo4j struct {
-	servers map[string]*neo4jclient.ServerInfo
-	address map[string]string
-	down    map[string]bool
-	ops     []string
+	servers               map[string]*neo4jclient.ServerInfo
+	address               map[string]string
+	down                  map[string]bool
+	noDeallocatingAddress bool
+	ops                   []string
 }
 
 func newDrainNeo4j(cluster string, n int, down ...int) *drainNeo4j {
@@ -71,9 +73,12 @@ func (d *drainNeo4j) ListServersFromLeader(context.Context) ([]neo4jclient.Serve
 	out := make([]neo4jclient.ServerInfo, 0, len(ids))
 	for _, id := range ids {
 		s := *d.servers[id]
-		if d.down[id] {
+		switch {
+		case d.down[id]:
 			s.Health, s.Address = "Unavailable", "" // SHOW SERVERS: NULL
-		} else {
+		case d.noDeallocatingAddress && (s.State == "Deallocating" || s.State == "Deallocated"):
+			s.Address = ""
+		default:
 			s.Address = d.address[id]
 		}
 		out = append(out, s)
@@ -85,6 +90,18 @@ func (d *drainNeo4j) CordonServer(_ context.Context, id string) error {
 	d.ops = append(d.ops, "cordon "+id)
 	d.servers[id].State = "Cordoned"
 	return nil
+}
+
+// EnableServer is ENABLE SERVER: a cordoned (or enabled) server is Enabled
+// afterwards; Neo4j refuses it for one deallocating or past it.
+func (d *drainNeo4j) EnableServer(_ context.Context, id string) error {
+	d.ops = append(d.ops, "enable "+id)
+	switch d.servers[id].State {
+	case "Enabled", "Cordoned":
+		d.servers[id].State = "Enabled"
+		return nil
+	}
+	return fmt.Errorf("server %s is %s and cannot be enabled", id, d.servers[id].State)
 }
 func (d *drainNeo4j) DeallocateServers(_ context.Context, ids []string, dryRun bool) error {
 	if dryRun {

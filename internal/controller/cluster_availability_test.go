@@ -104,7 +104,9 @@ func TestAssessServerShortfall(t *testing.T) {
 		{"one of three down for an hour: Degraded",
 			shortfallInput{Formed: true, Servers: availServers(3, 2), Expected: 3, UnavailableSince: ago(time.Hour)}, verdictDegraded, 2},
 		{"pod gone but Neo4j has not noticed yet: still a shortfall",
-			shortfallInput{Formed: true, Servers: availServers(3, 3), Expected: 3}, verdictWithinGrace, 3},
+			shortfallInput{Formed: true, Servers: availServers(3, 3), Expected: 3, NotReadyPods: []string{"c-server-2 (missing)"}}, verdictWithinGrace, 3},
+		{"pod terminating but Neo4j has not noticed yet: still a shortfall",
+			shortfallInput{Formed: true, Servers: availServers(3, 3), Expected: 3, NotReadyPods: []string{"c-server-2 (terminating)"}}, verdictWithinGrace, 3},
 		{"three of four is a majority",
 			shortfallInput{Formed: true, Servers: availServers(4, 3), Expected: 4}, verdictWithinGrace, 3},
 

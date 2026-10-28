@@ -105,6 +105,14 @@ func TestSplitBrainCheckSkippable(t *testing.T) {
 	if !splitBrainCheckSkippable(ready, availableServers(3), recent, "p", 5*time.Minute, now) {
 		t.Fatal("a Ready, whole cluster with unchanged pods and a recent clean check must skip")
 	}
+	// A cordoned server is a member that keeps its databases, and the full
+	// check counts it so (operations.md id 224): it is no shortfall, so a
+	// cluster with one cordoned by hand is not checked in full on every pass.
+	cordoned := availableServers(3)
+	cordoned[1].State = "Cordoned"
+	if !splitBrainCheckSkippable(ready, cordoned, recent, "p", 5*time.Minute, now) {
+		t.Fatal("a cordoned server is a member: the cluster is whole")
+	}
 
 	degraded := ready.DeepCopy()
 	degraded.Status.Phase = neo4jv1beta1.PhaseDegraded
@@ -112,8 +120,8 @@ func TestSplitBrainCheckSkippable(t *testing.T) {
 	forming.Status.Phase = neo4jv1beta1.PhaseForming
 	short := availableServers(3)
 	short[2].Health = "Unavailable"
-	cordoned := availableServers(3)
-	cordoned[1].State = "Cordoned"
+	deallocating := availableServers(3)
+	deallocating[1].State = "Deallocating"
 
 	for _, tc := range []struct {
 		name     string
@@ -129,7 +137,7 @@ func TestSplitBrainCheckSkippable(t *testing.T) {
 		{"Degraded", degraded, availableServers(3), recent, "p", 5 * time.Minute},
 		{"Forming", forming, availableServers(3), recent, "p", 5 * time.Minute},
 		{"a server unavailable", ready, short, recent, "p", 5 * time.Minute},
-		{"a server cordoned", ready, cordoned, recent, "p", 5 * time.Minute},
+		{"a server deallocating", ready, deallocating, recent, "p", 5 * time.Minute},
 		{"scaled up past the servers listed", ready, availableServers(2), recent, "p", 5 * time.Minute},
 		{"pods changed", ready, availableServers(3), recent, "q", 5 * time.Minute},
 		{"interval elapsed", ready, availableServers(3), &splitBrainCheck{at: now.Add(-5 * time.Minute), pods: "p"}, "p", 5 * time.Minute},
