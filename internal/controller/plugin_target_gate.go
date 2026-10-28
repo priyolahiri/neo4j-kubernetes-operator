@@ -514,17 +514,20 @@ func podInitContainer(pod corev1.PodSpec, name string) (corev1.Container, bool) 
 }
 
 // statefulSetOrdinal returns the ordinal of a pod of the StatefulSet sts
-// ({sts}-{ordinal}).
+// ({sts}-{ordinal}). It is parsed as a 32-bit value: callers compare it with
+// int32 replicas and partitions and convert it to int32, and a suffix out of
+// that range is no ordinal a StatefulSet gives (CodeQL
+// go/incorrect-integer-conversion).
 func statefulSetOrdinal(sts, pod string) (int, bool) {
 	suffix, ok := strings.CutPrefix(pod, sts+"-")
 	if !ok {
 		return 0, false
 	}
-	ordinal, err := strconv.Atoi(suffix)
-	if err != nil || ordinal < 0 || strconv.Itoa(ordinal) != suffix {
+	ordinal, err := strconv.ParseInt(suffix, 10, 32)
+	if err != nil || ordinal < 0 || strconv.FormatInt(ordinal, 10) != suffix {
 		return 0, false
 	}
-	return ordinal, true
+	return int(ordinal), true
 }
 
 // failingPod describes a pod that cannot start because a container fails;
