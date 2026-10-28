@@ -798,16 +798,30 @@ func (r *Neo4jEnterpriseClusterReconciler) stepUpgradeVerifying(
 	if us := cluster.Status.UpgradeStatus; us != nil && us.StartTime != nil {
 		startTime = us.StartTime.Time
 	}
-	if err := orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "Rolling upgrade completed successfully", "", reported); err != nil {
+	if err := r.completeUpgrade(ctx, cluster, orch, reported); err != nil {
 		logger.Error(err, "Failed to persist Completed upgrade phase; retrying")
 		return ctrl.Result{RequeueAfter: upgradeTransitionRequeue}, nil
 	}
-	_ = r.updateClusterStatusWithVersion(ctx, cluster, "Ready", "Rolling upgrade completed successfully", cluster.Spec.Image.Tag)
 
 	orch.upgradeMetrics.RecordUpgrade(ctx, true, time.Since(startTime))
 	r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonUpgradeCompleted, "Rolling upgrade completed successfully")
 	logger.Info("Rolling upgrade completed successfully", "version", cluster.Spec.Image.Tag)
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
+}
+
+// completeUpgrade records a verified upgrade: the record Completed, with what
+// the servers reported (status.runningVersion for a tag without a patch), then
+// the cluster's Ready status and version in one write. That write announces
+// ClusterReady only when it takes the cluster into Ready — a walk that
+// replaced servers which could not start on a cluster Degraded or Forming —
+// never for a cluster that stayed Ready through its upgrade (operations.md id
+// 136, #606).
+func (r *Neo4jEnterpriseClusterReconciler) completeUpgrade(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, orch *RollingUpgradeOrchestrator, reported string) error {
+	if err := orch.updateUpgradeStatus(ctx, cluster, upgradePhaseCompleted, "Rolling upgrade completed successfully", "", reported); err != nil {
+		return err
+	}
+	_ = r.updateClusterStatusWithVersion(ctx, cluster, neo4jv1beta1.PhaseReady, "Rolling upgrade completed successfully", cluster.Spec.Image.Tag)
+	return nil
 }
 
 // failUpgrade routes a step failure: Paused when autoPauseOnFailure is set

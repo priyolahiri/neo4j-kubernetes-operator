@@ -372,7 +372,17 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		}
 	}
 	if len(idSet) == 0 && undecided == "" {
-		return r.clearScaleDownState(ctx, cluster)
+		// Nothing left to drain: every server the scale-down removes is
+		// dropped, or gone. The condition of a drain the operator recorded
+		// says the drain is complete, and the passes after it leave it so
+		// (settleScaleDownCondition). This branch used to reset it as for an
+		// aborted scale-down ("not in progress"), and the completion's message
+		// sat further down, where no pass reached it: every id in the set is
+		// a live server not dropped, so nothing is active only when the set is
+		// empty (#606).
+		logger.Info("Scale-down drain complete; releasing replica hold", "desired", desired)
+		r.settleScaleDownCondition(ctx, cluster, scaleDownDrainCompleteMessage)
+		return r.setDrainServers(ctx, cluster, nil)
 	}
 
 	var active []neo4jclient.ServerInfo
@@ -393,11 +403,6 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonServersPendingDrain,
 			fmt.Sprintf("Scale-down to %d server(s) waits: %s", desired, undecided))
 		return r.setDrainServers(ctx, cluster, provisionalDrainHoldNames(cluster.Name, current, desired))
-	}
-	if len(active) == 0 {
-		logger.Info("Scale-down drain complete; releasing replica hold", "desired", desired)
-		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionFalse, ConditionReasonNoServersPendingDrain, "Scale-down drain complete")
-		return r.setDrainServers(ctx, cluster, nil)
 	}
 
 	// Persist/refresh the target set (also holds replicas via the annotation).
@@ -542,17 +547,52 @@ func provisionalDrainHoldNames(clusterName string, current, desired int) []strin
 	return names
 }
 
+// The messages of a ServersPendingDrain condition that is False: a drain that
+// ran to its end, and a scale-down that stopped before it did (scaled back
+// up).
+const (
+	scaleDownDrainCompleteMessage = "Scale-down drain complete"
+	scaleDownNotInProgressMessage = "Scale-down not in progress"
+)
+
 // clearScaleDownState releases the replica hold (clears the draining annotation)
-// and, when the ServersPendingDrain condition is currently True (e.g. a prior
+// and, when the ServersPendingDrain condition is True (e.g. a prior
 // ScaleDownBlocked or in-progress), resets it to False — so aborting a
 // scale-down (scaling back up, or a no-op) never leaves a stale Blocked/InProgress
 // status. Both halves are no-ops when already clear, so it is safe to call every
-// reconcile.
+// reconcile; a drain's "complete" stays as it is.
 func (r *Neo4jEnterpriseClusterReconciler) clearScaleDownState(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
-	if c := findCondition(cluster.Status.Conditions, ConditionTypeServersPendingDrain); c != nil && c.Status == metav1.ConditionTrue {
-		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionFalse, ConditionReasonNoServersPendingDrain, "Scale-down not in progress")
-	}
+	r.settleScaleDownCondition(ctx, cluster, scaleDownNotInProgressMessage)
 	return r.setDrainServers(ctx, cluster, nil)
+}
+
+// settleScaleDownCondition sets the ServersPendingDrain condition False
+// (NoServersPendingDrain) with message, when it is True as stored: decided in
+// the write, from the object it re-reads, never from this pass's copy. The
+// pass after a drain completed reads, from a cache that has not seen the
+// "complete" write, the condition still True; judged from that copy, it
+// rewrote "Scale-down drain complete" into "Scale-down not in progress"
+// (#606). A condition that is False already, or absent, is left as it is.
+func (r *Neo4jEnterpriseClusterReconciler) settleScaleDownCondition(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, message string) {
+	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		latest := &neo4jv1beta1.Neo4jEnterpriseCluster{}
+		if getErr := r.Get(ctx, client.ObjectKeyFromObject(cluster), latest); getErr != nil {
+			return getErr
+		}
+		if c := findCondition(latest.Status.Conditions, ConditionTypeServersPendingDrain); c == nil || c.Status != metav1.ConditionTrue {
+			return nil
+		}
+		SetNamedCondition(&latest.Status.Conditions, ConditionTypeServersPendingDrain,
+			latest.Generation, metav1.ConditionFalse, ConditionReasonNoServersPendingDrain, message)
+		if updateErr := r.Status().Update(ctx, latest); updateErr != nil {
+			return updateErr
+		}
+		cluster.Status.Conditions = latest.Status.Conditions
+		return nil
+	})
+	if err != nil {
+		log.FromContext(ctx).Error(err, "Failed to set scale-down condition (non-fatal)")
+	}
 }
 
 // drainDeferralKey is where deferredUpgradeTargets remembers the image change

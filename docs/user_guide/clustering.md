@@ -379,7 +379,7 @@ When you **lower** `spec.topology.servers`, the operator drains the removed serv
 cordon → DRYRUN DEALLOCATE (feasibility) → DEALLOCATE DATABASES FROM SERVER → wait until it hosts only `system` → DROP SERVER → lower replicas
 ```
 
-Replicas are **held** at the current count (the removed pods stay running and reachable for data hand-off) until every removed server is dropped; only then are the pods stopped. Progress shows as a `ServersPendingDrain` condition and `ScaleDownDraining` events. Removed-ordinal PVCs are reclaimed (`PVCRetentionPolicy.WhenScaled=Delete`).
+Replicas are **held** at the current count (the removed pods stay running and reachable for data hand-off) until every removed server is dropped; only then are the pods stopped. Progress shows as a `ServersPendingDrain` condition and `ScaleDownDraining` events. When the drain is done the condition is `False` with "Scale-down drain complete", and stays so; a scale-down you set back before its drain ends leaves it `False` with "Scale-down not in progress". Removed-ordinal PVCs are reclaimed (`PVCRetentionPolicy.WhenScaled=Delete`).
 
 A removed server that is down when the scale-down starts — its pod being replaced, say — is drained too. `SHOW SERVERS` lists such a server with no address; the operator knows it by the address it last reported, or, failing that, because every server the scale-down keeps is accounted for. If a kept server is down too and the operator cannot tell which is which, it drains what it can name and keeps the replicas held, with `ServersPendingDrain` saying why, until a server reports its address again.
 
