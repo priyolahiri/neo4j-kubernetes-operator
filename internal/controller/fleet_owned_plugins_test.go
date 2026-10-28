@@ -234,9 +234,9 @@ func TestClusterReconcile_TogglingFleetManagementWithItsOwnNeo4jPlugins(t *testi
 }
 
 // Turning it on on a running cluster: one roll, the conf change's restart
-// stamp carrying the cluster's list — no more than a cluster without spec.env
-// NEO4J_PLUGINS makes (its stamp, then the merge's write: two template changes,
-// #608 item 3, unchanged here).
+// stamp carrying the cluster's list — as a cluster without spec.env
+// NEO4J_PLUGINS makes since its stamp carries the merge's addition (its stamp,
+// then the merge's write were two template changes, #608 item 3; id 226).
 func TestClusterReconcile_EnablingFleetManagementWithItsOwnNeo4jPlugins(t *testing.T) {
 	enable := func(mutate func(*neo4jv1beta1.Neo4jEnterpriseCluster)) (int, *fleetClusterHarness) {
 		h := newFleetClusterHarnessWith(t, fleetOff, mutate)
@@ -254,7 +254,7 @@ func TestClusterReconcile_EnablingFleetManagementWithItsOwnNeo4jPlugins(t *testi
 
 	without, h := enable(nil)
 	require.Equal(t, `["fleet-management"]`, neo4jPlugins(t, h.server()))
-	assert.LessOrEqual(t, own, without, "not more rolls than a cluster without spec.env NEO4J_PLUGINS")
+	assert.Equal(t, 1, without, "one roll without spec.env NEO4J_PLUGINS too: the stamp carries the merge's addition (id 226)")
 	t.Logf("template changes on the enable: %d with spec.env NEO4J_PLUGINS, %d without", own, without)
 }
 

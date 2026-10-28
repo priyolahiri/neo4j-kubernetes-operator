@@ -185,10 +185,14 @@ func (r *Neo4jPluginReconciler) reconcileRefused(ctx context.Context, plugin *ne
 // from a status that did not carry it already, as the write read it (ids 136,
 // 145) — so the steps of taking an earlier write off the target, which change
 // the message, do not announce it again, nor does a restarted operator. A
-// different refusal (the target's image changed) is announced once more.
+// different refusal (the target's image changed) is announced once more. Its
+// log line follows the event: at info when it is announced, at V(1) on the
+// passes and steps in between, never an ERROR (logRefusal, id 228).
 func (r *Neo4jPluginReconciler) reportRefused(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, refusal, message string) bool {
 	changed, prevPhase, prevMessage := r.writePluginStatus(ctx, plugin, neo4jv1beta1.PhaseFailed, message)
-	if changed && (prevPhase != neo4jv1beta1.PhaseFailed || !strings.HasPrefix(prevMessage, refusal)) {
+	announced := changed && (prevPhase != neo4jv1beta1.PhaseFailed || !strings.HasPrefix(prevMessage, refusal))
+	logAnnounced(log.FromContext(ctx), announced, "Plugin refused: its target's image cannot install it", "reason", message)
+	if announced {
 		r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginUnknownToImage, refusal)
 	}
 	return changed

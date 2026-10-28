@@ -29,9 +29,19 @@ import "github.com/go-logr/logr"
 // through lastAnnounced — a fleet-management patch the StatefulSet cannot
 // take — is logged the same way, announced being what lastAnnounced said.
 func logRefusal(logger logr.Logger, announced bool, msg string, err error) {
+	logAnnounced(logger, announced, msg, "reason", err.Error())
+}
+
+// logAnnounced logs msg at info when announced, at V(1) otherwise: a line
+// about a condition that lasts, said once per cause — when a status write
+// records it, or when lastAnnounced finds it new — and kept for the debug log
+// on the passes in between (knowledge rules 136, 145). logRefusal is this for
+// a refusal or a failure; a notice that is neither (plugin-only Aura Fleet
+// Management, rule 145) calls it directly.
+func logAnnounced(logger logr.Logger, announced bool, msg string, keysAndValues ...any) {
 	if announced {
-		logger.Info(msg, "reason", err.Error())
+		logger.Info(msg, keysAndValues...)
 		return
 	}
-	logger.V(1).Info(msg, "reason", err.Error())
+	logger.V(1).Info(msg, keysAndValues...)
 }

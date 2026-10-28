@@ -124,6 +124,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// once it is turned off, so one that lasts is logged at info once
 	// (removeFleetManagementPlugin, operations.md id 222).
 	fleetEntryRemovalFailures lastAnnounced
+	// fleetRegistrationDeferred remembers, per cluster, that its plugin-only
+	// Aura Fleet Management (neither tokenSecretRef nor provision) was logged,
+	// so the line is said once at info, not on every pass (operations.md id
+	// 145).
+	fleetRegistrationDeferred lastAnnounced
 	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
@@ -700,6 +705,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			r.Recorder.Eventf(cluster, corev1.EventTypeWarning, EventReasonAuraFleetFailed,
 				"Aura Fleet Management registration failed: %v", err)
 		}
+	} else {
+		// Turned off: plugin-only mode is said again if it is turned on again.
+		r.fleetRegistrationDeferred.forget(client.ObjectKeyFromObject(cluster).String())
 	}
 
 	// Calculate topology placement if topology scheduler is available
@@ -899,6 +907,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
 	r.fleetPluginPatchFailures.forget(client.ObjectKeyFromObject(cluster).String())
 	r.fleetEntryRemovalFailures.forget(client.ObjectKeyFromObject(cluster).String())
+	r.fleetRegistrationDeferred.forget(client.ObjectKeyFromObject(cluster).String())
 	r.availabilityAnnounced.Delete(clusterKey(cluster))
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	r.upgradeDiagnostics.Delete(clusterKey(cluster))
@@ -3671,9 +3680,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 	// spec.provision is set. Keying off tokenSecretRef alone meant a provisioned
 	// cluster never registered its own minted token.
 	secretName, secretKey, haveTokenSource := ResolveFleetTokenSource(spec, cluster.Name)
-	if !haveTokenSource {
-		logger.Info("Aura Fleet Management enabled but neither tokenSecretRef nor provision is configured; " +
-			"plugin installed, registration deferred")
+	if !logFleetRegistrationDeferred(logger, &r.fleetRegistrationDeferred, client.ObjectKeyFromObject(cluster).String(), haveTokenSource) {
 		return nil
 	}
 
@@ -3752,11 +3759,38 @@ func (r *Neo4jEnterpriseClusterReconciler) failFleetRegistration(ctx context.Con
 // back, and the two restarted the servers in turn without end (#608). The
 // cluster renders the name into its own list instead (clusterNeo4jPlugins),
 // and one it cannot add to is the validator's warning (operations.md id 223).
+//
+// Turning Fleet Management on changes neo4j.conf too, and the ConfigMap's
+// restart stamp, written earlier in the pass, carries the name
+// (triggerRollingRestartForConfigChange): so an enable is one roll. The merge
+// waits while a conf roll is due (confRollPending: a ConfigMap read from a
+// cache that has not seen this pass's write, or a write the debounce put off),
+// and writes the name alone only once the conf is settled. The cached
+// StatefulSet decides whether anything is due; the write is made against a
+// read from the API server, so a cache that has not seen the stamp neither
+// writes the name a second time nor meets a Conflict (operations.md id 226).
 func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	stsName := cluster.Name + "-server"
+	key := types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}
+	cached := &appsv1.StatefulSet{}
+	if err := r.Get(ctx, key, cached); err != nil {
+		return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
+	}
+	if neo4jPluginsOwnedByTarget(cached) {
+		return nil // the cluster's own variable: it renders the name itself
+	}
+	if due, err := addFleetManagementPlugin(&cached.DeepCopy().Spec.Template); err != nil || !due {
+		if err != nil {
+			return fmt.Errorf("%w in StatefulSet %s", err, stsName)
+		}
+		return nil // already present, or built into the image — nothing to patch
+	}
+	if r.ConfigMapManager != nil && r.ConfigMapManager.confRollPending(ctx, cluster) {
+		return nil // the conf roll's restart stamp carries the name
+	}
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		sts := &appsv1.StatefulSet{}
-		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}, sts); err != nil {
+		if err := r.apiReader().Get(ctx, key, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
 		}
 		if neo4jPluginsOwnedByTarget(sts) {

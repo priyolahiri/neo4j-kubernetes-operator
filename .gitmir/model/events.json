@@ -1052,7 +1052,7 @@
   {
     "id": "ev-plugin-install-failed",
     "name": "PluginInstallFailed",
-    "description": "Emitted when merging a Neo4jPlugin into its target or configuring it fails for a reason that needs action (including a variable the cluster's own spec sets, which the plugin will not overwrite). Emitted once per failure; the plugin is retried every RequeueAfter without repeating it. A StatefulSet conflict or an unreachable server while the servers restart is not a failure: the plugin stays Installing and no event is emitted.",
+    "description": "Emitted when merging a Neo4jPlugin into its target or configuring it fails for a reason that needs action (including a variable the cluster's own spec sets, which the plugin will not overwrite). Emitted once per failure; the plugin is retried every RequeueAfter without repeating it. A StatefulSet conflict or an unreachable server while the servers restart is not a failure: the plugin stays Installing and no event is emitted. Also an install the target's spec refuses (\"Plugin <name> installation refused: …\"), announced from the status write that makes the plugin Failed; that refusal is logged once at info, never as an ERROR (operations.md id 228).",
     "moduleId": "mod-plugins"
   },
   {

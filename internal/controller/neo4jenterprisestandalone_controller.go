@@ -90,6 +90,11 @@ type Neo4jEnterpriseStandaloneReconciler struct {
 	// AuraFleetManagementPluginPatchFailed it announced, so a patch that keeps
 	// failing the same way is announced once (operations.md id 145).
 	fleetPluginPatchFailures lastAnnounced
+	// fleetRegistrationDeferred remembers, per standalone, that its
+	// plugin-only Aura Fleet Management (neither tokenSecretRef nor provision)
+	// was logged, so the line is said once at info, not on every pass
+	// (operations.md id 145).
+	fleetRegistrationDeferred lastAnnounced
 
 	// advisoryWarnings announces each advisory warning when it starts to apply
 	// and every advisoryWarningRefresh after, not on every pass.
@@ -290,6 +295,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) handleDeletion(ctx context.Context
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, standalone)
 	r.fleetFailures.clear(client.ObjectKeyFromObject(standalone))
 	r.fleetPluginPatchFailures.forget(client.ObjectKeyFromObject(standalone).String())
+	r.fleetRegistrationDeferred.forget(client.ObjectKeyFromObject(standalone).String())
 
 	// Cleanup resources
 	if err := r.cleanupResources(ctx, standalone); err != nil {
@@ -452,6 +458,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 					"Aura Fleet Management registration failed: %v", err)
 			}
 		}
+	} else {
+		// Turned off: plugin-only mode is said again if it is turned on again.
+		r.fleetRegistrationDeferred.forget(client.ObjectKeyFromObject(standalone).String())
 	}
 
 	// Reload a renewed TLS certificate without a restart (#469).
@@ -3081,9 +3090,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 	// ResolveFleetTokenSource. Keying off tokenSecretRef alone meant a provisioned
 	// standalone never registered its own minted token.
 	secretName, secretKey, haveTokenSource := ResolveFleetTokenSource(spec, standalone.Name)
-	if !haveTokenSource {
-		logger.Info("Aura Fleet Management enabled but neither tokenSecretRef nor provision is configured; " +
-			"plugin installed, registration deferred")
+	if !logFleetRegistrationDeferred(logger, &r.fleetRegistrationDeferred, client.ObjectKeyFromObject(standalone).String(), haveTokenSource) {
 		return nil
 	}
 
@@ -3179,6 +3186,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 			// StatefulSet write, so the record is kept here
 			// (reconcileFleetEntry does it after a cluster's apply).
 			keepFleetRecord(ctx, r.Client, r.apiReader(), sts, standalone.Name, standalone.Spec.Image.Tag)
+			return nil
+		}
+		// The enable's conf change rolls the pod with the StatefulSet write that
+		// carries its new conf hash, and that write adds the name: one roll, not
+		// the merge's first (operations.md id 226).
+		if r.standaloneConfRollDue(ctx, standalone, sts) {
 			return nil
 		}
 		setFleetEntryRecord(stsCopy, true)

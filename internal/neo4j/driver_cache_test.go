@@ -18,7 +18,7 @@ package neo4j
 
 import (
 	"context"
-	"crypto/sha256"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -54,7 +54,7 @@ func closes(t *testing.T, e *sharedDriver) int32 {
 }
 
 func keyFor(password string) driverKey {
-	return driverKey{uid: "u", uri: "neo4j://c-client:7687", username: "neo4j", password: sha256.Sum256([]byte(password))}
+	return driverKey{uid: "u", uri: "neo4j://c-client:7687", username: "neo4j", password: password}
 }
 
 func TestDriverCache(t *testing.T) {
@@ -221,4 +221,19 @@ func TestNewClientForEnterpriseSharesTheDriver(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotSame(t, withTLS, f.driver, "a renewed certificate gets a new driver")
 	require.NoError(t, f.Close())
+}
+
+// A driver key compares the password but never prints it: %v, %+v, %#v and
+// %s of a key, or of a struct holding one, carry no password.
+func TestDriverKey_NeverPrintsThePassword(t *testing.T) {
+	k := keyFor("s3cret-pw")
+	assert.NotEqual(t, k, keyFor("other-pw"), "a different password is a different key")
+	assert.Equal(t, k, keyFor("s3cret-pw"))
+	for _, f := range []string{"%v", "%+v", "%#v", "%s"} {
+		out := fmt.Sprintf(f, k)
+		assert.NotContains(t, out, "s3cret-pw", f)
+		assert.Contains(t, out, "<redacted>", f)
+	}
+	holder := struct{ Key driverKey }{k}
+	assert.NotContains(t, fmt.Sprintf("%+v", holder), "s3cret-pw")
 }
