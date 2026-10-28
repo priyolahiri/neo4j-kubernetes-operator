@@ -806,6 +806,37 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 - A cluster whose `spec.config` sets `server.jvm.additional`, or whose `spec.env` sets a plain `NEO4J_server_jvm_additional`: one rolling restart, after which the line follows the operator's list in one variable.
 - A cluster or standalone whose `spec.env` sets a shared-list variable with a plain value: one rolling restart, moving it into `neo4j.conf` (a cluster hands the StatefulSet variable to its plugins in the same write).
 
+## Upgrading from v1.23.x
+
+This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server.
+
+### Behaviour changes
+
+**Clusters**
+
+- **`ClusterReady` is announced only when a cluster enters `Ready` from another phase.** That means its first formation, a scale-up, or a return from `Degraded`, `Forming` or `Failed`. A cluster that stays `Ready` no longer raises it:
+  - not when an upgrade completes, retargeted or not: read `UpgradeCompleted`;
+  - not when a server comes back within the grace period: read the `Degraded` condition;
+  - not after a spec edit.
+
+  Automation that counted `ClusterReady` for any of those should switch.
+- **A completed scale-down drain says so.** `ServersPendingDrain` ends `False` with reason `NoServersPendingDrain` and message "Scale-down drain complete", and keeps that message until the next scale-down. "Scale-down not in progress" now means only a scale-down set back before its drain ended. A cluster keeps its current message until its next scale-down.
+
+**Aura Fleet Management**
+
+- **Turning it off takes `fleet-management` out of `NEO4J_PLUGINS`**, in the same rolling restart as the `neo4j.conf` change of the disable. Before, the plugin stayed on the servers. The operator removes only an entry it added. It leaves an entry that a `Neo4jPlugin` installs, and a `NEO4J_PLUGINS` your own `spec.env` sets. See [Turning it off](aura_fleet_management.md#turning-it-off).
+- **The operator records the entry it adds** in the server StatefulSet's annotation `neo4j.com/aura-fleet-management-entries`. On a deployment with Fleet Management on, the first pass after the upgrade records the existing entry. That is a metadata patch and restarts nothing. On 2026.03+, the entry that v1.23.0 kept is recorded too, and goes when Fleet Management is turned off.
+- **A deployment where Fleet Management was turned off under an earlier operator** still lists `fleet-management` in `NEO4J_PLUGINS`. The operator cannot tell that entry from one you added, so it leaves it. Remove it by hand with `kubectl edit statefulset <cluster>-server` (or `<standalone>`), which is one restart. On a standalone on 5.26.12+ or 2025.08–2026.02, the leftover name also lets the image narrow the allowlist to `fleetManagement.*`, so removing it brings back the procedures that the allowlist hid.
+
+**Restores**
+
+- **A finished `Neo4jRestore` stays quiet.** One that is `Completed` or `Failed` at its generation no longer logs "Restore already completed" or "Restore previously failed; not retrying…" at info whenever the operator's cache resyncs (every 30 seconds in development mode). Those lines are now at debug level. The outcome is in the restore's status, its `Ready` condition and its `RestoreCompleted` or `RestoreFailed` event, and a refusal is still logged once at info. Log-based alerts on those two lines should watch the event or the condition instead.
+- **A `Neo4jRestore` without `spec.instanceRef` is refused once**, as `Failed` with "spec.instanceRef is required" and one info line "Restore refused: spec.instanceRef is required". It used to log "Invalid Neo4jRestore spec" and write its status on every pass. It now carries the restore finalizer; deleting it is unchanged.
+
+### Restarts after the upgrade
+
+- None. Recording an existing Fleet Management entry is a metadata patch.
+
 ## Upgrading between future releases
 
 When a newer version ships:
