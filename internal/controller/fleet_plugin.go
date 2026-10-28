@@ -91,6 +91,11 @@ func standaloneInstallsFleetManagement(standalone *neo4jv1beta1.Neo4jEnterpriseS
 // procedures are the server's own (operations.md id 192). A name an earlier
 // write put there stays: removing it would restart every server for an entry
 // the entrypoint skips.
+//
+// Never into a NEO4J_PLUGINS read from a Secret or ConfigMap: a value beside
+// valueFrom is an env var the API server refuses, so the write failed, and
+// what the source holds cannot be read (operations.md id 223). A value that
+// is not a JSON list is errNeo4jPluginsNotAList.
 func addFleetManagementPlugin(template *corev1.PodTemplateSpec) (bool, error) {
 	idx := -1
 	for i := range template.Spec.Containers {
@@ -110,13 +115,16 @@ func addFleetManagementPlugin(template *corev1.PodTemplateSpec) (bool, error) {
 	current := ""
 	for i := range env {
 		if env[i].Name == "NEO4J_PLUGINS" {
+			if env[i].ValueFrom != nil {
+				return false, nil
+			}
 			at, current = i, env[i].Value
 			break
 		}
 	}
 	updated, err := MergeNeo4jPluginList(current, fleetManagementPluginEntry)
 	if err != nil {
-		return false, fmt.Errorf("merge plugin list: %w", err)
+		return false, fmt.Errorf("merge plugin list: %w: %w", errNeo4jPluginsNotAList, err)
 	}
 	if at >= 0 && updated == current {
 		return false, nil // already listed

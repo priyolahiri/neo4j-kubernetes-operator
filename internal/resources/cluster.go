@@ -1206,7 +1206,10 @@ func BuildPodSpecForEnterprise(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, ser
 	// NOTE: NEO4J_PLUGINS for fleet-management is NOT baked into the static template here.
 	// It is applied by the cluster controller via a live StatefulSet patch in
 	// reconcileAuraFleetManagement, so it merges cleanly with plugins added by the
-	// Neo4jPlugin controller rather than overwriting them.
+	// Neo4jPlugin controller rather than overwriting them. A NEO4J_PLUGINS the
+	// cluster's own spec.env sets is copied below as it is; that one is the
+	// cluster's, and the controller appends fleet-management to it
+	// (buildServerStatefulSet, operations.md id 223).
 
 	// NOTE: Property sharding config is handled via neo4j.conf, not environment variables
 

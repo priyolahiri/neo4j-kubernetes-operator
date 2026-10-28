@@ -17,10 +17,12 @@ limitations under the License.
 package validation
 
 import (
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
@@ -134,6 +136,52 @@ func fleetManagementImageErrors(imageTag string, path *field.Path) field.ErrorLi
 			"neo4j:%s image does not know that plugin and exits on it, so the servers would not start; set spec.image.tag "+
 			"to a release that installs it, or remove spec.auraFleetManagement",
 		firstReleasesInstalling(fleetManagementPlugin), imageTag))}
+}
+
+// FleetPluginsEnvWarnings says, for a deployment whose spec.auraFleetManagement
+// is enabled on an image whose entrypoint installs the plugin (not one with
+// Fleet Manager built in, FleetManagementBuiltIn), that a NEO4J_PLUGINS its own
+// spec.env sets is one the operator cannot add fleet-management to: read from a
+// Secret or ConfigMap, or a value that is not a JSON list (operations.md id
+// 223). The deployment owns that variable, so nothing else writes it: the
+// operator adds the name to a JSON list given as a value, and leaves these
+// alone. Advisory: the list may name the plugin already, and it is the user's
+// to keep.
+func FleetPluginsEnvWarnings(env []corev1.EnvVar, fleet *neo4jv1beta1.AuraFleetManagementSpec, imageTag string) []string {
+	if fleet == nil || !fleet.Enabled || FleetManagementBuiltIn(imageTag) {
+		return nil
+	}
+	for i, e := range env {
+		if e.Name != "NEO4J_PLUGINS" {
+			continue
+		}
+		path := field.NewPath("spec", "env").Index(i)
+		switch {
+		case e.ValueFrom != nil:
+			return []string{fmt.Sprintf(
+				"%s (NEO4J_PLUGINS) comes from a Secret or ConfigMap, which the operator cannot read: Aura Fleet Management "+
+					"needs %s in that list, and the operator cannot add it. List %s there, or set NEO4J_PLUGINS as a JSON "+
+					"list value in spec.env (the operator adds the name), or leave it out of spec.env",
+				path, fleetManagementPlugin, fleetManagementPlugin)}
+		case !isPluginList(e.Value):
+			return []string{fmt.Sprintf(
+				"%s (NEO4J_PLUGINS) is not a JSON list such as [\"apoc\"]: Aura Fleet Management needs %s in that list, "+
+					"and the operator cannot add it. Write it as a JSON list, and the operator adds the name",
+				path, fleetManagementPlugin)}
+		}
+		return nil // the first one is what the operator reads
+	}
+	return nil
+}
+
+// isPluginList reports whether v is a NEO4J_PLUGINS value a name can be merged
+// into: a JSON list of names, or empty (MergeNeo4jPluginList).
+func isPluginList(v string) bool {
+	if strings.TrimSpace(v) == "" {
+		return true
+	}
+	var names []string
+	return json.Unmarshal([]byte(v), &names) == nil
 }
 
 // firstReleasesInstalling names, line by line, the first release whose

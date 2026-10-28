@@ -742,8 +742,9 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{RequeueAfter: time.Second}, nil
 	}
 
-	// Create single StatefulSet for all servers
-	serverStatefulSet := resources.BuildServerStatefulSetForEnterprise(cluster)
+	// Create single StatefulSet for all servers, with the cluster's own
+	// NEO4J_PLUGINS as it renders it (operations.md id 223).
+	serverStatefulSet := buildServerStatefulSet(cluster)
 
 	// Apply topology constraints to the server StatefulSet
 	if r.TopologyScheduler != nil && topologyPlacement != nil {
@@ -1243,6 +1244,18 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						// check omits. updatedTemplate keeps cluster-owned env only
 						// (the foreign-merge above wrote to sts, not updatedTemplate).
 						setClusterTemplateHash(sts, *updatedTemplate)
+						// With Aura Fleet Management, fleet-management stays in
+						// NEO4J_PLUGINS: the write that stops owning the variable
+						// (spec.env no longer sets it) dropped the name, and the
+						// next pass's merge put it back, a second roll. Anywhere
+						// else it is there already — the merge's, or the cluster's
+						// own list as it renders it (operations.md id 223).
+						if ownerCluster, isCluster := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); isCluster &&
+							clusterInstallsFleetManagement(ownerCluster) {
+							if err := addFleetEntryInWrite(ctx, sts); err != nil {
+								return fmt.Errorf("%w in StatefulSet %s", err, sts.Name)
+							}
+						}
 					} else {
 						logger := log.FromContext(ctx)
 						logger.V(1).Info("Skipping StatefulSet template update - no significant changes detected",
@@ -1328,17 +1341,15 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				// during its first formation (operations.md id 175). A template
 				// recreated as it was already carries it; the merge is idempotent.
 				// Not into the first step of a two-step create: its template is the
-				// revision the servers below the partition run, exactly.
+				// revision the servers below the partition run, exactly. A
+				// NEO4J_PLUGINS the cluster's spec.env sets carries the name as the
+				// cluster renders it already (clusterNeo4jPlugins, id 223).
 				if isCluster && !twoStep && sts.Name == ownerCluster.Name+"-server" && clusterInstallsFleetManagement(ownerCluster) {
 					sts.Spec.Template = *sts.Spec.Template.DeepCopy()
-					added, err := addFleetManagementPlugin(&sts.Spec.Template)
-					if err != nil {
-						return fmt.Errorf("%w in StatefulSet %s", err, sts.Name)
-					}
 					// Recorded as Fleet Management's in the same create, so
 					// turning it off takes the entry out again (id 222).
-					if added && !neo4jPluginsOwnedByTarget(sts) {
-						setFleetEntryRecord(sts, true)
+					if err := addFleetEntryInWrite(ctx, sts); err != nil {
+						return fmt.Errorf("%w in StatefulSet %s", err, sts.Name)
 					}
 				}
 			}
@@ -3734,12 +3745,21 @@ func (r *Neo4jEnterpriseClusterReconciler) failFleetRegistration(ctx context.Con
 // pass keeps that record in line after its template apply — adopting an entry
 // an earlier operator added — with a patch of the metadata alone
 // (reconcileFleetEntry, operations.md id 222).
+//
+// Never into a NEO4J_PLUGINS the cluster owns (its spec.env sets it; its
+// record of its env lists it): the template apply puts the cluster's own value
+// back, and the two restarted the servers in turn without end (#608). The
+// cluster renders the name into its own list instead (clusterNeo4jPlugins),
+// and one it cannot add to is the validator's warning (operations.md id 223).
 func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
 	stsName := cluster.Name + "-server"
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		sts := &appsv1.StatefulSet{}
 		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
+		}
+		if neo4jPluginsOwnedByTarget(sts) {
+			return nil // the cluster's own variable: it renders the name itself
 		}
 		stsCopy := sts.DeepCopy()
 		changed, err := addFleetManagementPlugin(&stsCopy.Spec.Template)
@@ -3749,9 +3769,7 @@ func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx contex
 		if !changed {
 			return nil // already present, or built into the image — nothing to patch
 		}
-		if !neo4jPluginsOwnedByTarget(stsCopy) {
-			setFleetEntryRecord(stsCopy, true)
-		}
+		setFleetEntryRecord(stsCopy, true)
 		if err := r.Update(ctx, stsCopy); err != nil {
 			// Marked as the write, for the event's wording (fleetPluginPatchFailure);
 			// a Conflict is still one to RetryOnConflict.

@@ -297,6 +297,8 @@ auraFleetManagement:
 
 Turning it off (`enabled: false`, or removing the block) takes `fleet-management` — the entry the operator recorded adding — out of `NEO4J_PLUGINS`, in the same pod restart as the `neo4j.conf` change; see [Turning it off](../user_guide/aura_fleet_management.md#turning-it-off).
 
+A `NEO4J_PLUGINS` your own `spec.env` sets as a JSON list gets `fleet-management` appended by the standalone's StatefulSet write while this is on (before 2026.03), and goes back to what you wrote when it is off, in the same pod restart. One from a Secret or ConfigMap, or a value that is not a JSON list, cannot be added to: it is left as it is, with a `ValidationWarning`. See [Your own `NEO4J_PLUGINS` in `spec.env`](../user_guide/aura_fleet_management.md#your-own-neo4j_plugins-in-specenv).
+
 For full setup instructions see [Aura Fleet Management Guide](../user_guide/aura_fleet_management.md).
 For the full type definition — including the optional `provision` block, by which the operator registers the deployment and mints the token itself — see [`AuraFleetManagementSpec`](neo4jenterprisecluster.md#aurafleetmanagementspec). The `status.auraFleetManagement` fields are the same as on the cluster.
 
