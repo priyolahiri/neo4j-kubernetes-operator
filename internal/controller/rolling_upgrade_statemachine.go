@@ -57,7 +57,6 @@ import (
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
-	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/resources"
 )
 
 // Upgrade phases persisted in status.upgradeStatus.phase.
@@ -322,12 +321,13 @@ func (r *Neo4jEnterpriseClusterReconciler) startRollingUpgrade(
 // image-only patch): the builder's env for the target tag carries the
 // version-correct discovery config (5.26 uses dbms.cluster.discovery.v2.*;
 // CalVer uses dbms.cluster.endpoints), so each pod restarts into a
-// self-consistent target template.
+// self-consistent target template. Its own NEO4J_PLUGINS too, as the target
+// renders it (buildServerStatefulSet, operations.md id 223).
 func (r *Neo4jEnterpriseClusterReconciler) buildDesiredServerStatefulSet(
 	ctx context.Context,
 	cluster *neo4jv1beta1.Neo4jEnterpriseCluster,
 ) (*appsv1.StatefulSet, error) {
-	sts := resources.BuildServerStatefulSetForEnterprise(cluster)
+	sts := buildServerStatefulSet(cluster)
 	if r.TopologyScheduler != nil {
 		placement, err := r.TopologyScheduler.CalculateTopologyPlacement(ctx, cluster)
 		if err != nil {

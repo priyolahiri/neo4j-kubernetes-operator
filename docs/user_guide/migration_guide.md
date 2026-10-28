@@ -808,7 +808,7 @@ Apply the new CRDs before upgrading the operator. They add the `Disabled` phase 
 
 ## Upgrading from v1.23.x
 
-This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server.
+This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server, except for the deployments listed under "Restarts after the upgrade" below.
 
 ### Behaviour changes
 
@@ -827,6 +827,8 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 - **Turning it off takes `fleet-management` out of `NEO4J_PLUGINS`**, in the same rolling restart as the `neo4j.conf` change of the disable. Before, the plugin stayed on the servers. The operator removes only an entry it added. It leaves an entry that a `Neo4jPlugin` installs, and a `NEO4J_PLUGINS` your own `spec.env` sets. See [Turning it off](aura_fleet_management.md#turning-it-off).
 - **The operator records the entry it adds** in the server StatefulSet's annotation `neo4j.com/aura-fleet-management-entries`. On a deployment with Fleet Management on, the first pass after the upgrade records the existing entry. That is a metadata patch and restarts nothing. On 2026.03+, the entry that v1.23.0 kept is recorded too, and goes when Fleet Management is turned off.
 - **A deployment where Fleet Management was turned off under an earlier operator** still lists `fleet-management` in `NEO4J_PLUGINS`. The operator cannot tell that entry from one you added, so it leaves it. Remove it by hand with `kubectl edit statefulset <cluster>-server` (or `<standalone>`), which is one restart. On a standalone on 5.26.12+ or 2025.08–2026.02, the leftover name also lets the image narrow the allowlist to `fleetManagement.*`, so removing it brings back the procedures that the allowlist hid.
+- **A `NEO4J_PLUGINS` that your own `spec.env` sets now carries `fleet-management` itself.** Up to v1.23.x, a cluster with a JSON list there (`'["apoc"]'`) and Fleet Management on restarted its servers without end. The Fleet Management merge added the name, and the cluster put your value back. The cluster now appends `fleet-management` to your list, keeping your names and their order, and the merge never writes that variable. A list that already names the plugin is left as it is. On such a deployment, turning Fleet Management on or off is one rolling restart, and turning it off gives back the list you wrote. On 2026.03 and later nothing is appended. A `Neo4jPlugin` on such a deployment is still refused. See [Your own `NEO4J_PLUGINS` in `spec.env`](aura_fleet_management.md#your-own-neo4j_plugins-in-specenv).
+- **A `NEO4J_PLUGINS` from a Secret or ConfigMap, or one that is not a JSON list,** is left as it is, with one `ValidationWarning` saying that Aura Fleet Management needs `fleet-management` in that list and the operator cannot add it. Before, the write of the StatefulSet failed: a new cluster or standalone was never created, and an existing standalone applied no template change. List the plugin there yourself, or set the list as a value.
 
 **Restores**
 
@@ -835,7 +837,9 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 
 ### Restarts after the upgrade
 
-- None. Recording an existing Fleet Management entry is a metadata patch.
+- Recording an existing Fleet Management entry is a metadata patch and restarts nothing.
+- A cluster caught in the `spec.env` `NEO4J_PLUGINS` restart loop (Fleet Management on, before 2026.03) rolls at most once more, to your list with `fleet-management`, and then stops. If its last write was the merge's, it does not roll at all.
+- A standalone with Fleet Management on and a `NEO4J_PLUGINS` from a Secret, or one that is not a JSON list, rolls once if its template changed while its writes were failing. A cluster in that shape restarts nothing; one that was never created is created.
 
 ## Upgrading between future releases
 

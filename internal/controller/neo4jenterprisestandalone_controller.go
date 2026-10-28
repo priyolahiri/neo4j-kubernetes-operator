@@ -1220,21 +1220,6 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 			if len(statefulSet.Spec.Template.Spec.Containers) > 0 {
 				statefulSet.Spec.Template.Spec.Containers[0].Env = mergedEnv
 			}
-			// With Aura Fleet Management the template carries the plugin from
-			// the write that creates the StatefulSet: the fleet merge later in
-			// the pass reads the StatefulSet from a cache that has not seen it,
-			// and the next pass's merge restarted the new pod. Added to what is
-			// written, never to the record of the env the standalone owns
-			// (operations.md id 175); on an existing StatefulSet the merge of
-			// an earlier pass has put it there already.
-			fleetAdded := false
-			if standaloneInstallsFleetManagement(standalone) {
-				added, err := addFleetManagementPlugin(&statefulSet.Spec.Template)
-				if err != nil {
-					return fmt.Errorf("%w in StatefulSet %s", err, statefulSet.Name)
-				}
-				fleetAdded = added
-			}
 			statefulSet.Spec.Template.Spec.InitContainers = mergeOwnedByName(
 				currentInit, desiredTemplate.Spec.InitContainers, prevOwnedInit,
 				func(c corev1.Container) string { return c.Name })
@@ -1243,10 +1228,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 				func(v corev1.Volume) string { return v.Name })
 
 			r.stampStandaloneStatefulSetTracking(statefulSet, desiredHash, desiredSpec.Template)
-			// Recorded as Fleet Management's in the write that adds it, after
-			// the record of the env the standalone owns (operations.md id 222).
-			if fleetAdded && !neo4jPluginsOwnedByTarget(statefulSet) {
-				setFleetEntryRecord(statefulSet, true)
+			// With Aura Fleet Management the template carries the plugin from
+			// the write that creates the StatefulSet: the fleet merge later in
+			// the pass reads the StatefulSet from a cache that has not seen it,
+			// and the next pass's merge restarted the new pod. Added to what is
+			// written, never to the record of the env the standalone owns
+			// (operations.md id 175), and recorded as Fleet Management's after
+			// that record (id 222); on an existing StatefulSet the merge of an
+			// earlier pass has put it there already. A NEO4J_PLUGINS of the
+			// standalone's own spec.env gets the name here alone — this write,
+			// which the conf hash of the same toggle moves; the merge never
+			// writes it — and one read from a Secret or ConfigMap, or not a
+			// JSON list, none (operations.md id 223).
+			if standaloneInstallsFleetManagement(standalone) {
+				if err := addFleetEntryInWrite(ctx, statefulSet); err != nil {
+					return fmt.Errorf("%w in StatefulSet %s", err, statefulSet.Name)
+				}
 			}
 			return nil
 		})
@@ -3155,6 +3152,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) failFleetRegistration(ctx context.
 // template is not touched. The write that adds the name records it as Fleet Management's,
 // and a pass that adds nothing keeps that record in line (keepFleetRecord), as on a
 // cluster (operations.md id 222).
+//
+// Never into a NEO4J_PLUGINS the standalone owns (its spec.env sets it): its
+// template write puts the name there, in the write the conf hash of the same
+// toggle makes, and a merge before it was a second roll; one it cannot add to
+// is the validator's warning (operations.md id 223).
 func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
 	stsName := standalone.Name
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -3162,21 +3164,24 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: standalone.Namespace}, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
 		}
+		changed := false
 		stsCopy := sts.DeepCopy()
-		changed, err := addFleetManagementPlugin(&stsCopy.Spec.Template)
-		if err != nil {
-			return fmt.Errorf("%w in StatefulSet %s", err, stsName)
+		if !neo4jPluginsOwnedByTarget(sts) {
+			added, err := addFleetManagementPlugin(&stsCopy.Spec.Template)
+			if err != nil {
+				return fmt.Errorf("%w in StatefulSet %s", err, stsName)
+			}
+			changed = added
 		}
 		if !changed {
-			// Already present, or built into the image: nothing to add. The
-			// merge runs after the pass's StatefulSet write, so the record is
-			// kept here (reconcileFleetEntry does it after a cluster's apply).
+			// Already present, built into the image, or the standalone's own
+			// variable: nothing to add. The merge runs after the pass's
+			// StatefulSet write, so the record is kept here
+			// (reconcileFleetEntry does it after a cluster's apply).
 			keepFleetRecord(ctx, r.Client, r.apiReader(), sts, standalone.Name, standalone.Spec.Image.Tag)
 			return nil
 		}
-		if !neo4jPluginsOwnedByTarget(stsCopy) {
-			setFleetEntryRecord(stsCopy, true)
-		}
+		setFleetEntryRecord(stsCopy, true)
 		if err := r.Update(ctx, stsCopy); err != nil {
 			// Marked as the write, for the event's wording (fleetPluginPatchFailure);
 			// a Conflict is still one to RetryOnConflict.

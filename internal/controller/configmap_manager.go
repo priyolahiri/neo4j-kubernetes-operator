@@ -419,11 +419,19 @@ func (cm *ConfigMapManager) triggerRollingRestartForConfigChange(ctx context.Con
 	// write, so the disable rolls the servers once (operations.md id 222).
 	// The write of a removal no conf change carries is
 	// removeFleetManagementPlugin's.
-	if _, pending := restorePending(serverSts); !pending && !clusterInstallsFleetManagement(cluster) {
+	_, pending := restorePending(serverSts)
+	if !pending && !clusterInstallsFleetManagement(cluster) {
 		if _, _, err := fleetDisableEdit(ctx, cm.Client, serverSts, cluster.Name, cluster.Spec.Image.Tag); err != nil {
 			logger.V(1).Info("Cannot tell whether a Neo4jPlugin installs fleet-management; Aura Fleet Management's entry is taken out on a later pass",
 				"error", err.Error())
 		}
+	}
+	// A NEO4J_PLUGINS the cluster's spec.env sets carries fleet-management
+	// while Aura Fleet Management installs it (clusterNeo4jPlugins): turning
+	// it on or off changes the variable with the conf, and both go in this
+	// write, one roll (operations.md id 223).
+	if !pending {
+		carryOwnNeo4jPlugins(cluster, serverSts)
 	}
 
 	if err := cm.updateStatefulSetWithConfigHash(ctx, serverSts, configHash); err != nil {

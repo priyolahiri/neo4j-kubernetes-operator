@@ -88,8 +88,8 @@ func routeNoEffectWarnings(service *neo4jv1beta1.ServiceSpec, mcp *neo4jv1beta1.
 }
 
 // NoEffectWarnings reports cluster spec fields that are set but not read, plus
-// the advisory AuthProviderWarnings and SpecEnvListWarnings, which share the
-// same ValidationWarning channel.
+// the advisory AuthProviderWarnings, SpecEnvListWarnings and
+// FleetPluginsEnvWarnings, which share the same ValidationWarning channel.
 func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) []string {
 	warnings := tlsNoEffectWarnings(cluster.Spec.TLS, cluster.Name)
 	warnings = append(warnings, routeNoEffectWarnings(cluster.Spec.Service, cluster.Spec.MCP)...)
@@ -124,6 +124,7 @@ func (v *ClusterValidator) NoEffectWarnings(cluster *neo4jv1beta1.Neo4jEnterpris
 				"up before the next, and the cluster stays available. Remove it, or set it to RollingUpgrade"))
 	}
 	warnings = append(warnings, SpecEnvListWarnings(cluster.Spec.Env, false)...)
+	warnings = append(warnings, FleetPluginsEnvWarnings(cluster.Spec.Env, cluster.Spec.AuraFleetManagement, cluster.Spec.Image.Tag)...)
 	return append(warnings, AuthProviderWarnings(cluster.Spec.Auth, field.NewPath("spec", "auth"))...)
 }
 
@@ -139,7 +140,8 @@ func maxUnavailableNoEffectWarning(strategy *neo4jv1beta1.UpgradeStrategySpec, i
 }
 
 // NoEffectWarnings reports standalone spec fields that are set but not read,
-// plus the advisory AuthProviderWarnings. The standalone has no warning channel
+// plus the advisory AuthProviderWarnings, SpecEnvListWarnings and
+// FleetPluginsEnvWarnings. The standalone has no warning channel
 // of its own (ValidateCreate returns only errors), so this is a separate method
 // the reconciler turns into events.
 func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) []string {
@@ -165,6 +167,7 @@ func (v *StandaloneValidator) NoEffectWarnings(standalone *neo4jv1beta1.Neo4jEnt
 	}
 	warnings = append(warnings, standaloneUpgradeTimeoutWarnings(standalone.Spec.UpgradeStrategy)...)
 	warnings = append(warnings, SpecEnvListWarnings(standalone.Spec.Env, true)...)
+	warnings = append(warnings, FleetPluginsEnvWarnings(standalone.Spec.Env, standalone.Spec.AuraFleetManagement, standalone.Spec.Image.Tag)...)
 	return append(warnings, AuthProviderWarnings(standalone.Spec.Auth, field.NewPath("spec", "auth"))...)
 }
 
