@@ -521,7 +521,7 @@ Enables integration with [Neo4j Aura Fleet Management](https://neo4j.com/docs/au
 
 | Field | Type | Description |
 |---|---|---|
-| `enabled` | `bool` | Enable Aura Fleet Management integration (default: `false`) |
+| `enabled` | `bool` | Enable Aura Fleet Management integration (default: `false`). Turning it off (`false`, or removing the block) takes out what the operator added for it — `fleetManagement.*` in the procedure settings, and the `fleet-management` entry it recorded in `NEO4J_PLUGINS` (annotation `neo4j.com/aura-fleet-management-entries`) — in one rolling restart; an entry a `Neo4jPlugin` or your own `spec.env` puts there stays. See [Turning it off](../user_guide/aura_fleet_management.md#turning-it-off) |
 | `tokenSecretRef` | [`*SecretKeyRef`](#secretkeyref-token) | Reference to the Kubernetes Secret holding the Aura registration token (optional; registration deferred if omitted). **Mutually exclusive with `provision`** (enforced by a CEL rule: *set at most one of provision or tokenSecretRef*). |
 | `provision` | [`*AuraFleetProvisionSpec`](#aurafleetprovisionspec) | Let the operator register the deployment with Aura Fleet Manager and mint the registration token itself via the Aura API, instead of the console-wizard step. **Beta / best-effort** (the Fleet Manager request bodies are not published in the Aura OpenAPI spec). Mutually exclusive with `tokenSecretRef`. |
 

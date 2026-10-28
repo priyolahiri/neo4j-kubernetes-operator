@@ -414,6 +414,18 @@ func (cm *ConfigMapManager) triggerRollingRestartForConfigChange(ctx context.Con
 		return fmt.Errorf("failed to get server StatefulSet: %w", err)
 	}
 
+	// Turning Aura Fleet Management off changes neo4j.conf, which is this
+	// roll: the entry its own path put in NEO4J_PLUGINS goes in the same
+	// write, so the disable rolls the servers once (operations.md id 222).
+	// The write of a removal no conf change carries is
+	// removeFleetManagementPlugin's.
+	if _, pending := restorePending(serverSts); !pending && !clusterInstallsFleetManagement(cluster) {
+		if _, _, err := fleetDisableEdit(ctx, cm.Client, serverSts, cluster.Name, cluster.Spec.Image.Tag); err != nil {
+			logger.V(1).Info("Cannot tell whether a Neo4jPlugin installs fleet-management; Aura Fleet Management's entry is taken out on a later pass",
+				"error", err.Error())
+		}
+	}
+
 	if err := cm.updateStatefulSetWithConfigHash(ctx, serverSts, configHash); err != nil {
 		return fmt.Errorf("failed to update server StatefulSet: %w", err)
 	}
@@ -423,6 +435,21 @@ func (cm *ConfigMapManager) triggerRollingRestartForConfigChange(ctx context.Con
 		"configHash", configHash)
 
 	return nil
+}
+
+// confRollPending reports whether the cluster's ConfigMap, as read, differs
+// from what the cluster renders now in what restarts the servers: the
+// comparison ReconcileConfigMap makes. The write that settles it stamps the
+// server StatefulSet (triggerRollingRestartForConfigChange), and an edit that
+// rides that stamp waits for it (removeFleetManagementPlugin, operations.md
+// id 222). A ConfigMap that cannot be read counts as pending.
+func (cm *ConfigMapManager) confRollPending(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
+	desired := resources.BuildConfigMapForEnterprise(cluster)
+	existing := &corev1.ConfigMap{}
+	if err := cm.Get(ctx, types.NamespacedName{Name: fmt.Sprintf("%s-config", cluster.Name), Namespace: cluster.Namespace}, existing); err != nil {
+		return true
+	}
+	return cm.calculateConfigMapHash(withoutMovedJVMLines(existing, desired)) != cm.calculateConfigMapHash(desired)
 }
 
 // updateStatefulSetWithConfigHash updates a StatefulSet with config hash annotation to trigger rolling restart

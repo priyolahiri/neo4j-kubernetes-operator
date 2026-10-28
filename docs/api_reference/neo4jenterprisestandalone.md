@@ -295,6 +295,8 @@ auraFleetManagement:
     key: token               # optional; defaults to "token"
 ```
 
+Turning it off (`enabled: false`, or removing the block) takes `fleet-management` — the entry the operator recorded adding — out of `NEO4J_PLUGINS`, in the same pod restart as the `neo4j.conf` change; see [Turning it off](../user_guide/aura_fleet_management.md#turning-it-off).
+
 For full setup instructions see [Aura Fleet Management Guide](../user_guide/aura_fleet_management.md).
 For the full type definition — including the optional `provision` block, by which the operator registers the deployment and mints the token itself — see [`AuraFleetManagementSpec`](neo4jenterprisecluster.md#aurafleetmanagementspec). The `status.auraFleetManagement` fields are the same as on the cluster.
 

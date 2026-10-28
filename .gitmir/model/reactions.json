@@ -351,5 +351,30 @@
         "description": "One AuraFleetTokenRotated Warning once the new token is stored; a refused rotation is a status message, not an event."
       }
     ]
+  },
+  {
+    "id": "rx-fleet-disabled-leaves-target",
+    "name": "Disabled Fleet Management Leaves The Servers",
+    "description": "When a cluster's or standalone's spec.auraFleetManagement is turned off (enabled false, or the block removed), the operator takes out what it added for it, in one roll: Fleet Management's procedure lines leave neo4j.conf, and the fleet-management entry it recorded leaves NEO4J_PLUGINS in the StatefulSet write that rolls the servers for that conf change. A Neo4jPlugin's entry and the deployment's own spec.env list stay. Turning it on again adds and records the entry again (operations.md id 222).",
+    "moduleId": "mod-cluster",
+    "trigger": {
+      "entityId": "ent-neo4jenterprisecluster",
+      "fieldName": "spec.auraFleetManagement.enabled",
+      "change": "update"
+    },
+    "effects": [
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "ConfigMap {name}-config neo4j.conf",
+        "description": "fleetManagement.* leaves dbms.security.procedures.unrestricted and the allowlist line; on a standalone the allowlist * set against the image's default goes too."
+      },
+      {
+        "kind": "update",
+        "entityId": "ent-neo4jenterprisecluster",
+        "fieldName": "StatefulSet.spec.template (neo4j container NEO4J_PLUGINS); StatefulSet annotation neo4j.com/aura-fleet-management-entries",
+        "description": "One update — the conf change's restart stamp on a cluster, the write carrying the new conf hash on a standalone — removes the recorded fleet-management entry and the record; a removal no conf change carries is written alone."
+      }
+    ]
   }
 ]

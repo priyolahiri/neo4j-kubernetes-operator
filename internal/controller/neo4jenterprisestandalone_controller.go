@@ -1116,13 +1116,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	// what other controllers wrote, and restarts nothing that has not changed
 	// (operations.md id 171).
 	existing := &appsv1.StatefulSet{}
-	if getErr := r.Get(ctx, client.ObjectKeyFromObject(statefulSet), existing); errors.IsNotFound(getErr) {
+	getErr := r.Get(ctx, client.ObjectKeyFromObject(statefulSet), existing)
+	if errors.IsNotFound(getErr) {
 		if src := r.deletedStatefulSets.source(ctx, r.Client, r.apiReader(), statefulSet.Namespace, statefulSet.Name,
 			standalone.UID, resources.StandalonePodSelector(standalone.Name)); src != nil {
 			src.applyTo(statefulSet)
 			logger.Info("Creating the StatefulSet again as it was, with the new volume claim templates",
 				"statefulSet", statefulSet.Name, "from", src.from)
 		}
+	}
+	// Aura Fleet Management turned off: the entry its own path put in
+	// NEO4J_PLUGINS goes in this write when it carries the conf the
+	// standalone renders now — with the conf hash that rolls the pod for the
+	// same disable, or alone once the conf is settled (operations.md id 222).
+	dropFleet, fleetClaimed := false, false
+	if getErr == nil {
+		dropFleet, fleetClaimed = r.standaloneFleetEntryDue(ctx, standalone, existing, confSemantic)
 	}
 
 	// Create or update StatefulSet with retry logic to handle resource version conflicts
@@ -1158,6 +1167,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 					statefulSet.Annotations = map[string]string{}
 				}
 				statefulSet.Annotations[standaloneConfigSemanticHashAnnotation] = confSemantic
+			}
+
+			// Before the template check: the removal is the same write whether
+			// the template below is applied (a conf change rolls the pod) or not.
+			if dropFleet {
+				dropFleetEntry(ctx, statefulSet, fleetClaimed)
 			}
 
 			// Apply the desired template only when our desired hash differs from the
@@ -1212,10 +1227,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 			// written, never to the record of the env the standalone owns
 			// (operations.md id 175); on an existing StatefulSet the merge of
 			// an earlier pass has put it there already.
+			fleetAdded := false
 			if standaloneInstallsFleetManagement(standalone) {
-				if _, err := addFleetManagementPlugin(&statefulSet.Spec.Template); err != nil {
+				added, err := addFleetManagementPlugin(&statefulSet.Spec.Template)
+				if err != nil {
 					return fmt.Errorf("%w in StatefulSet %s", err, statefulSet.Name)
 				}
+				fleetAdded = added
 			}
 			statefulSet.Spec.Template.Spec.InitContainers = mergeOwnedByName(
 				currentInit, desiredTemplate.Spec.InitContainers, prevOwnedInit,
@@ -1225,6 +1243,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 				func(v corev1.Volume) string { return v.Name })
 
 			r.stampStandaloneStatefulSetTracking(statefulSet, desiredHash, desiredSpec.Template)
+			// Recorded as Fleet Management's in the write that adds it, after
+			// the record of the env the standalone owns (operations.md id 222).
+			if fleetAdded && !neo4jPluginsOwnedByTarget(statefulSet) {
+				setFleetEntryRecord(statefulSet, true)
+			}
 			return nil
 		})
 		return err
@@ -3031,7 +3054,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileAuraFleetManagement(ctx c
 
 	// --- Phase 1: ensure the plugin jar is loaded ---
 	// The standalone StatefulSet name is the same as the standalone resource name.
-	if err := r.mergeFleetManagementPlugin(ctx, standalone.Name, standalone.Namespace); err != nil {
+	if err := r.mergeFleetManagementPlugin(ctx, standalone); err != nil {
 		if errors.IsNotFound(err) {
 			// The pass that creates the StatefulSet reads it back from a cache
 			// that has not seen it yet. Nothing failed: the next pass adds the
@@ -3127,12 +3150,16 @@ func (r *Neo4jEnterpriseStandaloneReconciler) failFleetRegistration(ctx context.
 	return r.setFleetManagementStatus(ctx, standalone, false, message)
 }
 
-// mergeFleetManagementPlugin patches the named StatefulSet so "fleet-management" is present
-// in NEO4J_PLUGINS. Idempotent: if already present, no patch is issued.
-func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx context.Context, stsName, namespace string) error {
+// mergeFleetManagementPlugin patches the standalone's StatefulSet (named after it) so
+// "fleet-management" is present in NEO4J_PLUGINS. Idempotent: if already present, the pod
+// template is not touched. The write that adds the name records it as Fleet Management's,
+// and a pass that adds nothing keeps that record in line (keepFleetRecord), as on a
+// cluster (operations.md id 222).
+func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) error {
+	stsName := standalone.Name
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		sts := &appsv1.StatefulSet{}
-		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: namespace}, sts); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: standalone.Namespace}, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
 		}
 		stsCopy := sts.DeepCopy()
@@ -3141,7 +3168,14 @@ func (r *Neo4jEnterpriseStandaloneReconciler) mergeFleetManagementPlugin(ctx con
 			return fmt.Errorf("%w in StatefulSet %s", err, stsName)
 		}
 		if !changed {
-			return nil // already present, or built into the image — nothing to patch
+			// Already present, or built into the image: nothing to add. The
+			// merge runs after the pass's StatefulSet write, so the record is
+			// kept here (reconcileFleetEntry does it after a cluster's apply).
+			keepFleetRecord(ctx, r.Client, r.apiReader(), sts, standalone.Name, standalone.Spec.Image.Tag)
+			return nil
+		}
+		if !neo4jPluginsOwnedByTarget(stsCopy) {
+			setFleetEntryRecord(stsCopy, true)
 		}
 		if err := r.Update(ctx, stsCopy); err != nil {
 			// Marked as the write, for the event's wording (fleetPluginPatchFailure);

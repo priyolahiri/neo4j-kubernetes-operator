@@ -6,7 +6,7 @@
 
 Up to Neo4j 2026.02 the fleet-management plugin jar is pre-bundled in the Enterprise image at `/var/lib/neo4j/products/` (5.26.12 and later, 2025.08 to 2026.02). From **2026.03 Fleet Manager is built into Neo4j** and enabled by default — "the plugin is no longer supported" (Operations Manual, *Configuration → Plugins*) — and its procedures (`fleetManagement.status`, `fleetManagement.registerToken`, …) are the server's own. When you enable Fleet Management in the operator:
 
-1. On a release before 2026.03, the operator merges `"fleet-management"` into the existing `NEO4J_PLUGINS` list on the StatefulSet. On 2026.03 and later it adds nothing: the image's entrypoint could not install the plugin (it has no JAR for it, and logs `ERROR: could not query null` for the name), and Fleet Manager is already there. A deployment an earlier operator gave the name keeps it — the merge never removes, so nothing restarts — and its servers log that ERROR line at each start, harmlessly; take the name out of `NEO4J_PLUGINS` by hand at a restart of your choosing if you want it gone. This is additive — any plugins already installed via `Neo4jPlugin` CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to `/plugins/` — **no internet access required**. A new cluster or standalone is created with the plugin already listed, so its servers start with it; enabling Fleet Management on a running deployment restarts its servers once to load it.
+1. On a release before 2026.03, the operator merges `"fleet-management"` into the existing `NEO4J_PLUGINS` list on the StatefulSet. On 2026.03 and later it adds nothing: the image's entrypoint could not install the plugin (it has no JAR for it, and logs `ERROR: could not query null` for the name), and Fleet Manager is already there. A deployment an earlier operator gave the name keeps it while Fleet Management is on — the merge never removes, so nothing restarts — and its servers log that ERROR line at each start, harmlessly; [turning Fleet Management off](#turning-it-off) takes it out, or take the name out of `NEO4J_PLUGINS` by hand at a restart of your choosing. This is additive — any plugins already installed via `Neo4jPlugin` CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to `/plugins/` — **no internet access required**. A new cluster or standalone is created with the plugin already listed, so its servers start with it; enabling Fleet Management on a running deployment restarts its servers once to load it.
 2. The procedure security settings are added for you, as the Neo4j Operations Manual asks for a plugin: `fleetManagement.*` always goes into `dbms.security.procedures.unrestricted`, and into `dbms.security.procedures.allowlist` only when something else sets the allowlist — your `spec.config`, or a `Neo4jPlugin`'s `spec.security.allowedProcedures`. While nothing does, Neo4j loads every procedure, so enabling Fleet Management hides no other plugin's procedures. The Neo4j image itself would narrow it: for `fleet-management` in `NEO4J_PLUGINS` its entrypoint adds `dbms.security.procedures.allowlist=fleetManagement.*` to a `neo4j.conf` without the setting. So, while nothing else sets the allowlist, the operator sets it to Neo4j's default, `*` — through the cluster's startup script, and in a standalone's `neo4j.conf` — and the entrypoint leaves it alone. Both lists are added to, never replaced: your own entries join fleet management's, and so do a plugin's — each server's startup joins the plugins' lists with the cluster's own. (With operators up to v1.22.x the allowlist was `fleetManagement.*` alone, set by the operator and by the image, which loaded nothing else — APOC and every plugin without `allowedProcedures` disappeared; the first reconcile after the upgrade restarts such a deployment once to fix it.)
 3. Once the cluster reaches `Ready` phase and the plugin is loaded, the operator reads the Aura registration token from a Kubernetes Secret and calls `CALL fleetManagement.registerToken($token)` via Bolt. This is idempotent — re-registering on reconcile loops is harmless.
 
@@ -22,7 +22,7 @@ Fleet Management works alongside any `Neo4jPlugin` CRDs you apply to the same de
 ["apoc","fleet-management"]
 ```
 
-The operator uses an additive merge strategy — neither controller overwrites the other's entries.
+The operator uses an additive merge strategy — neither controller overwrites the other's entries. Turning Fleet Management off takes out only its own `fleet-management` entry, never a plugin's (see [Turning it off](#turning-it-off)).
 
 Fleet Management's `dbms.security.procedures.unrestricted` line does not take the other plugins' place either. The Neo4j image gives each plugin it installs its own unrestricted entry (APOC `apoc.*`, GDS `gds.*`, …) only while nothing else sets that list, so beside Fleet Management's line APOC used to lose `apoc.*` (operators up to v1.22.x). The operator now keeps each installed plugin's entry in the list, unless you set `dbms.security.procedures.unrestricted` yourself, in the deployment's `spec.config` or `spec.env`. A cluster's servers pick this up at their next start; a standalone restarts once for it.
 
@@ -32,7 +32,7 @@ Fleet Management's `dbms.security.procedures.unrestricted` line does not take th
 - A registration token from the Aura console wizard (see [Generate a token](#generate-a-token)) — **or** Aura API credentials, and let the operator mint the token itself (see [Operator-managed onboarding](#operator-managed-onboarding-mint-the-token-automatically)).
 - Neo4j Enterprise **5.26.11 or a later 5.26, or 2025.08.0 or later** (a floating `5.26-enterprise` or `2026.08-enterprise` tag is fine). The operator installs the plugin by adding `fleet-management` to `NEO4J_PLUGINS`, and the image's entrypoint knows that name only from those releases: on 5.26.0 – 5.26.10 and 2025.01 – 2025.07 it exits on it and the servers do not start. The operator refuses `spec.auraFleetManagement.enabled: true` on those images (`ValidationFailed`, naming these releases) — see [which plugins each release installs](guides/plugins.md#which-plugins-managed-installs).
 
-  A deployment that already enabled it on such an image — whose restarted servers are failing on it — is refused from the first pass of the upgraded operator, and the operator writes nothing to it until the spec changes: its StatefulSet stays as it was. Move `spec.image.tag` to a release that installs the plugin and the servers roll onto it. Or remove `spec.auraFleetManagement`, then take `fleet-management` out of the StatefulSet's `NEO4J_PLUGINS` by hand: the operator only ever adds it.
+  A deployment that already enabled it on such an image — whose restarted servers are failing on it — is refused from the first pass of the upgraded operator, and the operator writes nothing to it until the spec changes: its StatefulSet stays as it was. Move `spec.image.tag` to a release that installs the plugin and the servers roll onto it. Or remove `spec.auraFleetManagement`, then take `fleet-management` out of the StatefulSet's `NEO4J_PLUGINS` by hand: an earlier operator added it without the record that lets [turning Fleet Management off](#turning-it-off) take it out again, and the refused spec gives this operator no pass to record it.
 
 ## Generate a token
 
@@ -138,6 +138,35 @@ auraFleetManagement:
 ```
 
 This is useful if you want to pre-install the plugin before setting up Aura access.
+
+## Turning it off
+
+Set `spec.auraFleetManagement.enabled: false`, or remove the block. The operator then takes out what it added for Fleet Management, in **one** rolling restart:
+
+- `fleetManagement.*` leaves the procedure settings of `neo4j.conf` (on a standalone, so does the `dbms.security.procedures.allowlist=*` it set against the image's default, unless a `fleet-management` `Neo4jPlugin` still needs it);
+- `fleet-management` leaves `NEO4J_PLUGINS` on the StatefulSet, in the same write that rolls the servers for that `neo4j.conf` change — on a cluster the ConfigMap's restart stamp, on a standalone the write that carries the new conf hash. Like any other change of the deployment's own spec it does not wait for the deployment to be `Ready`.
+
+The operator records the entry it added on the StatefulSet, in the annotation `neo4j.com/aura-fleet-management-entries`, in the same write that adds it, and turning Fleet Management off takes out only an entry that record lists. It leaves:
+
+- an entry a `Neo4jPlugin` installs: a `Managed` plugin named `fleet-management` (or with it as a dependency), or one whose `neo4j.com/plugin-entries.<plugin>` record lists it. The plugin's own removal takes it, when you delete or disable the plugin;
+- a `NEO4J_PLUGINS` your deployment's own `spec.env` sets — that list is yours;
+- an entry nothing recorded (below).
+
+**Deployments from an earlier operator.** Their entry has no record. While Fleet Management is still on, the first reconcile of the upgraded operator records it — an annotation, so nothing restarts — unless a `Neo4jPlugin` installs the name; turning Fleet Management off later then takes it out. A deployment whose Fleet Management was **already off** before the upgrade keeps the name, since the operator cannot tell it from one you put there. Take it out by hand (one rolling restart):
+
+```bash
+# Is it still there?
+kubectl get statefulset my-cluster-server \
+  -o jsonpath='{.spec.template.spec.containers[?(@.name=="neo4j")].env[?(@.name=="NEO4J_PLUGINS")].value}'
+# Then remove "fleet-management" from that value
+kubectl edit statefulset my-cluster-server
+```
+
+On a standalone (`kubectl edit statefulset my-standalone`) on 5.26.12 or later, or 2025.08 to 2026.02, do it soon: with the name in `NEO4J_PLUGINS` and Fleet Management off, the image's entrypoint sets `dbms.security.procedures.allowlist=fleetManagement.*`, which hides every other plugin's procedures. A cluster's startup script keeps the allowlist at Neo4j's default there.
+
+**On 2026.03 and later** an entry an earlier operator left — kept while Fleet Management is on, see [How it works](#how-it-works) — goes with the disable's restart the same way, and its `ERROR: could not query null` line with it. Fleet Manager itself is built into the server, and the operator does not turn it off.
+
+`status.auraFleetManagement` keeps its last values. Turning Fleet Management on again adds `fleet-management` back and records it (the servers restart to load it); if the deployment does not show up in the Aura console again, reset `registered` as under [Token rotation](#token-rotation).
 
 ## Operator-managed onboarding (mint the token automatically)
 

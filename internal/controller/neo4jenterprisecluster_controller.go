@@ -119,6 +119,11 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// AuraFleetManagementPluginPatchFailed it announced, so a patch that keeps
 	// failing the same way is announced once (operations.md id 145).
 	fleetPluginPatchFailures lastAnnounced
+	// fleetEntryRemovalFailures remembers, per cluster, the last failure of
+	// the write that takes Aura Fleet Management's entry out of NEO4J_PLUGINS
+	// once it is turned off, so one that lasts is logged at info once
+	// (removeFleetManagementPlugin, operations.md id 222).
+	fleetEntryRemovalFailures lastAnnounced
 	// FleetClientFactory injects a fake Aura Fleet Manager client in tests. nil in
 	// production, where the shared credential-keyed client is used.
 	FleetClientFactory auraFleetClientFactory
@@ -766,6 +771,12 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// The rollout checks below read the StatefulSet from the cache, which may
 	// not have this write yet (serverTemplateWriteUnobserved).
 	r.noteServerStatefulSetWrite(cluster, serverStatefulSet)
+	// Aura Fleet Management's record of its NEO4J_PLUGINS entry: kept while
+	// it is on (an earlier operator's entry adopted), and once it is off the
+	// recorded entry goes — the conf change of the same disable rolls the
+	// servers, and its restart stamp above carried the removal; this writes
+	// one no conf change carries (operations.md id 222).
+	r.reconcileFleetEntry(ctx, cluster)
 	// A server that cannot start and is due for the update — a plugin's repair,
 	// a spec fix — is replaced, where the StatefulSet controller does not
 	// replace it itself (MaxUnavailableStatefulSet, operations.md id 204).
@@ -886,6 +897,7 @@ func (r *Neo4jEnterpriseClusterReconciler) handleDeletion(ctx context.Context, c
 	r.newFleetProvisioner().deprovisionAuraFleet(ctx, cluster)
 	r.fleetFailures.clear(client.ObjectKeyFromObject(cluster))
 	r.fleetPluginPatchFailures.forget(client.ObjectKeyFromObject(cluster).String())
+	r.fleetEntryRemovalFailures.forget(client.ObjectKeyFromObject(cluster).String())
 	r.availabilityAnnounced.Delete(clusterKey(cluster))
 	r.splitBrainChecks.Delete(clusterKey(cluster))
 	r.upgradeDiagnostics.Delete(clusterKey(cluster))
@@ -1319,8 +1331,14 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				// revision the servers below the partition run, exactly.
 				if isCluster && !twoStep && sts.Name == ownerCluster.Name+"-server" && clusterInstallsFleetManagement(ownerCluster) {
 					sts.Spec.Template = *sts.Spec.Template.DeepCopy()
-					if _, err := addFleetManagementPlugin(&sts.Spec.Template); err != nil {
+					added, err := addFleetManagementPlugin(&sts.Spec.Template)
+					if err != nil {
 						return fmt.Errorf("%w in StatefulSet %s", err, sts.Name)
+					}
+					// Recorded as Fleet Management's in the same create, so
+					// turning it off takes the entry out again (id 222).
+					if added && !neo4jPluginsOwnedByTarget(sts) {
+						setFleetEntryRecord(sts, true)
 					}
 				}
 			}
@@ -3607,7 +3625,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileAuraFleetManagement(ctx cont
 	// This is always done (regardless of Ready state) so pods restart promptly after
 	// the feature is first enabled, before we attempt token registration.
 	stsName := fmt.Sprintf("%s-server", cluster.Name)
-	if err := r.mergeFleetManagementPlugin(ctx, stsName, cluster.Namespace); err != nil {
+	if err := r.mergeFleetManagementPlugin(ctx, cluster); err != nil {
 		if errors.IsNotFound(err) {
 			// A new cluster's first pass gets here before it writes its server
 			// StatefulSet. Nothing failed: the pass that finds it adds the
@@ -3706,14 +3724,21 @@ func (r *Neo4jEnterpriseClusterReconciler) failFleetRegistration(ctx context.Con
 	return r.setFleetManagementStatus(ctx, cluster, false, message)
 }
 
-// mergeFleetManagementPlugin patches the named StatefulSet to ensure "fleet-management"
+// mergeFleetManagementPlugin patches the cluster's server StatefulSet to ensure "fleet-management"
 // appears in the NEO4J_PLUGINS env var of the neo4j container. The merge is idempotent:
-// if "fleet-management" is already present, the StatefulSet is not touched.
+// if "fleet-management" is already present, the pod template is not touched.
 // Uses retry.RetryOnConflict to handle concurrent update conflicts.
-func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx context.Context, stsName, namespace string) error {
+//
+// The write that adds the name records it as Fleet Management's
+// (fleetEntriesAnnotation), so turning the feature off takes it out again; the
+// pass keeps that record in line after its template apply — adopting an entry
+// an earlier operator added — with a patch of the metadata alone
+// (reconcileFleetEntry, operations.md id 222).
+func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster) error {
+	stsName := cluster.Name + "-server"
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		sts := &appsv1.StatefulSet{}
-		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: namespace}, sts); err != nil {
+		if err := r.Get(ctx, types.NamespacedName{Name: stsName, Namespace: cluster.Namespace}, sts); err != nil {
 			return fmt.Errorf("get StatefulSet %s: %w", stsName, err)
 		}
 		stsCopy := sts.DeepCopy()
@@ -3723,6 +3748,9 @@ func (r *Neo4jEnterpriseClusterReconciler) mergeFleetManagementPlugin(ctx contex
 		}
 		if !changed {
 			return nil // already present, or built into the image — nothing to patch
+		}
+		if !neo4jPluginsOwnedByTarget(stsCopy) {
+			setFleetEntryRecord(stsCopy, true)
 		}
 		if err := r.Update(ctx, stsCopy); err != nil {
 			// Marked as the write, for the event's wording (fleetPluginPatchFailure);
