@@ -1028,6 +1028,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#your-own-neo4j_plugins-in-specenv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your own NEO4J_PLUGINS in spec.env
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4070,6 +4081,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#your-own-neo4j_plugins-in-specenv" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Your own NEO4J_PLUGINS in spec.env
+      
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4304,7 +4326,7 @@
 <h2 id="how-it-works">How it works<a class="headerlink" href="#how-it-works" title="Anchor link to this section">&para;</a></h2>
 <p>Up to Neo4j 2026.02 the fleet-management plugin jar is pre-bundled in the Enterprise image at <code>/var/lib/neo4j/products/</code> (5.26.12 and later, 2025.08 to 2026.02). From <strong>2026.03 Fleet Manager is built into Neo4j</strong> and enabled by default — "the plugin is no longer supported" (Operations Manual, <em>Configuration → Plugins</em>) — and its procedures (<code>fleetManagement.status</code>, <code>fleetManagement.registerToken</code>, …) are the server's own. When you enable Fleet Management in the operator:</p>
 <ol>
-<li>On a release before 2026.03, the operator merges <code>"fleet-management"</code> into the existing <code>NEO4J_PLUGINS</code> list on the StatefulSet. On 2026.03 and later it adds nothing: the image's entrypoint could not install the plugin (it has no JAR for it, and logs <code>ERROR: could not query null</code> for the name), and Fleet Manager is already there. A deployment an earlier operator gave the name keeps it while Fleet Management is on — the merge never removes, so nothing restarts — and its servers log that ERROR line at each start, harmlessly; <a href="#turning-it-off">turning Fleet Management off</a> takes it out, or take the name out of <code>NEO4J_PLUGINS</code> by hand at a restart of your choosing. This is additive — any plugins already installed via <code>Neo4jPlugin</code> CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to <code>/plugins/</code> — <strong>no internet access required</strong>. A new cluster or standalone is created with the plugin already listed, so its servers start with it; enabling Fleet Management on a running deployment restarts its servers once to load it.</li>
+<li>On a release before 2026.03, the operator merges <code>"fleet-management"</code> into the existing <code>NEO4J_PLUGINS</code> list on the StatefulSet (a list your own <code>spec.env</code> sets is the deployment's: see <a href="#your-own-neo4j_plugins-in-specenv">Your own <code>NEO4J_PLUGINS</code> in <code>spec.env</code></a>). On 2026.03 and later it adds nothing: the image's entrypoint could not install the plugin (it has no JAR for it, and logs <code>ERROR: could not query null</code> for the name), and Fleet Manager is already there. A deployment an earlier operator gave the name keeps it while Fleet Management is on — the merge never removes, so nothing restarts — and its servers log that ERROR line at each start, harmlessly; <a href="#turning-it-off">turning Fleet Management off</a> takes it out, or take the name out of <code>NEO4J_PLUGINS</code> by hand at a restart of your choosing. This is additive — any plugins already installed via <code>Neo4jPlugin</code> CRDs are preserved. At pod startup, the Docker entrypoint copies the bundled jar to <code>/plugins/</code> — <strong>no internet access required</strong>. A new cluster or standalone is created with the plugin already listed, so its servers start with it; enabling Fleet Management on a running deployment restarts its servers once to load it.</li>
 <li>The procedure security settings are added for you, as the Neo4j Operations Manual asks for a plugin: <code>fleetManagement.*</code> always goes into <code>dbms.security.procedures.unrestricted</code>, and into <code>dbms.security.procedures.allowlist</code> only when something else sets the allowlist — your <code>spec.config</code>, or a <code>Neo4jPlugin</code>'s <code>spec.security.allowedProcedures</code>. While nothing does, Neo4j loads every procedure, so enabling Fleet Management hides no other plugin's procedures. The Neo4j image itself would narrow it: for <code>fleet-management</code> in <code>NEO4J_PLUGINS</code> its entrypoint adds <code>dbms.security.procedures.allowlist=fleetManagement.*</code> to a <code>neo4j.conf</code> without the setting. So, while nothing else sets the allowlist, the operator sets it to Neo4j's default, <code>*</code> — through the cluster's startup script, and in a standalone's <code>neo4j.conf</code> — and the entrypoint leaves it alone. Both lists are added to, never replaced: your own entries join fleet management's, and so do a plugin's — each server's startup joins the plugins' lists with the cluster's own. (With operators up to v1.22.x the allowlist was <code>fleetManagement.*</code> alone, set by the operator and by the image, which loaded nothing else — APOC and every plugin without <code>allowedProcedures</code> disappeared; the first reconcile after the upgrade restarts such a deployment once to fix it.)</li>
 <li>Once the cluster reaches <code>Ready</code> phase and the plugin is loaded, the operator reads the Aura registration token from a Kubernetes Secret and calls <code>CALL fleetManagement.registerToken($token)</code> via Bolt. This is idempotent — re-registering on reconcile loops is harmless.</li>
 </ol>
@@ -4316,6 +4338,14 @@
 </span></code></pre></div>
 <p>The operator uses an additive merge strategy — neither controller overwrites the other's entries. Turning Fleet Management off takes out only its own <code>fleet-management</code> entry, never a plugin's (see <a href="#turning-it-off">Turning it off</a>).</p>
 <p>Fleet Management's <code>dbms.security.procedures.unrestricted</code> line does not take the other plugins' place either. The Neo4j image gives each plugin it installs its own unrestricted entry (APOC <code>apoc.*</code>, GDS <code>gds.*</code>, …) only while nothing else sets that list, so beside Fleet Management's line APOC used to lose <code>apoc.*</code> (operators up to v1.22.x). The operator now keeps each installed plugin's entry in the list, unless you set <code>dbms.security.procedures.unrestricted</code> yourself, in the deployment's <code>spec.config</code> or <code>spec.env</code>. A cluster's servers pick this up at their next start; a standalone restarts once for it.</p>
+<h3 id="your-own-neo4j_plugins-in-specenv">Your own <code>NEO4J_PLUGINS</code> in <code>spec.env</code><a class="headerlink" href="#your-own-neo4j_plugins-in-specenv" title="Anchor link to this section">&para;</a></h3>
+<p>When the deployment's own <code>spec.env</code> sets <code>NEO4J_PLUGINS</code>, that variable is the deployment's: the operator renders it from your spec, and neither a <code>Neo4jPlugin</code> nor the Fleet Management merge writes to it. With Fleet Management on, before 2026.03:</p>
+<ul>
+<li><strong>A JSON list given as a value</strong> (<code>'["apoc"]'</code>) gets <code>fleet-management</code> appended by the deployment itself: the servers run <code>["apoc","fleet-management"]</code>. Your names and their order stay; a list that already names <code>fleet-management</code> is left byte for byte. Turning Fleet Management on or off changes the list in the same rolling restart as the <code>neo4j.conf</code> change, so each is one restart. Off, the list goes back to what you wrote, and a <code>fleet-management</code> you wrote yourself stays.</li>
+<li><strong>A list from a Secret or ConfigMap</strong> (<code>valueFrom</code>), or <strong>a value that is not a JSON list</strong>, cannot be added to. The operator leaves it as it is and raises one <code>ValidationWarning</code>: "… Aura Fleet Management needs fleet-management in that list, and the operator cannot add it". List <code>fleet-management</code> there yourself, set the list as a value, or leave <code>NEO4J_PLUGINS</code> out of <code>spec.env</code>.</li>
+</ul>
+<p>On 2026.03 and later Fleet Manager is built in, nothing is added, and a <code>fleet-management</code> you list stays yours. Taking <code>NEO4J_PLUGINS</code> out of <code>spec.env</code> while Fleet Management is on keeps <code>fleet-management</code> on the StatefulSet, in the same restart. A <code>Neo4jPlugin</code> on such a deployment is still refused (<code>Failed</code>, naming <code>spec.env</code>): list its name in your own <code>NEO4J_PLUGINS</code>, or remove the variable from <code>spec.env</code>.</p>
+<p>(Up to v1.23.x a cluster with a JSON list there restarted its servers without end: the merge added <code>fleet-management</code> to the variable, and the cluster put its own value back. A standalone did not loop. With a list from a Secret, or one that was not a JSON list, the operator's write of the StatefulSet failed: a new cluster or standalone was never created, and an existing standalone applied no template change.)</p>
 <h2 id="prerequisites">Prerequisites<a class="headerlink" href="#prerequisites" title="Anchor link to this section">&para;</a></h2>
 <ul>
 <li>A Neo4j Aura account with Fleet Management enabled.</li>
@@ -4415,7 +4445,7 @@
 <p>The operator records the entry it added on the StatefulSet, in the annotation <code>neo4j.com/aura-fleet-management-entries</code>, in the same write that adds it, and turning Fleet Management off takes out only an entry that record lists. It leaves:</p>
 <ul>
 <li>an entry a <code>Neo4jPlugin</code> installs: a <code>Managed</code> plugin named <code>fleet-management</code> (or with it as a dependency), or one whose <code>neo4j.com/plugin-entries.&lt;plugin&gt;</code> record lists it. The plugin's own removal takes it, when you delete or disable the plugin;</li>
-<li>a <code>NEO4J_PLUGINS</code> your deployment's own <code>spec.env</code> sets — that list is yours;</li>
+<li>a <code>NEO4J_PLUGINS</code> your deployment's own <code>spec.env</code> sets — that list is yours. It goes back to what you wrote, in the same restart: the <code>fleet-management</code> the deployment appended goes, one you wrote stays (see <a href="#your-own-neo4j_plugins-in-specenv">Your own <code>NEO4J_PLUGINS</code> in <code>spec.env</code></a>);</li>
 <li>an entry nothing recorded (below).</li>
 </ul>
 <p><strong>Deployments from an earlier operator.</strong> Their entry has no record. While Fleet Management is still on, the first reconcile of the upgraded operator records it — an annotation, so nothing restarts — unless a <code>Neo4jPlugin</code> installs the name; turning Fleet Management off later then takes it out. A deployment whose Fleet Management was <strong>already off</strong> before the upgrade keeps the name, since the operator cannot tell it from one you put there. Take it out by hand (one rolling restart):</p>

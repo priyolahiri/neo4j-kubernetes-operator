@@ -5637,7 +5637,7 @@ behaviour changes below take effect on the first reconcile.</p>
 <li>A cluster or standalone whose <code>spec.env</code> sets a shared-list variable with a plain value: one rolling restart, moving it into <code>neo4j.conf</code> (a cluster hands the StatefulSet variable to its plugins in the same write).</li>
 </ul>
 <h2 id="upgrading-from-v123x">Upgrading from v1.23.x<a class="headerlink" href="#upgrading-from-v123x" title="Anchor link to this section">&para;</a></h2>
-<p>This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server.</p>
+<p>This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server, except for the deployments listed under "Restarts after the upgrade" below.</p>
 <h3 id="behaviour-changes_6">Behaviour changes<a class="headerlink" href="#behaviour-changes_6" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Clusters</strong></p>
 <ul>
@@ -5653,6 +5653,8 @@ behaviour changes below take effect on the first reconcile.</p>
 <li><strong>Turning it off takes <code>fleet-management</code> out of <code>NEO4J_PLUGINS</code></strong>, in the same rolling restart as the <code>neo4j.conf</code> change of the disable. Before, the plugin stayed on the servers. The operator removes only an entry it added. It leaves an entry that a <code>Neo4jPlugin</code> installs, and a <code>NEO4J_PLUGINS</code> your own <code>spec.env</code> sets. See <a href="../aura_fleet_management/#turning-it-off">Turning it off</a>.</li>
 <li><strong>The operator records the entry it adds</strong> in the server StatefulSet's annotation <code>neo4j.com/aura-fleet-management-entries</code>. On a deployment with Fleet Management on, the first pass after the upgrade records the existing entry. That is a metadata patch and restarts nothing. On 2026.03+, the entry that v1.23.0 kept is recorded too, and goes when Fleet Management is turned off.</li>
 <li><strong>A deployment where Fleet Management was turned off under an earlier operator</strong> still lists <code>fleet-management</code> in <code>NEO4J_PLUGINS</code>. The operator cannot tell that entry from one you added, so it leaves it. Remove it by hand with <code>kubectl edit statefulset &lt;cluster&gt;-server</code> (or <code>&lt;standalone&gt;</code>), which is one restart. On a standalone on 5.26.12+ or 2025.08–2026.02, the leftover name also lets the image narrow the allowlist to <code>fleetManagement.*</code>, so removing it brings back the procedures that the allowlist hid.</li>
+<li><strong>A <code>NEO4J_PLUGINS</code> that your own <code>spec.env</code> sets now carries <code>fleet-management</code> itself.</strong> Up to v1.23.x, a cluster with a JSON list there (<code>'["apoc"]'</code>) and Fleet Management on restarted its servers without end. The Fleet Management merge added the name, and the cluster put your value back. The cluster now appends <code>fleet-management</code> to your list, keeping your names and their order, and the merge never writes that variable. A list that already names the plugin is left as it is. On such a deployment, turning Fleet Management on or off is one rolling restart, and turning it off gives back the list you wrote. On 2026.03 and later nothing is appended. A <code>Neo4jPlugin</code> on such a deployment is still refused. See <a href="../aura_fleet_management/#your-own-neo4j_plugins-in-specenv">Your own <code>NEO4J_PLUGINS</code> in <code>spec.env</code></a>.</li>
+<li><strong>A <code>NEO4J_PLUGINS</code> from a Secret or ConfigMap, or one that is not a JSON list,</strong> is left as it is, with one <code>ValidationWarning</code> saying that Aura Fleet Management needs <code>fleet-management</code> in that list and the operator cannot add it. Before, the write of the StatefulSet failed: a new cluster or standalone was never created, and an existing standalone applied no template change. List the plugin there yourself, or set the list as a value.</li>
 </ul>
 <p><strong>Restores</strong></p>
 <ul>
@@ -5661,7 +5663,9 @@ behaviour changes below take effect on the first reconcile.</p>
 </ul>
 <h3 id="restarts-after-the-upgrade_2">Restarts after the upgrade<a class="headerlink" href="#restarts-after-the-upgrade_2" title="Anchor link to this section">&para;</a></h3>
 <ul>
-<li>None. Recording an existing Fleet Management entry is a metadata patch.</li>
+<li>Recording an existing Fleet Management entry is a metadata patch and restarts nothing.</li>
+<li>A cluster caught in the <code>spec.env</code> <code>NEO4J_PLUGINS</code> restart loop (Fleet Management on, before 2026.03) rolls at most once more, to your list with <code>fleet-management</code>, and then stops. If its last write was the merge's, it does not roll at all.</li>
+<li>A standalone with Fleet Management on and a <code>NEO4J_PLUGINS</code> from a Secret, or one that is not a JSON list, rolls once if its template changed while its writes were failing. A cluster in that shape restarts nothing; one that was never created is created.</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
