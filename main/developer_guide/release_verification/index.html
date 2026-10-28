@@ -5848,6 +5848,12 @@ role-CR-name, and sharded-backup-by-CR-name checks). Record each run below.</p>
 </thead>
 <tbody>
 <tr>
+<td><strong>post-v1.23.0 fixes (#606)</strong></td>
+<td>2026-10-27 – 2026-10-28</td>
+<td>✅ One live walk of the combined build <code>5043c68f</code> (23:21–01:42 CET), 23 checks, one Enterprise deployment at a time: an upgrade from v1.23.0 and Fleet Management off and on again on a 5.26.32 cluster; <code>ClusterReady</code>, the drain and built-in Fleet Manager on a 2026.08.1 → 2026.09.0 cluster with <code>--server-unavailable-grace=2m</code>; Fleet Management off and the restore checks on a 5.26.32 standalone. All 23 pass; no ERROR or <code>Reconciler error</code> in the captured logs.</td>
+<td><strong>Fixed and walked:</strong> <code>ClusterReady</code> only on entering <code>Ready</code> (id 136); "Scale-down drain complete" written and kept (id 219); a finished restore quiet on resync, a missing <code>instanceRef</code> refused once (id 215); turning Fleet Management off takes its <code>NEO4J_PLUGINS</code> entry out in one roll (id 222). <strong>Found, also on v1.23.0 (not regressions):</strong> (1) a cluster whose own <code>spec.env</code> sets <code>NEO4J_PLUGINS</code> while Fleet Management is on restarts its servers about twice a minute without end and stays <code>Forming</code>: the fleet merge adds the name and the template apply puts the user's value back; (2) a scale-down set back within a second leaves the servers it cordoned <code>Cordoned</code>, and the cluster sits in <code>Forming</code> until a later scale-down drops them; (3) enabling Fleet Management on a running cluster writes two controllerrevisions in the same second (the pods went straight to the second); (4) for about 10 s after a drain the <code>Degraded</code> condition reads <code>True</code> with "3 of 3 servers available".</td>
+</tr>
+<tr>
 <td><strong>v1.23.0 release verification</strong></td>
 <td>2026-10-26</td>
 <td>✅ (after fixes) Phases 0, 1, 2, 2c, 3 and 5 (Parts A–E) walked on <code>dd429120</code> (01:24–08:33 CET); Phase 4 <strong>not run</strong> (no Aura credentials); Phase 2b not in scope. Upgrades from v1.22.0 walked on a standalone, two CalVer clusters, a 5.26.32 Fleet Management cluster and standalone, and the sharding cluster. <strong>No hard release blocker; two FAILs and one more defect, both FAILs fixed before the tag (#595, #596) and re-walked on <code>939818d6</code> (09:22–10:45 CET): PASS</strong></td>

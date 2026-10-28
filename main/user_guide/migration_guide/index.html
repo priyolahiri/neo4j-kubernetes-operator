@@ -1039,6 +1039,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v123x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.23.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.23.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restarts-after-the-upgrade_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restarts after the upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4688,6 +4727,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v123x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.23.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.23.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_6" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restarts-after-the-upgrade_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restarts after the upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5557,6 +5635,33 @@ behaviour changes below take effect on the first reconcile.</p>
 <li>A standalone whose <code>neo4j.conf</code> sets the unrestricted list and runs Managed plugins (Aura Fleet Management beside a plugin, GDS or Bloom beside APOC, a plugin with <code>spec.security</code>): one restart, after which it keeps the plugins' image entries. Clusters take the same change at each server's next start and restart nothing for it.</li>
 <li>A cluster whose <code>spec.config</code> sets <code>server.jvm.additional</code>, or whose <code>spec.env</code> sets a plain <code>NEO4J_server_jvm_additional</code>: one rolling restart, after which the line follows the operator's list in one variable.</li>
 <li>A cluster or standalone whose <code>spec.env</code> sets a shared-list variable with a plain value: one rolling restart, moving it into <code>neo4j.conf</code> (a cluster hands the StatefulSet variable to its plugins in the same write).</li>
+</ul>
+<h2 id="upgrading-from-v123x">Upgrading from v1.23.x<a class="headerlink" href="#upgrading-from-v123x" title="Anchor link to this section">&para;</a></h2>
+<p>This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server.</p>
+<h3 id="behaviour-changes_6">Behaviour changes<a class="headerlink" href="#behaviour-changes_6" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Clusters</strong></p>
+<ul>
+<li><strong><code>ClusterReady</code> is announced only when a cluster enters <code>Ready</code> from another phase.</strong> That means its first formation, a scale-up, or a return from <code>Degraded</code>, <code>Forming</code> or <code>Failed</code>. A cluster that stays <code>Ready</code> no longer raises it:</li>
+<li>not when an upgrade completes, retargeted or not: read <code>UpgradeCompleted</code>;</li>
+<li>not when a server comes back within the grace period: read the <code>Degraded</code> condition;</li>
+<li>not after a spec edit.</li>
+</ul>
+<p>Automation that counted <code>ClusterReady</code> for any of those should switch.
+- <strong>A completed scale-down drain says so.</strong> <code>ServersPendingDrain</code> ends <code>False</code> with reason <code>NoServersPendingDrain</code> and message "Scale-down drain complete", and keeps that message until the next scale-down. "Scale-down not in progress" now means only a scale-down set back before its drain ended. A cluster keeps its current message until its next scale-down.</p>
+<p><strong>Aura Fleet Management</strong></p>
+<ul>
+<li><strong>Turning it off takes <code>fleet-management</code> out of <code>NEO4J_PLUGINS</code></strong>, in the same rolling restart as the <code>neo4j.conf</code> change of the disable. Before, the plugin stayed on the servers. The operator removes only an entry it added. It leaves an entry that a <code>Neo4jPlugin</code> installs, and a <code>NEO4J_PLUGINS</code> your own <code>spec.env</code> sets. See <a href="../aura_fleet_management/#turning-it-off">Turning it off</a>.</li>
+<li><strong>The operator records the entry it adds</strong> in the server StatefulSet's annotation <code>neo4j.com/aura-fleet-management-entries</code>. On a deployment with Fleet Management on, the first pass after the upgrade records the existing entry. That is a metadata patch and restarts nothing. On 2026.03+, the entry that v1.23.0 kept is recorded too, and goes when Fleet Management is turned off.</li>
+<li><strong>A deployment where Fleet Management was turned off under an earlier operator</strong> still lists <code>fleet-management</code> in <code>NEO4J_PLUGINS</code>. The operator cannot tell that entry from one you added, so it leaves it. Remove it by hand with <code>kubectl edit statefulset &lt;cluster&gt;-server</code> (or <code>&lt;standalone&gt;</code>), which is one restart. On a standalone on 5.26.12+ or 2025.08–2026.02, the leftover name also lets the image narrow the allowlist to <code>fleetManagement.*</code>, so removing it brings back the procedures that the allowlist hid.</li>
+</ul>
+<p><strong>Restores</strong></p>
+<ul>
+<li><strong>A finished <code>Neo4jRestore</code> stays quiet.</strong> One that is <code>Completed</code> or <code>Failed</code> at its generation no longer logs "Restore already completed" or "Restore previously failed; not retrying…" at info whenever the operator's cache resyncs (every 30 seconds in development mode). Those lines are now at debug level. The outcome is in the restore's status, its <code>Ready</code> condition and its <code>RestoreCompleted</code> or <code>RestoreFailed</code> event, and a refusal is still logged once at info. Log-based alerts on those two lines should watch the event or the condition instead.</li>
+<li><strong>A <code>Neo4jRestore</code> without <code>spec.instanceRef</code> is refused once</strong>, as <code>Failed</code> with "spec.instanceRef is required" and one info line "Restore refused: spec.instanceRef is required". It used to log "Invalid Neo4jRestore spec" and write its status on every pass. It now carries the restore finalizer; deleting it is unchanged.</li>
+</ul>
+<h3 id="restarts-after-the-upgrade_2">Restarts after the upgrade<a class="headerlink" href="#restarts-after-the-upgrade_2" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li>None. Recording an existing Fleet Management entry is a metadata patch.</li>
 </ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
