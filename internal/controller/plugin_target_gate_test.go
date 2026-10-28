@@ -704,7 +704,7 @@ func TestInitContainerFailure(t *testing.T) {
 }
 
 func TestStatefulSetOrdinal(t *testing.T) {
-	for pod, want := range map[string]int{"c-server-0": 0, "c-server-12": 12, "c-server-01": -1, "c-server-x": -1, "c-server": -1, "c-servers-1": -1, "other-0": -1} {
+	for pod, want := range map[string]int{"c-server-0": 0, "c-server-12": 12, "c-server-01": -1, "c-server-x": -1, "c-server": -1, "c-servers-1": -1, "other-0": -1, "c-server-2147483647": 2147483647, "c-server-2147483648": -1, "c-server-4294967296": -1, "c-server--1": -1} {
 		got, ok := statefulSetOrdinal("c-server", pod)
 		if want < 0 {
 			assert.False(t, ok, pod)

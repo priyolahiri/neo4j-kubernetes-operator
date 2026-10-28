@@ -42,7 +42,7 @@ import (
 // own circuit breaker, and its Close releases the driver instead of closing it.
 //
 // The key holds everything the driver was built from: the deployment's UID,
-// the URI, the username and digests of the password and of the TLS material.
+// the URI, the username, the password and a digest of the TLS material.
 // A deployment whose key changes (password rotated, certificate renewed, TLS
 // switched on) gets a new driver, and the old one is closed once nobody holds
 // it. A driver nobody has used for driverIdleTimeout is closed too, which also
@@ -54,9 +54,22 @@ type driverKey struct {
 	uid      types.UID
 	uri      string
 	username string
-	password [sha256.Size]byte
+	// password is compared as it is. An unsalted SHA-256 of it (as before)
+	// protected nothing — the shared driver keeps the password for its auth
+	// token in the same process — and CodeQL rightly reads it as a weak
+	// password hash (go/weak-sensitive-data-hashing). The key is never
+	// printed with it: String and GoString leave it out.
+	password string
 	tls      [sha256.Size]byte
 }
+
+// String and GoString print the key without its password, so no log line or
+// error that formats a key can carry one.
+func (k driverKey) String() string {
+	return fmt.Sprintf("driverKey{uid:%s uri:%s username:%s password:<redacted> tls:%x}", k.uid, k.uri, k.username, k.tls[:4])
+}
+
+func (k driverKey) GoString() string { return k.String() }
 
 type sharedDriver struct {
 	driver                  neo4j.DriverWithContext
@@ -185,7 +198,7 @@ func driverTarget(kind, namespace, name string) string {
 }
 
 func newDriverKey(uid types.UID, uri string, creds *Credentials, tlsDigest [sha256.Size]byte) driverKey {
-	return driverKey{uid: uid, uri: uri, username: creds.Username, password: sha256.Sum256([]byte(creds.Password)), tls: tlsDigest}
+	return driverKey{uid: uid, uri: uri, username: creds.Username, password: creds.Password, tls: tlsDigest}
 }
 
 // tlsMaterialDigest digests what buildTLSConfig builds a TLS config from: the
