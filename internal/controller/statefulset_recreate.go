@@ -358,7 +358,9 @@ func restorePending(sts *appsv1.StatefulSet) (*int32, bool) {
 	if !ok {
 		return nil, false
 	}
-	p, err := strconv.Atoi(raw)
+	// A partition is an int32; a value out of that range is no partition, as
+	// one that does not parse is not (CodeQL go/incorrect-integer-conversion).
+	p, err := strconv.ParseInt(raw, 10, 32)
 	if err != nil || p < 0 {
 		return nil, true
 	}
