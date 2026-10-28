@@ -2,7 +2,7 @@
 
 Guidance to Claude Code (claude.ai/code) when working in this repository.
 
-Last updated: 2026-10-26
+Last updated: 2026-10-28
 
 This file is the **constitution + domain reference + index**. It holds the small set of
 non-negotiable invariants, the domain-knowledge sections an agent needs to make a change,
@@ -169,7 +169,7 @@ Auto-generates SSL policies for `https`/`bolt`, certs at `/ssl/`. Cluster SSL de
 
 **Validate plugin config:** cluster → StatefulSet env vars (`NEO4J_PLUGINS`); standalone → ConfigMap content.
 
-**`NEO4J_PLUGINS` live-patching**: never bake into the static StatefulSet template in `internal/resources/cluster.go`. Use `MergeNeo4jPluginList` so plugin/fleet/Aura controllers don't overwrite each other.
+**`NEO4J_PLUGINS` live-patching**: never bake into the static StatefulSet template in `internal/resources/cluster.go`. Use `MergeNeo4jPluginList` so plugin/fleet/Aura controllers don't overwrite each other. (The cluster's own `spec.env` `NEO4J_PLUGINS` is copied by the builder and is the cluster's; it carries `fleet-management` as the cluster renders it, `docs/knowledge/operations.md` id 223.)
 
 **`envVarsEqual` = subset + ownership-tracked removal**: verifies desired vars exist with right value; tolerates extras so plugin/fleet/Aura controllers can live-patch without wholesale-replace oscillation. The cluster controller writes its owned names to `neo4j.com/cluster-controller-env-vars` annotation each reconcile; next reconcile enforces removals via `previously-owned ∖ desired` without disturbing foreign vars. Apply path uses `mergeEnvVars` — never wholesale-replace, never strict length+value equality, never drop the annotation.
 
@@ -178,8 +178,10 @@ Auto-generates SSL policies for `https`/`bolt`, certs at `/ssl/`. Cluster SSL de
 `spec.auraFleetManagement.{enabled, tokenSecretRef{name,key}}` — default key is `token`.
 
 **Two-phase reconciliation** (never collapse):
-1. Install plugin via `mergeFleetManagementPlugin` — every reconcile when enabled. A new StatefulSet is created with it already listed (`addFleetManagementPlugin`, outside the owned-env record; `docs/knowledge/operations.md` id 175), so a new deployment's servers do not restart for it. Not on 2026.03+, where Fleet Manager is built in (`validation.FleetManagementBuiltIn`; the merge never removes an existing entry); fleet's allowlist entry goes only beside an allowlist set elsewhere, and the image's own `fleetManagement.*`-only default is countered with `*` (id 192).
+1. Install plugin via `mergeFleetManagementPlugin` — every reconcile when enabled. A new StatefulSet is created with it already listed (`addFleetManagementPlugin`, outside the owned-env record; `docs/knowledge/operations.md` id 175), so a new deployment's servers do not restart for it. Not on 2026.03+, where Fleet Manager is built in (`validation.FleetManagementBuiltIn`; the merge never removes an existing entry); fleet's allowlist entry goes only beside an allowlist set elsewhere, and the image's own `fleetManagement.*`-only default is countered with `*` (id 192). A `NEO4J_PLUGINS` the deployment's own `spec.env` sets is the deployment's: a cluster renders `fleet-management` into it (`clusterNeo4jPlugins` / `buildServerStatefulSet`) and the conf roll's restart stamp carries it, a standalone's template write adds it; the merge never writes such a variable, and one from a Secret, or not a JSON list, gets a `ValidationWarning` (id 223).
 2. Register token via `CALL fleetManagement.registerToken($token)` — only when cluster `Ready` AND token not yet registered.
+
+**Disable:** turning it off takes out the `fleet-management` entry Fleet Management recorded adding (`neo4j.com/aura-fleet-management-entries`), in the same restart as the conf change; never a plugin's entry or the user's `spec.env` list (`docs/knowledge/operations.md` id 222).
 
 Plugin-only mode: omit `tokenSecretRef` to defer registration. Implementation: `reconcileAuraFleetManagement` + `mergeFleetManagementPlugin` on both controllers; `RegisterFleetManagementToken` / `IsFleetManagementInstalled` in `internal/neo4j/client.go`; `internal/validation/fleet_validator.go`.
 
