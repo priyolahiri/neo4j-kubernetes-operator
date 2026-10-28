@@ -4305,7 +4305,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>ClusterReady</code></td>
 <td>Normal</td>
-<td>Cluster has reached Ready phase</td>
+<td>Cluster has reached the <code>Ready</code> phase from another phase: first formation, back from <code>Degraded</code>, <code>Forming</code> or <code>Failed</code>, or an upgrade's completion on a cluster it repaired. Announced by the status write that enters <code>Ready</code>, once. A cluster that stays <code>Ready</code> announces nothing: not over an upgrade (<code>UpgradeCompleted</code> says it finished), not when a server comes back within the grace period (the <code>Degraded</code> condition turns <code>False</code>), not after a spec edit</td>
 </tr>
 <tr>
 <td><code>ValidationFailed</code></td>

@@ -4085,7 +4085,7 @@ operator restarts:</p>
 </tr>
 <tr>
 <td><code>Completed</code></td>
-<td>Every server verified on the target; <code>status.version</code> is the target</td>
+<td>Every server verified on the target; <code>status.version</code> is the target. An <code>UpgradeCompleted</code> event says so. A cluster that stayed <code>Ready</code> through its upgrade raises no <code>ClusterReady</code>: that event marks a cluster entering <code>Ready</code> from another phase</td>
 </tr>
 <tr>
 <td><code>Failed</code> / <code>Paused</code></td>

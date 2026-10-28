@@ -8718,8 +8718,8 @@ visible via <code>kubectl get svc</code>.</p>
 <tr>
 <td><code>ServersPendingDrain</code></td>
 <td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them</td>
-<td>The removed servers have been drained and dropped</td>
-<td>n/a</td>
+<td>Reason <code>NoServersPendingDrain</code>: the removed servers have been drained and dropped ("Scale-down drain complete"), or the scale-down was set back before its drain ended ("Scale-down not in progress")</td>
+<td>n/a — absent until a scale-down first records a drain</td>
 </tr>
 <tr>
 <td><code>RestartPending</code></td>
