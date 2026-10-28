@@ -433,6 +433,20 @@ func (cm *ConfigMapManager) triggerRollingRestartForConfigChange(ctx context.Con
 	if !pending {
 		carryOwnNeo4jPlugins(cluster, serverSts)
 	}
+	// Turning it on changes neo4j.conf too (its procedure lines), and the
+	// fleet merge adds fleet-management to a NEO4J_PLUGINS the cluster does
+	// not own: the name goes in this write, recorded as Fleet Management's,
+	// so the enable rolls the servers once — the merge later in the pass
+	// finds it listed (operations.md id 226). It was the stamp, then the
+	// merge's write: two revisions (#608). A variable the cluster owns
+	// carries the name as it renders it (above), and one that cannot take it
+	// is left as it is (addFleetEntryInWrite).
+	if !pending && clusterInstallsFleetManagement(cluster) {
+		if err := addFleetEntryInWrite(ctx, serverSts); err != nil {
+			logger.V(1).Info("Cannot add fleet-management to NEO4J_PLUGINS with the restart stamp; the fleet merge reports it",
+				"error", err.Error())
+		}
+	}
 
 	if err := cm.updateStatefulSetWithConfigHash(ctx, serverSts, configHash); err != nil {
 		return fmt.Errorf("failed to update server StatefulSet: %w", err)

@@ -666,7 +666,8 @@
       "internal/controller/plugin_target_gate.go",
       "internal/controller/plugin_env_ownership.go",
       "internal/controller/plugin_disabled.go",
-      "internal/controller/plugin_allowlist.go"
+      "internal/controller/plugin_allowlist.go",
+      "internal/controller/plugin_install_refusal.go"
     ]
   },
   {

@@ -323,7 +323,10 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 			// Announced when the failure starts or its message changes, not on
 			// every pass (a resync, any status write) while the spec stays
 			// invalid (knowledge rule 136).
-			if r.updatePluginStatus(ctx, plugin, "Invalid", msg) {
+			announced := r.updatePluginStatus(ctx, plugin, "Invalid", msg)
+			// Logged from the same write: once at info, never an ERROR (id 228).
+			logRefusal(logger, announced, "Neo4jPlugin spec is invalid", result.Errors.ToAggregate())
+			if announced {
 				r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonValidationFailed, msg)
 			}
 			return ctrl.Result{}, nil
@@ -355,8 +358,11 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 				winner, plugin.Spec.ClusterRef, plugin.Spec.Name,
 			)
 			// Announced when the conflict starts, not again on the pass its own
-			// status write starts, nor on every resync (knowledge rule 145).
-			if r.updatePluginStatus(ctx, plugin, "Failed", msg) {
+			// status write starts, nor on every resync (knowledge rule 145), and
+			// logged from the same write (id 228).
+			announced := r.updatePluginStatus(ctx, plugin, "Failed", msg)
+			logRefusal(logger, announced, "Duplicate Neo4jPlugin: another CR installs this plugin on its target", stderrors.New(msg))
+			if announced {
 				r.Recorder.Event(plugin, corev1.EventTypeWarning, EventReasonPluginDuplicate, msg)
 			}
 			return ctrl.Result{}, nil
@@ -477,8 +483,12 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 		case errors.IsNotFound(err):
 			return r.awaitStatefulSet(ctx, plugin, deployment)
 		case err != nil:
-			// The install below reads the same StatefulSet and reports it.
-			logger.Error(err, "Cannot tell whether the target still carries the plugin")
+			// The install below reads the same StatefulSet and reports it: a
+			// refusal (a NEO4J_PLUGINS that is not a JSON list) as one, logged
+			// once, never as an ERROR (id 228).
+			if pluginInstallRefusal(err) == nil {
+				logger.Error(err, "Cannot tell whether the target still carries the plugin")
+			}
 		case missing == "" && outdated == "" && drift.removing == "":
 			// Nothing to put right. A plugin installed by an earlier operator
 			// records what it sets, which restarts nothing (id 155).
@@ -524,6 +534,13 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	changes, changesErr := r.installChangesTarget(ctx, plugin, deployment)
 	if errors.IsNotFound(changesErr) {
 		return r.awaitStatefulSet(ctx, plugin, deployment)
+	}
+	// A write the user has to change the target's spec for — one that would
+	// change a variable the cluster renders itself, or a NEO4J_PLUGINS that is
+	// not a JSON list — is refused before the gate and the Bolt check, which
+	// are for a write: Failed, logged once at info, never an ERROR (id 228).
+	if refusal := pluginInstallRefusal(changesErr); refusal != nil {
+		return r.refuseInstall(ctx, plugin, refusal)
 	}
 	if changesErr != nil {
 		// The install below reads the same StatefulSet and reports it.
@@ -598,6 +615,10 @@ func (r *Neo4jPluginReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			return r.awaitStatefulSet(ctx, plugin, deployment)
+		}
+		// The target's record changed since the check above: the same refusal.
+		if refusal := pluginInstallRefusal(err); refusal != nil {
+			return r.refuseInstall(ctx, plugin, refusal)
 		}
 		if retryablePluginError(err) {
 			logger.Info("Plugin installation interrupted; retrying", "error", err.Error())
@@ -723,7 +744,10 @@ func (r *Neo4jPluginReconciler) trustedCAUpdate(ctx context.Context, plugin *neo
 // installChangesTarget reports whether the plugin's next write would change
 // its target's StatefulSet, which restarts the servers: the plugin's edits
 // (desiredTarget) made on a copy of the live pod template — its install, or
-// for a disabled or refused plugin its removal.
+// for a disabled or refused plugin its removal. An install that would change a
+// variable the cluster renders itself is the write's refusal
+// (pluginEnvOwnedError, ownedEnvRefusal), returned here so the pass refuses it
+// before it waits for the target or asks it anything (operations.md id 228).
 func (r *Neo4jPluginReconciler) installChangesTarget(ctx context.Context, plugin *neo4jv1beta1.Neo4jPlugin, deployment *DeploymentInfo) (bool, error) {
 	sts := &appsv1.StatefulSet{}
 	if err := r.Get(ctx, types.NamespacedName{Name: r.getStatefulSetName(deployment), Namespace: deployment.Namespace}, sts); err != nil {
@@ -734,6 +758,11 @@ func (r *Neo4jPluginReconciler) installChangesTarget(ctx context.Context, plugin
 	desired := sts.DeepCopy()
 	if err := r.desiredTarget(ctx, desired, plugin, deployment); err != nil {
 		return false, err
+	}
+	if pluginOnTarget(plugin, deployment) {
+		if err := ownedEnvRefusal(sts, desired, deployment); err != nil {
+			return false, err
+		}
 	}
 	return !equality.Semantic.DeepEqual(sts.Spec.Template, desired.Spec.Template), nil
 }
@@ -1071,15 +1100,12 @@ func (r *Neo4jPluginReconciler) writePluginToTarget(ctx context.Context, plugin 
 			}
 			return r.Patch(ctx, currentSts, mergePatchSince(base))
 		}
-		if deployment.Type == "cluster" {
-			// The cluster controller puts its own value back on a variable it
-			// renders from the cluster's spec, which restarts the servers, and
-			// the plugin's next pass would change it again. Say so instead of
-			// starting that tug of war.
-			changed := changedEnvNames(neo4jContainerEnv(before.Spec), neo4jContainerEnv(currentSts.Spec.Template.Spec))
-			if owned := ownedEnvNames(changed, readOwnedEnvVarNames(currentSts)); len(owned) > 0 {
-				return &pluginEnvOwnedError{statefulSet: currentSts.Name, cluster: deployment.Name, names: owned}
-			}
+		// The cluster controller puts its own value back on a variable it
+		// renders from the cluster's spec, which restarts the servers, and the
+		// plugin's next pass would change it again. Say so instead of starting
+		// that tug of war (ownedEnvRefusal).
+		if err := ownedEnvRefusal(base, currentSts, deployment); err != nil {
+			return err
 		}
 
 		if err := r.Update(ctx, currentSts); err != nil {
@@ -1190,7 +1216,8 @@ func (r *Neo4jPluginReconciler) applyPluginEnv(container *corev1.Container, plug
 			for _, plugin := range pluginsToInstall {
 				updated, err := r.addPluginToList(currentValue, plugin)
 				if err != nil {
-					return fmt.Errorf("failed to update plugin list: %w", err)
+					// A value the user has to fix, not a failure (id 228).
+					return &pluginListUnreadableError{err: err}
 				}
 				currentValue = updated
 			}
