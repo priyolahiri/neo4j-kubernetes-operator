@@ -43,7 +43,7 @@ The `Neo4jPlugin` controller implements Neo4j's recommended installation approac
 6. **Rolling Restart**: Triggers controlled pod restarts to apply changes
 7. **Ready once rolled out**: The plugin is `Ready` once every server runs the new pod template. Every setting reaches the servers when they start (an env var, or on a standalone its `neo4j.conf`); nothing is set at runtime, and the operator does not call Neo4j once the roll is done
 
-> **Multi-plugin coexistence**: The plugin controller, the cluster/standalone controller, and the Aura Fleet Management reconciler all use an additive merge strategy for `NEO4J_PLUGINS`. Installing APOC via `Neo4jPlugin` and enabling Fleet Management via `spec.auraFleetManagement` simultaneously results in `["apoc","fleet-management"]` — neither entry is overwritten on subsequent reconciles.
+> **Multi-plugin coexistence**: The plugin controller, the cluster/standalone controller, and the Aura Fleet Management reconciler all use an additive merge strategy for `NEO4J_PLUGINS`. Installing APOC via `Neo4jPlugin` and enabling Fleet Management via `spec.auraFleetManagement` simultaneously results in `["apoc","fleet-management"]` — neither entry is overwritten on subsequent reconciles. Turning Fleet Management off takes out only the `fleet-management` entry it recorded adding; a `Managed` `fleet-management` plugin keeps its own ([Turning it off](../user_guide/aura_fleet_management.md#turning-it-off)).
 
 ### Environment Variable Mapping
 

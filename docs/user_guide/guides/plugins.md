@@ -72,7 +72,7 @@ spec:
 
 > **Fleet management is built in from Neo4j 2026.03.** Use `spec.auraFleetManagement` on the cluster or standalone, not a `Neo4jPlugin`. A `Managed` `Neo4jPlugin` named `fleet-management` installs nothing on 2026.03 and later — the image's entrypoint could not install it, and the procedures are the server's own — and is `Ready` with a message that says so; `kubectl neo4j validate` warns about it. Before 2026.03 it installs the plugin from the image's `products/`.
 
-> **Multi-controller coexistence**: the plugin controller merges plugin names into `NEO4J_PLUGINS` additively — it never overwrites entries added by other controllers (e.g. the Aura Fleet Management reconciler). Installing APOC via `Neo4jPlugin` alongside `spec.auraFleetManagement` on the cluster yields `["apoc","fleet-management"]`, and neither entry is removed on subsequent reconciles. Fleet Management itself is managed via the cluster/standalone CRD, not via `Neo4jPlugin`.
+> **Multi-controller coexistence**: the plugin controller merges plugin names into `NEO4J_PLUGINS` additively — it never overwrites entries added by other controllers (e.g. the Aura Fleet Management reconciler). Installing APOC via `Neo4jPlugin` alongside `spec.auraFleetManagement` on the cluster yields `["apoc","fleet-management"]`, and neither entry is removed on subsequent reconciles. Turning Fleet Management off takes out only the `fleet-management` entry it added, never a plugin's — a `Managed` `fleet-management` plugin's included ([Turning it off](../aura_fleet_management.md#turning-it-off)). Fleet Management itself is managed via the cluster/standalone CRD, not via `Neo4jPlugin`.
 
 ## Quick starts
 
