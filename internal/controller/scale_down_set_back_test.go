@@ -211,13 +211,26 @@ func TestScaleDownDrain_ASetBackTooLateIsRefused(t *testing.T) {
 		require.NotNil(t, pending)
 		assert.Equal(t, metav1.ConditionTrue, pending.Status)
 		assert.Equal(t, ConditionReasonScaleDownBlocked, pending.Reason)
-		assert.Equal(t, "Scale-down set back too late for late-server-3 (uuid-3) (Deallocating), late-server-4 (uuid-4) (Deallocating): "+
-			"Neo4j cannot enable a server again once it deallocates, and a dropped server cannot rejoin. "+
+		assert.Equal(t, "Scale-down set back too late for late-server-3 (uuid-3), late-server-4 (uuid-4): "+
+			"the drain has begun deallocating them, and Neo4j cannot enable a server again once it deallocates, nor can a dropped server rejoin. "+
 			"Set spec.topology.servers to 3 so the drain can finish them, then raise it to add new servers in their place. "+
 			"Replicas are held at 5.", pending.Message)
 		got := events(r.Recorder)
 		require.Len(t, got, 1, "announced once")
 		assert.True(t, strings.HasPrefix(got[0], "Warning ScaleDownBlocked Scale-down set back too late"), got[0])
+
+		// The deallocation goes on while the set-back stays refused: the
+		// condition and its Warning do not follow the servers' states (the
+		// #608 walk saw a second Warning when Deallocating became Deallocated).
+		refused := pending.Message
+		for _, state := range []string{"Deallocated", "Dropped"} {
+			neo.servers["uuid-3"].State, neo.servers["uuid-4"].State = state, state
+			for range repeatPasses {
+				drainPass(t, r, fc, c)
+			}
+			assert.Equal(t, refused, pendingDrain(t, fc, c).Message, state)
+		}
+		assert.Empty(t, events(r.Recorder), "no second ScaleDownBlocked as the states move on")
 
 		// Lowered again: the drain finishes.
 		setServers(t, fc, c, 3)
@@ -252,8 +265,7 @@ func TestScaleDownDrain_ASetBackTooLateIsRefused(t *testing.T) {
 		drainPass(t, r, fc, c)
 		assert.Empty(t, opsOf(neo, "enable"))
 		msg := pendingDrain(t, fc, c).Message
-		assert.Contains(t, msg, "gone-server-4 (uuid-4) (Dropped)")
-		assert.Contains(t, msg, "gone-server-3 (uuid-3) (Deallocating)")
+		assert.Contains(t, msg, "gone-server-3 (uuid-3), gone-server-4 (uuid-4):")
 		assert.Contains(t, msg, "Set spec.topology.servers to 3")
 		assert.True(t, scaleDownDrainInProgress(latestCluster(t, fc, c)))
 	})
@@ -290,7 +302,7 @@ func TestScaleDownDrain_APartialSetBack(t *testing.T) {
 		assert.Empty(t, opsOf(neo, "drop"), "nothing is dropped while the spec keeps server-3")
 		assert.True(t, scaleDownDrainInProgress(latestCluster(t, fc, c)))
 		msg := pendingDrain(t, fc, c).Message
-		assert.Contains(t, msg, "part2-server-3 (uuid-3) (Deallocating)")
+		assert.Contains(t, msg, "part2-server-3 (uuid-3):")
 		assert.NotContains(t, msg, "server-4", "server-4 is still removed: the drain may finish it")
 		assert.Contains(t, msg, "Set spec.topology.servers to 3")
 	})

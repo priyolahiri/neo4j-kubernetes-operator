@@ -797,12 +797,16 @@ func serversPastUndoing(servers, reported []neo4jclient.ServerInfo, clusterName 
 
 // setBackRefusal is the ServersPendingDrain message of a set-back that comes
 // too late for some servers: it names them and the spec that lets the drain
-// finish them.
+// finish them. It leaves out each server's state: a server the drain is
+// deallocating moves on to Deallocated and Dropped while the set-back stays
+// refused, and a message that followed the state was a new condition, and a
+// new ScaleDownBlocked Warning, at each step (#608 walk: two Warnings for one
+// refusal). SHOW SERVERS and ServersHealthy carry the state.
 func setBackRefusal(past []neo4jclient.ServerInfo, clusterName string, replicas int) string {
 	names := make([]string, 0, len(past))
 	lowest := -1
 	for _, s := range past {
-		names = append(names, fmt.Sprintf("%s (%s)", serverLabel(s, clusterName), s.State))
+		names = append(names, serverLabel(s, clusterName))
 		if ord, ok := serverOrdinal(s, clusterName); ok && (lowest < 0 || ord < lowest) {
 			lowest = ord
 		}
@@ -812,7 +816,7 @@ func setBackRefusal(past []neo4jclient.ServerInfo, clusterName string, replicas 
 	if lowest >= 0 {
 		advice = fmt.Sprintf("Set spec.topology.servers to %d so the drain can finish them, then raise it to add new servers in their place.", lowest)
 	}
-	return fmt.Sprintf("Scale-down set back too late for %s: Neo4j cannot enable a server again once it deallocates, and a dropped server cannot rejoin. %s Replicas are held at %d.",
+	return fmt.Sprintf("Scale-down set back too late for %s: the drain has begun deallocating them, and Neo4j cannot enable a server again once it deallocates, nor can a dropped server rejoin. %s Replicas are held at %d.",
 		strings.Join(names, ", "), advice, replicas)
 }
 
