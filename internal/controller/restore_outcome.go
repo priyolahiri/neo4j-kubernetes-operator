@@ -69,6 +69,19 @@ func (r *Neo4jRestoreReconciler) refuseRestore(ctx context.Context, restore *neo
 	return announced
 }
 
+// restoreEndedAtGeneration reports whether the restore ended — Completed or
+// Failed — at its current generation, and in which phase. Such a restore is
+// not run again until its spec changes (a new generation) or it is created
+// again; Reconcile returns on it before it looks the target up, with no
+// requeue, no write and nothing logged at info (knowledge ids 198, 215).
+func restoreEndedAtGeneration(restore *neo4jv1beta1.Neo4jRestore) (bool, string) {
+	phase := restore.Status.Phase
+	if phase != StatusCompleted && phase != StatusFailed {
+		return false, ""
+	}
+	return restore.Status.ObservedGeneration == restore.Generation, phase
+}
+
 // restoreReadyCondition is the Ready condition of a restore in phase: reasons
 // of a restore, not the backup's BackupSucceeded or the generic
 // ReconciliationFailed PhaseToConditionStatus gives (knowledge id 215).

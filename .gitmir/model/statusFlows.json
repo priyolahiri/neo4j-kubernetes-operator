@@ -488,12 +488,12 @@
       {
         "key": "Completed",
         "name": "Completed",
-        "description": "The restore Job succeeded (standalone) or the recreated database(s) were confirmed fully online (cluster / all-databases). The Ready condition reads True with reason RestoreCompleted (operations.md id 215)."
+        "description": "The restore Job succeeded (standalone) or the recreated database(s) were confirmed fully online (cluster / all-databases). The Ready condition reads True with reason RestoreCompleted (operations.md id 215). Once Completed at its generation the restore is not requeued or written again, and the passes a resync or its Job still start log only at V(1) (#606, id 215)."
       },
       {
         "key": "Failed",
         "name": "Failed",
-        "description": "The restore Job failed terminally, was TTL-collected before completion was observed, or the online-wait deadline elapsed. Also a spec the operator refuses before anything runs (validation, an unsupported Neo4j version, a database that exists without replaceExisting, an offline restore into a running standalone without stopCluster), logged once at info. A failed Job's message carries its reason and the tail of its pod's output. The Ready condition reads False with reason RestoreFailed (operations.md id 215)."
+        "description": "The restore Job failed terminally, was TTL-collected before completion was observed, or the online-wait deadline elapsed. Also a spec the operator refuses before anything runs (validation, an unsupported Neo4j version, a database that exists without replaceExisting, an offline restore into a running standalone without stopCluster), logged once at info. A failed Job's message carries its reason and the tail of its pod's output. The Ready condition reads False with reason RestoreFailed (operations.md id 215). A restore without spec.instanceRef is refused here too. Once Failed at its generation the restore is not requeued or written again, and the passes a resync or its Job still start log only at V(1) (#606, id 215)."
       }
     ],
     "transitions": [

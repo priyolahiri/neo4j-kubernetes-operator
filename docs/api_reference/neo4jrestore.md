@@ -49,6 +49,8 @@ kubectl exec <instance>-0 -c neo4j -- bash -c \
 
 `Completed` and `Failed` are terminal **for the current spec generation**, not forever. To re-run a restore, **edit the spec** (any change that bumps `metadata.generation` — typically `source.backupRef` or `database`): the operator clears the previous attempt's one-shot state and issues a fresh restore. Changing `source.backupRef` also invalidates the pinned `status.resolvedSource`, so the new reference is re-resolved rather than silently reusing the old snapshot. Alternatively, delete and recreate the CR.
 
+Until then the operator leaves a finished restore alone: it does not requeue it and writes nothing to it. How it ended is in its status and its `RestoreCompleted` or `RestoreFailed` event, and a refused spec is logged once at info. The passes a resync or its Job still starts log "Restore already completed" or "Restore previously failed; not retrying …" at debug level only (`--zap-log-level=debug`). A restore without `spec.instanceRef` is refused the same way: `Failed`, "spec.instanceRef is required".
+
 ## Neo4jRestore Spec
 
 ### Top-Level Fields

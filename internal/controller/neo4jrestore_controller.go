@@ -271,15 +271,6 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 		return r.handleDeletion(ctx, restore)
 	}
 
-	// spec.instanceRef names the target deployment (cluster or standalone). The
-	// legacy spec.clusterRef/databaseName aliases were removed in v1.14.
-	if restore.Spec.InstanceRef == "" {
-		msg := "spec.instanceRef is required"
-		logger.Info("Invalid Neo4jRestore spec", "error", msg)
-		r.updateRestoreStatus(ctx, restore, StatusFailed, msg)
-		return ctrl.Result{}, nil
-	}
-
 	// Add finalizer if not present
 	if !controllerutil.ContainsFinalizer(restore, RestoreFinalizer) {
 		if err := addFinalizer(ctx, r.Client, restore, RestoreFinalizer); err != nil {
@@ -301,16 +292,33 @@ func (r *Neo4jRestoreReconciler) Reconcile(ctx context.Context, req ctrl.Request
 	// target deleted after the restore wrote Pending over Completed or Failed,
 	// and the target created again under the same name ran the restore a
 	// second time — a Job restore into a new standalone overwrote its data
-	// (knowledge id 198).
-	if restore.Status.Phase == StatusCompleted && restore.Status.ObservedGeneration == restore.Generation {
-		logger.Info("Restore already completed")
+	// (knowledge id 198). A previously failed restore must not silently retry:
+	// the user bumps the spec (a new generation) or recreates the CR.
+	//
+	// The pass returns no requeue and writes nothing, and it is still run: by
+	// a resync (every 30 seconds in dev mode, configureDevelopmentCache), an
+	// event of its Job (the TTL removing it), an operator restart. The write
+	// that ended the restore announced it — its event, its status, a refusal's
+	// one line at info — so here it is V(1): at info it was one line every 30
+	// seconds for as long as the restore was kept (#606, knowledge id 215).
+	if ended, phase := restoreEndedAtGeneration(restore); ended {
+		if phase == StatusCompleted {
+			logger.V(1).Info("Restore already completed")
+		} else {
+			logger.V(1).Info("Restore previously failed; not retrying until spec changes or resource is recreated",
+				"message", restore.Status.Message)
+		}
 		return ctrl.Result{}, nil
 	}
-	// A previously failed restore for the same spec generation must not silently retry.
-	// The user must bump spec (new generation) or delete/recreate the CR to trigger a retry.
-	if restore.Status.Phase == StatusFailed && restore.Status.ObservedGeneration == restore.Generation {
-		logger.Info("Restore previously failed; not retrying until spec changes or resource is recreated",
-			"message", restore.Status.Message)
+
+	// spec.instanceRef names the target deployment (cluster or standalone). The
+	// legacy spec.clusterRef/databaseName aliases were removed in v1.14. Its
+	// absence is a refusal like any other (knowledge id 215), checked after the
+	// guard above so that it is written and logged once: checked first (until
+	// #606), every pass logged it at info and wrote the status again.
+	if restore.Spec.InstanceRef == "" {
+		msg := "spec.instanceRef is required"
+		r.refuseRestore(ctx, restore, "Restore refused: spec.instanceRef is required", msg, stderrors.New(msg))
 		return ctrl.Result{}, nil
 	}
 
