@@ -116,7 +116,13 @@
   {
     "id": "ev-scale-down-blocked",
     "name": "ScaleDownBlocked",
-    "description": "Fires when a scale-down cannot proceed: below the system database's minimum voting-member floor, a DEALLOCATE dry-run fails, or a DROP SERVER fails — replicas stay held at the current count. Announced from the ServersPendingDrain condition write, once per cause (its message), never from the pass's own copy of the condition, which a lagging cache can hand over from before the last pass's write (#565; knowledge operations.md id 145).",
+    "description": "Fires when a scale-down cannot proceed: below the system database's minimum voting-member floor, a DEALLOCATE dry-run fails, or a DROP SERVER fails — replicas stay held at the current count. Announced from the ServersPendingDrain condition write, once per cause (its message), never from the pass's own copy of the condition, which a lagging cache can hand over from before the last pass's write (#565; knowledge operations.md id 145). Also fires when a scale-down is set back after its drain took a server the cluster would keep past undoing (deallocating, deallocated, or dropped): the message names them and the spec.topology.servers that lets the drain finish (operations.md id 224).",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-scale-down-set-back",
+    "name": "ScaleDownSetBack",
+    "description": "Fires once when a scale-down set back before its drain ended enabled again the servers the drain had cordoned (ENABLE SERVER), naming them; a server cordoned by hand is left cordoned and not named. None when the set-back had nothing to give back (#608; knowledge operations.md id 224).",
     "moduleId": "mod-cluster"
   },
   {

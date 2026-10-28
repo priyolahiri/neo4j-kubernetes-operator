@@ -60,7 +60,7 @@
         "from": "Forming",
         "to": "Ready",
         "label": "cluster formation and StatefulSet rollout verified",
-        "condition": "verifyNeo4jClusterFormation reports the expected Enabled+Available quorum AND serverStatefulSetFullyRolled is true",
+        "condition": "verifyNeo4jClusterFormation reports the expected members (Enabled or Cordoned) Available AND serverStatefulSetFullyRolled is true",
         "effects": [
           {
             "kind": "update",
@@ -130,7 +130,7 @@
         "from": "Ready",
         "to": "Degraded",
         "label": "a server stayed unavailable past the grace period",
-        "condition": "ClusterFormed, no template rollout, more than half the servers Enabled+Available, and the Degraded condition True for at least the grace period",
+        "condition": "ClusterFormed, no template rollout, more than half the servers members (Enabled or Cordoned) and Available, and the Degraded condition True for at least the grace period",
         "effects": [
           {
             "kind": "update",
@@ -144,7 +144,7 @@
         "from": "Degraded",
         "to": "Ready",
         "label": "every server available again",
-        "condition": "verifyNeo4jClusterFormation reports the expected Enabled+Available servers AND serverStatefulSetFullyRolled is true; the Degraded condition goes False"
+        "condition": "verifyNeo4jClusterFormation reports the expected members (Enabled or Cordoned) Available AND serverStatefulSetFullyRolled is true; the Degraded condition goes False"
       },
       {
         "from": "Ready",
@@ -199,7 +199,7 @@
       {
         "key": "Rolling",
         "name": "Rolling",
-        "description": "Lowers the StatefulSet partition one ordinal at a time, highest first, gating each step on the Kubernetes rollout AND the restarted server re-appearing as Enabled+Available in SHOW SERVERS."
+        "description": "Lowers the StatefulSet partition one ordinal at a time, highest first, gating each step on the Kubernetes rollout AND the restarted server re-appearing as an Available member (Enabled or Cordoned) in SHOW SERVERS."
       },
       {
         "key": "Stabilizing",
@@ -269,7 +269,7 @@
         "from": "Rolling",
         "to": "Rolling",
         "label": "lower the partition by one ordinal",
-        "condition": "the current ordinal's StatefulSet rollout is settled, every server pod is Ready, the restarted server reports Enabled+Available in SHOW SERVERS (matched by host, not substring), and its databases have caught up: on that server dbms.cluster.statusCheck reports every database copy replicationSuccessful and APPLYING with no error, and SHOW DATABASES shows every database it hosts at its requested status (#488). While a database lags, status.upgradeStatus.message names it and the reconcile requeues.",
+        "condition": "the current ordinal's StatefulSet rollout is settled, every server pod is Ready, the restarted server reports an Available member, Enabled or Cordoned, in SHOW SERVERS (matched by host, not substring), and its databases have caught up: on that server dbms.cluster.statusCheck reports every database copy replicationSuccessful and APPLYING with no error, and SHOW DATABASES shows every database it hosts at its requested status (#488). While a database lags, status.upgradeStatus.message names it and the reconcile requeues.",
         "effects": [
           {
             "kind": "update",
