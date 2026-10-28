@@ -7021,7 +7021,7 @@ covers the path).</p>
 <tr>
 <td><code>enabled</code></td>
 <td><code>bool</code></td>
-<td>Enable Aura Fleet Management integration (default: <code>false</code>)</td>
+<td>Enable Aura Fleet Management integration (default: <code>false</code>). Turning it off (<code>false</code>, or removing the block) takes out what the operator added for it — <code>fleetManagement.*</code> in the procedure settings, and the <code>fleet-management</code> entry it recorded in <code>NEO4J_PLUGINS</code> (annotation <code>neo4j.com/aura-fleet-management-entries</code>) — in one rolling restart; an entry a <code>Neo4jPlugin</code> or your own <code>spec.env</code> puts there stays. See <a href="../../user_guide/aura_fleet_management/#turning-it-off">Turning it off</a></td>
 </tr>
 <tr>
 <td><code>tokenSecretRef</code></td>

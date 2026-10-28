@@ -5330,7 +5330,7 @@
 <li><strong>Ready once rolled out</strong>: The plugin is <code>Ready</code> once every server runs the new pod template. Every setting reaches the servers when they start (an env var, or on a standalone its <code>neo4j.conf</code>); nothing is set at runtime, and the operator does not call Neo4j once the roll is done</li>
 </ol>
 <blockquote>
-<p><strong>Multi-plugin coexistence</strong>: The plugin controller, the cluster/standalone controller, and the Aura Fleet Management reconciler all use an additive merge strategy for <code>NEO4J_PLUGINS</code>. Installing APOC via <code>Neo4jPlugin</code> and enabling Fleet Management via <code>spec.auraFleetManagement</code> simultaneously results in <code>["apoc","fleet-management"]</code> — neither entry is overwritten on subsequent reconciles.</p>
+<p><strong>Multi-plugin coexistence</strong>: The plugin controller, the cluster/standalone controller, and the Aura Fleet Management reconciler all use an additive merge strategy for <code>NEO4J_PLUGINS</code>. Installing APOC via <code>Neo4jPlugin</code> and enabling Fleet Management via <code>spec.auraFleetManagement</code> simultaneously results in <code>["apoc","fleet-management"]</code> — neither entry is overwritten on subsequent reconciles. Turning Fleet Management off takes out only the <code>fleet-management</code> entry it recorded adding; a <code>Managed</code> <code>fleet-management</code> plugin keeps its own (<a href="../../user_guide/aura_fleet_management/#turning-it-off">Turning it off</a>).</p>
 </blockquote>
 <h3 id="environment-variable-mapping">Environment Variable Mapping<a class="headerlink" href="#environment-variable-mapping" title="Anchor link to this section">&para;</a></h3>
 <p><strong>Example Configuration (APOC)</strong>:
