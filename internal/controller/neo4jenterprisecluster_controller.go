@@ -834,9 +834,10 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	}
 	r.availabilityAnnounced.Delete(cluster.Namespace + "/" + cluster.Name)
 
-	// Update status to "Ready" only if cluster formation is verified
+	// Update status to "Ready" only if cluster formation is verified; the
+	// write that enters Ready announces it (writeClusterStatus).
 	// Note: Split-brain detection is already performed in verifyNeo4jClusterFormation
-	statusChanged := r.recordClusterReady(ctx, cluster, formation.servers, formedConditions...)
+	r.recordClusterReady(ctx, cluster, formation.servers, formedConditions...)
 
 	// Scale-down draining (server cordon→deallocate→drop) is driven earlier in
 	// the reconcile by reconcileScaleDownDrain, which owns the
@@ -849,11 +850,6 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 			logger.Error(err, "Failed to update property sharding status")
 			// Don't fail the reconciliation for status update issues
 		}
-	}
-
-	// Only create event if status actually changed
-	if statusChanged {
-		r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterReady, "Neo4j Enterprise cluster is ready")
 	}
 
 	// Reload a renewed TLS certificate on the running servers (#469).
@@ -1919,11 +1915,27 @@ type clusterStatusWrite struct {
 	// not this pass's copy, which the informer cache may have handed over
 	// from before the last pass's write. nil when the write failed.
 	before *neo4jv1beta1.Neo4jEnterpriseClusterStatus
+	// phase is the phase the write recorded.
+	phase string
+}
+
+// entered reports whether the write took the cluster into phase from another
+// phase, as the API server held it: a write that keeps the phase — a new
+// message, a condition, a generation or a version — enters nothing.
+func (w clusterStatusWrite) entered(phase string) bool {
+	return w.before != nil && w.phase == phase && w.before.Phase != phase
 }
 
 // writeClusterStatus is updateClusterStatusRecording, reporting what the write
 // replaced as well as whether it changed something. A caller that announces
 // entering a phase reads it from before (operations.md id 136).
+//
+// ClusterReady is announced here, by the write that enters Ready, whichever
+// pass writes it: the normal pass, a formed cluster short of a server within
+// its grace, the upgrade's completion. Announced from "changed", a cluster
+// that stayed Ready announced it again whenever the Ready write moved
+// anything else — the message of an upgrade that completed, of a server back
+// within the grace, a spec edit's generation (#606).
 func (r *Neo4jEnterpriseClusterReconciler) writeClusterStatus(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, phase, message string, rec statusRecord, extra ...metav1.Condition) clusterStatusWrite {
 	logger := log.FromContext(ctx)
 	statusChanged := false
@@ -2072,7 +2084,11 @@ func (r *Neo4jEnterpriseClusterReconciler) writeClusterStatus(ctx context.Contex
 		logger.Error(err, "Failed to update cluster status")
 		return clusterStatusWrite{}
 	}
-	return clusterStatusWrite{changed: statusChanged, before: before}
+	w := clusterStatusWrite{changed: statusChanged, before: before, phase: phase}
+	if w.entered(neo4jv1beta1.PhaseReady) && r.Recorder != nil {
+		r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterReady, "Neo4j Enterprise cluster is ready")
+	}
+	return w
 }
 
 // buildReplicaStatus reports the desired vs ready server count by reading
@@ -3882,8 +3898,10 @@ func (r *Neo4jEnterpriseClusterReconciler) holdImageDriftUntilReady(ctx context.
 }
 
 // recordClusterReady writes the Ready status of a cluster whose formation and
-// rollout are both verified, and reports whether the phase, message or Ready
-// condition moved (updateClusterStatusWithVersion).
+// rollout are both verified, and reports whether the write took the cluster
+// into Ready from another phase, which it announced with ClusterReady
+// (writeClusterStatus): a cluster that was Ready already — an upgrade that
+// completed, a server back within the grace, a spec edit — announces nothing.
 //
 // status.version is the version every server runs, read from the rolled server
 // StatefulSet. The upgrade machine records it after a verified upgrade; this
@@ -3911,7 +3929,7 @@ func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Contex
 	}
 	var outcome reportedVersionsOutcome
 	rec.outcome = &outcome
-	changed := r.updateClusterStatusRecording(ctx, cluster, "Ready", clusterReadyMessage(cluster), rec, conditions...)
+	w := r.writeClusterStatus(ctx, cluster, neo4jv1beta1.PhaseReady, clusterReadyMessage(cluster), rec, conditions...)
 	// Said once it is stored. With the CRDs of an earlier release installed,
 	// the API server drops the fields, so every Ready pass sends them again
 	// (the first pass after the CRDs are applied records them): that write
@@ -3927,7 +3945,7 @@ func (r *Neo4jEnterpriseClusterReconciler) recordClusterReady(ctx context.Contex
 			"version", firstNonEmpty(rec.version, cluster.Status.Version), "runningVersion", reportedValue(rec.runningVersion),
 			"resolvedTargetVersion", reportedValue(rec.resolvedTargetVersion))
 	}
-	return changed
+	return w.entered(neo4jv1beta1.PhaseReady)
 }
 
 // reportedVersionsToRecord is what a Ready pass records about the versions the

@@ -8,7 +8,7 @@
   {
     "id": "ev-cluster-ready",
     "name": "ClusterReady",
-    "description": "Fires once per Ready transition, when updateClusterStatusWithVersion actually changes status.phase to Ready after formation and full StatefulSet rollout are both verified.",
+    "description": "Fires when a status write takes the cluster into Ready from another phase, as the API server held it (writeClusterStatus, clusterStatusWrite.entered): first formation, back from Degraded, Forming or Failed, a formed cluster short of a server back within its grace from Forming, or an upgrade's completion on a cluster its walk repaired. Announced by that write, once, whichever pass writes it. A Ready write that keeps the phase announces nothing, whatever else it moves — the message of an upgrade that completed or of a server back within the grace, the Degraded condition, a generation, status.version — nor does a pass on a copy from before the Ready write, or an operator restart. Reconcile used to announce every Ready write that moved the phase, message, Ready condition or generation: an upgrade retargeted from 2026.09.9 to 2026.09.0 on a cluster Ready throughout added one (#606; knowledge operations.md id 136).",
     "moduleId": "mod-cluster"
   },
   {

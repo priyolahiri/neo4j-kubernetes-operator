@@ -53,7 +53,7 @@ operator restarts:
 | `Rolling` | Pods restart one at a time, highest ordinal first; after each pod, Kubernetes readiness, Neo4j cluster membership (`SHOW SERVERS`) **and** that pod's databases (`dbms.cluster.statusCheck`, `SHOW DATABASES`) are verified before the partition is lowered. While a server is unavailable — the one restarting, or one that cannot start on the target — the cluster's `Degraded` condition is `True` and names it; the phase stays as it is |
 | `Stabilizing` | All pods updated; the operator waits for consistently stable cluster health and consensus |
 | `Verifying` | Every server's reported version is checked against the target before the upgrade is declared done |
-| `Completed` | Every server verified on the target; `status.version` is the target |
+| `Completed` | Every server verified on the target; `status.version` is the target. An `UpgradeCompleted` event says so. A cluster that stayed `Ready` through its upgrade raises no `ClusterReady`: that event marks a cluster entering `Ready` from another phase |
 | `Failed` / `Paused` | A check or a step's timeout failed: `Paused` with `autoPauseOnFailure: true`, `Failed` otherwise. The servers stay where the upgrade left them — see [When an upgrade stops](#when-an-upgrade-stops-paused-and-failed) |
 
 Two status fields drive the machine and are useful when watching a long
