@@ -110,6 +110,24 @@ func TestAssessServerShortfall_NoneShortAndCordonedMembers(t *testing.T) {
 		"a deallocating server is no member: four of five")
 }
 
+// The upgrade's wait for each restarted server takes a cordoned one that is
+// back: it keeps its state across the restart, and a cluster with one is Ready
+// and can start an upgrade (operations.md id 224).
+func TestPodServerAvailable_ACordonedServerThatIsBack(t *testing.T) {
+	rows := append(availServers(2, 2), availServer("c-server-2", "Cordoned", "Available"))
+	rows[2].Version = "2026.08.1"
+	ok, version := podServerAvailable(rows, "c-server-2")
+	assert.True(t, ok)
+	assert.Equal(t, "2026.08.1", version)
+
+	rows[2].Health = "Unavailable"
+	ok, _ = podServerAvailable(rows, "c-server-2")
+	assert.False(t, ok, "not back yet")
+	rows[2].State, rows[2].Health = "Deallocating", "Available"
+	ok, _ = podServerAvailable(rows, "c-server-2")
+	assert.False(t, ok, "no member")
+}
+
 // During an upgrade the Degraded condition counts a cordoned server as the
 // normal pass does.
 func TestRecordShortfallDuringUpgrade_CountsACordonedServer(t *testing.T) {

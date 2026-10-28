@@ -57,6 +57,7 @@ import (
 
 	neo4jv1beta1 "github.com/priyolahiri/neo4j-kubernetes-operator/api/v1beta1"
 	"github.com/priyolahiri/neo4j-kubernetes-operator/internal/metrics"
+	neo4jclient "github.com/priyolahiri/neo4j-kubernetes-operator/internal/neo4j"
 )
 
 // Upgrade phases persisted in status.upgradeStatus.phase.
@@ -931,10 +932,21 @@ func (r *Neo4jEnterpriseClusterReconciler) isServerAvailable(
 	if err != nil {
 		return false, "", err
 	}
+	available, version := podServerAvailable(servers, podName)
+	return available, version, nil
+}
+
+// podServerAvailable reports whether SHOW SERVERS lists the server whose bolt
+// address is podName's as a member (Enabled, or Cordoned: a cordoned server
+// keeps its state across the restart) and Available, with the version it
+// reports. Counted as Enabled only, an upgrade over a server cordoned by
+// hand waited at that server until it failed — a cluster with one is Ready
+// since the formation check counts it (operations.md id 224).
+func podServerAvailable(servers []neo4jclient.ServerInfo, podName string) (bool, string) {
 	for _, s := range servers {
-		if addressIsPod(s.Address, podName) && s.State == "Enabled" && s.Health == "Available" {
-			return true, s.Version, nil
+		if addressIsPod(s.Address, podName) && serverServes(s) {
+			return true, s.Version
 		}
 	}
-	return false, "", nil
+	return false, ""
 }

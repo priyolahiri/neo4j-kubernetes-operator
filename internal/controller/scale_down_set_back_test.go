@@ -28,6 +28,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -54,7 +55,8 @@ func drainPass(t *testing.T, r *Neo4jEnterpriseClusterReconciler, fc client.Clie
 	require.NoError(t, r.reconcileScaleDownDrain(context.Background(), latestCluster(t, fc, c)))
 }
 
-// opsOf returns the drain's statements of one kind ("enable", "cordon"…).
+// opsOf returns the drain's statements of one kind ("enable", "cordon"…),
+// sorted: the drain takes a step's servers in no fixed order.
 func opsOf(neo *drainNeo4j, kind string) []string {
 	var out []string
 	for _, op := range neo.ops {
@@ -62,6 +64,7 @@ func opsOf(neo *drainNeo4j, kind string) []string {
 			out = append(out, op)
 		}
 	}
+	sort.Strings(out)
 	return out
 }
 
