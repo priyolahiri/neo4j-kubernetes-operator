@@ -37,8 +37,10 @@ func (w *passWakes) note(key string, after time.Duration) {
 	if after <= 0 {
 		return
 	}
-	if prev, ok := w.m.Load(key); ok && prev.(time.Duration) <= after {
-		return
+	if prev, ok := w.m.Load(key); ok {
+		if d, isDuration := prev.(time.Duration); isDuration && d <= after {
+			return
+		}
 	}
 	w.m.Store(key, after)
 }
@@ -51,7 +53,10 @@ func (w *passWakes) apply(key string, res ctrl.Result, err error) ctrl.Result {
 	if !ok || err != nil {
 		return res
 	}
-	after := v.(time.Duration)
+	after, isDuration := v.(time.Duration)
+	if !isDuration || after <= 0 {
+		return res
+	}
 	if res.RequeueAfter > 0 && res.RequeueAfter <= after {
 		return res
 	}

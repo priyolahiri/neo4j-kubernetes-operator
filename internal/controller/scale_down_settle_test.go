@@ -56,7 +56,8 @@ func noted(r *Neo4jEnterpriseClusterReconciler, c *neo4jv1beta1.Neo4jEnterpriseC
 	if !ok {
 		return 0
 	}
-	return v.(time.Duration)
+	d, _ := v.(time.Duration)
+	return d
 }
 
 func TestScaleDownDrain_TheSettleKeepsASetBackRecoverable(t *testing.T) {

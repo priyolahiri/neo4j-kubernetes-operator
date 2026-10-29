@@ -96,8 +96,7 @@ func gone(t *testing.T, r *Neo4jEnterpriseClusterReconciler, obj client.Object) 
 	ctx := context.Background()
 	require.NoError(t, r.Get(ctx, client.ObjectKeyFromObject(obj), obj))
 	if len(obj.GetFinalizers()) > 0 {
-		obj.SetFinalizers(nil)
-		require.NoError(t, r.Update(ctx, obj))
+		require.NoError(t, patchObject(ctx, r.Client, obj, func() { obj.SetFinalizers(nil) }))
 	}
 	_ = r.Delete(ctx, obj)
 }
