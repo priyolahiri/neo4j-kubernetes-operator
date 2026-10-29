@@ -8681,7 +8681,7 @@ visible via <code>kubectl get svc</code>.</p>
 <tbody>
 <tr>
 <td><code>Degraded</code></td>
-<td>The cluster has formed and one or more of its servers is unavailable (reason <code>ServersUnavailable</code>; the message names them). Its <code>lastTransitionTime</code> is when the shortfall began</td>
+<td>The cluster has formed and one or more of its servers is unavailable (reason <code>ServersUnavailable</code>; the message names them, or the server pods Kubernetes does not report ready). Its <code>lastTransitionTime</code> is when the shortfall began. A cordoned server counts as a member</td>
 <td>Every server is available (reason <code>AllServersAvailable</code>)</td>
 <td>n/a — absent until the cluster first forms</td>
 </tr>
@@ -8717,8 +8717,8 @@ visible via <code>kubectl get svc</code>.</p>
 </tr>
 <tr>
 <td><code>ServersPendingDrain</code></td>
-<td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them</td>
-<td>Reason <code>NoServersPendingDrain</code>: the removed servers have been drained and dropped ("Scale-down drain complete"), or the scale-down was set back before its drain ended ("Scale-down not in progress")</td>
+<td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them. Reason <code>ScaleDownBlocked</code> when the drain cannot go on, including a scale-down set back after the drain began deallocating a server the cluster would keep (the message says what to set <code>spec.topology.servers</code> to)</td>
+<td>Reason <code>NoServersPendingDrain</code>: the removed servers have been drained and dropped ("Scale-down drain complete"), or the scale-down was set back before its drain ended and the servers it cordoned were enabled again ("Scale-down not in progress")</td>
 <td>n/a — absent until a scale-down first records a drain</td>
 </tr>
 <tr>
