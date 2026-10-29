@@ -4690,7 +4690,7 @@ is met on many passes. It is announced once:</p>
 <tr>
 <td><code>PluginInstallFailed</code></td>
 <td>Warning</td>
-<td>Plugin installation failed (once per failure; retried every 30s without repeating it). A server that is restarting or briefly unreachable is not a failure: the plugin stays <code>Installing</code></td>
+<td>Plugin installation failed (once per failure; retried every 30s without repeating it). A server that is restarting or briefly unreachable is not a failure: the plugin stays <code>Installing</code>. Also an install refused for something in the target's spec — a variable the cluster renders itself (<code>NEO4J_PLUGINS</code> in its <code>spec.env</code> without the plugin), or a <code>NEO4J_PLUGINS</code> that is not a JSON list: "Plugin <name> installation refused: …", once, from the status write that makes the plugin <code>Failed</code>, logged once at info and never as an ERROR</td>
 </tr>
 <tr>
 <td><code>PluginMissing</code></td>
