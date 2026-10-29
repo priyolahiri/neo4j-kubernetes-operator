@@ -77,6 +77,14 @@ const (
 	// whose container has just died. Nothing is written: the phase and the
 	// conditions stay as they were until a pass can ask Neo4j again.
 	verdictUnmeasured availabilityVerdict = "Unmeasured"
+	// verdictNoneShort: formed, and short of nothing: SHOW SERVERS lists
+	// every server the spec asks for as a member and Available, and
+	// Kubernetes reports each of their pods ready. What kept the formation or
+	// rollout check from passing is something else — a scale-down's removed
+	// pods still terminating, the StatefulSet's status catching up. Nothing
+	// is written: the Degraded condition says servers are unavailable, and
+	// none is (operations.md id 225).
+	verdictNoneShort availabilityVerdict = "NoneShort"
 )
 
 // shortfallInput is everything assessServerShortfall decides from, so the
@@ -97,6 +105,10 @@ type shortfallInput struct {
 	// current streak. Both are read only when Servers is nil.
 	ReadyServerPods  int
 	UnreachableSince *time.Time
+	// NotReadyPods names each server pod, {cluster}-server-0 to N-1, that
+	// Kubernetes does not report ready (notReadyServerPods). Read only when
+	// the cluster has formed and Servers is not nil.
+	NotReadyPods []string
 	// Expected is spec.topology.servers.
 	Expected int
 	// UnavailableSince is when the Degraded condition went True for missing
@@ -104,6 +116,24 @@ type shortfallInput struct {
 	UnavailableSince *time.Time
 	Now              time.Time
 	Grace            time.Duration
+}
+
+// serverIsMember reports whether a SHOW SERVERS row is a member of the
+// cluster that hosts databases: Enabled, or Cordoned. A cordoned server
+// "cannot be assigned to host any newly created databases; however, the
+// server retains the databases it already hosts" (Operations Manual,
+// "Managing servers in a cluster", 5.x and current): it is a member, and
+// cordoning one by hand, as the manual's error handling does, or a
+// scale-down set back after its drain cordoned one, is not a cluster
+// forming. Free, deallocating, deallocated and dropped servers are not
+// members (operations.md id 224).
+func serverIsMember(s neo4jclient.ServerInfo) bool {
+	return s.State == "Enabled" || s.State == "Cordoned"
+}
+
+// serverServes reports a member that the other servers can reach.
+func serverServes(s neo4jclient.ServerInfo) bool {
+	return serverIsMember(s) && s.Health == "Available"
 }
 
 // shortfallAssessment is the verdict plus what the status messages need.
@@ -135,12 +165,12 @@ func assessServerShortfall(in shortfallInput) shortfallAssessment {
 		return a
 	}
 
-	enabled := 0
+	members := 0
 	for _, s := range in.Servers {
-		if s.State != "Enabled" {
+		if !serverIsMember(s) {
 			continue
 		}
-		enabled++
+		members++
 		if s.Health == "Available" {
 			a.Available++
 		} else {
@@ -148,8 +178,19 @@ func assessServerShortfall(in shortfallInput) shortfallAssessment {
 		}
 	}
 	// A server Neo4j has never enabled is joining — a scale-up — not lost.
-	// A server that restarts keeps its identity and stays Enabled throughout.
-	if enabled < in.Expected {
+	// A server that restarts keeps its identity and stays Enabled throughout;
+	// a cordoned one is a member too (serverIsMember).
+	if members < in.Expected {
+		return a
+	}
+
+	// Every server it asks for is a member and Available, and each of their
+	// pods ready: nothing is short. Written as a shortfall, the Degraded
+	// condition read True "3 of 3 servers available" for about ten seconds
+	// after every scale-down drain, while the removed servers' pods were
+	// still terminating (#608).
+	if len(a.Unavailable) == 0 && len(in.NotReadyPods) == 0 {
+		a.Verdict = verdictNoneShort
 		return a
 	}
 

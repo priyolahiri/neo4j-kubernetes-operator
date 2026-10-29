@@ -89,12 +89,13 @@ func serverPodsFingerprint(pods []corev1.Pod) string {
 	return strings.Join(parts, ",")
 }
 
-// countAvailableServers counts the servers SHOW SERVERS lists as Enabled and
-// Available — the same test the split-brain path applies to the largest view.
+// countAvailableServers counts the servers SHOW SERVERS lists as members
+// (Enabled or Cordoned) and Available — the same test the split-brain path
+// applies to the largest view (serverServes).
 func countAvailableServers(servers []neo4jclient.ServerInfo) int {
 	n := 0
 	for _, s := range servers {
-		if s.State == "Enabled" && s.Health == "Available" {
+		if serverServes(s) {
 			n++
 		}
 	}

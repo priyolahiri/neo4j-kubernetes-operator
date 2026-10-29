@@ -52,6 +52,17 @@ func TestBuildDeallocateStatement(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBuildEnableServerStatement(t *testing.T) {
+	stmt, err := buildEnableServerStatement(uuidA)
+	require.NoError(t, err)
+	assert.Equal(t, "ENABLE SERVER '"+uuidA+"'", stmt)
+
+	_, err = buildEnableServerStatement("server-3")
+	assert.Error(t, err)
+	_, err = buildEnableServerStatement(uuidA + "'; DROP SERVER 'x")
+	assert.Error(t, err, "an injection attempt is refused, not escaped")
+}
+
 func TestBuildDropServerStatement(t *testing.T) {
 	stmt, err := buildDropServerStatement(uuidB)
 	require.NoError(t, err)

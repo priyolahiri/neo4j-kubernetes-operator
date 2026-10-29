@@ -429,13 +429,14 @@ func (d *SplitBrainDetector) haveSimilarClusterView(view1, view2 ClusterView) bo
 	return similarity >= 0.8
 }
 
-// countUniqueServersInGroup counts unique servers visible across a group of views
+// countUniqueServersInGroup counts unique servers visible across a group of
+// views: members (Enabled or Cordoned) that are Available (serverServes).
 func (d *SplitBrainDetector) countUniqueServersInGroup(group []ClusterView) int {
 	addresses := make(map[string]bool)
 
 	for _, view := range group {
 		for _, server := range view.Servers {
-			if server.State == "Enabled" && server.Health == "Available" {
+			if serverServes(server) {
 				addresses[server.Address] = true
 			}
 		}
@@ -473,12 +474,13 @@ func (d *SplitBrainDetector) isSameGroup(group1, group2 []ClusterView) bool {
 	return true
 }
 
-// getVisibleServerAddresses extracts addresses from server list
+// getVisibleServerAddresses extracts the addresses of the members a view
+// lists as Available (serverServes).
 func (d *SplitBrainDetector) getVisibleServerAddresses(servers []neo4jclient.ServerInfo) []string {
 	addresses := make([]string, 0, len(servers))
 
 	for _, server := range servers {
-		if server.State == "Enabled" && server.Health == "Available" {
+		if serverServes(server) {
 			addresses = append(addresses, server.Address)
 		}
 	}

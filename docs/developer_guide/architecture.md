@@ -203,7 +203,12 @@ server-lifecycle commands *before* lowering `replicas`.
   database → `DROP SERVER` once a server hosts **only `system`** (a system-DB
   primary stays `Deallocating` forever and never reaches `Deallocated`, so DROP
   is gated on *hosting only `system`*, not on the `Deallocated` state) → finally
-  lower `replicas`. Scaling back up mid-drain cancels it (clears the annotation).
+  lower `replicas`. Scaling back up mid-drain cancels it: the servers the drain
+  cordoned (recorded in `neo4j.com/scale-down-cordoned-servers` before the
+  `CORDON`) are enabled again with `ENABLE SERVER`, never one cordoned by hand,
+  and the annotations are cleared. A set-back after a server started
+  deallocating is refused with `ScaleDownBlocked` (Neo4j cannot undo a
+  deallocation); lowering the spec lets the drain finish.
 - **Fail-fast pre-flight**: before cordoning anything, a `DRYRUN DEALLOCATE`
   checks the move is feasible, and the **system-DB voting floor**
   (`dbms.cluster.minimum_initial_system_primaries_count`, read live via

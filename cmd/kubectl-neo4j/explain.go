@@ -89,7 +89,9 @@ var conditionGuidance = map[string]guidance{
 	controller.ConditionTypeServersPendingDrain: {
 		problemWhenTrue: true,
 		meaning:         "a scale-down is waiting for servers to hand off their data before they can be removed.",
-		action:          "Wait. Removing the pods by hand loses the data those servers still hold.",
+		action: "Wait. Removing the pods by hand loses the data those servers still hold. With reason ScaleDownBlocked " +
+			"the message says what the drain needs; a scale-down set back after the drain began deallocating a " +
+			"server names the spec.topology.servers that lets it finish — Neo4j cannot enable a deallocating server again.",
 	},
 	controller.ConditionTypeTopologyChangeDeferred: {
 		problemWhenTrue: true,

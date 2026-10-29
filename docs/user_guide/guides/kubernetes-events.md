@@ -68,7 +68,8 @@ is met on many passes. It is announced once:
 |---|---|---|
 | `ScaledWithoutRestart` | Normal | A scale-up added only servers that join as `system` secondaries, so the running servers were not restarted; they read the longer discovery list at their next restart. A scale-up that adds a system primary (with the default, from 2 servers to 3+) restarts them instead and raises no such event |
 | `ScaleDownDraining` | Normal | A scale-down step ran: servers cordoned, their databases deallocated, or the drained servers dropped |
-| `ScaleDownBlocked` | Warning | Scale-down refused or stuck — the target is below the `system` database's minimum voting members, or the `DEALLOCATE` dry-run / `DROP SERVER` failed; replicas are held. Once per cause, announced from the `ServersPendingDrain` condition the operator writes, not on every retry |
+| `ScaleDownBlocked` | Warning | Scale-down refused or stuck — the target is below the `system` database's minimum voting members, the `DEALLOCATE` dry-run / `DROP SERVER` failed, or the scale-down was set back after its drain began deallocating a server the cluster would keep; replicas are held. Once per cause, announced from the `ServersPendingDrain` condition the operator writes, not on every retry |
+| `ScaleDownSetBack` | Normal | A scale-down set back before its drain ended: the servers the drain had cordoned were enabled again (`ENABLE SERVER`). A server you cordoned yourself stays cordoned |
 
 ### Rolling Upgrades
 

@@ -379,7 +379,13 @@ When you **lower** `spec.topology.servers`, the operator drains the removed serv
 cordon → DRYRUN DEALLOCATE (feasibility) → DEALLOCATE DATABASES FROM SERVER → wait until it hosts only `system` → DROP SERVER → lower replicas
 ```
 
-Replicas are **held** at the current count (the removed pods stay running and reachable for data hand-off) until every removed server is dropped; only then are the pods stopped. Progress shows as a `ServersPendingDrain` condition and `ScaleDownDraining` events. When the drain is done the condition is `False` with "Scale-down drain complete", and stays so; a scale-down you set back before its drain ends leaves it `False` with "Scale-down not in progress". Removed-ordinal PVCs are reclaimed (`PVCRetentionPolicy.WhenScaled=Delete`).
+Replicas are **held** at the current count (the removed pods stay running and reachable for data hand-off) until every removed server is dropped; only then are the pods stopped. Progress shows as a `ServersPendingDrain` condition and `ScaleDownDraining` events. When the drain is done the condition is `False` with "Scale-down drain complete", and stays so. Removed-ordinal PVCs are reclaimed (`PVCRetentionPolicy.WhenScaled=Delete`).
+
+**Setting a scale-down back.** If you raise `spec.topology.servers` again before the drain ends, the operator gives back what the drain took: it runs `ENABLE SERVER` for each server the drain cordoned. It records those servers on the cluster (annotation `neo4j.com/scale-down-cordoned-servers`), so a server you cordoned yourself stays cordoned. A `ScaleDownSetBack` event names the servers it enabled, and `ServersPendingDrain` reads `False` with "Scale-down not in progress". If you set it back only part of the way (5 → 3, then 4), the server the cluster keeps again is given back and the drain finishes the others.
+
+Neo4j cannot undo a deallocation: once a removed server is `Deallocating` (or `Deallocated`, or dropped), it never hosts databases again. A set-back that comes after that is refused. The replicas stay held, nothing more is drained, and `ServersPendingDrain` reads `True` with reason `ScaleDownBlocked`, naming the servers and the value to set `spec.topology.servers` back to so the drain can finish: "Scale-down set back too late for c-server-3 (…), …: … Set spec.topology.servers to 3 so the drain can finish them, then raise it to add new servers in their place." Lower it as the message says, wait for "Scale-down drain complete", then raise it: the new servers join with new identities on new volumes. Until then the cluster reads `Forming`, because the spec asks for more servers than are members. The message and its one Warning stay the same while the servers move on from `Deallocating` to `Deallocated` and `Dropped`; `SHOW SERVERS` and `ServersHealthy` show their states.
+
+**A cordoned server is a member.** Neo4j keeps a cordoned server's databases on it and only stops placing new ones there, so the operator counts it as a member: a cluster with a server you cordoned (`CALL dbms.cluster.cordonServer(…)`) is `Ready`, and `ServersHealthy` names the server (`state=Cordoned`). A cordoned server that is down is reported like any other server that is down (the `Degraded` condition).
 
 A removed server that is down when the scale-down starts — its pod being replaced, say — is drained too. `SHOW SERVERS` lists such a server with no address; the operator knows it by the address it last reported, or, failing that, because every server the scale-down keeps is accounted for. If a kept server is down too and the operator cannot tell which is which, it drains what it can name and keeps the replicas held, with `ServersPendingDrain` saying why, until a server reports its address again.
 
@@ -395,6 +401,7 @@ A removed server that is down when the scale-down starts — its pod being repla
   ALTER DATABASE neo4j SET TOPOLOGY 2 PRIMARIES;   -- then the scale-down proceeds
   ```
 - A database's `TOPOLOGY` can no longer be satisfied by the survivors (e.g. a 3-primary DB on a would-be 2-server cluster) — reduce its topology or keep the servers.
+- The scale-down was **set back after the drain began deallocating** a server the cluster would now keep (above). Here the drain has already cordoned and deallocated servers; the refusal stops it from going further until the spec lets it finish them.
 
 The operator deliberately **never auto-changes a database's `TOPOLOGY`** (that alters your durability guarantees) — it only relocates what Neo4j allows and refuses the rest with actionable guidance.
 

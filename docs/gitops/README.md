@@ -118,6 +118,7 @@ resources is a merge patch of what it changes:
 |---------|----|------|
 | `metadata.finalizers` (its own entry) | Every kind it cleans up after | First reconcile; removed on deletion |
 | `neo4j.com/scale-down-draining-servers` annotation | `Neo4jEnterpriseCluster` | While a scale-down drains servers |
+| `neo4j.com/scale-down-cordoned-servers` annotation | `Neo4jEnterpriseCluster` | While a scale-down drain has cordoned servers, until it ends or is set back |
 | `neo4j.com/external-fleet-deployment-id` annotation | Cluster or standalone | When Aura Fleet Management provisions the deployment |
 | `neo4j.com/restore-in-progress` annotation | `Neo4jEnterpriseStandalone` | While an offline restore holds it stopped |
 | `neo4j.com/cypher-restore-issued`, `cypher-restore-observed-offline`, `restore-pre-hooks-ran`, `point-in-time-path`, `seed-proxy-wait-started` annotations | `Neo4jRestore` | While the restore runs |

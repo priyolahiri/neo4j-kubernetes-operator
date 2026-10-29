@@ -71,6 +71,43 @@ func buildDropServerStatement(serverID string) (string, error) {
 	return "DROP SERVER '" + serverID + "'", nil
 }
 
+// buildEnableServerStatement builds an `ENABLE SERVER 'id'` command.
+func buildEnableServerStatement(serverID string) (string, error) {
+	if err := validateServerIDs([]string{serverID}); err != nil {
+		return "", err
+	}
+	return "ENABLE SERVER '" + serverID + "'", nil
+}
+
+// EnableServer returns a cordoned server to the Enabled state, so the
+// allocator may place databases on it again. The Operations Manual, "Managing
+// servers in a cluster" (5.x for the 5.26 LTS, current for CalVer), documents
+// `ENABLE SERVER` for this on both lines: "A server in the cordoned state can
+// be transitioned to deallocating state or back to enabled. To re-enable a
+// server, run the ENABLE SERVER command" — the uncordonServer procedure is
+// deprecated since 5.23 and Cypher 5 only on CalVer. A server that is
+// deallocating or past it cannot be enabled again. Run against system.
+func (c *Client) EnableServer(ctx context.Context, serverID string) error {
+	stmt, err := buildEnableServerStatement(serverID)
+	if err != nil {
+		return err
+	}
+	session := c.driver.NewSession(ctx, neo4j.SessionConfig{
+		AccessMode:   neo4j.AccessModeWrite,
+		DatabaseName: "system",
+	})
+	defer session.Close(ctx)
+
+	result, err := session.Run(ctx, stmt, nil)
+	if err != nil {
+		return fmt.Errorf("%s: %w", stmt, err)
+	}
+	if _, err := result.Consume(ctx); err != nil {
+		return fmt.Errorf("%s: %w", stmt, err)
+	}
+	return nil
+}
+
 // CordonServer marks a server as cordoned so the allocator places no new
 // databases on it and prefers it first when deallocating. Reversible. Run
 // against the system database. Procedure form is stable across 5.26 LTS and
