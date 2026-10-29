@@ -174,9 +174,15 @@ func (r *Neo4jEnterpriseClusterReconciler) holdRaiseForRemovedServers(ctx contex
 		Reason:  ConditionReasonWaitsForRemovedServers,
 		Message: raiseHoldMessage(cluster, requested, keep, left, stuck),
 	}
-	logger.Info("Scale-up waits for the pods and volumes of removed servers to be gone",
-		"requested", requested, "replicas", replicas, "keeping", keep, "leftovers", describeLeftovers(cluster, left), "stuck", stuck)
 	before, wrote := r.writeTopologyDeferral(ctx, cluster, want)
+	// At info when what it says changes; the passes in between, every
+	// raiseHoldPoll, at V(1).
+	logLevel := logger.V(1)
+	if wrote {
+		logLevel = logger
+	}
+	logLevel.Info("Scale-up waits for the pods and volumes of removed servers to be gone",
+		"requested", requested, "replicas", replicas, "keeping", keep, "leftovers", describeLeftovers(cluster, left), "stuck", stuck)
 	if wrote {
 		began := before == nil || before.Status != metav1.ConditionTrue || before.Reason != ConditionReasonWaitsForRemovedServers
 		switch {
@@ -308,9 +314,10 @@ type droppedServerInPod struct {
 // (Operations Manual, "Managing servers in a cluster"). servers has the
 // addresses filled in that rows no longer report (withKnownAddresses). A
 // Dropped row is matched to its pod by its address, when no member is that
-// pod's server. With no address known for any Dropped row (an operator
-// restarted since), the pods it names are those below expected whose server
-// pod is ready and whose server is no member, when there are any such rows:
+// pod's server and the pod is ready. With no address known for any Dropped
+// row (an operator restarted since), the pods it names are those below
+// expected whose pod is ready and whose server is no member, when there are
+// any such rows:
 // SHOW SERVERS cannot say which is which. Dropped rows of pods at or above
 // expected — a scale-down's, while they terminate — are not these.
 func droppedServersInKeptPods(servers []neo4jclient.ServerInfo, notReadyPods []string, clusterName string, expected int) []droppedServerInPod {
@@ -323,6 +330,13 @@ func droppedServersInKeptPods(servers []neo4jclient.ServerInfo, notReadyPods []s
 			members[ord] = true
 		}
 	}
+	// A pod that runs a dropped server is up, and ready: the journey's were.
+	// One that is not ready may be a new server still starting while the
+	// row of the one it replaces lingers.
+	notReady := map[string]bool{}
+	for _, p := range notReadyPods {
+		notReady[strings.SplitN(p, " ", 2)[0]] = true
+	}
 	var found []droppedServerInPod
 	var unnamed []string
 	for _, s := range servers {
@@ -334,17 +348,14 @@ func droppedServersInKeptPods(servers []neo4jclient.ServerInfo, notReadyPods []s
 			unnamed = append(unnamed, serverIdentifier(s))
 			continue
 		}
-		if ord < expected && !members[ord] {
-			found = append(found, droppedServerInPod{pod: fmt.Sprintf("%s-server-%d", clusterName, ord), id: serverIdentifier(s)})
+		pod := fmt.Sprintf("%s-server-%d", clusterName, ord)
+		if ord < expected && !members[ord] && !notReady[pod] {
+			found = append(found, droppedServerInPod{pod: pod, id: serverIdentifier(s)})
 		}
 	}
 	if len(found) > 0 || len(unnamed) == 0 {
 		sort.Slice(found, func(i, j int) bool { return found[i].pod < found[j].pod })
 		return found
-	}
-	notReady := map[string]bool{}
-	for _, p := range notReadyPods {
-		notReady[strings.SplitN(p, " ", 2)[0]] = true
 	}
 	sort.Strings(unnamed)
 	for ord := 0; ord < expected; ord++ {

@@ -274,6 +274,8 @@ func TestDroppedServersInKeptPods(t *testing.T) {
 	}{
 		{"named by their addresses", append(availServers(3, 3), availServer("c-server-3", "Dropped", "Available")), nil, 4,
 			[]droppedServerInPod{{pod: "c-server-3", id: "id-c-server-3"}}},
+		{"a new server still starting while the old row lingers", append(availServers(3, 3), availServer("c-server-3", "Dropped", "Available")),
+			[]string{"c-server-3 (not ready)"}, 4, nil},
 		{"a scale-down's, terminating above the spec", append(availServers(3, 3),
 			availServer("c-server-3", "Dropped", "Available"), availServer("c-server-4", "Dropped", "Available")), nil, 3, nil},
 		{"an old identity of a pod whose new server is a member", append(availServers(4, 4),

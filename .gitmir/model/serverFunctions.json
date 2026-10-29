@@ -2791,7 +2791,7 @@
     "name": "Report Dropped Servers In Kept Pods",
     "serverUnitId": "su-neo4jenterprisecluster",
     "operation": "business_action",
-    "description": "droppedServersInKeptPods, in the Forming branch of reconcileServerShortfall: a formed cluster whose SHOW SERVERS lists a server Dropped at the address of a pod below spec.topology.servers that no member is the server of (the address it reports or last reported), or, with no address known for any dropped row, a ready kept pod whose server is no member, reads Forming with a message naming the pods and the way out — lower spec.topology.servers to the first of them, wait for \"Scale-down drain complete\", raise it again — in status.message and the Ready condition, announced once with DroppedServersReturned from the write that puts it there. It read \"Cluster formation verification incomplete\" for good (#619; operations.md id 229).",
+    "description": "droppedServersInKeptPods, in the Forming branch of reconcileServerShortfall: a formed cluster whose SHOW SERVERS lists a server Dropped at the address of a ready pod below spec.topology.servers that no member is the server of (the address it reports or last reported), or, with no address known for any dropped row, a ready kept pod whose server is no member, reads Forming with a message naming the pods and the way out — lower spec.topology.servers to the first of them, wait for \"Scale-down drain complete\", raise it again — in status.message and the Ready condition, announced once with DroppedServersReturned from the write that puts it there. It read \"Cluster formation verification incomplete\" for good (#619; operations.md id 229).",
     "readsFieldIds": [
       "f-neo4jenterprisecluster-topology-servers"
     ],
