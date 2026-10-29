@@ -65,11 +65,13 @@
     "id": "su-scale-down",
     "name": "Scale-Down Drain Worker",
     "kind": "worker",
-    "description": "Automates the cordon-deallocate-wait-drop drain sequence for servers being removed by a topology shrink, holding StatefulSet replicas via an annotation until every drained server is Dropped or gone. A scale-down set back before the drain ended gives back the servers the drain cordoned (ENABLE SERVER), recorded on the cluster when it cordoned them, and refuses a set-back Neo4j cannot undo.",
+    "description": "Automates the cordon-deallocate-wait-drop drain sequence for servers being removed by a topology shrink, holding StatefulSet replicas via an annotation until every drained server is Dropped or gone. A scale-down set back before the drain ended gives back the servers the drain cordoned (ENABLE SERVER), recorded on the cluster when it cordoned them, and refuses a set-back Neo4j cannot undo. After its cordon the drain waits 20 s before it deallocates, so a set-back in that time is given back. A raise afterwards waits until the removed servers' pods and volumes are gone, so no new server starts on a removed server's volume as the server Neo4j dropped (#619).",
     "entityIds": [
       "ent-neo4jenterprisecluster"
     ],
     "dependsOn": [
+      "ev-scale-up-blocked",
+      "ev-scale-up-deferred",
       "su-neo4jenterprisecluster"
     ],
     "moduleId": "mod-cluster",

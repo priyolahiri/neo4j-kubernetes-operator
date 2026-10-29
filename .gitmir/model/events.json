@@ -116,19 +116,19 @@
   {
     "id": "ev-scale-down-blocked",
     "name": "ScaleDownBlocked",
-    "description": "Fires when a scale-down cannot proceed: below the system database's minimum voting-member floor, a DEALLOCATE dry-run fails, or a DROP SERVER fails — replicas stay held at the current count. Announced from the ServersPendingDrain condition write, once per cause (its message), never from the pass's own copy of the condition, which a lagging cache can hand over from before the last pass's write (#565; knowledge operations.md id 145). Also fires when a scale-down is set back after its drain took a server the cluster would keep past undoing (deallocating, deallocated, or dropped): the message names them and the spec.topology.servers that lets the drain finish (operations.md id 224).",
+    "description": "Fires when a scale-down cannot proceed: below the system database's minimum voting-member floor, a DEALLOCATE dry-run fails, or a DROP SERVER fails — replicas stay held at the current count. Announced from the ServersPendingDrain condition write, once per cause (its message), never from the pass's own copy of the condition, which a lagging cache can hand over from before the last pass's write (#565; knowledge operations.md id 145). Also fires when a scale-down is set back after its drain took a server the cluster would keep past undoing (deallocating, deallocated, or dropped): the message names them and the spec.topology.servers that lets the drain finish (operations.md id 224). When Neo4j refuses the drain's deallocation, the message quotes Neo4j's error and advises for the cause it names: a database whose topology the servers left cannot host (\"Required topology for '<db>' is N primaries and M secondaries.\": lower its topology, or keep at least N+M servers), or a database with its only primary on a removed server (\"Can't move databases with only one primary: <db>.\": a second primary); naming neither, advice covering both. The drain takes its servers in id order, so one refusal is one Warning; in the map's order it was two a second apart, and the dry run advised a second primary for a database with four (#619; operations.md id 123).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-scale-down-set-back",
     "name": "ScaleDownSetBack",
-    "description": "Fires once when a scale-down set back before its drain ended enabled again the servers the drain had cordoned (ENABLE SERVER), naming them; a server cordoned by hand is left cordoned and not named. None when the set-back had nothing to give back (#608; knowledge operations.md id 224).",
+    "description": "Fires once when a scale-down set back before its drain ended enabled again the servers the drain had cordoned (ENABLE SERVER), naming them; a server cordoned by hand is left cordoned and not named. None when the set-back had nothing to give back (#608; knowledge operations.md id 224). The drain waits 20 s (DefaultScaleDownSettle) after its cordon before it deallocates, so a set-back in that time reaches this give-back; before, the DEALLOCATE followed the cordon within about a second and a set-back by hand was nearly always refused (#619; operations.md id 231).",
     "moduleId": "mod-cluster"
   },
   {
     "id": "ev-scale-down-draining",
     "name": "ScaleDownDraining",
-    "description": "Fires on each successful drain step (cordon, deallocate, or drop) as the scale-down worker walks servers being removed by a topology shrink toward zero.",
+    "description": "Fires on each successful drain step (cordon, deallocate, or drop) as the scale-down worker walks servers being removed by a topology shrink toward zero. After the cordon the drain waits 20 s before it deallocates (operations.md id 231).",
     "moduleId": "mod-cluster"
   },
   {
@@ -1148,7 +1148,7 @@
   {
     "id": "ev-scaled-without-restart",
     "name": "ScaledWithoutRestart",
-    "description": "Fires when a scale-up added only servers that join as system secondaries (ordinals at or past minSystemPrimaries), so the running servers were not restarted; they read the longer discovery list at their next restart.",
+    "description": "Fires when a scale-up added only servers that join as system secondaries (ordinals at or past minSystemPrimaries), so the running servers were not restarted; they read the longer discovery list at their next restart. It names only the ordinals the server StatefulSet does not run yet: a scale-down set back while the drain held the replicas, refused or given back, adds none and announces none (it announced \"Adding servers 3-4\" on each, #619; operations.md id 230).",
     "moduleId": "mod-cluster"
   },
   {
@@ -1198,5 +1198,23 @@
     "name": "DuplicateNameKept",
     "description": "Normal event on a Neo4jDatabase, Neo4jCompositeDatabase or Neo4jDatabaseAlias being deleted while another live CR of its kind still gives its name on the same clusterRef, ignoring case: the deletion drops nothing and releases the finalizer (\"<what> \"<name>\" kept, not dropped: <Kind> \"<other>\" still gives it\"), so the database, composite or alias stays for the CR that remains. Before, deleting either of two such CRs dropped the object the other still named (operations.md id 217).",
     "moduleId": "mod-database"
+  },
+  {
+    "id": "ev-scale-up-deferred",
+    "name": "ScaleUpDeferred",
+    "description": "Fires once when a raise of spec.topology.servers starts to wait for the pods and volumes of the servers a scale-down removed to be gone (TopologyChangeDeferred True, reason WaitsForRemovedServers): a server added on such a volume would start as the server Neo4j dropped and could not rejoin. Announced from the condition write that sets the reason (#619 S1; operations.md id 229).",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-scale-up-blocked",
+    "name": "ScaleUpBlocked",
+    "description": "Warning, once, when what is left of the removed servers has not gone 2 minutes after a raise began to wait for it (a pod terminating on a node that is gone, a volume a foreign finalizer keeps): the message names each and how to remove it. The raise stays held; the operator deletes nothing (operations.md id 229).",
+    "moduleId": "mod-cluster"
+  },
+  {
+    "id": "ev-dropped-servers-returned",
+    "name": "DroppedServersReturned",
+    "description": "Warning, once, when a formed cluster's kept server pods run servers SHOW SERVERS lists Dropped — started on the volumes of servers a scale-down removed, by a raise before the hold or on a volume no pod owned. The Forming message carries the same text: lower spec.topology.servers to the first of them, wait for the drain to complete, raise it again (operations.md id 229).",
+    "moduleId": "mod-cluster"
   }
 ]

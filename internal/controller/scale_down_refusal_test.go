@@ -17,7 +17,7 @@ limitations under the License.
 package controller
 
 // The advice of a refused deallocation follows what Neo4j names
-// (operations.md id 231). The v1.24.0 journey (#619): a 5 → 3 scale-down of a
+// (operations.md id 123). The v1.24.0 journey (#619): a 5 → 3 scale-down of a
 // cluster with a 4-primary database was refused by the dry run, and the
 // ScaleDownBlocked message advised giving single-primary databases an
 // additional primary; the same refusal was announced twice a second apart,

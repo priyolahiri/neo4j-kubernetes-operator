@@ -309,8 +309,8 @@ var (
 // servers in a cluster": an offline database, a quorum of a database's
 // primaries cordoned). It used to give one fixed piece of advice per step,
 // and the dry run before the cordon advised a second primary for a database
-// with four (v1.24.0 journey, #619). cordoned says whether the drain has
-// cordoned the servers already.
+// with four (v1.24.0 journey, #619; operations.md id 123). cordoned says
+// whether the drain has cordoned the servers already.
 func deallocateRefusal(desired int, err error, cordoned bool) string {
 	text := err.Error()
 	var advice []string

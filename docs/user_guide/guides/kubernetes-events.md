@@ -66,10 +66,13 @@ is met on many passes. It is announced once:
 
 | Reason | Type | Description |
 |---|---|---|
-| `ScaledWithoutRestart` | Normal | A scale-up added only servers that join as `system` secondaries, so the running servers were not restarted; they read the longer discovery list at their next restart. A scale-up that adds a system primary (with the default, from 2 servers to 3+) restarts them instead and raises no such event |
+| `ScaledWithoutRestart` | Normal | A scale-up added only servers that join as `system` secondaries, so the running servers were not restarted; they read the longer discovery list at their next restart. It names only the servers the StatefulSet does not run yet: a scale-down set back while the drain held the replicas adds none and raises none. A scale-up that adds a system primary (with the default, from 2 servers to 3+) restarts them instead and raises no such event |
+| `ScaleUpDeferred` | Normal | A raise of `spec.topology.servers` waits until the pods and volumes of the servers a scale-down removed are gone, so no new server starts on a removed server's volume as the server Neo4j dropped (`TopologyChangeDeferred`, reason `WaitsForRemovedServers`); the servers are added once they are gone |
+| `ScaleUpBlocked` | Warning | What is left of the removed servers has not gone in 2 minutes (a pod terminating on a node that is gone, a volume another finalizer keeps): the message names it and how to remove it. The raise stays held |
+| `DroppedServersReturned` | Warning | Server pods the spec keeps run servers Neo4j has dropped: they started on the volumes of removed servers (a raise made too soon by an earlier release). The message says how to recover: lower `spec.topology.servers`, wait for the drain to complete, raise it again |
 | `ScaleDownDraining` | Normal | A scale-down step ran: servers cordoned, their databases deallocated, or the drained servers dropped |
-| `ScaleDownBlocked` | Warning | Scale-down refused or stuck — the target is below the `system` database's minimum voting members, the `DEALLOCATE` dry-run / `DROP SERVER` failed, or the scale-down was set back after its drain began deallocating a server the cluster would keep; replicas are held. Once per cause, announced from the `ServersPendingDrain` condition the operator writes, not on every retry |
-| `ScaleDownSetBack` | Normal | A scale-down set back before its drain ended: the servers the drain had cordoned were enabled again (`ENABLE SERVER`). A server you cordoned yourself stays cordoned |
+| `ScaleDownBlocked` | Warning | Scale-down refused or stuck — the target is below the `system` database's minimum voting members, the `DEALLOCATE` dry-run / `DROP SERVER` failed (the message quotes Neo4j and advises for the cause it names), or the scale-down was set back after its drain began deallocating a server the cluster would keep; replicas are held. Once per cause, announced from the `ServersPendingDrain` condition the operator writes, not on every retry |
+| `ScaleDownSetBack` | Normal | A scale-down set back before its drain began deallocating — within 20 s of the cordon: the servers the drain had cordoned were enabled again (`ENABLE SERVER`). A server you cordoned yourself stays cordoned |
 
 ### Rolling Upgrades
 
