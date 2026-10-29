@@ -19,6 +19,7 @@ package controller
 import (
 	"sync"
 
+	"github.com/go-logr/logr"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -69,4 +70,27 @@ func announceFleetFailure(rec record.EventRecorder, t *fleetFailureTracker, obj 
 	}
 	rec.Eventf(obj, corev1.EventTypeWarning, EventReasonAuraFleetFailed,
 		"Aura Fleet Management registration failed: %s", msg)
+}
+
+// fleetRegistrationDeferredMessage is the line plugin-only Aura Fleet
+// Management logs: the plugin is installed, and nothing registers it.
+const fleetRegistrationDeferredMessage = "Aura Fleet Management enabled but neither tokenSecretRef nor provision is configured; " +
+	"plugin installed, registration deferred"
+
+// logFleetRegistrationDeferred is the token-source step of a cluster's or
+// standalone's Aura Fleet Management pass, keyed by the deployment: it reports
+// whether registration goes on (haveTokenSource). Plugin-only mode — neither
+// tokenSecretRef nor provision — is a state the user chose, met again on every
+// pass for as long as it lasts: it is logged at info once, when it starts, and
+// at V(1) on the passes after (operations.md id 145). It was an info line on
+// every pass (#608). A token source configured, Aura Fleet Management turned
+// off, or the deployment deleted ends it, so plugin-only mode that comes back
+// is logged at info again.
+func logFleetRegistrationDeferred(logger logr.Logger, said *lastAnnounced, key string, haveTokenSource bool) bool {
+	if haveTokenSource {
+		said.forget(key)
+		return true
+	}
+	logAnnounced(logger, said.changed(key, fleetRegistrationDeferredMessage), fleetRegistrationDeferredMessage)
+	return false
 }

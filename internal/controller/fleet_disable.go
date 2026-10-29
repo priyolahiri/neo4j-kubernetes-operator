@@ -235,12 +235,15 @@ func fleetDisableEdit(ctx context.Context, c client.Reader, sts *appsv1.Stateful
 // adopts an entry without a record — listed, the variable not the
 // deployment's own, the name claimed by no Neo4jPlugin — which an earlier
 // operator added, or which the merge keeps on an image with Fleet Manager built
-// in (id 192); and it drops a record whose entry is gone. It reports whether
-// it changed sts's annotations; the pod template is never touched.
+// in (id 192); and it drops a record whose entry is gone, or whose variable
+// has become the deployment's own (spec.env sets it again: the write that took
+// it back drops the record itself, so this is for a record a build before it
+// left, id 227). It reports whether it changed sts's annotations; the
+// pod template is never touched.
 func fleetRecordUpkeep(ctx context.Context, c client.Reader, sts *appsv1.StatefulSet, target, imageTag string) (bool, error) {
 	listed, recorded := fleetEntryListed(&sts.Spec.Template), fleetEntryRecorded(sts)
 	switch {
-	case recorded && !listed:
+	case recorded && (!listed || neo4jPluginsOwnedByTarget(sts)):
 		setFleetEntryRecord(sts, false)
 		return true, nil
 	case !recorded && listed && !neo4jPluginsOwnedByTarget(sts):
@@ -394,16 +397,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) standaloneFleetEntryDue(ctx contex
 		return false, false
 	}
 	logger := log.FromContext(ctx)
-	desired, err := desiredStandaloneConfigMap(ctx, r.Client, standalone)
+	rendered, err := r.renderedConfSemantic(ctx, standalone)
 	if err != nil {
 		logger.V(1).Info("Cannot render the standalone's neo4j.conf; Aura Fleet Management's entry is taken out on a later pass", "error", err.Error())
 		return false, false
 	}
-	live := &corev1.ConfigMap{}
-	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name + "-config", Namespace: standalone.Namespace}, live); err != nil {
-		return false, false
-	}
-	if standaloneConfSemanticHash(mergeStandaloneConf(desired.Data["neo4j.conf"], live)) != confSemantic {
+	if rendered != confSemantic {
 		return false, false
 	}
 	claimed, err = fleetEntryClaimedOn(ctx, r.Client, existing, standalone.Name, standalone.Spec.Image.Tag)
@@ -412,4 +411,22 @@ func (r *Neo4jEnterpriseStandaloneReconciler) standaloneFleetEntryDue(ctx contex
 		return false, false
 	}
 	return true, claimed
+}
+
+// renderedConfSemantic is the semantic hash (standaloneConfSemanticHash) of
+// the neo4j.conf the standalone renders now, as its ConfigMap write makes it:
+// desiredStandaloneConfigMap merged with the live ConfigMap's keys someone else
+// put there (mergeStandaloneConf). The pod's conf hash stands for that conf once
+// the StatefulSet write that carries it is made. An error is the render's or
+// the ConfigMap read's: the caller leaves its edit to a later pass.
+func (r *Neo4jEnterpriseStandaloneReconciler) renderedConfSemantic(ctx context.Context, standalone *neo4jv1beta1.Neo4jEnterpriseStandalone) (string, error) {
+	desired, err := desiredStandaloneConfigMap(ctx, r.Client, standalone)
+	if err != nil {
+		return "", err
+	}
+	live := &corev1.ConfigMap{}
+	if err := r.Get(ctx, types.NamespacedName{Name: standalone.Name + "-config", Namespace: standalone.Namespace}, live); err != nil {
+		return "", err
+	}
+	return standaloneConfSemanticHash(mergeStandaloneConf(desired.Data["neo4j.conf"], live)), nil
 }

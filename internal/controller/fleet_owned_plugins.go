@@ -152,14 +152,23 @@ var errNeo4jPluginsNotAList = errors.New("NEO4J_PLUGINS is not a JSON list")
 // addFleetEntryInWrite is addFleetManagementPlugin for a write the deployment
 // makes of its own template — the cluster's create and template apply, the
 // standalone's template write — after the record of the env the deployment
-// owns is written on sts. It records the name as Fleet Management's when it
-// adds it to a variable the deployment does not own (operations.md id 222),
-// and a value that is not a JSON list does not fail the write: the merge
-// reports one that is not the deployment's, the validator one that is
-// (FleetPluginsEnvWarnings). On a cluster a NEO4J_PLUGINS its spec.env sets
-// already carries the name as it renders it (clusterNeo4jPlugins), or cannot
-// take it, so nothing is added there; a standalone's gets it here.
+// owns is written on sts, and for the cluster's conf roll (the restart stamp,
+// triggerRollingRestartForConfigChange, operations.md id 226). It records the
+// name as Fleet Management's when it adds it to a variable the deployment does
+// not own (id 222), and a value that is not a JSON list does not fail the
+// write: the merge reports one that is not the deployment's, the validator one
+// that is (FleetPluginsEnvWarnings). On a cluster a NEO4J_PLUGINS its spec.env
+// sets already carries the name as it renders it (clusterNeo4jPlugins), or
+// cannot take it, so nothing is added there; a standalone's gets it here.
+//
+// A variable the deployment owns carries no record: one left from before this
+// write took the variable back (spec.env set NEO4J_PLUGINS again while Fleet
+// Management was on) goes in the same write, which restarts nothing more
+// (operations.md id 227). It stayed until the next disable.
 func addFleetEntryInWrite(ctx context.Context, sts *appsv1.StatefulSet) error {
+	if neo4jPluginsOwnedByTarget(sts) {
+		setFleetEntryRecord(sts, false)
+	}
 	added, err := addFleetManagementPlugin(&sts.Spec.Template)
 	if errors.Is(err, errNeo4jPluginsNotAList) {
 		log.FromContext(ctx).V(1).Info("NEO4J_PLUGINS is not a JSON list; fleet-management is not added to it",
