@@ -106,6 +106,17 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// drainClient replaces the scale-down drain's Neo4j client in tests; nil
 	// in production.
 	drainClient func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster) (scaleDownClient, error)
+	// ScaleDownSettle is how long a scale-down drain waits after it cordons
+	// the servers it removes before it deallocates their databases, so a
+	// scale-down set back in that time can still enable them again
+	// (operations.md id 231). Zero deallocates on the next pass, as before
+	// v1.25; main sets DefaultScaleDownSettle.
+	ScaleDownSettle time.Duration
+	// clock is the time the drain's settle is measured on; nil is time.Now.
+	clock func() time.Time
+	// wakes is how soon, per cluster, a timed wait of the pass ends
+	// (passWakes).
+	wakes passWakes
 	// Ignore, when set, makes Reconcile leave alone every cluster it returns
 	// true for. The envtest suite uses it for clusters that stand in for a
 	// Ready cluster in backup and restore specs: envtest runs no pods, so this
@@ -338,8 +349,12 @@ func clusterEverAccepted(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	return controllerutil.ContainsFinalizer(cluster, ClusterFinalizer)
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	logger := log.FromContext(ctx)
+	// A wait that ends with time, not with a change Kubernetes reports — the
+	// drain's settle after its cordon, a raise held for the removed
+	// servers' volumes — brings the next pass forward to it (passWakes).
+	defer func() { result = r.wakes.apply(req.String(), result, err) }()
 
 	// Fetch the Neo4jEnterpriseCluster instance
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}

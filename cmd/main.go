@@ -474,6 +474,7 @@ func setupProductionControllers(mgr ctrl.Manager) error {
 				SplitBrainCheckInterval: splitBrainCheckInterval,
 				MaxConcurrentReconciles: clusterMaxConcurrentReconciles,
 				ReconcileTimeout:        clusterReconcileTimeout,
+				ScaleDownSettle:         controller.DefaultScaleDownSettle,
 			},
 		},
 		{
@@ -790,6 +791,7 @@ func devControllerRegistry(mgr ctrl.Manager) map[string]func() (interface{ Setup
 				SplitBrainCheckInterval: splitBrainCheckInterval,
 				MaxConcurrentReconciles: clusterMaxConcurrentReconciles,
 				ReconcileTimeout:        clusterReconcileTimeout,
+				ScaleDownSettle:         controller.DefaultScaleDownSettle,
 			}, "Neo4jEnterpriseCluster"
 		},
 		"standalone": func() (interface{ SetupWithManager(ctrl.Manager) error }, string) {
