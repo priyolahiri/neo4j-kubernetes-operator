@@ -32,7 +32,7 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | Container OOMKilled | `lastState.terminated` (a container that restarted) or `state.terminated` (one that did not — see [below](#containers-that-finished-and-were-not-restarted)): reason `OOMKilled`, **or** exit code 137 |
 | Container exited non-zero | `state.terminated` with a non-zero exit code and any reason but OOMKilled (typically `Error`), with its message. Exit 0 (`Completed`) is not a finding |
 | Image will not pull | waiting reason `ImagePullBackOff` / `ErrImagePull` / `InvalidImageName` |
-| Crash-looping | waiting reason `CrashLoopBackOff`, with the restart count |
+| Crash-looping | waiting reason `CrashLoopBackOff`, with the restart count; or, before the kubelet says so, a container restarted at least twice whose latest run has just died with a non-zero exit (`state.terminated`, kubectl shows `Error`). A single restart, or a container running again since, is a `⚠` for its previous run |
 | Config not resolvable | waiting reason `CreateContainerConfigError` — usually a missing Secret key |
 | Still starting (`…`) | waiting reason `ContainerCreating` / `PodInitializing` — a pod that was just replaced, before its container runs; or a container that runs but whose readiness probe has not passed yet. Neither changes the exit code |
 | PVC never bound | `pvc.status.phase != Bound`, naming the StorageClass |
