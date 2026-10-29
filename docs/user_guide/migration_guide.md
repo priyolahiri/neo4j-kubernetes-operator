@@ -860,6 +860,10 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 
 - **Deleting a namespace no longer logs ERRORs.** Kubernetes deletes what the namespace holds in no fixed order. When it deleted a deployment's Services or ConfigMap before the deployment itself, the operator created them again, the API server refused ("… is being terminated"), and each pass logged an ERROR and a `Reconciler error`. A standalone also went `Failed` with a `ReconcileFailed` event for a moment. The operator now treats that refusal as the namespace going away, for every kind: it logs one debug line, writes no status and returns no error. The deletion goes on through the finalizers as before. A cluster whose server pods are being deleted no longer logs ERROR "Failed to perform split-brain detection". Log alerts on those lines during a teardown stop firing. Any other refusal is still an ERROR.
 
+**Plugins**
+
+- **Removing your own `NEO4J_PLUGINS` from `spec.env` is one rolling restart.** If a Managed `Neo4jPlugin` was installed and its name was in that list, the write that takes the variable out of `spec.env` now keeps the plugin's name (and its dependencies'), and records it as the plugin's (`neo4j.com/plugin-entries.<plugin>`). Names that no installed plugin adds go, as you asked. With Aura Fleet Management on, `fleet-management` stays as well. Up to v1.24.x that write dropped the plugin's name, and the plugin raised `PluginMissing` and wrote it back: two rolls. This applies to clusters and standalones.
+
 **`kubectl neo4j`**
 
 - **`export` takes its flags before the target.** `kubectl neo4j export --context dr -n prod replica-database dr-copy …` now works, as `validate` and `preflight` always did. It used to exit 2 with `unknown export target "--context"`.

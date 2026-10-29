@@ -1190,8 +1190,13 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						// A shared list it stops owning (a spec.env list now
 						// in neo4j.conf) goes to the plugins in this write,
 						// so the servers roll once (operations.md id 209).
+						// So does a NEO4J_PLUGINS spec.env no longer sets: the
+						// names its plugins add stay in it, recorded as theirs
+						// (operations.md id 233).
 						if cluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok {
 							merged = r.handOverSharedLists(ctx, cluster, sts, merged, currentEnv, desiredEnv, owned.env)
+							merged = handOverNeo4jPlugins(ctx, r.Client, sts, cluster.Name, cluster.Spec.Image.Tag,
+								merged, currentEnv, desiredEnv, owned.env)
 						}
 						// Init containers and volumes the same way, by name: the
 						// plugin controller's VerifiedDownload init container and

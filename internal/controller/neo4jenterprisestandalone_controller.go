@@ -1222,6 +1222,11 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 				currentEnv = statefulSet.Spec.Template.Spec.Containers[0].Env
 			}
 			mergedEnv := mergeEnvVars(currentEnv, desiredEnv, previousOwned)
+			// A NEO4J_PLUGINS spec.env no longer sets keeps the names the
+			// standalone's plugins add, recorded as theirs, so they write
+			// nothing after this write (operations.md id 233).
+			mergedEnv = handOverNeo4jPlugins(ctx, r.Client, statefulSet, standalone.Name, standalone.Spec.Image.Tag,
+				mergedEnv, currentEnv, desiredEnv, previousOwned)
 			currentInit := statefulSet.Spec.Template.Spec.InitContainers
 			currentVolumes := statefulSet.Spec.Template.Spec.Volumes
 
