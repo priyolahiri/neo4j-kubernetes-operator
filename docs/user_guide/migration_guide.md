@@ -858,7 +858,7 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 
 **Deleting a namespace**
 
-- **Deleting a namespace no longer logs ERRORs.** Kubernetes deletes what the namespace holds in no fixed order. When it deleted a deployment's Services or ConfigMap before the deployment itself, the operator created them again, the API server refused ("… is being terminated"), and each pass logged an ERROR and a `Reconciler error`. A standalone also went `Failed` with a `ReconcileFailed` event for a moment. The operator now treats that refusal as the namespace going away, for every kind: it logs one debug line, writes no status and returns no error. The deletion goes on through the finalizers as before. A cluster whose server pods are being deleted no longer logs ERROR "Failed to perform split-brain detection". Log alerts on those lines during a teardown stop firing. Any other refusal is still an ERROR.
+- **Deleting a namespace no longer logs ERRORs.** Kubernetes deletes what the namespace holds in no fixed order. When it deleted a deployment's Services or ConfigMap before the deployment itself, the operator created them again, the API server refused ("… is being terminated"), and each pass logged an ERROR and a `Reconciler error`. A standalone's status also read `Failed` ("Reconciliation failed: …") for a moment. The operator now treats that refusal as the namespace going away, for every kind: it logs one debug line, writes no status and returns no error. The deletion goes on through the finalizers as before. A cluster whose server pods are being deleted no longer logs ERROR "Failed to perform split-brain detection". Log alerts on those lines during a teardown stop firing. Any other refusal is still an ERROR.
 
 **Plugins**
 
