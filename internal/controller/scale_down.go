@@ -19,6 +19,7 @@ package controller
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -285,6 +286,63 @@ func drainAlreadyUnderway(err error) bool {
 	return false
 }
 
+// What Neo4j names when it refuses to deallocate (the dry run and the real
+// statement give the same refusal). The texts are Neo4j's own, from
+// TopologyGraphWriteSupportV5 and DatabaseAllocatorV5 in
+// neo4j-dbms-enterprise, 5.26.32 and 2026.09.0 alike:
+//
+//	Can't move databases with only one primary: %s.
+//	Unable to reallocate '%s(%s)'.        (5.26: '%s')
+//	Required topology for '%s' is %s primaries and %s secondaries.
+var (
+	onlyOnePrimaryRefusal   = regexp.MustCompile(`only one primary: (.*?)\.(?:\s|\)|$)`)
+	requiredTopologyRefusal = regexp.MustCompile(`Required topology for '([^']*)' is (\d+) primaries and (\d+) secondaries`)
+)
+
+// deallocateRefusal is the ScaleDownBlocked message of a deallocation Neo4j
+// refuses: its error, and advice for the cause it names. A database with a
+// single primary on a removed server needs a second one; a database whose
+// topology the servers left cannot host needs a smaller topology or more
+// servers. Neo4j names one or the other; when it names neither, the advice
+// covers both, and the other refusals the Operations Manual lists ("Managing
+// servers in a cluster": an offline database, a quorum of a database's
+// primaries cordoned). It used to give one fixed piece of advice per step,
+// and the dry run before the cordon advised a second primary for a database
+// with four (v1.24.0 journey, #619). cordoned says whether the drain has
+// cordoned the servers already.
+func deallocateRefusal(desired int, err error, cordoned bool) string {
+	text := err.Error()
+	var advice []string
+	if m := onlyOnePrimaryRefusal.FindStringSubmatch(text); m != nil {
+		dbs := strings.Trim(strings.TrimSpace(m[1]), "[]")
+		example := strings.TrimSpace(strings.SplitN(dbs, ",", 2)[0])
+		if example == "" {
+			example = "<database>"
+		}
+		advice = append(advice, fmt.Sprintf("Neo4j cannot move a database's only primary, and %s has one on a server the scale-down removes: "+
+			"give it a second primary first (ALTER DATABASE %s SET TOPOLOGY 2 PRIMARIES), or keep the servers.", dbs, example))
+	}
+	for _, m := range requiredTopologyRefusal.FindAllStringSubmatch(text, -1) {
+		primaries, _ := strconv.Atoi(m[2])
+		secondaries, _ := strconv.Atoi(m[3])
+		advice = append(advice, fmt.Sprintf("Database '%s' needs %d primaries and %d secondaries, each on a server of its own, "+
+			"and the servers the scale-down leaves cannot host them: lower its topology (ALTER DATABASE %s SET TOPOLOGY …), "+
+			"or keep enough servers for it (at least %d).", m[1], primaries, secondaries, m[1], primaries+secondaries))
+	}
+	if len(advice) == 0 {
+		advice = append(advice, "Either a database needs more servers than the scale-down leaves "+
+			"(lower its topology with ALTER DATABASE … SET TOPOLOGY, or keep more servers), "+
+			"or a database has its only primary on a server the scale-down removes (give it a second primary first). "+
+			"Neo4j also refuses while a database on these servers is offline, or while a quorum of a database's primaries is cordoned.")
+	}
+	held := "Replicas are held until this is resolvable."
+	if !cordoned {
+		held = "No server has been cordoned; replicas are held until this is resolvable."
+	}
+	return fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. %s The operator never changes a database's topology itself. %s",
+		desired, err, strings.Join(advice, " "), held)
+}
+
 // hostsOnlySystem reports whether a server hosts no user databases — only the
 // `system` database (or nothing). Such a draining server is safe to DROP.
 func hostsOnlySystem(s neo4jclient.ServerInfo) bool {
@@ -438,6 +496,11 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		}
 		active = append(active, s)
 	}
+	// In the order of their ids: the statements, and the refusal messages
+	// that quote them, are the same on every pass. Taken in the map's order,
+	// one refused dry run was two ScaleDownBlocked Warnings a second apart,
+	// the same two servers named in either order (v1.24.0 journey, #619).
+	sort.Slice(active, func(i, j int) bool { return serverIdentifier(active[i]) < serverIdentifier(active[j]) })
 
 	if len(active) == 0 && undecided != "" {
 		// Nothing left it can name, and a server it cannot: keep holding.
@@ -493,8 +556,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 				logger.V(1).Info("Scale-down drain: a server is already further along than this read showed; next pass", "error", derr.Error())
 				return nil
 			}
-			msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. Give single-primary databases an additional primary (ALTER DATABASE ... SET TOPOLOGY) or keep the servers — the operator will not auto-reduce topology. No server has been cordoned; replicas are held until this is resolvable.", desired, derr)
-			r.blockScaleDown(ctx, cluster, msg)
+			r.blockScaleDown(ctx, cluster, deallocateRefusal(desired, derr, false))
 			return nil
 		}
 	}
@@ -524,8 +586,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 				logger.V(1).Info("Scale-down drain: a server is already further along than this read showed; next pass", "error", derr.Error())
 				return nil
 			}
-			msg := fmt.Sprintf("Scale-down to %d server(s) is blocked: DEALLOCATE dry-run failed: %v. Reduce database topology (ALTER DATABASE ... SET TOPOLOGY) or keep the servers — the operator will not auto-reduce topology. Replicas are held until this is resolvable.", desired, derr)
-			r.blockScaleDown(ctx, cluster, msg)
+			r.blockScaleDown(ctx, cluster, deallocateRefusal(desired, derr, true))
 			return nil
 		}
 		if derr := nc.DeallocateServers(ctx, step.serverIDs, false); derr != nil {

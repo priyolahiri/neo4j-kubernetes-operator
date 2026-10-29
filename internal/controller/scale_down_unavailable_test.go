@@ -49,6 +49,9 @@ type drainNeo4j struct {
 	down                  map[string]bool
 	noDeallocatingAddress bool
 	ops                   []string
+	// refuseDryRun, when set, is Neo4j's refusal of a DRYRUN DEALLOCATE of
+	// these ids, in the order the drain gave them.
+	refuseDryRun func(ids []string) error
 }
 
 func newDrainNeo4j(cluster string, n int, down ...int) *drainNeo4j {
@@ -105,6 +108,9 @@ func (d *drainNeo4j) EnableServer(_ context.Context, id string) error {
 }
 func (d *drainNeo4j) DeallocateServers(_ context.Context, ids []string, dryRun bool) error {
 	if dryRun {
+		if d.refuseDryRun != nil {
+			return d.refuseDryRun(ids)
+		}
 		return nil
 	}
 	for _, id := range ids {
