@@ -532,5 +532,5 @@ func (r *Neo4jDatabaseAliasReconciler) SetupWithManager(mgr ctrl.Manager) error 
 		// (operations.md id 217).
 		Watches(&neo4jv1beta1.Neo4jDatabaseAlias{}, aliasNames.othersOfTheName(mgr.GetClient()), aliasNames.onClaimChange()).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

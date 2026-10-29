@@ -1154,7 +1154,7 @@ func (r *Neo4jShardedDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: maxConcurrentReconciles,
 		}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
 
 // shardedSeedConsumable reports whether the sharded database's seed can still be

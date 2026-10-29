@@ -852,6 +852,23 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 - A cluster caught in the `spec.env` `NEO4J_PLUGINS` restart loop (Fleet Management on, before 2026.03) rolls at most once more, to your list with `fleet-management`, and then stops. If its last write was the merge's, it does not roll at all.
 - A standalone with Fleet Management on and a `NEO4J_PLUGINS` from a Secret, or one that is not a JSON list, rolls once if its template changed while its writes were failing. A cluster in that shape restarts nothing; one that was never created is created.
 
+## Upgrading from v1.24.x
+
+### Behaviour changes
+
+**Deleting a namespace**
+
+- **Deleting a namespace no longer logs ERRORs.** Kubernetes deletes what the namespace holds in no fixed order. When it deleted a deployment's Services or ConfigMap before the deployment itself, the operator created them again, the API server refused ("… is being terminated"), and each pass logged an ERROR and a `Reconciler error`. A standalone also went `Failed` with a `ReconcileFailed` event for a moment. The operator now treats that refusal as the namespace going away, for every kind: it logs one debug line, writes no status and returns no error. The deletion goes on through the finalizers as before. A cluster whose server pods are being deleted no longer logs ERROR "Failed to perform split-brain detection". Log alerts on those lines during a teardown stop firing. Any other refusal is still an ERROR.
+
+**`kubectl neo4j`**
+
+- **`export` takes its flags before the target.** `kubectl neo4j export --context dr -n prod replica-database dr-copy …` now works, as `validate` and `preflight` always did. It used to exit 2 with `unknown export target "--context"`.
+- **`diagnose` calls a crash-loop before Kubernetes does.** A container restarted at least twice whose latest run has just died with an error (kubectl shows `Error`, before `CrashLoopBackOff`) is reported as crash-looping. The command exits 1 and points at the `--previous` log. It used to give a ⚠ for the previous run and exit 0. A single restart, or a container running again since, is still a ⚠.
+
+### Restarts after the upgrade
+
+- None.
+
 ## Upgrading between future releases
 
 When a newer version ships:

@@ -260,6 +260,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) Reconcile(ctx context.Context, req
 	// Reconcile the standalone deployment
 	result, err := r.reconcileStandalone(ctx, standalone)
 	if err != nil {
+		if namespaceTerminating(err) {
+			// A write refused because the namespace is being deleted: not a
+			// failure, so no ERROR, no Failed status, no ReconcileFailed
+			// event; the CR is marked for deletion next (operations.md id 232).
+			logNamespaceTerminating(logger, err)
+			return ctrl.Result{}, nil
+		}
 		logger.Error(err, "Failed to reconcile standalone deployment")
 
 		// Update status to reflect failure. The error is retried with
@@ -3041,7 +3048,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) SetupWithManager(mgr ctrl.Manager)
 		builder = builder.WatchesRawSource(source.Kind(mgr.GetCache(), routeObj, routeHandler))
 	}
 
-	return builder.Complete(r)
+	return builder.Complete(endsWithItsNamespace(r))
 }
 
 // reconcileAuraFleetManagement handles Aura Fleet Management for standalone deployments.

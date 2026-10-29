@@ -768,5 +768,5 @@ func (r *AuraInstanceReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&neo4jv1beta1.AuraInstance{}).
 		Owns(&corev1.Secret{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: mcr}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

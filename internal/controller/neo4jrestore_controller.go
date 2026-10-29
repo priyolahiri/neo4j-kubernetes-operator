@@ -4466,7 +4466,7 @@ func (r *Neo4jRestoreReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
 
 // validateNeo4jVersion validates that the target cluster uses Neo4j 5.26+ or 2025.01+

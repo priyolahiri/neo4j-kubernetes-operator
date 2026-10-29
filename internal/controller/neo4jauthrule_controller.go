@@ -766,5 +766,5 @@ func (r *Neo4jAuthRuleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return reqs
 		})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
