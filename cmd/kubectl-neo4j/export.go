@@ -64,20 +64,68 @@ import (
 )
 
 func runExport(args []string, stdout, stderr *os.File) int {
-	if len(args) == 0 {
+	target, rest, help := exportTarget(args)
+	if target == "" {
+		if help {
+			fmt.Fprint(stdout, exportUsage)
+			return exitOK
+		}
 		fmt.Fprint(stderr, exportUsage)
 		return exitUsage
 	}
-	switch args[0] {
+	switch target {
 	case "replica-database":
-		return runExportReplicaDatabase(args[1:], stdout, stderr)
-	case "-h", "--help", "help":
+		return runExportReplicaDatabase(rest, stdout, stderr)
+	case "help":
 		fmt.Fprint(stdout, exportUsage)
 		return exitOK
 	default:
-		fmt.Fprintf(stderr, "unknown export target %q\n\n%s", args[0], exportUsage)
+		fmt.Fprintf(stderr, "unknown export target %q\n\n%s", target, exportUsage)
 		return exitUsage
 	}
+}
+
+// exportTarget finds the target among args: the first argument that is neither
+// a flag nor a flag's value. Flags may come before it, as they may before any
+// other command's positionals (parseFlags): `export --context dr
+// replica-database …` took "--context" for the target and exited 2, where
+// `validate --context dr -f x.yaml` worked. rest is args without the target,
+// in their order, for the target's own parse; help reports a -h or --help
+// before any target.
+//
+// Which flag takes the next argument as its value is read from the targets' own
+// flag set, so in `--context replica-database` the context is never taken for
+// the target. A flag that set does not know is taken to have no value; the
+// target's parse reports it.
+func exportTarget(args []string) (target string, rest []string, help bool) {
+	fs := flag.NewFlagSet("export", flag.ContinueOnError)
+	registerExportReplicaFlags(fs)
+	without := func(i int) []string {
+		return append(append([]string{}, args[:i]...), args[i+1:]...)
+	}
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--" {
+			if i+1 < len(args) {
+				return args[i+1], without(i + 1), help
+			}
+			return "", nil, help
+		}
+		if len(arg) < 2 || arg[0] != '-' {
+			return arg, without(i), help
+		}
+		name := strings.TrimLeft(arg, "-")
+		switch {
+		case name == "h" || name == "help":
+			help = true
+		case strings.Contains(name, "="):
+		default:
+			if f := fs.Lookup(name); f != nil && !isBoolFlag(f) {
+				i++ // its value
+			}
+		}
+	}
+	return "", nil, help
 }
 
 const exportUsage = `Author a downstream manifest from an upstream resource's status.
@@ -93,18 +141,37 @@ prefer those refs — they stay correct when the upstream changes.
 Run "kubectl neo4j export replica-database -h" for flags.
 `
 
+// exportReplicaFlags are the flags of `export replica-database`.
+type exportReplicaFlags struct {
+	fromBackup, fromCluster, clusterRef, upstreamDatabase, downstreamNamespace *string
+	seedFromLatest                                                             *bool
+	namespace, kubeContext, kubeconfig                                         *string
+}
+
+// registerExportReplicaFlags registers them on fs. exportTarget reads the same
+// set to tell a flag's value from the target.
+func registerExportReplicaFlags(fs *flag.FlagSet) exportReplicaFlags {
+	return exportReplicaFlags{
+		fromBackup:          fs.String("from-backup", "", "Upstream Neo4jBackup to read status.replicationPullURI from (backup mode)"),
+		fromCluster:         fs.String("from-cluster", "", "Upstream Neo4jEnterpriseCluster to read replication addresses from (network mode)"),
+		clusterRef:          fs.String("cluster-ref", "", "Downstream cluster or standalone that will host the replica (required)"),
+		upstreamDatabase:    fs.String("upstream-database", "", "Database name on the upstream (required)"),
+		downstreamNamespace: fs.String("downstream-namespace", "", "Namespace to write into the manifest (default: the source namespace)"),
+		seedFromLatest:      fs.Bool("seed-from-latest", false, "Also set source.seedURI from the newest successful backup run"),
+		namespace:           namespaceFlag(fs, "Namespace of the upstream resource"),
+		kubeContext:         fs.String("context", "", "Kubeconfig context to use"),
+		kubeconfig:          fs.String("kubeconfig", "", "Path to the kubeconfig file"),
+	}
+}
+
 func runExportReplicaDatabase(args []string, stdout, stderr *os.File) int {
 	fs := flag.NewFlagSet("export replica-database", flag.ContinueOnError)
 	fs.SetOutput(stderr)
-	fromBackup := fs.String("from-backup", "", "Upstream Neo4jBackup to read status.replicationPullURI from (backup mode)")
-	fromCluster := fs.String("from-cluster", "", "Upstream Neo4jEnterpriseCluster to read replication addresses from (network mode)")
-	clusterRef := fs.String("cluster-ref", "", "Downstream cluster or standalone that will host the replica (required)")
-	upstreamDatabase := fs.String("upstream-database", "", "Database name on the upstream (required)")
-	downstreamNamespace := fs.String("downstream-namespace", "", "Namespace to write into the manifest (default: the source namespace)")
-	seedFromLatest := fs.Bool("seed-from-latest", false, "Also set source.seedURI from the newest successful backup run")
-	namespace := namespaceFlag(fs, "Namespace of the upstream resource")
-	kubeContext := fs.String("context", "", "Kubeconfig context to use")
-	kubeconfig := fs.String("kubeconfig", "", "Path to the kubeconfig file")
+	opts := registerExportReplicaFlags(fs)
+	fromBackup, fromCluster := opts.fromBackup, opts.fromCluster
+	clusterRef, upstreamDatabase := opts.clusterRef, opts.upstreamDatabase
+	downstreamNamespace, seedFromLatest := opts.downstreamNamespace, opts.seedFromLatest
+	namespace, kubeContext, kubeconfig := opts.namespace, opts.kubeContext, opts.kubeconfig
 	fs.Usage = func() {
 		fmt.Fprint(stderr, `Author a Neo4jReplicaDatabase for a downstream on another Kubernetes cluster.
 
