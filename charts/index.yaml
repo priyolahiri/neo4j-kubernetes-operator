@@ -112,8 +112,142 @@ entries:
         - url: https://artifacthub.io/packages/helm/cert-manager/cert-manager
           description: For TLS certificate management
     apiVersion: v2
+    appVersion: 1.24.0
+    created: "2026-10-29T17:46:39.86003503Z"
+    description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
+      deployments (v5.26+)
+    digest: 55d4631aa1a324bbcffdb5c17a4bf7713e4f64433c6c014aeff3437476fe087a
+    home: https://github.com/priyolahiri/neo4j-kubernetes-operator
+    keywords:
+    - neo4j
+    - graph
+    - database
+    - operator
+    - kubernetes
+    kubeVersion: '>=1.32.0-0'
+    maintainers:
+    - email: priyolahiri@users.noreply.github.com
+      name: Priyo Lahiri
+    name: neo4j-operator
+    sources:
+    - https://github.com/priyolahiri/neo4j-kubernetes-operator
+    type: application
+    urls:
+    - https://priyolahiri.github.io/neo4j-kubernetes-operator/charts/neo4j-operator-1.24.0.tgz
+    version: 1.24.0
+  - annotations:
+      artifacthub.io/changes: |
+        - kind: added
+          description: Initial Helm chart implementation
+        - kind: added
+          description: Support for both cluster-wide and namespace-scoped deployments
+        - kind: added
+          description: Configurable RBAC and resource management
+        - kind: added
+          description: "Neo4jUser, Neo4jRole, Neo4jRoleBinding CRDs for declarative user, role, and privilege management"
+        - kind: added
+          description: "Cluster status surfacing for SHOW USERS / SHOW ROLES via status.diagnostics"
+      artifacthub.io/containsSecurityUpdates: "false"
+      artifacthub.io/crds: |-
+        - kind: AuraCustomerManagedKey
+          version: v1beta1
+          description: Registers a customer-managed encryption key with Neo4j Aura for dedicated-tier instances
+        - kind: AuraDatabaseBackup
+          version: v1beta1
+          description: Takes an on-demand per-database backup on a Neo4j Aura instance via the Aura API v2beta1 (beta)
+        - kind: AuraDatabaseRestore
+          version: v1beta1
+          description: Restores a database in place from a per-database backup on a Neo4j Aura instance via the Aura API v2beta1 (beta)
+        - kind: AuraDatabase
+          version: v1beta1
+          description: Manages a database on a Neo4j Aura instance via the Aura API v2beta1 (beta)
+        - kind: AuraInstance
+          version: v1beta1
+          description: Provisions and manages Neo4j Aura cloud instances via the Aura API
+        - kind: AuraInvite
+          version: v1beta1
+          description: Invites a user to a Neo4j Aura organization or project via the Aura API v2beta1 (beta)
+        - kind: AuraIPFilter
+          version: v1beta1
+          description: Manages a Neo4j Aura network IP filter (CIDR allowlist) via the Aura API v2beta1 (beta)
+        - kind: AuraOrganizationMember
+          version: v1beta1
+          description: Manages an Aura console user's organization role via the Aura API v2beta1 (beta)
+        - kind: AuraProjectMember
+          version: v1beta1
+          description: Manages an Aura console user's project role via the Aura API v2beta1 (beta)
+        - kind: AuraProviderConfig
+          version: v1beta1
+          description: Neo4j Aura API credentials and account defaults for Aura orchestration
+        - kind: AuraRestore
+          version: v1beta1
+          description: Restores a Neo4j Aura instance in place from a snapshot
+        - kind: AuraSnapshot
+          version: v1beta1
+          description: Takes on-demand snapshots of Neo4j Aura instances
+        - kind: Neo4jAuthRule
+          version: v1beta1
+          description: Attribute-based access control (ABAC) — claims-to-roles mapping evaluated at OIDC authentication time (Neo4j 2026.03+)
+        - kind: Neo4jBackup
+          version: v1beta1
+          description: Manages Neo4j backup operations
+        - kind: Neo4jCompositeDatabase
+          version: v1beta1
+          description: A single query endpoint over several constituent databases — the composite stores no data of its own
+        - kind: Neo4jDatabaseAlias
+          version: v1beta1
+          description: A second name for a database — used to keep a stable connection string across a cross-cluster replica promotion
+        - kind: Neo4jDatabase
+          version: v1beta1
+          description: Manages Neo4j databases within clusters
+        - kind: Neo4jEnterpriseCluster
+          version: v1beta1
+          description: Manages Neo4j Enterprise cluster deployments
+        - kind: Neo4jEnterpriseStandalone
+          version: v1beta1
+          description: Manages Neo4j Enterprise standalone deployments
+        - kind: Neo4jPlugin
+          version: v1beta1
+          description: Manages Neo4j plugin installations (APOC, GDS, Bloom, etc.)
+        - kind: Neo4jReplicaDatabase
+          version: v1beta1
+          description: Read-only cross-cluster replica of a database on another Neo4j cluster, fed by a differential backup chain (Neo4j 2026.08+)
+        - kind: Neo4jReplicaPromotion
+          version: v1beta1
+          description: One-shot, irreversible promotion of a cross-cluster replica into a read-write database (disaster-recovery failover)
+        - kind: Neo4jRestore
+          version: v1beta1
+          description: Manages Neo4j restore operations
+        - kind: Neo4jRoleBinding
+          version: v1beta1
+          description: Role grants for users provisioned externally (SSO/LDAP/OIDC first-login)
+        - kind: Neo4jRole
+          version: v1beta1
+          description: Declarative Neo4j role management with privilege-drift reconciliation
+        - kind: Neo4jShardedDatabase
+          version: v1beta1
+          description: Manages Neo4j property-sharded databases (Infinigraph, GA in 2025.12+)
+        - kind: Neo4jUser
+          version: v1beta1
+          description: Declarative Neo4j user management (passwords from Secrets, role bindings, status, external auth)
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://priyolahiri.github.io/neo4j-kubernetes-operator/
+        - name: Support
+          url: https://github.com/priyolahiri/neo4j-kubernetes-operator/issues
+      artifacthub.io/maintainers: |
+        - name: Priyo Lahiri
+          email: priyolahiri@users.noreply.github.com
+      artifacthub.io/operator: "true"
+      artifacthub.io/operatorCapabilities: Full Lifecycle
+      artifacthub.io/prerelease: "false"
+      artifacthub.io/recommendations: |
+        - url: https://artifacthub.io/packages/helm/cert-manager/cert-manager
+          description: For TLS certificate management
+    apiVersion: v2
     appVersion: 1.23.0
-    created: "2026-10-27T15:01:54.735735485Z"
+    created: "2026-10-29T17:46:39.85411378Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 38e31c4eff50638f732838154be2793f150ea1c6961ba65104faf17c4b041890
@@ -247,7 +381,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.22.0
-    created: "2026-10-27T15:01:54.728980642Z"
+    created: "2026-10-29T17:46:39.847092933Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 15ddefcc1a48b2510baf39a14477877c03dc2ad76f34fc2fb5479bff6fd0f9f1
@@ -381,7 +515,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.21.1
-    created: "2026-10-27T15:01:54.722669764Z"
+    created: "2026-10-29T17:46:39.841159072Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 70d0332b3f073336a1ff783c321445eb3a9c5271b6a923f4b60492623779306b
@@ -515,7 +649,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.21.0
-    created: "2026-10-27T15:01:54.716464565Z"
+    created: "2026-10-29T17:46:39.834963521Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 80ea956df27ab31a083358d0fc5bac2118ca547a3cfc189c1696d6d6796b9f73
@@ -649,7 +783,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.20.0
-    created: "2026-10-27T15:01:54.71039266Z"
+    created: "2026-10-29T17:46:39.828984414Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 1d2aa5f513c25628f2cf7179bb77a0b30c6f6fa319130a7ab4142cd0498f3801
@@ -783,7 +917,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.19.0
-    created: "2026-10-27T15:01:54.704244305Z"
+    created: "2026-10-29T17:46:39.822328343Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 6131e7151dd198468702cb1839e87a8cd80eafa447f7c46b5cc1e277f3de778c
@@ -917,7 +1051,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.18.0
-    created: "2026-10-27T15:01:54.698236671Z"
+    created: "2026-10-29T17:46:39.816301366Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 3d4a676f7c2b09f1b02883388f4d237a3768342912af51bc6ab38255b6ddb04c
@@ -1051,7 +1185,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.17.0
-    created: "2026-10-27T15:01:54.692262351Z"
+    created: "2026-10-29T17:46:39.8103804Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: c7f3421ab03b3c17110fdcc7caf82f031f239f575da085e4ffc0b3d563475205
@@ -1185,7 +1319,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.16.0
-    created: "2026-10-27T15:01:54.686414033Z"
+    created: "2026-10-29T17:46:39.804548123Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 705417eb025af624422335765e88b369df1fa562fcdfb2848385f59070cb78b8
@@ -1316,7 +1450,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.15.0
-    created: "2026-10-27T15:01:54.680433311Z"
+    created: "2026-10-29T17:46:39.799309848Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 413fcda0931404aef8a777840132e0f0af8fe252e16432cd718df4fbfe8c8365
@@ -1438,7 +1572,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.14.0
-    created: "2026-10-27T15:01:54.675132103Z"
+    created: "2026-10-29T17:46:39.794016218Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: cc00e0b20f226b71b3eecda97458c86d4c654b0d2457ab73be83ece5e1d432ff
@@ -1524,7 +1658,7 @@ entries:
           description: For TLS certificate management
     apiVersion: v2
     appVersion: 1.13.0
-    created: "2026-10-27T15:01:54.669318751Z"
+    created: "2026-10-29T17:46:39.787835262Z"
     description: Neo4j Enterprise Operator for Kubernetes - Manages Neo4j Enterprise
       deployments (v5.26+)
     digest: 6408448c046980a157130ad16ab0433573dcc0b38b2e9e8516925106e6194f12
@@ -1546,4 +1680,4 @@ entries:
     urls:
     - https://priyolahiri.github.io/neo4j-kubernetes-operator/charts/neo4j-operator-1.13.0.tgz
     version: 1.13.0
-generated: "2026-10-27T15:01:54.663427665Z"
+generated: "2026-10-29T17:46:39.782239751Z"
