@@ -133,6 +133,11 @@ const (
 	// exclusion; operations.md id 163).
 	ConditionReasonWaitsForUpgrade       = "WaitsForUpgrade"
 	ConditionReasonNoTopologyChangeWaits = "NoTopologyChangeWaits"
+	// ConditionReasonWaitsForRemovedServers is the TopologyChangeDeferred
+	// condition's reason while a raise of spec.topology.servers waits for the
+	// pods and volumes of servers a scale-down removed to be gone
+	// (operations.md id 229).
+	ConditionReasonWaitsForRemovedServers = "WaitsForRemovedServers"
 )
 
 // SetReadyCondition sets the standard "Ready" condition on a conditions slice.

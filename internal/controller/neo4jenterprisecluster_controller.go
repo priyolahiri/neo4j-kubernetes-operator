@@ -520,8 +520,11 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	r.holdImageDriftUntilReady(ctx, cluster)
 	// Likewise a change of spec.topology.servers, while a Paused or Failed
 	// upgrade keeps a partition: servers added then would start on its target,
-	// and a drain would run mid-upgrade (operations.md id 163).
-	r.holdTopologyWhileUpgradeHolds(ctx, cluster)
+	// and a drain would run mid-upgrade (operations.md id 163). And a raise
+	// while the pods and volumes of servers a scale-down removed are still
+	// there: a server added on such a volume starts as the server Neo4j
+	// dropped (id 229).
+	r.holdTopologyChange(ctx, cluster)
 
 	// Neo4jEnterpriseCluster is always multi-node from the start
 	// (minimum 1 primary + 1 secondary OR 2+ primaries)
@@ -2900,11 +2903,27 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 		// come from a cache that has not seen the last pass's write of Forming,
 		// and judged from it every new cluster announced formation twice
 		// (#553; operations.md id 136).
+		//
+		// A formed cluster whose kept pods run servers Neo4j has dropped —
+		// started on the volumes of servers a scale-down removed — never
+		// finishes forming; the message says why and how out, announced once
+		// by the write that puts it there (operations.md id 229). It read
+		// "Cluster formation verification incomplete" for good (#619).
+		var dropped []droppedServerInPod
+		if formed && in.Servers != nil {
+			dropped = droppedServersInKeptPods(in.Servers, in.NotReadyPods, cluster.Name, in.Expected)
+		}
+		if len(dropped) > 0 {
+			detail = droppedServersMessage(cluster.Name, dropped)
+		}
 		w := r.writeClusterStatus(ctx, cluster, neo4jv1beta1.PhaseForming, detail, statusRecord{})
 		if w.before != nil && w.before.Phase != neo4jv1beta1.PhaseForming &&
 			!clusterHasFormed(&neo4jv1beta1.Neo4jEnterpriseCluster{Status: *w.before}) {
 			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterFormationStarted,
 				"Neo4j cluster formation started")
+		}
+		if len(dropped) > 0 && w.before != nil && w.before.Message != detail {
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonDroppedServersReturned, detail)
 		}
 	}
 }

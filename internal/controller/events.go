@@ -28,6 +28,17 @@ const (
 	// ended enabled the servers the drain had cordoned (ENABLE SERVER); one
 	// cordoned by hand is left cordoned (operations.md id 224).
 	EventReasonScaleDownSetBack = "ScaleDownSetBack"
+	// EventReasonScaleUpDeferred — a raise of spec.topology.servers waits
+	// until the pods and volumes of the servers a scale-down removed are gone
+	// (Normal); EventReasonScaleUpBlocked — they have not gone within
+	// removedServersGrace, and the message names what is left and how to
+	// remove it (Warning); EventReasonDroppedServersReturned — a server pod
+	// the spec keeps runs a server Neo4j has dropped, started on a removed
+	// server's volume, and the message says how to recover (Warning)
+	// (operations.md id 229).
+	EventReasonScaleUpDeferred        = "ScaleUpDeferred"
+	EventReasonScaleUpBlocked         = "ScaleUpBlocked"
+	EventReasonDroppedServersReturned = "DroppedServersReturned"
 	// EventReasonConnectivityDegraded — the operator has failed to reach the
 	// cluster's Bolt endpoint for a sustained streak of reconciles (#263).
 	EventReasonConnectivityDegraded = "ConnectivityDegraded"
