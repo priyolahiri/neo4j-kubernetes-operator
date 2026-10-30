@@ -82,6 +82,8 @@ func TestHoldTopologyWhileUpgradeHolds(t *testing.T) {
 			if tc.wantCond == metav1.ConditionTrue {
 				assert.Equal(t, ConditionReasonWaitsForUpgrade, cond.Reason)
 				assert.Contains(t, cond.Message, "the server StatefulSet keeps 3 servers until the upgrade to "+holdTarget)
+			} else {
+				assert.Equal(t, "No change of spec.topology.servers waits for an upgrade", cond.Message)
 			}
 		})
 	}

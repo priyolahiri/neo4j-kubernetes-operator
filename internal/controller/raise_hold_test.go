@@ -140,6 +140,10 @@ func TestHoldRaise_WaitsForTheRemovedServersPodsAndVolumes(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, ConditionReasonNoTopologyChangeWaits, cond.Reason)
+	assert.Equal(t, "No change of spec.topology.servers waits for the pods and volumes of removed servers", cond.Message,
+		"it names the wait that ended, not an upgrade (#619 walk)")
+	assert.Equal(t, int32(5), passOn(t, r))
+	assert.Equal(t, cond.Message, deferral(t, r).Message, "and keeps it")
 }
 
 func TestHoldRaise_ANormalScaleUpIsNotHeld(t *testing.T) {

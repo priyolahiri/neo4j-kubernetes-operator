@@ -106,12 +106,7 @@ func (r *Neo4jEnterpriseClusterReconciler) holdTopologyWhileUpgradeHolds(ctx con
 // servers: True while they differ, False otherwise.
 func topologyDeferral(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, requested, servers int32) metav1.Condition {
 	if requested == servers {
-		return metav1.Condition{
-			Type:    ConditionTypeTopologyChangeDeferred,
-			Status:  metav1.ConditionFalse,
-			Reason:  ConditionReasonNoTopologyChangeWaits,
-			Message: "No change of spec.topology.servers waits for an upgrade",
-		}
+		return noTopologyChangeWaits(findCondition(cluster.Status.Conditions, ConditionTypeTopologyChangeDeferred))
 	}
 	target, phase := "", ""
 	if us := cluster.Status.UpgradeStatus; us != nil {
@@ -123,6 +118,28 @@ func topologyDeferral(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, requested, s
 		Reason: ConditionReasonWaitsForUpgrade,
 		Message: fmt.Sprintf("spec.topology.servers is %d; the server StatefulSet keeps %d servers until the upgrade to %s (%s, status.upgradeStatus) completes: a rolling upgrade changes no topology",
 			requested, servers, target, phase),
+	}
+}
+
+// noTopologyChangeWaits is the TopologyChangeDeferred condition once nothing
+// waits. Its message names the wait that ended, from the condition it
+// replaces (have): "for an upgrade", or "for the pods and volumes of removed
+// servers" (id 229). The walk of the #619 fixes read "No change … waits for
+// an upgrade" after a wait for removed servers. A condition that is False
+// already keeps its message, so no pass rewrites it.
+func noTopologyChangeWaits(have *metav1.Condition) metav1.Condition {
+	message := "No change of spec.topology.servers waits for an upgrade"
+	switch {
+	case have != nil && have.Status == metav1.ConditionFalse && have.Message != "":
+		message = have.Message
+	case have != nil && have.Reason == ConditionReasonWaitsForRemovedServers:
+		message = "No change of spec.topology.servers waits for the pods and volumes of removed servers"
+	}
+	return metav1.Condition{
+		Type:    ConditionTypeTopologyChangeDeferred,
+		Status:  metav1.ConditionFalse,
+		Reason:  ConditionReasonNoTopologyChangeWaits,
+		Message: message,
 	}
 }
 
