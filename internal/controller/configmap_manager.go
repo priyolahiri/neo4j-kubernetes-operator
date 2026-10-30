@@ -159,6 +159,24 @@ func (cm *ConfigMapManager) scaleNeedsNoRestart(oldCM, newCM *corev1.ConfigMap, 
 	return len(addedSystemPrimaries(oldServers, cluster)) == 0, oldServers
 }
 
+// serversAdded is the first and last ordinal a scale to spec.topology.servers
+// adds: those the server StatefulSet does not run yet, nor did the
+// ConfigMap list (oldServers). first > last when it adds none — a scale-down,
+// or a scale-down set back while the drain still held the replicas, which
+// lists servers that never stopped running. Every such set-back, refused or
+// not, announced "Adding servers 3-4 as system secondaries" and logged
+// "Scaled … from 3 to 5" while nothing was added (eight times on the v1.24.0
+// journey, #619). Without a StatefulSet it reads from the ConfigMap alone.
+func (cm *ConfigMapManager) serversAdded(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, oldServers int32) (int32, int32) {
+	first := oldServers
+	sts := &appsv1.StatefulSet{}
+	if err := cm.Get(ctx, types.NamespacedName{Name: cluster.Name + "-server", Namespace: cluster.Namespace}, sts); err == nil &&
+		sts.Spec.Replicas != nil && *sts.Spec.Replicas > first {
+		first = *sts.Spec.Replicas
+	}
+	return first, cluster.Spec.Topology.Servers - 1
+}
+
 // onlyNeo4jConfChanged reports whether neo4j.conf is the only file whose
 // restart-relevant content differs. startup.sh runs only when a container
 // starts, so a change there needs a restart; health.sh has no restart-relevant
@@ -273,15 +291,21 @@ func (cm *ConfigMapManager) ReconcileConfigMap(ctx context.Context, cluster *neo
 		if configMapExists && restartRelevant {
 			if ok, oldServers := cm.scaleNeedsNoRestart(restartBase, desiredConfigMap, cluster); ok {
 				restartRelevant = false
-				logger.Info("Scaled without restarting the running servers",
-					"cluster", cluster.Name, "from", oldServers, "to", cluster.Spec.Topology.Servers)
-				if added := cluster.Spec.Topology.Servers - oldServers; added == 1 {
+				first, last := cm.serversAdded(ctx, cluster, oldServers)
+				switch {
+				case first == last:
+					logger.Info("Adding a server without restarting the running servers",
+						"cluster", cluster.Name, "server", first, "from", oldServers, "to", cluster.Spec.Topology.Servers)
 					cm.recordEvent(cluster, corev1.EventTypeNormal, EventReasonScaledWithoutRestart,
-						"Adding server %d as a system secondary; the running servers keep running", oldServers)
-				} else if added > 1 {
+						"Adding server %d as a system secondary; the running servers keep running", first)
+				case first < last:
+					logger.Info("Adding servers without restarting the running servers",
+						"cluster", cluster.Name, "servers", fmt.Sprintf("%d-%d", first, last), "from", oldServers, "to", cluster.Spec.Topology.Servers)
 					cm.recordEvent(cluster, corev1.EventTypeNormal, EventReasonScaledWithoutRestart,
-						"Adding servers %d-%d as system secondaries; the running servers keep running",
-						oldServers, cluster.Spec.Topology.Servers-1)
+						"Adding servers %d-%d as system secondaries; the running servers keep running", first, last)
+				default:
+					logger.V(1).Info("Discovery list follows spec.topology.servers; no server is added and none restarts",
+						"cluster", cluster.Name, "from", oldServers, "to", cluster.Spec.Topology.Servers)
 				}
 			}
 		}

@@ -3,10 +3,10 @@
     "modules": 11,
     "entities": 26,
     "serverUnits": 41,
-    "serverFunctions": 159,
+    "serverFunctions": 161,
     "apiRoutes": 3,
     "frontendUnits": 0,
-    "events": 200,
+    "events": 203,
     "processes": 10,
     "statusFlows": 9,
     "reactions": 14

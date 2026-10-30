@@ -106,6 +106,17 @@ type Neo4jEnterpriseClusterReconciler struct {
 	// drainClient replaces the scale-down drain's Neo4j client in tests; nil
 	// in production.
 	drainClient func(context.Context, *neo4jv1beta1.Neo4jEnterpriseCluster) (scaleDownClient, error)
+	// ScaleDownSettle is how long a scale-down drain waits after it cordons
+	// the servers it removes before it deallocates their databases, so a
+	// scale-down set back in that time can still enable them again
+	// (operations.md id 231). Zero deallocates on the next pass, as before
+	// v1.25; main sets DefaultScaleDownSettle.
+	ScaleDownSettle time.Duration
+	// clock is the time the drain's settle is measured on; nil is time.Now.
+	clock func() time.Time
+	// wakes is how soon, per cluster, a timed wait of the pass ends
+	// (passWakes).
+	wakes passWakes
 	// Ignore, when set, makes Reconcile leave alone every cluster it returns
 	// true for. The envtest suite uses it for clusters that stand in for a
 	// Ready cluster in backup and restore specs: envtest runs no pods, so this
@@ -338,8 +349,12 @@ func clusterEverAccepted(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) bool {
 	return controllerutil.ContainsFinalizer(cluster, ClusterFinalizer)
 }
 
-func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, err error) {
 	logger := log.FromContext(ctx)
+	// A wait that ends with time, not with a change Kubernetes reports — the
+	// drain's settle after its cordon, a raise held for the removed
+	// servers' volumes — brings the next pass forward to it (passWakes).
+	defer func() { result = r.wakes.apply(req.String(), result, err) }()
 
 	// Fetch the Neo4jEnterpriseCluster instance
 	cluster := &neo4jv1beta1.Neo4jEnterpriseCluster{}
@@ -505,8 +520,11 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	r.holdImageDriftUntilReady(ctx, cluster)
 	// Likewise a change of spec.topology.servers, while a Paused or Failed
 	// upgrade keeps a partition: servers added then would start on its target,
-	// and a drain would run mid-upgrade (operations.md id 163).
-	r.holdTopologyWhileUpgradeHolds(ctx, cluster)
+	// and a drain would run mid-upgrade (operations.md id 163). And a raise
+	// while the pods and volumes of servers a scale-down removed are still
+	// there: a server added on such a volume starts as the server Neo4j
+	// dropped (id 229).
+	r.holdTopologyChange(ctx, cluster)
 
 	// Neo4jEnterpriseCluster is always multi-node from the start
 	// (minimum 1 primary + 1 secondary OR 2+ primaries)
@@ -2876,11 +2894,27 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileServerShortfall(ctx context.
 		// come from a cache that has not seen the last pass's write of Forming,
 		// and judged from it every new cluster announced formation twice
 		// (#553; operations.md id 136).
+		//
+		// A formed cluster whose kept pods run servers Neo4j has dropped —
+		// started on the volumes of servers a scale-down removed — never
+		// finishes forming; the message says why and how out, announced once
+		// by the write that puts it there (operations.md id 229). It read
+		// "Cluster formation verification incomplete" for good (#619).
+		var dropped []droppedServerInPod
+		if formed && in.Servers != nil {
+			dropped = droppedServersInKeptPods(in.Servers, in.NotReadyPods, cluster.Name, in.Expected)
+		}
+		if len(dropped) > 0 {
+			detail = droppedServersMessage(cluster.Name, dropped)
+		}
 		w := r.writeClusterStatus(ctx, cluster, neo4jv1beta1.PhaseForming, detail, statusRecord{})
 		if w.before != nil && w.before.Phase != neo4jv1beta1.PhaseForming &&
 			!clusterHasFormed(&neo4jv1beta1.Neo4jEnterpriseCluster{Status: *w.before}) {
 			r.Recorder.Event(cluster, corev1.EventTypeNormal, EventReasonClusterFormationStarted,
 				"Neo4j cluster formation started")
+		}
+		if len(dropped) > 0 && w.before != nil && w.before.Message != detail {
+			r.Recorder.Event(cluster, corev1.EventTypeWarning, EventReasonDroppedServersReturned, detail)
 		}
 	}
 }

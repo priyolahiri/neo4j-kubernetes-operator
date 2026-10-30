@@ -89,19 +89,24 @@ var conditionGuidance = map[string]guidance{
 	controller.ConditionTypeServersPendingDrain: {
 		problemWhenTrue: true,
 		meaning:         "a scale-down is waiting for servers to hand off their data before they can be removed.",
-		action: "Wait. Removing the pods by hand loses the data those servers still hold. With reason ScaleDownBlocked " +
+		action: "Wait. Removing the pods by hand loses the data those servers still hold. A scale-down set back within " +
+			"20 s of the drain's cordon (the message says until when) gives the servers back. With reason ScaleDownBlocked " +
 			"the message says what the drain needs; a scale-down set back after the drain began deallocating a " +
 			"server names the spec.topology.servers that lets it finish — Neo4j cannot enable a deallocating server again.",
 	},
 	controller.ConditionTypeTopologyChangeDeferred: {
 		problemWhenTrue: true,
 		meaning: "spec.topology.servers asks for another number of servers than the cluster runs, and the change " +
-			"waits: an upgrade is in progress, or stopped Paused or Failed part-way. A rolling upgrade changes no " +
-			"topology — servers added then would start on the upgrade's target, and a scale-down's drain would run " +
-			"mid-upgrade. The message gives both counts and the upgrade.",
-		action: "Nothing is lost; the change is applied once the upgrade completes. To go on with a Paused upgrade, " +
+			"waits. Reason WaitsForUpgrade: an upgrade is in progress, or stopped Paused or Failed part-way; a rolling " +
+			"upgrade changes no topology — servers added then would start on the upgrade's target, and a scale-down's " +
+			"drain would run mid-upgrade. Reason WaitsForRemovedServers: a raise waits until the pods and volumes of " +
+			"the servers a scale-down removed are gone — a server added on such a volume would start as the server " +
+			"Neo4j dropped. The message gives both counts and what it waits for.",
+		action: "Nothing is lost; the change is applied once what it waits for is over. To go on with a Paused upgrade, " +
 			"see status.upgradeStatus.lastError and change spec.image.tag or set " +
-			"spec.upgradeStrategy.autoPauseOnFailure to false; or set spec.topology.servers back to the count the cluster runs.",
+			"spec.upgradeStrategy.autoPauseOnFailure to false; or set spec.topology.servers back to the count the cluster runs. " +
+			"A wait for removed servers takes seconds; past 2 minutes the message names what is left (a pod on a node " +
+			"that is gone, a volume a finalizer keeps) and how to remove it.",
 	},
 	controller.ConditionTypeStalled: {
 		problemWhenTrue: true,

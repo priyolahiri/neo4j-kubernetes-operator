@@ -854,7 +854,22 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 
 ## Upgrading from v1.24.x
 
+This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server.
+
 ### Behaviour changes
+
+**Clusters: scaling**
+
+- **A scale-up right after a scale-down waits until the removed servers are gone.** Raised within seconds of "Scale-down drain complete", a removed server used to come back on its old volume as a server Neo4j had dropped. The cluster then stayed `Forming` ("Cluster formation verification incomplete") until `servers` was lowered again (#619, also in v1.23.x). The operator now adds no server at an ordinal whose pod is still there or whose volume is still being deleted. `TopologyChangeDeferred` reads `True` with the new reason `WaitsForRemovedServers` and names the servers, one `ScaleUpDeferred` event says so, and the cluster stays `Ready` meanwhile. The servers are added once their pods and volumes are gone, usually within seconds. You no longer need to wait for the volumes yourself before raising `servers`.
+  - If something is still there after 2 minutes, such as a pod terminating on a node that is gone or a volume another tool's finalizer keeps, the message and one `ScaleUpBlocked` Warning name it and say how to remove it. The raise stays held until it is gone. The operator deletes nothing itself.
+  - A scale-up with nothing left over is not delayed. A volume that is not being deleted and that no pod owns, for example one you created ready for a new server, is used as before.
+  - To tell a raise from a cache that has not caught up, the operator now also reads the server StatefulSet from the API server once per reconcile. While a raise is held it reads the pod and the volume of each ordinal it would add, and checks again every 5 seconds.
+- **A cluster already stuck that way says so.** If v1.24.x left a cluster with pods running servers that `SHOW SERVERS` lists as `Dropped`, its phase stays `Forming`, but the message now names those pods and the way out, with one `DroppedServersReturned` Warning: set `spec.topology.servers` back to the first of them, wait for "Scale-down drain complete", then raise it again. The operator holds the raise until the old pods and volumes are gone.
+- **The drain waits 20 seconds between the cordon and the deallocation.** A scale-down set back in that time is now given back: the operator runs `ENABLE SERVER` for the servers its drain cordoned, with one `ScaleDownSetBack` event. In v1.24.x the deallocation followed the cordon within about a second, so a set-back was nearly always refused. Every scale-down takes about 20 seconds longer. While the drain waits, `ServersPendingDrain` reads "Scale-down to N server(s) in progress: cordoned M server(s); their databases are deallocated from <time> unless spec.topology.servers is raised again before then". The drain records the cordon's time, to the nanosecond, in the cluster annotation `neo4j.com/scale-down-cordoned-at`, next to `neo4j.com/scale-down-cordoned-servers`. Both go when the drain ends or the set-back is resolved. A drain that v1.24.x had already cordoned when you upgrade has no time recorded, and deallocates without the wait. Servers you cordoned yourself are deallocated without it too.
+- **The drain set holds server ids only.** Before the drain can name the servers a scale-down removes, it holds the replicas by the removed pods' names. Up to v1.24.x those names went into `neo4j.com/scale-down-draining-servers`, the set of server ids it drains. They now go into a new annotation, `neo4j.com/scale-down-held-pods`, which is removed once the drain names the servers, the drain ends, or the scale-down is set back. Tooling that reads the drain set now finds only server ids there; to see whether a scale-down holds the replicas, check either annotation. A drain an earlier operator started with pod names in the drain set goes on as before.
+- **`TopologyChangeDeferred` says which wait ended.** Once a raise's wait for removed servers ends, the condition reads `False` with "No change of spec.topology.servers waits for the pods and volumes of removed servers". After an upgrade's wait it still reads "… waits for an upgrade". A condition that is already `False` keeps its message.
+- **`ScaledWithoutRestart` names only the servers a scale actually adds.** A scale-down set back while the drain held the replicas, refused or not, used to announce "Adding servers 3-4 as system secondaries" and log "Scaled … from 3 to 5", although nothing was added. Now it announces nothing and logs that line at debug level. A scale-up announces only the servers the StatefulSet does not run yet. Event-count checks on `ScaledWithoutRestart` count one per real scale-up.
+- **A refused scale-down's advice follows the cause Neo4j names.** When Neo4j refuses the drain's deallocation, `ScaleDownBlocked` still quotes Neo4j's error. Its advice now matches the cause: "Database '<db>' needs N primaries and M secondaries … lower its topology … or keep enough servers for it" when the remaining servers cannot host a database's topology, and a second primary when a database has its only primary on a removed server. When Neo4j names neither, the advice covers both. In v1.24.x the dry run before the cordon always advised a second primary, even for a database with four. The refusal is also announced once: the drain names its servers in a fixed order, where one refusal could be two Warnings a second apart. Alerts that matched the old advice text should match the reason `ScaleDownBlocked` instead.
 
 **Deleting a namespace**
 
@@ -876,7 +891,7 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 
 ### Restarts after the upgrade
 
-- None.
+- None. The new annotation, condition reason and events restart nothing. A cluster held for a raise at the moment of the upgrade adds its servers once the removed ones are gone, which is the scale-up you asked for.
 
 ## Upgrading between future releases
 

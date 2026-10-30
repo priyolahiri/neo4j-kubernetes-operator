@@ -67,7 +67,7 @@ func TestHoldTopologyWhileUpgradeHolds(t *testing.T) {
 			}
 			r := gateTestReconciler(t, c.DeepCopy(), heldSTS())
 
-			r.holdTopologyWhileUpgradeHolds(ctx, c)
+			r.holdTopologyChange(ctx, c)
 
 			assert.Equal(t, tc.wantPinned, c.Spec.Topology.Servers, "the server count the rest of the pass works on")
 			stored := &neo4jv1beta1.Neo4jEnterpriseCluster{}
@@ -82,6 +82,8 @@ func TestHoldTopologyWhileUpgradeHolds(t *testing.T) {
 			if tc.wantCond == metav1.ConditionTrue {
 				assert.Equal(t, ConditionReasonWaitsForUpgrade, cond.Reason)
 				assert.Contains(t, cond.Message, "the server StatefulSet keeps 3 servers until the upgrade to "+holdTarget)
+			} else {
+				assert.Equal(t, "No change of spec.topology.servers waits for an upgrade", cond.Message)
 			}
 		})
 	}
