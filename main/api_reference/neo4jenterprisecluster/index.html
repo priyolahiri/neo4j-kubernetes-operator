@@ -8705,8 +8705,8 @@ visible via <code>kubectl get svc</code>.</p>
 </tr>
 <tr>
 <td><code>TopologyChangeDeferred</code></td>
-<td><code>spec.topology.servers</code> asks for another number of servers than the server StatefulSet keeps, and the change waits: an upgrade is in progress, or a <code>Paused</code> or <code>Failed</code> one keeps a partition (reason <code>WaitsForUpgrade</code>; the message gives both counts and the upgrade). Applied once the upgrade completes — see <a href="../../user_guide/guides/upgrades/">Upgrades</a></td>
-<td>Nothing waits any more (reason <code>NoTopologyChangeWaits</code>)</td>
+<td><code>spec.topology.servers</code> asks for another number of servers than the server StatefulSet keeps, and the change waits: an upgrade is in progress, or a <code>Paused</code> or <code>Failed</code> one keeps a partition (reason <code>WaitsForUpgrade</code>; the message gives both counts and the upgrade), applied once the upgrade completes — see <a href="../../user_guide/guides/upgrades/">Upgrades</a>; or a raise waits until the pods and volumes of the servers a scale-down removed are gone (reason <code>WaitsForRemovedServers</code>; the message names them, and after 2 minutes what is left and how to remove it) — see <a href="../../user_guide/clustering/#scale-updown">Scaling</a></td>
+<td>Nothing waits any more (reason <code>NoTopologyChangeWaits</code>); the message names the wait that ended: "… waits for an upgrade" or "… waits for the pods and volumes of removed servers"</td>
 <td>n/a — absent until a change first waits</td>
 </tr>
 <tr>
@@ -8717,7 +8717,7 @@ visible via <code>kubectl get svc</code>.</p>
 </tr>
 <tr>
 <td><code>ServersPendingDrain</code></td>
-<td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them. Reason <code>ScaleDownBlocked</code> when the drain cannot go on, including a scale-down set back after the drain began deallocating a server the cluster would keep (the message says what to set <code>spec.topology.servers</code> to)</td>
+<td>Set during a scale-down: the cluster still has Neo4j servers registered beyond <code>spec.topology.servers</code> (removed servers not yet deallocated and dropped), so databases may be under-replicated on them. For 20 s after the drain cordons them, the message says from when their databases are deallocated: a set-back before then gives them back. Reason <code>ScaleDownBlocked</code> when the drain cannot go on, including a scale-down set back after the drain began deallocating a server the cluster would keep (the message says what to set <code>spec.topology.servers</code> to)</td>
 <td>Reason <code>NoServersPendingDrain</code>: the removed servers have been drained and dropped ("Scale-down drain complete"), or the scale-down was set back before its drain ended and the servers it cordoned were enabled again ("Scale-down not in progress")</td>
 <td>n/a — absent until a scale-down first records a drain</td>
 </tr>
