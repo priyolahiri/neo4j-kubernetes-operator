@@ -222,5 +222,5 @@ func (r *AuraSnapshotReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.AuraSnapshot{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: mcr}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

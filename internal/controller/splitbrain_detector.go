@@ -180,6 +180,20 @@ func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4
 		}
 	}
 
+	// Servers that are being deleted refuse connections as they stop: that is
+	// not a failed detection but servers going away — the namespace being
+	// deleted, or the cluster scaled or replaced — and the next pass looks
+	// again (#619 S4: a namespace delete logged an ERROR "Failed to perform
+	// split-brain detection" while its pods terminated; operations.md id 232).
+	if len(clusterViews) > 0 && connectionErrors == len(clusterViews) && allBeingDeleted(serverPods, clusterViews) {
+		return &SplitBrainAnalysis{
+			IsSplitBrain:    false,
+			ExpectedServers: expectedServers,
+			RepairAction:    RepairActionWaitForming,
+			ErrorMessage:    fmt.Sprintf("%d of %d server pods are being deleted", len(clusterViews), expectedServers),
+		}, nil
+	}
+
 	// If we have too many connection errors early on, return an error rather than hanging
 	if len(clusterViews) > 0 && connectionErrors == len(clusterViews) {
 		return nil, fmt.Errorf("failed to connect to any running Neo4j server pods (%d/%d failed), cluster may not be ready for split-brain detection", connectionErrors, len(clusterViews))
@@ -194,6 +208,20 @@ func (d *SplitBrainDetector) DetectSplitBrain(ctx context.Context, cluster *neo4
 		"orphanedPods", len(analysis.OrphanedPods))
 
 	return analysis, nil
+}
+
+// allBeingDeleted reports whether the pod of every view is being deleted.
+func allBeingDeleted(pods []corev1.Pod, views []ClusterView) bool {
+	deleting := make(map[string]bool, len(pods))
+	for i := range pods {
+		deleting[pods[i].Name] = pods[i].DeletionTimestamp != nil
+	}
+	for _, v := range views {
+		if !deleting[v.ServerPodName] {
+			return false
+		}
+	}
+	return len(views) > 0
 }
 
 // getServerPods returns all server pods for the cluster

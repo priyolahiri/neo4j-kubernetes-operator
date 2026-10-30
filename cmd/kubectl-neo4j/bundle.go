@@ -537,9 +537,10 @@ func renderPodStatus(p *corev1.Pod) string {
 		fmt.Fprintf(&b, "container %s: ready=%t restarts=%d\n", cs.Name, cs.Ready, cs.RestartCount)
 		if cs.LastTerminationState.Terminated != nil {
 			t := cs.LastTerminationState.Terminated
-			// Exit 137 is OOMKilled, the single most common Neo4j Enterprise
-			// failure on an under-provisioned cluster, so the reason and code
-			// are surfaced rather than buried in the raw object.
+			// Reason OOMKilled is the single most common Neo4j Enterprise
+			// failure on an under-provisioned cluster (exit 137 alone is any
+			// SIGKILL), so the reason and code are surfaced rather than
+			// buried in the raw object.
 			fmt.Fprintf(&b, "  last termination: reason=%s exit=%d\n", t.Reason, t.ExitCode)
 		}
 	}

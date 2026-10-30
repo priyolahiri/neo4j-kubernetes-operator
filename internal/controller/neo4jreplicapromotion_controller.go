@@ -440,5 +440,5 @@ func (r *Neo4jReplicaPromotionReconciler) SetupWithManager(mgr ctrl.Manager) err
 		For(&neo4jv1beta1.Neo4jReplicaPromotion{}).
 		Watches(&neo4jv1beta1.Neo4jReplicaDatabase{}, enqueue).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

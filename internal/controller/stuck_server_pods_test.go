@@ -175,13 +175,20 @@ func TestReconcile_ReplacesAServerThatCannotStartOnTheRevisionBeingLeft(t *testi
 	assert.Equal(t, 1, replaced)
 }
 
-// maxUnavailable: 1, written to a StatefulSet an earlier operator created
-// without it, is not part of the pod template: the template, and so its
-// revision, stay as they were, and no server restarts.
+// maxUnavailable: 1 is said by the StatefulSet the operator creates. One an
+// earlier operator created without it is left as it is: the StatefulSet
+// controller reads it unset as 1, and with MaxUnavailableStatefulSet off the
+// API server drops it on every write, so writing it again on every pass was
+// an Update each time (operations.md id 235). A write the strategy needs for
+// another reason (a partition left over) carries it, and the pod template,
+// and so its revision, stay as they were: no server restarts.
 func TestServerStatefulSet_MaxUnavailableRestartsNothing(t *testing.T) {
 	ctx := context.Background()
 	cluster := expansionCluster("1Gi")
 	cluster.Status.UpgradeStatus = nil
+	created := resources.BuildServerStatefulSetForEnterprise(cluster)
+	require.Equal(t, intstr.FromInt32(1), *created.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable, "said on create")
+
 	earlier := resources.BuildServerStatefulSetForEnterprise(cluster)
 	earlier.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable = nil
 	c := recreateClient(t)
@@ -192,8 +199,18 @@ func TestServerStatefulSet_MaxUnavailableRestartsNothing(t *testing.T) {
 
 	require.NoError(t, r.createOrUpdateResource(ctx, resources.BuildServerStatefulSetForEnterprise(cluster), cluster))
 	after := storedServerSTS(t, c)
+	assert.Equal(t, before.ResourceVersion, after.ResourceVersion, "nothing to write: unset is 1")
+
+	// A partition left over is a change the strategy needs: written with
+	// maxUnavailable 1, the template untouched.
+	leftover := after.DeepCopy()
+	leftover.Spec.UpdateStrategy.RollingUpdate.Partition = ptr.To[int32](2)
+	require.NoError(t, c.Update(ctx, leftover))
+	require.NoError(t, r.createOrUpdateResource(ctx, resources.BuildServerStatefulSetForEnterprise(cluster), cluster))
+	after = storedServerSTS(t, c)
 	require.NotNil(t, after.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
 	assert.Equal(t, intstr.FromInt32(1), *after.Spec.UpdateStrategy.RollingUpdate.MaxUnavailable)
+	assert.Nil(t, after.Spec.UpdateStrategy.RollingUpdate.Partition, "the partition the rendering leaves unset")
 	assert.True(t, equality.Semantic.DeepEqual(before.Spec.Template, after.Spec.Template), "the pod template is unchanged")
 	assert.Equal(t, revisionOf(before.Spec.Template), revisionOf(after.Spec.Template), "the same revision: no server restarts")
 }

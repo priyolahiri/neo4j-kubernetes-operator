@@ -375,6 +375,12 @@ func (r *Neo4jBackupReconciler) handleScheduledBackup(ctx context.Context, backu
 		if isInvalidQuantity(err) {
 			return r.reportInvalidBackupSpec(ctx, backup, err)
 		}
+		if namespaceTerminating(err) {
+			// The namespace is being deleted: not a failed schedule
+			// (operations.md id 232).
+			logNamespaceTerminating(logger, err)
+			return ctrl.Result{}, nil
+		}
 		logger.Error(err, "Failed to create backup CronJob")
 		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, fmt.Sprintf("Failed to create CronJob: %v", err))
 		return ctrl.Result{}, err
@@ -744,6 +750,12 @@ func (r *Neo4jBackupReconciler) handleOneTimeBackup(ctx context.Context, backup 
 		// no error return, so no backoff loop) and wait for the spec edit.
 		if isInvalidQuantity(err) {
 			return r.reportInvalidBackupSpec(ctx, backup, err)
+		}
+		if namespaceTerminating(err) {
+			// The namespace is being deleted: not a failed backup
+			// (operations.md id 232).
+			logNamespaceTerminating(logger, err)
+			return ctrl.Result{}, nil
 		}
 		logger.Error(err, "Failed to create backup job")
 		r.updateBackupStatus(ctx, backup, neo4jv1beta1.PhaseFailed, fmt.Sprintf("Failed to create backup job: %v", err))
@@ -2809,5 +2821,5 @@ func (r *Neo4jBackupReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

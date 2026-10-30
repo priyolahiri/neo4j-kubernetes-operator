@@ -1016,7 +1016,7 @@ func (r *Neo4jDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		WithOptions(controller.Options{
 			MaxConcurrentReconciles: r.MaxConcurrentReconciles,
 		}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
 
 // warnRolesStillGranting emits a Warning on every Neo4jRole on this database's

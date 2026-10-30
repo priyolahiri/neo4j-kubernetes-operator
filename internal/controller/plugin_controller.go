@@ -2051,7 +2051,7 @@ func (r *Neo4jPluginReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&neo4jv1beta1.Neo4jPlugin{},
 			handler.EnqueueRequestsFromMapFunc(r.pluginsSharingTuple),
 			builder.WithPredicates(tupleOwnershipChanged)).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
 
 // pluginsSharingTuple maps a Neo4jPlugin to the other Neo4jPlugins of its

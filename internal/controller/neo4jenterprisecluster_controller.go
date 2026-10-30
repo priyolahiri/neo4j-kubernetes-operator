@@ -523,9 +523,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		certificate := resources.BuildCertificateForEnterprise(cluster)
 		if certificate != nil {
 			if err := r.createOrUpdateResource(ctx, certificate, cluster); err != nil {
-				logger.Error(err, "Failed to create Certificate")
-				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Certificate: %v", err))
-				return ctrl.Result{}, err
+				return r.failPass(ctx, cluster, err, "Failed to create Certificate", fmt.Sprintf("Failed to create Certificate: %v", err))
 			}
 		}
 
@@ -573,17 +571,13 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// Create External Secrets if enabled
 	if cluster.Spec.TLS != nil && cluster.Spec.TLS.ExternalSecrets != nil && cluster.Spec.TLS.ExternalSecrets.Enabled {
 		if err := r.createExternalSecretForTLS(ctx, cluster); err != nil {
-			logger.Error(err, "Failed to create TLS ExternalSecret")
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create TLS ExternalSecret: %v", err))
-			return ctrl.Result{}, err
+			return r.failPass(ctx, cluster, err, "Failed to create TLS ExternalSecret", fmt.Sprintf("Failed to create TLS ExternalSecret: %v", err))
 		}
 	}
 
 	if cluster.Spec.Auth != nil && cluster.Spec.Auth.ExternalSecrets != nil && cluster.Spec.Auth.ExternalSecrets.Enabled {
 		if err := r.createExternalSecretForAuth(ctx, cluster); err != nil {
-			logger.Error(err, "Failed to create Auth ExternalSecret")
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Auth ExternalSecret: %v", err))
-			return ctrl.Result{}, err
+			return r.failPass(ctx, cluster, err, "Failed to create Auth ExternalSecret", fmt.Sprintf("Failed to create Auth ExternalSecret: %v", err))
 		}
 	}
 
@@ -593,9 +587,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// server.cluster.advertised_address below.
 	ccdrStatus, err := r.reconcileCrossClusterReplicationProxy(ctx, cluster)
 	if err != nil {
-		logger.Error(err, "Failed to reconcile CCDR proxy")
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile CCDR proxy: %v", err))
-		return ctrl.Result{}, err
+		return r.failPass(ctx, cluster, err, "Failed to reconcile CCDR proxy", fmt.Sprintf("Failed to reconcile CCDR proxy: %v", err))
 	}
 	cluster.Status.CrossClusterReplication = ccdrStatus
 
@@ -608,9 +600,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 
 	// Reconcile ConfigMap with immediate updates and pod restarts
 	if err := r.ConfigMapManager.ReconcileConfigMap(ctx, cluster); err != nil {
-		logger.Error(err, "Failed to reconcile ConfigMap")
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err))
-		return ctrl.Result{}, err
+		return r.failPass(ctx, cluster, err, "Failed to reconcile ConfigMap", fmt.Sprintf("Failed to reconcile ConfigMap: %v", err))
 	}
 
 	// The ServiceAccount the server pods run under (it carries
@@ -618,9 +608,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// discovery needs no Kubernetes API access, so it is bound to no Role.
 	serviceAccount := resources.BuildDiscoveryServiceAccountForEnterprise(cluster)
 	if err := r.createOrUpdateResource(ctx, serviceAccount, cluster); err != nil {
-		logger.Error(err, "Failed to create the server ServiceAccount", "serviceAccount", serviceAccount.Name)
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create ServiceAccount %s: %v", serviceAccount.Name, err))
-		return ctrl.Result{}, err
+		return r.failPass(ctx, cluster, err, "Failed to create the server ServiceAccount", fmt.Sprintf("Failed to create ServiceAccount %s: %v", serviceAccount.Name, err), "serviceAccount", serviceAccount.Name)
 	}
 	if err := r.deleteLegacyDiscoveryObjects(ctx, cluster); err != nil {
 		// Not fatal: nothing uses them, and the next pass retries.
@@ -645,9 +633,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	services = validServices
 	for _, service := range services {
 		if err := r.createOrUpdateResource(ctx, service, cluster); err != nil {
-			logger.Error(err, "Failed to create Service", "service", service.Name)
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Service %s: %v", service.Name, err))
-			return ctrl.Result{}, err
+			return r.failPass(ctx, cluster, err, "Failed to create Service", fmt.Sprintf("Failed to create Service %s: %v", service.Name, err), "service", service.Name)
 		}
 	}
 
@@ -656,9 +642,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 		ingress := resources.BuildIngressForEnterprise(cluster)
 		if ingress != nil {
 			if err := r.createOrUpdateResource(ctx, ingress, cluster); err != nil {
-				logger.Error(err, "Failed to create Ingress")
-				_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create Ingress: %v", err))
-				return ctrl.Result{}, err
+				return r.failPass(ctx, cluster, err, "Failed to create Ingress", fmt.Sprintf("Failed to create Ingress: %v", err))
 			}
 		}
 	}
@@ -670,24 +654,18 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// branch trivially short-circuits without a feature-flag dance.
 	if np := resources.BuildNetworkPolicyForEnterprise(cluster); np != nil {
 		if err := r.createOrUpdateResource(ctx, np, cluster); err != nil {
-			logger.Error(err, "Failed to create NetworkPolicy")
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create NetworkPolicy: %v", err))
-			return ctrl.Result{}, err
+			return r.failPass(ctx, cluster, err, "Failed to create NetworkPolicy", fmt.Sprintf("Failed to create NetworkPolicy: %v", err))
 		}
 	}
 
 	// Create Route if configured (OpenShift)
 	if err := r.reconcileRoute(ctx, cluster); err != nil {
-		logger.Error(err, "Failed to reconcile Route")
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile Route: %v", err))
-		return ctrl.Result{}, err
+		return r.failPass(ctx, cluster, err, "Failed to reconcile Route", fmt.Sprintf("Failed to reconcile Route: %v", err))
 	}
 
 	// Reconcile MCP resources if enabled
 	if err := r.reconcileMCP(ctx, cluster); err != nil {
-		logger.Error(err, "Failed to reconcile MCP resources")
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to reconcile MCP resources: %v", err))
-		return ctrl.Result{}, err
+		return r.failPass(ctx, cluster, err, "Failed to reconcile MCP resources", fmt.Sprintf("Failed to reconcile MCP resources: %v", err))
 	}
 
 	// Reconcile Aura Fleet Management registration if enabled
@@ -757,9 +735,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	// Apply topology constraints to the server StatefulSet
 	if r.TopologyScheduler != nil && topologyPlacement != nil {
 		if err := r.TopologyScheduler.ApplyTopologyConstraints(ctx, serverStatefulSet, cluster, topologyPlacement); err != nil {
-			logger.Error(err, "Failed to apply topology constraints to server StatefulSet")
-			_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to apply topology constraints to server StatefulSet: %v", err))
-			return ctrl.Result{}, err
+			return r.failPass(ctx, cluster, err, "Failed to apply topology constraints to server StatefulSet", fmt.Sprintf("Failed to apply topology constraints to server StatefulSet: %v", err))
 		}
 	}
 
@@ -773,9 +749,7 @@ func (r *Neo4jEnterpriseClusterReconciler) Reconcile(ctx context.Context, req ct
 	}
 
 	if err := r.createOrUpdateResource(ctx, serverStatefulSet, cluster); err != nil {
-		logger.Error(err, "Failed to create server StatefulSet")
-		_ = r.updateClusterStatus(ctx, cluster, "Failed", fmt.Sprintf("Failed to create server StatefulSet: %v", err))
-		return ctrl.Result{}, err
+		return r.failPass(ctx, cluster, err, "Failed to create server StatefulSet", fmt.Sprintf("Failed to create server StatefulSet: %v", err))
 	}
 	// The rollout checks below read the StatefulSet from the cache, which may
 	// not have this write yet (serverTemplateWriteUnobserved).
@@ -1131,6 +1105,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				// Note: sts already contains the current state from CreateOrUpdate
 				originalMeta := sts.ObjectMeta.DeepCopy()
 				originalStatus := sts.Status.DeepCopy()
+				storedSpec := *sts.Spec.DeepCopy()
 
 				// Apply desired spec — but yield on replicas while a
 				// Neo4jRestore is coordinating a scale-down → restore →
@@ -1170,6 +1145,13 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				sts.Spec.PersistentVolumeClaimRetentionPolicy = desiredSpec.PersistentVolumeClaimRetentionPolicy
 				sts.Spec.MinReadySeconds = desiredSpec.MinReadySeconds
 				sts.Spec.Ordinals = desiredSpec.Ordinals
+				// What the API server stores for a strategy or policy the
+				// rendering leaves a default out of stays: assigned anew,
+				// CreateOrUpdate found the StatefulSet changed on every pass
+				// and sent an Update the API server defaulted back, persisted
+				// after each status write of the StatefulSet controller
+				// (operations.md id 235).
+				keepStoredStatefulSetFields(storedSpec, &sts.Spec)
 
 				// Preserve original metadata and status
 				sts.ObjectMeta = *originalMeta
@@ -1216,8 +1198,13 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 						// A shared list it stops owning (a spec.env list now
 						// in neo4j.conf) goes to the plugins in this write,
 						// so the servers roll once (operations.md id 209).
+						// So does a NEO4J_PLUGINS spec.env no longer sets: the
+						// names its plugins add stay in it, recorded as theirs
+						// (operations.md id 233).
 						if cluster, ok := owner.(*neo4jv1beta1.Neo4jEnterpriseCluster); ok {
 							merged = r.handOverSharedLists(ctx, cluster, sts, merged, currentEnv, desiredEnv, owned.env)
+							merged = handOverNeo4jPlugins(ctx, r.Client, sts, cluster.Name, cluster.Spec.Image.Tag,
+								merged, currentEnv, desiredEnv, owned.env)
 						}
 						// Init containers and volumes the same way, by name: the
 						// plugin controller's VerifiedDownload init container and
@@ -2230,7 +2217,11 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMutableResource(ctx context.
 		if !ok {
 			return fmt.Errorf("existing object %T does not match desired *corev1.Service", existing)
 		}
-		if applyDesiredServiceFields(e, d) {
+		// Compared with what the API server fills in, so a Service as it
+		// should be is not written again (operations.md id 235).
+		wanted := d.DeepCopy()
+		wanted.Spec = withServiceDefaults(d.Spec)
+		if applyDesiredServiceFields(e, wanted) {
 			logger.Info("Updating Service", "name", e.Name)
 			return r.Update(ctx, e)
 		}
@@ -3926,7 +3917,7 @@ func (r *Neo4jEnterpriseClusterReconciler) SetupWithManager(mgr ctrl.Manager) er
 		builder = builder.WatchesRawSource(source.Kind(mgr.GetCache(), routeObj, routeHandler))
 	}
 
-	return builder.Complete(r)
+	return builder.Complete(endsWithItsNamespace(r))
 }
 
 // holdImageDriftUntilReady neutralizes spec-vs-StatefulSet image drift on the

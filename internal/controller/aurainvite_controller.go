@@ -446,5 +446,5 @@ func (r *AuraInviteReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.AuraInvite{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: mcr}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

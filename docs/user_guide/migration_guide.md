@@ -852,6 +852,32 @@ This release changes no CRD and needs no new permissions. Upgrading the operator
 - A cluster caught in the `spec.env` `NEO4J_PLUGINS` restart loop (Fleet Management on, before 2026.03) rolls at most once more, to your list with `fleet-management`, and then stops. If its last write was the merge's, it does not roll at all.
 - A standalone with Fleet Management on and a `NEO4J_PLUGINS` from a Secret, or one that is not a JSON list, rolls once if its template changed while its writes were failing. A cluster in that shape restarts nothing; one that was never created is created.
 
+## Upgrading from v1.24.x
+
+### Behaviour changes
+
+**Deleting a namespace**
+
+- **Deleting a namespace no longer logs ERRORs.** Kubernetes deletes what the namespace holds in no fixed order. When it deleted a deployment's Services or ConfigMap before the deployment itself, the operator created them again, the API server refused ("… is being terminated"), and each pass logged an ERROR and a `Reconciler error`. A standalone's status also read `Failed` ("Reconciliation failed: …") for a moment. The operator now treats that refusal as the namespace going away, for every kind: it logs one debug line, writes no status and returns no error. The deletion goes on through the finalizers as before. A cluster whose server pods are being deleted no longer logs ERROR "Failed to perform split-brain detection". Log alerts on those lines during a teardown stop firing. Any other refusal is still an ERROR.
+
+**Clusters and standalones**
+
+- **A reconcile that changes nothing writes nothing.** The operator sent an Update of a cluster's server StatefulSet on every reconcile, because it set the update strategy without the defaults the API server fills in (the partition, and `maxUnavailable` where the API server drops it). The API server defaulted it back. After each status write of the StatefulSet controller, the API server also stored that Update with a new resourceVersion, so watchers saw a StatefulSet "modified" about every 10–20 seconds during a roll with nothing in it changed. The cluster's three Services were updated on every reconcile the same way, and logged as "Updating Service" at info, the headless one with the warning "spec.SessionAffinity is ignored for headless services". A standalone's StatefulSet and client Service were updated on every reconcile too. Now an object that is already right is not written. Nothing about what runs changes. A StatefulSet stored without `maxUnavailable` keeps it unset, which the StatefulSet controller reads as 1.
+
+**Plugins**
+
+- **Removing your own `NEO4J_PLUGINS` from `spec.env` is one rolling restart.** If a Managed `Neo4jPlugin` was installed and its name was in that list, the write that takes the variable out of `spec.env` now keeps the plugin's name (and its dependencies'), and records it as the plugin's (`neo4j.com/plugin-entries.<plugin>`). Names that no installed plugin adds go, as you asked. With Aura Fleet Management on, `fleet-management` stays as well. Up to v1.24.x that write dropped the plugin's name, and the plugin raised `PluginMissing` and wrote it back: two rolls. This applies to clusters and standalones.
+
+**`kubectl neo4j`**
+
+- **`export` takes its flags before the target.** `kubectl neo4j export --context dr -n prod replica-database dr-copy …` now works, as `validate` and `preflight` always did. It used to exit 2 with `unknown export target "--context"`.
+- **`diagnose` calls a crash-loop before Kubernetes does.** A container restarted at least twice whose latest run has just died with an error (kubectl shows `Error`, before `CrashLoopBackOff`) is reported as crash-looping. The command exits 1 and points at the `--previous` log. It used to give a ⚠ for the previous run and exit 0. A single restart, or a container running again since, is still a ⚠.
+- **`diagnose` reports OOMKilled only when Kubernetes does.** A container killed with SIGKILL (exit 137, reason `Error`, for example after a `kill -9`) was reported as "✗ was OOMKilled (exit 137)", with advice to raise memory, and the command exited 1. Exit 137 alone is now a ⚠ for that run, saying it was a SIGKILL and not the OOM killer, and the crash-loop finding when it repeats. A container whose last state carries reason `OOMKilled` is reported as before.
+
+### Restarts after the upgrade
+
+- None.
+
 ## Upgrading between future releases
 
 When a newer version ships:

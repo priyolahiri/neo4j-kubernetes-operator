@@ -194,7 +194,7 @@ kubectl describe pod <pod-name>
 
 #### Problem: Pods Crashing (CrashLoopBackOff)
 
-`kubectl neo4j diagnose` distinguishes a crash loop from an OOMKill (exit 137) and names
+`kubectl neo4j diagnose` distinguishes a crash loop from an OOMKill (reason `OOMKilled`; exit 137 alone is any SIGKILL) and names
 the pod and container to read. By hand:
 
 ```bash
