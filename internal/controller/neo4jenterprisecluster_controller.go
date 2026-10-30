@@ -1105,6 +1105,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				// Note: sts already contains the current state from CreateOrUpdate
 				originalMeta := sts.ObjectMeta.DeepCopy()
 				originalStatus := sts.Status.DeepCopy()
+				storedSpec := *sts.Spec.DeepCopy()
 
 				// Apply desired spec — but yield on replicas while a
 				// Neo4jRestore is coordinating a scale-down → restore →
@@ -1144,6 +1145,13 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 				sts.Spec.PersistentVolumeClaimRetentionPolicy = desiredSpec.PersistentVolumeClaimRetentionPolicy
 				sts.Spec.MinReadySeconds = desiredSpec.MinReadySeconds
 				sts.Spec.Ordinals = desiredSpec.Ordinals
+				// What the API server stores for a strategy or policy the
+				// rendering leaves a default out of stays: assigned anew,
+				// CreateOrUpdate found the StatefulSet changed on every pass
+				// and sent an Update the API server defaulted back, persisted
+				// after each status write of the StatefulSet controller
+				// (operations.md id 235).
+				keepStoredStatefulSetFields(storedSpec, &sts.Spec)
 
 				// Preserve original metadata and status
 				sts.ObjectMeta = *originalMeta
@@ -2209,7 +2217,11 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMutableResource(ctx context.
 		if !ok {
 			return fmt.Errorf("existing object %T does not match desired *corev1.Service", existing)
 		}
-		if applyDesiredServiceFields(e, d) {
+		// Compared with what the API server fills in, so a Service as it
+		// should be is not written again (operations.md id 235).
+		wanted := d.DeepCopy()
+		wanted.Spec = withServiceDefaults(d.Spec)
+		if applyDesiredServiceFields(e, wanted) {
 			logger.Info("Updating Service", "name", e.Name)
 			return r.Update(ctx, e)
 		}

@@ -792,6 +792,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 	// fields inside the closure instead. ClusterIP is immutable once set, so it
 	// is only assigned on create (empty live value).
 	desiredHeadless := r.createHeadlessService(standalone)
+	// Each desired Service with what the API server fills in, so one as it
+	// should be is not written again (operations.md id 235).
+	desiredHeadless.Spec = withServiceDefaults(desiredHeadless.Spec)
 	headless := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
 		Name:      desiredHeadless.Name,
 		Namespace: desiredHeadless.Namespace,
@@ -821,6 +824,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 	// changes never applied to existing Services (#203's headless lesson).
 	// ClusterIP is immutable → only set on create.
 	desiredClient := r.createService(standalone)
+	desiredClient.Spec = withServiceDefaults(desiredClient.Spec)
 	clientSvc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: desiredClient.Name, Namespace: desiredClient.Namespace}}
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, clientSvc, func() error {
@@ -865,6 +869,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 	// also CONVERTS a pre-rename LoadBalancer/NodePort {name}-service to
 	// ClusterIP (external exposure moves to {name}-client — release-noted).
 	desiredAlias := r.createAliasService(standalone)
+	desiredAlias.Spec = withServiceDefaults(desiredAlias.Spec)
 	aliasSvc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: desiredAlias.Name, Namespace: desiredAlias.Namespace}}
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
 		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, aliasSvc, func() error {
@@ -1173,7 +1178,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 			if !replicasReconciliationPaused(standalone) {
 				statefulSet.Spec.Replicas = desiredSpec.Replicas
 			}
-			statefulSet.Spec.UpdateStrategy = desiredSpec.UpdateStrategy
+			// A strategy that is the stored one once the API server has
+			// defaulted it is left as stored: assigned anew, it differed on
+			// every pass and CreateOrUpdate sent an Update (operations.md id
+			// 235). On create there is nothing stored to keep.
+			if !sameUpdateStrategy(statefulSet.Spec.UpdateStrategy, desiredSpec.UpdateStrategy) {
+				statefulSet.Spec.UpdateStrategy = desiredSpec.UpdateStrategy
+			}
 
 			// Record what the template's config-hash stamp stands for. Either the
 			// template below is applied with confStamp, or it matches the recorded
