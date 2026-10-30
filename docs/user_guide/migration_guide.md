@@ -904,7 +904,7 @@ When a newer version ships:
 
    ```bash
    kubectl apply --server-side -f \
-     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.24.0/neo4j-kubernetes-operator.yaml
+     https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.24.1/neo4j-kubernetes-operator.yaml
    ```
 
 2. **Upgrade the operator** via Helm:
