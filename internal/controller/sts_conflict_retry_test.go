@@ -84,9 +84,11 @@ func TestCreateOrUpdateResource_ConflictRetryKeepsTheDesiredSpec(t *testing.T) {
 		require.NoError(t, c.Update(ctx, live))
 	}
 
-	// The API server defaults fields the desired StatefulSet leaves empty, so
-	// the cluster controller's pass writes the StatefulSet every time — which
-	// is what gives the plugin controller's patch a window to conflict in.
+	// The API server defaults fields the desired StatefulSet leaves empty. A
+	// pass that changes nothing no longer writes the StatefulSet for them
+	// (operations.md id 235), so the racing pass below changes the replicas:
+	// its write is what gives the plugin controller's patch a window to
+	// conflict in.
 	defaulted := func(obj client.Object) {
 		if sts, ok := obj.(*appsv1.StatefulSet); ok && sts.Spec.UpdateStrategy.RollingUpdate == nil {
 			sts.Spec.UpdateStrategy.RollingUpdate = &appsv1.RollingUpdateStatefulSetStrategy{Partition: ptr.To[int32](0)}
@@ -121,9 +123,12 @@ func TestCreateOrUpdateResource_ConflictRetryKeepsTheDesiredSpec(t *testing.T) {
 	require.NoError(t, r.createOrUpdateResource(ctx, desired(), owner))
 	pluginPatch(c, "NEO4J_PLUGINS", `["apoc"]`)
 
-	// A cluster pass whose update conflicts with the plugin's next patch.
+	// A cluster pass whose update (a scale-up) conflicts with the plugin's
+	// next patch.
 	racePending = true
-	require.NoError(t, r.createOrUpdateResource(ctx, desired(), owner))
+	scaled := desired()
+	scaled.Spec.Replicas = ptr.To[int32](3)
+	require.NoError(t, r.createOrUpdateResource(ctx, scaled, owner))
 	require.False(t, racePending, "the race was not exercised")
 
 	live := &appsv1.StatefulSet{}
