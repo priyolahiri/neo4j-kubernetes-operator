@@ -5183,7 +5183,7 @@ enough, or a StorageClass that does not exist — <em>before</em> you apply. By 
 </li>
 </ol>
 <h4 id="problem-pods-crashing-crashloopbackoff">Problem: Pods Crashing (CrashLoopBackOff)<a class="headerlink" href="#problem-pods-crashing-crashloopbackoff" title="Anchor link to this section">&para;</a></h4>
-<p><code>kubectl neo4j diagnose</code> distinguishes a crash loop from an OOMKill (exit 137) and names
+<p><code>kubectl neo4j diagnose</code> distinguishes a crash loop from an OOMKill (reason <code>OOMKilled</code>; exit 137 alone is any SIGKILL) and names
 the pod and container to read. By hand:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-14-1"><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="c1"># Check pod logs</span>
 </span><span id="__span-14-2"><a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>kubectl<span class="w"> </span>logs<span class="w"> </span>&lt;pod-name&gt;<span class="w"> </span>--previous

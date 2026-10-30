@@ -3979,7 +3979,7 @@
 </tr>
 <tr>
 <td>Container OOMKilled</td>
-<td><code>lastState.terminated</code> (a container that restarted) or <code>state.terminated</code> (one that did not — see <a href="#containers-that-finished-and-were-not-restarted">below</a>): reason <code>OOMKilled</code>, <strong>or</strong> exit code 137</td>
+<td><code>lastState.terminated</code> (a container that restarted) or <code>state.terminated</code> (one that did not — see <a href="#containers-that-finished-and-were-not-restarted">below</a>): reason <code>OOMKilled</code>. Exit code 137 alone is any SIGKILL (a <code>kill -9</code>, say), not an OOM kill: a ⚠ for the run it ended, the crash-loop finding when it repeats</td>
 </tr>
 <tr>
 <td>Container exited non-zero</td>
@@ -3991,7 +3991,7 @@
 </tr>
 <tr>
 <td>Crash-looping</td>
-<td>waiting reason <code>CrashLoopBackOff</code>, with the restart count</td>
+<td>waiting reason <code>CrashLoopBackOff</code>, with the restart count; or, before the kubelet says so, a container restarted at least twice whose latest run has just died with a non-zero exit (<code>state.terminated</code>, kubectl shows <code>Error</code>). A single restart, or a container running again since, is a <code>⚠</code> for its previous run</td>
 </tr>
 <tr>
 <td>Config not resolvable</td>
