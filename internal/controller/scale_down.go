@@ -1127,13 +1127,6 @@ func (r *Neo4jEnterpriseClusterReconciler) holdPods(ctx context.Context, cluster
 	})
 }
 
-// setScaleDownIDs sets (or removes, when ids is empty) one of the drain's id
-// list annotations on the cluster CR, in memory and persisted, as a patch of
-// that annotation alone (operations.md id 150).
-func (r *Neo4jEnterpriseClusterReconciler) setScaleDownIDs(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, key string, ids []string) error {
-	return r.setDrainAnnotations(ctx, cluster, map[string]string{key: strings.Join(ids, ",")})
-}
-
 // setDrainAnnotations sets each of the drain's annotations in values (an
 // empty value removes it) on the cluster CR, in memory and persisted, in one
 // merge patch of those annotations alone (operations.md id 150). Nothing is
