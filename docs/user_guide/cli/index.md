@@ -51,6 +51,8 @@ kubectl neo4j diagnose Neo4jEnterpriseCluster/prod -n neo4j   # same
 kubectl neo4j diagnose -n neo4j Neo4jEnterpriseCluster/prod   # thing
 ```
 
+That holds for `export`'s target too: in `kubectl neo4j export --context prod -n neo4j replica-database dr-copy …` the target is `replica-database`.
+
 ## Common flags
 
 Every command that talks to a cluster accepts `--context` and `--kubeconfig` (the same resolution `kubectl` uses) and `-n` / `--namespace` (default: the kubeconfig context's namespace). `validate` is offline unless you pass `--connect`, `--context` or `--kubeconfig`. `status` also takes `--all-namespaces`.

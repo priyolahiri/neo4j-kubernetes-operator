@@ -1027,7 +1027,7 @@ func (r *Neo4jRoleReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		// the next requeue.
 		Watches(&neo4jv1beta1.Neo4jDatabase{}, handler.EnqueueRequestsFromMapFunc(r.rolesNamingDatabase)).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
 
 // rolesNamingDatabase maps a Neo4jDatabase to the roles on the same cluster

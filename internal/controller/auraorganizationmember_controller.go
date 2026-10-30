@@ -283,5 +283,5 @@ func (r *AuraOrganizationMemberReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.AuraOrganizationMember{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: mcr}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

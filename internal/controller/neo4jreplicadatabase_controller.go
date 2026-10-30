@@ -1316,5 +1316,5 @@ func (r *Neo4jReplicaDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) erro
 		Watches(&neo4jv1beta1.Neo4jEnterpriseCluster{}, enqueue).
 		Watches(&neo4jv1beta1.Neo4jEnterpriseStandalone{}, enqueue).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

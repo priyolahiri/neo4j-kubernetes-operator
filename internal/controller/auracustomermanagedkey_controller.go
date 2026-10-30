@@ -495,5 +495,5 @@ func (r *AuraCustomerManagedKeyReconciler) SetupWithManager(mgr ctrl.Manager) er
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&neo4jv1beta1.AuraCustomerManagedKey{}).
 		WithOptions(controller.Options{MaxConcurrentReconciles: mcr}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

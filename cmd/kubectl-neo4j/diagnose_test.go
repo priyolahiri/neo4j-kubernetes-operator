@@ -96,14 +96,14 @@ func TestDiagnose_UnschedulablePodIsReportedWithSchedulerMessage(t *testing.T) {
 }
 
 // OOMKilled is the most common Neo4j Enterprise failure on an under-provisioned
-// cluster. It must be caught from the exit code alone, because that is the one
-// signal that is not a kubelet string this test could be written to match.
-func TestDiagnose_OOMKilledDetectedFromExitCodeAlone(t *testing.T) {
+// cluster: the kubelet says so in the reason, and the action gives the memory
+// floor. Exit code 137 alone is any SIGKILL (TestDiagnose_ASigkillIsNotAnOOMKill).
+func TestDiagnose_OOMKilledIsTheKubeletsReason(t *testing.T) {
 	pod := serverPod("prod", "prod-server-0")
 	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
 		Name: "neo4j",
 		LastTerminationState: corev1.ContainerState{
-			Terminated: &corev1.ContainerStateTerminated{ExitCode: 137, Reason: ""},
+			Terminated: &corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"},
 		},
 	}}
 

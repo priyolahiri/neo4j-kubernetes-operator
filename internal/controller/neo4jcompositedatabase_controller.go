@@ -894,5 +894,5 @@ func (r *Neo4jCompositeDatabaseReconciler) SetupWithManager(mgr ctrl.Manager) er
 			),
 		).
 		Named("neo4jcompositedatabase").
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }

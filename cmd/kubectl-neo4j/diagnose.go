@@ -38,9 +38,9 @@ package main
 //
 // Three reasons have no exported constant because kubelet, not the API, owns
 // them: "CrashLoopBackOff", "ImagePullBackOff" and "OOMKilled". Those are
-// matched as literals, and the OOM check additionally matches exit code 137 so
-// that the single most common Neo4j Enterprise failure is not detected by a
-// string alone.
+// matched as literals. The OOM check does not also match exit code 137: that
+// is any SIGKILL, and a `kill -9` read as an OOM kill sent the user to raise
+// memory (isOOMKilled).
 //
 // Workloads are located through the operator's OWN exported selectors
 // (resources.ServerPodSelector and friends) rather than by rebuilding the
@@ -485,14 +485,7 @@ func diagnosePod(p *corev1.Pod) []symptom {
 					action:  imagePullAction(p.Name, w.Reason),
 				})
 			case "CrashLoopBackOff":
-				symptoms = append(symptoms, symptom{
-					mark:    markProblem,
-					subject: "container " + cs.Name + " in " + p.Name,
-					what:    fmt.Sprintf("crash-looping after %d restart(s)", cs.RestartCount),
-					detail:  w.Message,
-					action: "The reason is in the log of the run that died, not the current one: " +
-						"kubectl logs " + p.Name + " -c " + cs.Name + " --previous",
-				})
+				symptoms = append(symptoms, crashLoopSymptom(p, cs, w.Message))
 			case "CreateContainerConfigError":
 				symptoms = append(symptoms, symptom{
 					mark:    markProblem,
@@ -519,25 +512,34 @@ func diagnosePod(p *corev1.Pod) []symptom {
 			}
 		}
 
-		// OOMKilled is matched on the kubelet's reason string OR exit code 137
-		// because it is the single most common Neo4j Enterprise failure on an
-		// under-provisioned cluster, and neither signal is an API constant we
-		// can lean on alone.
+		// OOMKilled — the single most common Neo4j Enterprise failure on an
+		// under-provisioned cluster — is the kubelet's reason string alone:
+		// exit code 137 is any SIGKILL (isOOMKilled).
 		previousReported := false
-		if t := cs.LastTerminationState.Terminated; t != nil {
-			if isOOMKilled(t) {
-				previousReported = true
-				symptoms = append(symptoms, oomKilledSymptom(p, cs.Name, t, ""))
-			} else if t.ExitCode != 0 {
-				previousReported = true
-				symptoms = append(symptoms, symptom{
-					mark:    markWarning,
-					subject: "container " + cs.Name + " in " + p.Name,
-					what:    fmt.Sprintf("previously exited %d (%s)", t.ExitCode, t.Reason),
-					detail:  strings.TrimSpace(t.Message),
-					action:  "kubectl logs " + p.Name + " -c " + cs.Name + " --previous",
-				})
+		switch last := cs.LastTerminationState.Terminated; {
+		case last != nil && isOOMKilled(last):
+			previousReported = true
+			symptoms = append(symptoms, oomKilledSymptom(p, cs.Name, last, ""))
+		case diedAgainAfterRestarts(cs):
+			// Crash-looping before the kubelet says CrashLoopBackOff (#619
+			// S9): the same one finding that reason gets, in place of a ⚠ for
+			// the previous run and nothing for this one.
+			previousReported = true
+			cur := cs.State.Terminated
+			detail := fmt.Sprintf("its latest run exited %d (%s)", cur.ExitCode, cur.Reason)
+			if msg := exitDetail(cur); msg != "" {
+				detail += ": " + msg
 			}
+			symptoms = append(symptoms, crashLoopSymptom(p, cs, detail))
+		case last != nil && last.ExitCode != 0:
+			previousReported = true
+			symptoms = append(symptoms, symptom{
+				mark:    markWarning,
+				subject: "container " + cs.Name + " in " + p.Name,
+				what:    fmt.Sprintf("previously exited %d (%s)", last.ExitCode, last.Reason),
+				detail:  exitDetail(last),
+				action:  "kubectl logs " + p.Name + " -c " + cs.Name + " --previous",
+			})
 		}
 
 		// The container's CURRENT state, when it has already finished. Under
@@ -563,7 +565,7 @@ func diagnosePod(p *corev1.Pod) []symptom {
 					mark:    markProblem,
 					subject: "container " + cs.Name + " in " + p.Name,
 					what:    fmt.Sprintf("exited %d (%s)", t.ExitCode, t.Reason),
-					detail:  strings.TrimSpace(t.Message),
+					detail:  exitDetail(t),
 					action:  "kubectl logs " + p.Name + " -c " + cs.Name,
 				})
 			}
@@ -613,10 +615,27 @@ func imagePullAction(pod, reason string) string {
 		"target deployment's image."
 }
 
-// isOOMKilled matches the kubelet's reason string OR exit code 137 (SIGKILL):
-// either alone can be absent.
+// isOOMKilled matches the kubelet's reason string, and only that. Exit code
+// 137 is any SIGKILL — a `kill -9`, a runtime that gave up waiting — and the
+// kubelet says OOMKilled when the kernel's OOM killer sent it. Matched on the
+// code as well, one kill by hand was a ✗ "was OOMKilled (exit 137)" with advice
+// to raise memory, and exit 1 (#619 walk). A SIGKILL is a non-zero exit like
+// any other: a ⚠ for one run, a crash-loop when it repeats.
 func isOOMKilled(t *corev1.ContainerStateTerminated) bool {
-	return t.Reason == "OOMKilled" || t.ExitCode == 137
+	return t.Reason == "OOMKilled"
+}
+
+// exitDetail is what a finding about a run that exited non-zero says beyond
+// the exit: the container's message, or, for an exit 137 the kubelet did not
+// call OOMKilled, that it was a SIGKILL and not the OOM killer.
+func exitDetail(t *corev1.ContainerStateTerminated) string {
+	if msg := strings.TrimSpace(t.Message); msg != "" {
+		return msg
+	}
+	if t.ExitCode == 137 {
+		return "exit 137 is SIGKILL; the kubelet did not report OOMKilled, so it was not the OOM killer"
+	}
+	return ""
 }
 
 // isBackupPod reports whether a pod belongs to a Neo4jBackup Job, by the same
@@ -649,6 +668,40 @@ func oomKilledSymptom(p *corev1.Pod, container string, t *corev1.ContainerStateT
 		subject: "container " + container + " in " + p.Name,
 		what:    fmt.Sprintf("was OOMKilled (exit %d)", t.ExitCode),
 		action:  action,
+	}
+}
+
+// crashLoopRestarts is the restart count from which a container whose latest
+// run died with an error is crash-looping, whatever the kubelet calls it yet.
+//
+// The kubelet says CrashLoopBackOff only while it waits to start the container
+// again. Between a run's death and that wait the container is Terminated with
+// reason Error (kubectl shows "Error"), and diagnose reported only a ⚠ for the
+// previous run and exited 0 (#619 S9, at restartCount 2). Two restarts and a
+// third run that died are three failed runs in a row. One restart is not
+// enough: a server that stopped once during a planned roll and came back is
+// not failing, and one whose second run is dying too is told so at the next
+// restart.
+const crashLoopRestarts = 2
+
+// diedAgainAfterRestarts reports a container whose latest run has just died
+// with an error (not an OOM kill, which has its own finding) after at least
+// crashLoopRestarts restarts.
+func diedAgainAfterRestarts(cs corev1.ContainerStatus) bool {
+	t := cs.State.Terminated
+	return t != nil && t.ExitCode != 0 && !isOOMKilled(t) && cs.RestartCount >= crashLoopRestarts
+}
+
+// crashLoopSymptom is the one finding for a crash-looping container: a
+// problem, with the log of the run that died.
+func crashLoopSymptom(p *corev1.Pod, cs corev1.ContainerStatus, detail string) symptom {
+	return symptom{
+		mark:    markProblem,
+		subject: "container " + cs.Name + " in " + p.Name,
+		what:    fmt.Sprintf("crash-looping after %d restart(s)", cs.RestartCount),
+		detail:  detail,
+		action: "The reason is in the log of the run that died, not the current one: " +
+			"kubectl logs " + p.Name + " -c " + cs.Name + " --previous",
 	}
 }
 

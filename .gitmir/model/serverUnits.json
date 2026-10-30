@@ -18,7 +18,9 @@
       "internal/controller/tls_reload.go",
       "internal/controller/reconcile_cadence.go",
       "internal/controller/refusal_log.go",
-      "internal/controller/stuck_server_pods.go"
+      "internal/controller/stuck_server_pods.go",
+      "internal/controller/plugin_entries_handover.go",
+      "internal/controller/server_defaults.go"
     ]
   },
   {
@@ -700,7 +702,8 @@
     "dependsOn": [],
     "moduleId": "mod-platform",
     "paths": [
-      "cmd/main.go"
+      "cmd/main.go",
+      "internal/controller/namespace_terminating.go"
     ]
   },
   {

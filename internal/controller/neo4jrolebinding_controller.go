@@ -720,7 +720,7 @@ func (r *Neo4jRoleBindingReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return reqs
 		})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
 
 // stringSet builds a presence map from a string slice.

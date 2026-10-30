@@ -982,7 +982,7 @@ func (r *Neo4jUserReconciler) SetupWithManager(mgr ctrl.Manager) error {
 			return reqs
 		})).
 		WithOptions(controller.Options{MaxConcurrentReconciles: r.MaxConcurrentReconciles}).
-		Complete(r)
+		Complete(endsWithItsNamespace(r))
 }
 
 // effectiveUsername returns spec.username if non-empty, otherwise metadata.name.
