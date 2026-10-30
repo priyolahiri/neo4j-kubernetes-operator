@@ -1078,6 +1078,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v124x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.24.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.24.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restarts-after-the-upgrade_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restarts after the upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -4766,6 +4805,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#upgrading-from-v124x" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrading from v1.24.x
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Upgrading from v1.24.x">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#behaviour-changes_7" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Behaviour changes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#restarts-after-the-upgrade_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Restarts after the upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#upgrading-between-future-releases" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -5678,6 +5756,45 @@ behaviour changes below take effect on the first reconcile.</p>
 <li>A cluster caught in the <code>spec.env</code> <code>NEO4J_PLUGINS</code> restart loop (Fleet Management on, before 2026.03) rolls at most once more, to your list with <code>fleet-management</code>, and then stops. If its last write was the merge's, it does not roll at all.</li>
 <li>A standalone with Fleet Management on and a <code>NEO4J_PLUGINS</code> from a Secret, or one that is not a JSON list, rolls once if its template changed while its writes were failing. A cluster in that shape restarts nothing; one that was never created is created.</li>
 </ul>
+<h2 id="upgrading-from-v124x">Upgrading from v1.24.x<a class="headerlink" href="#upgrading-from-v124x" title="Anchor link to this section">&para;</a></h2>
+<p>This release changes no CRD and needs no new permissions. Upgrading the operator restarts no server.</p>
+<h3 id="behaviour-changes_7">Behaviour changes<a class="headerlink" href="#behaviour-changes_7" title="Anchor link to this section">&para;</a></h3>
+<p><strong>Clusters: scaling</strong></p>
+<ul>
+<li><strong>A scale-up right after a scale-down waits until the removed servers are gone.</strong> Raised within seconds of "Scale-down drain complete", a removed server used to come back on its old volume as a server Neo4j had dropped. The cluster then stayed <code>Forming</code> ("Cluster formation verification incomplete") until <code>servers</code> was lowered again (#619, also in v1.23.x). The operator now adds no server at an ordinal whose pod is still there or whose volume is still being deleted. <code>TopologyChangeDeferred</code> reads <code>True</code> with the new reason <code>WaitsForRemovedServers</code> and names the servers, one <code>ScaleUpDeferred</code> event says so, and the cluster stays <code>Ready</code> meanwhile. The servers are added once their pods and volumes are gone, usually within seconds. You no longer need to wait for the volumes yourself before raising <code>servers</code>.</li>
+<li>If something is still there after 2 minutes, such as a pod terminating on a node that is gone or a volume another tool's finalizer keeps, the message and one <code>ScaleUpBlocked</code> Warning name it and say how to remove it. The raise stays held until it is gone. The operator deletes nothing itself.</li>
+<li>A scale-up with nothing left over is not delayed. A volume that is not being deleted and that no pod owns, for example one you created ready for a new server, is used as before.</li>
+<li>To tell a raise from a cache that has not caught up, the operator now also reads the server StatefulSet from the API server once per reconcile. While a raise is held it reads the pod and the volume of each ordinal it would add, and checks again every 5 seconds.</li>
+<li><strong>A cluster already stuck that way says so.</strong> If v1.24.x left a cluster with pods running servers that <code>SHOW SERVERS</code> lists as <code>Dropped</code>, its phase stays <code>Forming</code>, but the message now names those pods and the way out, with one <code>DroppedServersReturned</code> Warning: set <code>spec.topology.servers</code> back to the first of them, wait for "Scale-down drain complete", then raise it again. The operator holds the raise until the old pods and volumes are gone.</li>
+<li><strong>The drain waits 20 seconds between the cordon and the deallocation.</strong> A scale-down set back in that time is now given back: the operator runs <code>ENABLE SERVER</code> for the servers its drain cordoned, with one <code>ScaleDownSetBack</code> event. In v1.24.x the deallocation followed the cordon within about a second, so a set-back was nearly always refused. Every scale-down takes about 20 seconds longer. While the drain waits, <code>ServersPendingDrain</code> reads "Scale-down to N server(s) in progress: cordoned M server(s); their databases are deallocated from <time> unless spec.topology.servers is raised again before then". The drain records the cordon's time, to the nanosecond, in the cluster annotation <code>neo4j.com/scale-down-cordoned-at</code>, next to <code>neo4j.com/scale-down-cordoned-servers</code>. Both go when the drain ends or the set-back is resolved. A drain that v1.24.x had already cordoned when you upgrade has no time recorded, and deallocates without the wait. Servers you cordoned yourself are deallocated without it too.</li>
+<li><strong>The drain set holds server ids only.</strong> Before the drain can name the servers a scale-down removes, it holds the replicas by the removed pods' names. Up to v1.24.x those names went into <code>neo4j.com/scale-down-draining-servers</code>, the set of server ids it drains. They now go into a new annotation, <code>neo4j.com/scale-down-held-pods</code>, which is removed once the drain names the servers, the drain ends, or the scale-down is set back. Tooling that reads the drain set now finds only server ids there; to see whether a scale-down holds the replicas, check either annotation. A drain an earlier operator started with pod names in the drain set goes on as before.</li>
+<li><strong><code>TopologyChangeDeferred</code> says which wait ended.</strong> Once a raise's wait for removed servers ends, the condition reads <code>False</code> with "No change of spec.topology.servers waits for the pods and volumes of removed servers". After an upgrade's wait it still reads "… waits for an upgrade". A condition that is already <code>False</code> keeps its message.</li>
+<li><strong><code>ScaledWithoutRestart</code> names only the servers a scale actually adds.</strong> A scale-down set back while the drain held the replicas, refused or not, used to announce "Adding servers 3-4 as system secondaries" and log "Scaled … from 3 to 5", although nothing was added. Now it announces nothing and logs that line at debug level. A scale-up announces only the servers the StatefulSet does not run yet. Event-count checks on <code>ScaledWithoutRestart</code> count one per real scale-up.</li>
+<li><strong>A refused scale-down's advice follows the cause Neo4j names.</strong> When Neo4j refuses the drain's deallocation, <code>ScaleDownBlocked</code> still quotes Neo4j's error. Its advice now matches the cause: "Database '<db>' needs N primaries and M secondaries … lower its topology … or keep enough servers for it" when the remaining servers cannot host a database's topology, and a second primary when a database has its only primary on a removed server. When Neo4j names neither, the advice covers both. In v1.24.x the dry run before the cordon always advised a second primary, even for a database with four. The refusal is also announced once: the drain names its servers in a fixed order, where one refusal could be two Warnings a second apart. Alerts that matched the old advice text should match the reason <code>ScaleDownBlocked</code> instead.</li>
+</ul>
+<p><strong>Deleting a namespace</strong></p>
+<ul>
+<li><strong>Deleting a namespace no longer logs ERRORs.</strong> Kubernetes deletes what the namespace holds in no fixed order. When it deleted a deployment's Services or ConfigMap before the deployment itself, the operator created them again, the API server refused ("… is being terminated"), and each pass logged an ERROR and a <code>Reconciler error</code>. A standalone's status also read <code>Failed</code> ("Reconciliation failed: …") for a moment. The operator now treats that refusal as the namespace going away, for every kind: it logs one debug line, writes no status and returns no error. The deletion goes on through the finalizers as before. A cluster whose server pods are being deleted no longer logs ERROR "Failed to perform split-brain detection". Log alerts on those lines during a teardown stop firing. Any other refusal is still an ERROR.</li>
+</ul>
+<p><strong>Clusters and standalones</strong></p>
+<ul>
+<li><strong>A reconcile that changes nothing writes nothing.</strong> The operator sent an Update of a cluster's server StatefulSet on every reconcile, because it set the update strategy without the defaults the API server fills in (the partition, and <code>maxUnavailable</code> where the API server drops it). The API server defaulted it back. After each status write of the StatefulSet controller, the API server also stored that Update with a new resourceVersion, so watchers saw a StatefulSet "modified" about every 10–20 seconds during a roll with nothing in it changed. The cluster's three Services were updated on every reconcile the same way, and logged as "Updating Service" at info, the headless one with the warning "spec.SessionAffinity is ignored for headless services". A standalone's StatefulSet and client Service were updated on every reconcile too. Now an object that is already right is not written. Nothing about what runs changes. A StatefulSet stored without <code>maxUnavailable</code> keeps it unset, which the StatefulSet controller reads as 1.</li>
+<li><strong>An idle standalone logs nothing at info.</strong> A standalone logged "Successfully created or updated StatefulSet / ConfigMap / headless Service / client Service / deprecated alias Service" and "Successfully reconciled Neo4jEnterpriseStandalone" at info on every reconcile, about every six seconds, though nothing was written. A child object's write is now logged as "Successfully created …" or "Successfully updated …" at info only when it happens, and at debug level otherwise; the same holds for both kinds' Routes. "Successfully reconciled Neo4jEnterpriseStandalone", "… Neo4jDatabase" and "… Neo4jShardedDatabase", and "Route API not available" (its <code>RouteAPINotFound</code> Warning is unchanged), are now at debug level. Log alerts or dashboards counting those lines should count the objects' events or conditions instead. An idle <code>Neo4jDatabase</code> and an idle cluster still log a few lines at info on each reconcile (#626).</li>
+</ul>
+<p><strong>Plugins</strong></p>
+<ul>
+<li><strong>Removing your own <code>NEO4J_PLUGINS</code> from <code>spec.env</code> is one rolling restart.</strong> If a Managed <code>Neo4jPlugin</code> was installed and its name was in that list, the write that takes the variable out of <code>spec.env</code> now keeps the plugin's name (and its dependencies'), and records it as the plugin's (<code>neo4j.com/plugin-entries.&lt;plugin&gt;</code>). Names that no installed plugin adds go, as you asked. With Aura Fleet Management on, <code>fleet-management</code> stays as well. Up to v1.24.x that write dropped the plugin's name, and the plugin raised <code>PluginMissing</code> and wrote it back: two rolls. This applies to clusters and standalones.</li>
+</ul>
+<p><strong><code>kubectl neo4j</code></strong></p>
+<ul>
+<li><strong><code>export</code> takes its flags before the target.</strong> <code>kubectl neo4j export --context dr -n prod replica-database dr-copy …</code> now works, as <code>validate</code> and <code>preflight</code> always did. It used to exit 2 with <code>unknown export target "--context"</code>.</li>
+<li><strong><code>diagnose</code> calls a crash-loop before Kubernetes does.</strong> A container restarted at least twice whose latest run has just died with an error (kubectl shows <code>Error</code>, before <code>CrashLoopBackOff</code>) is reported as crash-looping. The command exits 1 and points at the <code>--previous</code> log. It used to give a ⚠ for the previous run and exit 0. A single restart, or a container running again since, is still a ⚠.</li>
+<li><strong><code>diagnose</code> reports OOMKilled only when Kubernetes does.</strong> A container killed with SIGKILL (exit 137, reason <code>Error</code>, for example after a <code>kill -9</code>) was reported as "✗ was OOMKilled (exit 137)", with advice to raise memory, and the command exited 1. Exit 137 alone is now a ⚠ for that run, saying it was a SIGKILL and not the OOM killer, and the crash-loop finding when it repeats. A container whose last state carries reason <code>OOMKilled</code> is reported as before.</li>
+</ul>
+<h3 id="restarts-after-the-upgrade_3">Restarts after the upgrade<a class="headerlink" href="#restarts-after-the-upgrade_3" title="Anchor link to this section">&para;</a></h3>
+<ul>
+<li>None. The new annotation, condition reason and events restart nothing. A cluster held for a raise at the moment of the upgrade adds its servers once the removed ones are gone, which is the scale-up you asked for.</li>
+</ul>
 <h2 id="upgrading-between-future-releases">Upgrading between future releases<a class="headerlink" href="#upgrading-between-future-releases" title="Anchor link to this section">&para;</a></h2>
 <p>When a newer version ships:</p>
 <ol>
@@ -5686,7 +5803,7 @@ behaviour changes below take effect on the first reconcile.</p>
    bundle for the version you are upgrading to (replace the tag):</li>
 </ol>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>kubectl<span class="w"> </span>apply<span class="w"> </span>--server-side<span class="w"> </span>-f<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.24.0/neo4j-kubernetes-operator.yaml
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">  </span>https://github.com/priyolahiri/neo4j-kubernetes-operator/releases/download/v1.24.1/neo4j-kubernetes-operator.yaml
 </span></code></pre></div>
 <ol>
 <li><strong>Upgrade the operator</strong> via Helm:</li>
