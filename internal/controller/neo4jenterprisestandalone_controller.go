@@ -479,7 +479,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStandalone(ctx context.Co
 		}
 	}
 
-	logger.Info("Successfully reconciled Neo4jEnterpriseStandalone")
+	logger.V(1).Info("Successfully reconciled Neo4jEnterpriseStandalone")
 	return ctrl.Result{RequeueAfter: requeue}, nil
 }
 
@@ -541,8 +541,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 	}
 
 	// Create or update ConfigMap with retry logic to handle resource version conflicts.
+	var configMapOp controllerutil.OperationResult
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, configMap, func() error {
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, configMap, func() error {
 			// controllerutil.CreateOrUpdate's Get overwrites configMap with the
 			// EXISTING object, so the desired state MUST be (re)applied here in the
 			// mutate fn — an empty mutate would silently write the stale data back
@@ -579,12 +580,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileConfigMap(ctx context.Con
 
 			return controllerutil.SetControllerReference(standalone, configMap, r.Scheme)
 		})
+		configMapOp = op
 		return err
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create or update ConfigMap: %w", err)
 	}
-	logger.Info("Successfully created or updated ConfigMap", "name", configMap.Name)
+	logChildWrite(logger, configMapOp, "ConfigMap", configMap.Name)
 
 	// Rolling the pod when neo4j.conf changes is handled by reconcileStatefulSet,
 	// which stamps a hash of the rendered conf onto the pod template so the roll
@@ -799,8 +801,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 		Name:      desiredHeadless.Name,
 		Namespace: desiredHeadless.Namespace,
 	}}
+	var headlessOp controllerutil.OperationResult
 	if err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, headless, func() error {
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, headless, func() error {
 			if err := controllerutil.SetControllerReference(standalone, headless, r.Scheme); err != nil {
 				return err
 			}
@@ -813,11 +816,12 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 			headless.Spec.Ports = desiredHeadless.Spec.Ports
 			return nil
 		})
+		headlessOp = op
 		return err
 	}); err != nil {
 		return fmt.Errorf("failed to create or update headless Service: %w", err)
 	}
-	logger.Info("Successfully created or updated headless Service", "name", headless.Name)
+	logChildWrite(logger, headlessOp, "headless Service", headless.Name)
 
 	// Create the canonical client-facing Service ({name}-client, #215) with
 	// an ASSERTIVE mutate — the historical no-op mutate meant spec.service
@@ -826,8 +830,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 	desiredClient := r.createService(standalone)
 	desiredClient.Spec = withServiceDefaults(desiredClient.Spec)
 	clientSvc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: desiredClient.Name, Namespace: desiredClient.Namespace}}
+	var clientOp controllerutil.OperationResult
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, clientSvc, func() error {
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, clientSvc, func() error {
 			if err := controllerutil.SetControllerReference(standalone, clientSvc, r.Scheme); err != nil {
 				return err
 			}
@@ -857,12 +862,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 			clientSvc.Spec.SessionAffinity = desiredClient.Spec.SessionAffinity
 			return nil
 		})
+		clientOp = op
 		return err
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create or update client Service: %w", err)
 	}
-	logger.Info("Successfully created or updated client Service", "name", clientSvc.Name)
+	logChildWrite(logger, clientOp, "client Service", clientSvc.Name)
 
 	// Deprecated {name}-service alias (#215): plain ClusterIP shim so existing
 	// in-cluster connection strings survive one release. The assertive mutate
@@ -871,8 +877,9 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 	desiredAlias := r.createAliasService(standalone)
 	desiredAlias.Spec = withServiceDefaults(desiredAlias.Spec)
 	aliasSvc := &corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: desiredAlias.Name, Namespace: desiredAlias.Namespace}}
+	var aliasOp controllerutil.OperationResult
 	err = retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, aliasSvc, func() error {
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, aliasSvc, func() error {
 			if err := controllerutil.SetControllerReference(standalone, aliasSvc, r.Scheme); err != nil {
 				return err
 			}
@@ -888,12 +895,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileService(ctx context.Conte
 			aliasSvc.Spec.Ports = desiredAlias.Spec.Ports
 			return nil
 		})
+		aliasOp = op
 		return err
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create or update deprecated alias Service: %w", err)
 	}
-	logger.Info("Successfully created or updated deprecated alias Service", "name", aliasSvc.Name)
+	logChildWrite(logger, aliasOp, "deprecated alias Service", aliasSvc.Name)
 
 	// Reconcile OpenShift Route if requested
 	if err := r.reconcileRoute(ctx, standalone); err != nil {
@@ -1287,7 +1295,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileStatefulSet(ctx context.C
 	if op == controllerutil.OperationResultCreated {
 		r.deletedStatefulSets.forget(statefulSet.Namespace, statefulSet.Name)
 	}
-	logger.Info("Successfully created or updated StatefulSet", "name", statefulSet.Name)
+	logChildWrite(logger, op, "StatefulSet", statefulSet.Name)
 
 	return nil
 }
@@ -1415,7 +1423,7 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context
 
 	desired := route.DeepCopy()
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+	routeOp, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
 		applyDesiredRoute(route, desired)
 		return nil
 	})
@@ -1428,13 +1436,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileRoute(ctx context.Context
 	r.advisoryWarnings.recordScoped(r.Recorder, standalone, EventReasonRouteAPINotFound, "route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
-			logger.Info("Route API not available; skipping Route reconciliation")
+			logger.V(1).Info("Route API not available; skipping Route reconciliation")
 			return nil
 		}
 		return fmt.Errorf("failed to create or update Route: %w", err)
 	}
 
-	logger.Info("Successfully reconciled Route", "name", route.GetName())
+	logChildWrite(logger, routeOp, "Route", route.GetName())
 	return nil
 }
 
@@ -1483,11 +1491,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Cont
 
 	desired := route.DeepCopy()
 
+	var routeOp controllerutil.OperationResult
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
 			applyDesiredRoute(route, desired)
 			return nil
 		})
+		routeOp = op
 		return err
 	})
 	var noRouteAPI []string
@@ -1497,13 +1507,13 @@ func (r *Neo4jEnterpriseStandaloneReconciler) reconcileMCPRoute(ctx context.Cont
 	r.advisoryWarnings.recordScoped(r.Recorder, standalone, EventReasonRouteAPINotFound, "mcp-route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
-			logger.Info("Route API not available; skipping MCP Route reconciliation")
+			logger.V(1).Info("Route API not available; skipping MCP Route reconciliation")
 			return nil
 		}
 		return fmt.Errorf("failed to create or update MCP Route: %w", err)
 	}
 
-	logger.Info("Successfully reconciled MCP Route", "name", route.GetName())
+	logChildWrite(logger, routeOp, "MCP Route", route.GetName())
 	return nil
 }
 

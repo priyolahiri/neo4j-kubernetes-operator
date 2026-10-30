@@ -3521,7 +3521,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, c
 
 	desired := route.DeepCopy()
 
-	_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+	routeOp, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
 		applyDesiredRoute(route, desired)
 		return nil
 	})
@@ -3535,13 +3535,13 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileRoute(ctx context.Context, c
 	r.advisoryWarnings.recordScoped(r.Recorder, cluster, EventReasonRouteAPINotFound, "route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
-			logger.Info("Route API not available; skipping Route reconciliation")
+			logger.V(1).Info("Route API not available; skipping Route reconciliation")
 			return nil
 		}
 		return fmt.Errorf("failed to create or update Route: %w", err)
 	}
 
-	logger.Info("Successfully reconciled Route", "name", route.GetName())
+	logChildWrite(logger, routeOp, "Route", route.GetName())
 	return nil
 }
 
@@ -3590,11 +3590,13 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context
 
 	desired := route.DeepCopy()
 
+	var routeOp controllerutil.OperationResult
 	err := retry.RetryOnConflict(retry.DefaultRetry, func() error {
-		_, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
+		op, err := controllerutil.CreateOrUpdate(ctx, r.Client, route, func() error {
 			applyDesiredRoute(route, desired)
 			return nil
 		})
+		routeOp = op
 		return err
 	})
 	var noRouteAPI []string
@@ -3604,13 +3606,13 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileMCPRoute(ctx context.Context
 	r.advisoryWarnings.recordScoped(r.Recorder, cluster, EventReasonRouteAPINotFound, "mcp-route", noRouteAPI)
 	if err != nil {
 		if meta.IsNoMatchError(err) {
-			logger.Info("Route API not available; skipping MCP Route reconciliation")
+			logger.V(1).Info("Route API not available; skipping MCP Route reconciliation")
 			return nil
 		}
 		return fmt.Errorf("failed to create or update MCP Route: %w", err)
 	}
 
-	logger.Info("Successfully reconciled MCP Route", "name", route.GetName())
+	logChildWrite(logger, routeOp, "MCP Route", route.GetName())
 	return nil
 }
 
