@@ -19,7 +19,8 @@
       "internal/controller/reconcile_cadence.go",
       "internal/controller/refusal_log.go",
       "internal/controller/stuck_server_pods.go",
-      "internal/controller/plugin_entries_handover.go"
+      "internal/controller/plugin_entries_handover.go",
+      "internal/controller/server_defaults.go"
     ]
   },
   {
