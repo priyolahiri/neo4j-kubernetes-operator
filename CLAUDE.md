@@ -2,7 +2,7 @@
 
 Guidance to Claude Code (claude.ai/code) when working in this repository.
 
-Last updated: 2026-10-28
+Last updated: 2026-10-30
 
 This file is the **constitution + domain reference + index**. It holds the small set of
 non-negotiable invariants, the domain-knowledge sections an agent needs to make a change,
@@ -171,7 +171,7 @@ Auto-generates SSL policies for `https`/`bolt`, certs at `/ssl/`. Cluster SSL de
 
 **Plugin refusals:** a `Neo4jPlugin` refused for something the user must fix (a spec the validator refuses, a duplicate, a name the image cannot install, a variable the target owns) is `Failed` and logged once at info, never as an ERROR; a real failure (a write the API server refuses) keeps its ERROR (`docs/knowledge/operations.md` id 228).
 
-**`NEO4J_PLUGINS` live-patching**: never bake into the static StatefulSet template in `internal/resources/cluster.go`. Use `MergeNeo4jPluginList` so plugin/fleet/Aura controllers don't overwrite each other. (The cluster's own `spec.env` `NEO4J_PLUGINS` is copied by the builder and is the cluster's; it carries `fleet-management` as the cluster renders it, `docs/knowledge/operations.md` id 223.)
+**`NEO4J_PLUGINS` live-patching**: never bake into the static StatefulSet template in `internal/resources/cluster.go`. Use `MergeNeo4jPluginList` so plugin/fleet/Aura controllers don't overwrite each other. (The cluster's own `spec.env` `NEO4J_PLUGINS` is copied by the builder and is the cluster's; it carries `fleet-management` as the cluster renders it, `docs/knowledge/operations.md` id 223. The write that stops owning it keeps the names its installed plugins add, recorded as theirs: `handOverNeo4jPlugins`, id 233.)
 
 **`envVarsEqual` = subset + ownership-tracked removal**: verifies desired vars exist with right value; tolerates extras so plugin/fleet/Aura controllers can live-patch without wholesale-replace oscillation. The cluster controller writes its owned names to `neo4j.com/cluster-controller-env-vars` annotation each reconcile; next reconcile enforces removals via `previously-owned ∖ desired` without disturbing foreign vars. Apply path uses `mergeEnvVars` — never wholesale-replace, never strict length+value equality, never drop the annotation.
 
@@ -196,7 +196,7 @@ Once the cluster has formed (`Ready`, `Degraded`, or `ClusterFormed=True` — so
 
 **`CollectDiagnostics` is non-fatal**: errors go to `status.diagnostics.collectionError` only — never `return err`. Standalone has its own non-fatal `collectStandaloneDiagnostics()` (`SHOW DATABASES`), run while the standalone is `Ready`.
 
-**Server availability (#444):** a formed cluster short of a server stays `Ready` (condition `Degraded=True`) for `--server-unavailable-grace` (default 5m), then turns phase `Degraded`; only first formation, rollouts, scale-ups, split-brain and loss of a majority are `Forming`. Dependents gate on `clusterAcceptsWork` (Ready or Degraded); anything that rolls the servers needs `Ready` with no `Degraded=True`. Rule: `docs/knowledge/operations.md` id 105. A cordoned server is a member (formation, the shortfall check, the upgrade's per-server wait); `Degraded=True` only while a server or server pod is short (id 225). A scale-down set back gives back the servers its drain cordoned (`ENABLE SERVER`, recorded in `neo4j.com/scale-down-cordoned-servers`, never a server cordoned by hand), and is refused once one is deallocating (id 224).
+**Server availability (#444):** a formed cluster short of a server stays `Ready` (condition `Degraded=True`) for `--server-unavailable-grace` (default 5m), then turns phase `Degraded`; only first formation, rollouts, scale-ups, split-brain and loss of a majority are `Forming`. Dependents gate on `clusterAcceptsWork` (Ready or Degraded); anything that rolls the servers needs `Ready` with no `Degraded=True`. Rule: `docs/knowledge/operations.md` id 105. A cordoned server is a member (formation, the shortfall check, the upgrade's per-server wait); `Degraded=True` only while a server or server pod is short (id 225). A scale-down set back gives back the servers its drain cordoned (`ENABLE SERVER`, recorded in `neo4j.com/scale-down-cordoned-servers`, never a server cordoned by hand), and is refused once one is deallocating (id 224). A raise of `spec.topology.servers` waits until the removed servers' pods and volumes are gone (`TopologyChangeDeferred` `WaitsForRemovedServers`, id 229), and the drain waits 20 s (`DefaultScaleDownSettle`) between its cordon and DEALLOCATE so a set-back can be given back (id 231).
 
 ## Neo4j Database Syntax (5.26+ and 2025.x)
 
@@ -269,6 +269,8 @@ Three CRDs, one design rule: **privileges live on `Neo4jRole`, not `Neo4jUser` o
 - **Split-Brain Detection**: `internal/controller/splitbrain_detector.go` connects to each pod, compares cluster views, auto-restarts orphans. Events: `kubectl get events --field-selector reason=SplitBrainDetected -A`.
 - **Edition field removed**: no `edition: enterprise` in CRDs. Operator always assumes enterprise; client checks actual edition via `CALL dbms.components()`.
 - **Structured Events**: constants from `internal/controller/events.go`. Use `corev1.EventTypeNormal` / `corev1.EventTypeWarning`, never raw strings.
+- **A write refused because the namespace is being deleted is not a failure**: every reconciler is registered through `endsWithItsNamespace`; a create-failure branch that writes `Failed` checks `namespaceTerminating` first (`failPass` on the cluster) (`docs/knowledge/operations.md` id 232).
+- **A pass that changes nothing writes nothing**: compare a child object with what the API server stores, defaults included (`keepStoredStatefulSetFields`, `withServiceDefaults`; id 235).
 
 ## Regression rules
 
