@@ -24,6 +24,7 @@ package controller
 // give-back of #617 (id 224) was not reached once.
 
 import (
+	"context"
 	"errors"
 	"testing"
 	"time"
@@ -68,7 +69,7 @@ func TestScaleDownDrain_TheSettleKeepsASetBackRecoverable(t *testing.T) {
 	// when the deallocation starts.
 	pass()
 	require.Equal(t, []string{"cordon uuid-3", "cordon uuid-4"}, opsOf(neo, "cordon"))
-	assert.Equal(t, "2026-10-29T16:28:18Z", stored().Annotations[ScaleDownCordonedAtAnnotation])
+	assert.Equal(t, "2026-10-29T16:28:18.000000000Z", stored().Annotations[ScaleDownCordonedAtAnnotation])
 	pending := pendingDrain(t, r.Client, stored())
 	require.NotNil(t, pending)
 	assert.Equal(t, "Scale-down to 3 server(s) in progress: cordoned 2 server(s); their databases are deallocated from "+
@@ -131,6 +132,48 @@ func TestScaleDownDrain_TheSettleEndsAndTheDrainGoesOn(t *testing.T) {
 	}
 	assert.False(t, scaleDownDrainInProgress(stored()))
 	assert.Empty(t, stored().Annotations[ScaleDownCordonedAtAnnotation])
+}
+
+// The settle is never shorter than ScaleDownSettle. The walk of the #619
+// fixes measured 19.3 s: the cordon's time was truncated to the second.
+func TestScaleDownDrain_TheSettleIsNeverShort(t *testing.T) {
+	t.Run("a cordon part-way through a second", func(t *testing.T) {
+		neo := newDrainNeo4j("settle-ns", 5)
+		r, advance, stored, pass := settling(t, "settle-ns", neo)
+		advance(700 * time.Millisecond) // 16:28:18.7
+		pass()
+		assert.Equal(t, "2026-10-29T16:28:18.700000000Z", stored().Annotations[ScaleDownCordonedAtAnnotation])
+		pending := pendingDrain(t, r.Client, stored())
+		require.NotNil(t, pending)
+		assert.Contains(t, pending.Message, "deallocated from 2026-10-29T16:28:39Z", "the end shown rounded up")
+		assert.Equal(t, 20*time.Second, noted(r, stored()))
+
+		advance(19*time.Second + 500*time.Millisecond) // 19.5 s after the cordon
+		pass()
+		assert.Empty(t, opsOf(neo, "deallocate"), "half a second of the settle is left")
+		assert.Equal(t, 500*time.Millisecond, noted(r, stored()))
+		advance(500 * time.Millisecond)
+		pass()
+		assert.Equal(t, []string{"deallocate uuid-3", "deallocate uuid-4"}, opsOf(neo, "deallocate"))
+	})
+
+	t.Run("a cordon time an earlier build truncated to the second", func(t *testing.T) {
+		neo := newDrainNeo4j("settle-old", 5)
+		r, advance, stored, pass := settling(t, "settle-old", neo)
+		advance(700 * time.Millisecond)
+		pass() // cordons at 16:28:18.7
+		c := stored()
+		require.NoError(t, patchObject(context.Background(), r.Client, c, func() {
+			c.Annotations[ScaleDownCordonedAtAnnotation] = "2026-10-29T16:28:18Z"
+		}))
+
+		advance(19*time.Second + 500*time.Millisecond) // 16:28:38.2, 19.5 s after the cordon
+		pass()
+		assert.Empty(t, opsOf(neo, "deallocate"), "read as the second after: never short")
+		advance(800 * time.Millisecond) // 16:28:39.0
+		pass()
+		assert.Equal(t, []string{"deallocate uuid-3", "deallocate uuid-4"}, opsOf(neo, "deallocate"))
+	})
 }
 
 // A server cordoned by hand is deallocated without a cordon of the drain's,

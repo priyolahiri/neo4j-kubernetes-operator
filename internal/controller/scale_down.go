@@ -584,7 +584,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		// before the deallocation is measured from it (id 231).
 		if err := r.setDrainAnnotations(ctx, cluster, map[string]string{
 			ScaleDownCordonedServersAnnotation: strings.Join(unionIDs(cordonedByDrain(cluster), step.serverIDs), ","),
-			ScaleDownCordonedAtAnnotation:      r.now().UTC().Truncate(time.Second).Format(time.RFC3339),
+			ScaleDownCordonedAtAnnotation:      r.now().UTC().Format(cordonedAtLayout),
 		}); err != nil {
 			return err
 		}
@@ -607,7 +607,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		// about a second of the scale-down, and was refused (#619).
 		if from, left := r.cordonSettle(cluster, step.serverIDs); left > 0 {
 			logger.Info("Scale-down drain: cordoned; waiting before deallocating, so a set-back can still enable the servers again",
-				"servers", step.serverIDs, "deallocatingFrom", from.Format(time.RFC3339))
+				"servers", step.serverIDs, "deallocatingFrom", from.UTC().Format(time.RFC3339Nano))
 			r.wakes.note(clusterKey(cluster), left)
 			r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonServersPendingDrain,
 				settleMessage(desired, len(active), from))
@@ -662,10 +662,40 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 const DefaultScaleDownSettle = 20 * time.Second
 
 // ScaleDownCordonedAtAnnotation is when the drain last cordoned servers
-// (RFC 3339, whole seconds), written with the record of them
-// (ScaleDownCordonedServersAnnotation) and gone with it. The settle before
-// the deallocation is measured from it, so it survives an operator restart.
+// (RFC 3339 with nanoseconds, cordonedAtLayout), written with the record of
+// them (ScaleDownCordonedServersAnnotation) and gone with it. The settle
+// before the deallocation is measured from it, so it survives an operator
+// restart.
 const ScaleDownCordonedAtAnnotation = "neo4j.com/scale-down-cordoned-at"
+
+// cordonedAtLayout always writes the fraction, so a time on a whole second is
+// told apart from one an earlier build truncated to the second.
+const cordonedAtLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// cordonedAt reads ScaleDownCordonedAtAnnotation. A time with no fraction was
+// truncated to the second (the first builds of the settle), up to a second
+// before the cordon: it is read as the next second, so the settle is never
+// shorter than ScaleDownSettle (the #619 walk measured 19.3 s).
+func cordonedAt(cluster *neo4jv1beta1.Neo4jEnterpriseCluster) (time.Time, bool) {
+	raw := strings.TrimSpace(cluster.GetAnnotations()[ScaleDownCordonedAtAnnotation])
+	at, err := time.Parse(time.RFC3339Nano, raw)
+	if err != nil {
+		return time.Time{}, false
+	}
+	if !strings.Contains(raw, ".") {
+		at = at.Add(time.Second)
+	}
+	return at, true
+}
+
+// settleShown is the settle's end as the ServersPendingDrain message shows
+// it, in whole seconds, rounded up: never a second before the drain goes on.
+func settleShown(from time.Time) string {
+	if t := from.Truncate(time.Second); !t.Equal(from) {
+		from = t.Add(time.Second)
+	}
+	return from.UTC().Format(time.RFC3339)
+}
 
 // now is the drain's clock.
 func (r *Neo4jEnterpriseClusterReconciler) now() time.Time {
@@ -692,8 +722,8 @@ func (r *Neo4jEnterpriseClusterReconciler) cordonSettle(cluster *neo4jv1beta1.Ne
 	for _, id := range ids {
 		ours = ours || recorded[id]
 	}
-	at, err := time.Parse(time.RFC3339, strings.TrimSpace(cluster.GetAnnotations()[ScaleDownCordonedAtAnnotation]))
-	if !ours || err != nil {
+	at, known := cordonedAt(cluster)
+	if !ours || !known {
 		return time.Time{}, 0
 	}
 	from := at.Add(r.ScaleDownSettle)
@@ -707,7 +737,7 @@ func (r *Neo4jEnterpriseClusterReconciler) cordonSettle(cluster *neo4jv1beta1.Ne
 // after its cordon: from when it deallocates, and what stops it.
 func settleMessage(desired, draining int, from time.Time) string {
 	return fmt.Sprintf("Scale-down to %d server(s) in progress: cordoned %d server(s); their databases are deallocated from %s "+
-		"unless spec.topology.servers is raised again before then", desired, draining, from.UTC().Format(time.RFC3339))
+		"unless spec.topology.servers is raised again before then", desired, draining, settleShown(from))
 }
 
 // scaleDownClient is what the drain asks Neo4j: *neo4jclient.Client in
