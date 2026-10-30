@@ -67,7 +67,8 @@ func parseServerOrdinal(s, clusterName string) (int, bool) {
 // ---------------------------------------------------------------------------
 
 // ScaleDownDrainingServersAnnotation holds the comma-separated Neo4j serverIds
-// the operator is draining for an in-progress scale-down. Its presence gates
+// the operator is draining for an in-progress scale-down, and nothing else
+// (pods held before their servers are named: ScaleDownHeldPodsAnnotation). Its presence gates
 // the StatefulSet apply (scaleDownDrainInProgress) to HOLD replicas until the
 // drain finishes. Tracking by serverId — NOT pod ordinal — is essential: once a
 // server enters Deallocating its SHOW SERVERS address becomes NULL (and name is
@@ -85,11 +86,22 @@ const ScaleDownDrainingServersAnnotation = "neo4j.com/scale-down-draining-server
 // deallocates without cordoning it (operations.md id 224).
 const ScaleDownCordonedServersAnnotation = "neo4j.com/scale-down-cordoned-servers"
 
+// ScaleDownHeldPodsAnnotation holds the comma-separated pod names a
+// scale-down removes, written while the drain cannot name their servers yet:
+// before Neo4j is first asked (so this pass's StatefulSet apply cannot lower
+// the replicas before any drain ran), and while it cannot tell which servers
+// the scale-down removes (operations.md id 213). It holds the replicas like
+// the drain set, and goes once the drain set names the servers, or the drain
+// ends. The drain set itself holds server ids only: it held these pod names
+// too, read back as ids that matched no server (#619 walk).
+const ScaleDownHeldPodsAnnotation = "neo4j.com/scale-down-held-pods"
+
 func scaleDownDrainInProgress(owner client.Object) bool {
 	if owner == nil {
 		return false
 	}
-	return strings.TrimSpace(owner.GetAnnotations()[ScaleDownDrainingServersAnnotation]) != ""
+	return strings.TrimSpace(owner.GetAnnotations()[ScaleDownDrainingServersAnnotation]) != "" ||
+		strings.TrimSpace(owner.GetAnnotations()[ScaleDownHeldPodsAnnotation]) != ""
 }
 
 func drainServerIDsFromAnnotation(owner client.Object) []string {
@@ -387,17 +399,16 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		return r.setBackScaleDown(ctx, cluster, current)
 	}
 
-	// Engage the replica hold THIS reconcile, before we touch Neo4j. The hold is
-	// gated on the draining annotation; if we returned on a connect/SHOW SERVERS
-	// error below WITHOUT a hold already in place, this same reconcile's
-	// StatefulSet apply would lower replicas and delete pods before any drain
-	// ran. So if no drain is recorded yet, seed the annotation with the
-	// to-be-removed pod NAMES (derived from STS ordinals — no Neo4j needed).
-	// They only need to be non-empty to hold; once SHOW SERVERS succeeds they
-	// are replaced by real serverIds (and evicted from the set — they never
-	// match a live server, which is keyed by id).
+	// Engage the replica hold THIS reconcile, before we touch Neo4j. If we
+	// returned on a connect/SHOW SERVERS error below WITHOUT a hold already in
+	// place, this same reconcile's StatefulSet apply would lower replicas and
+	// delete pods before any drain ran. So if no drain is recorded yet, hold
+	// the to-be-removed pods by NAME (derived from STS ordinals — no Neo4j
+	// needed), in an annotation of their own: the drain set holds server ids
+	// only. Once SHOW SERVERS names the servers, the drain set holds them and
+	// the held pods go (setDrainServers).
 	if !scaleDownDrainInProgress(cluster) {
-		if err := r.setDrainServers(ctx, cluster, provisionalDrainHoldNames(cluster.Name, current, desired)); err != nil {
+		if err := r.holdPods(ctx, cluster, provisionalDrainHoldNames(cluster.Name, current, desired)); err != nil {
 			return err
 		}
 	}
@@ -443,8 +454,8 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 	// still present as live servers). The union absorbs further scale-downs
 	// mid-drain; keeping a persisted id only while it's still a live server
 	// covers a Deallocating server whose address went NULL (initialRemoved can't
-	// derive its ordinal, but its id row persists) AND evicts both the
-	// provisional pod-name hold seeded above and servers already Dropped + gone.
+	// derive its ordinal, but its id row persists) AND evicts servers already
+	// Dropped + gone (and pod names an operator before #619 held here).
 	// A persisted server whose ordinal the spec now keeps leaves the set: the
 	// drain gives it back (keptByTheSpec).
 	idSet := map[string]bool{}
@@ -508,7 +519,7 @@ func (r *Neo4jEnterpriseClusterReconciler) reconcileScaleDownDrain(ctx context.C
 		logger.Info("Scale-down drain: "+undecided, "desired", desired)
 		r.setScaleDownConditionPersisted(ctx, cluster, metav1.ConditionTrue, ConditionReasonServersPendingDrain,
 			fmt.Sprintf("Scale-down to %d server(s) waits: %s", desired, undecided))
-		return r.setDrainServers(ctx, cluster, provisionalDrainHoldNames(cluster.Name, current, desired))
+		return r.holdPods(ctx, cluster, provisionalDrainHoldNames(cluster.Name, current, desired))
 	}
 
 	// Persist/refresh the target set (also holds replicas via the annotation).
@@ -725,9 +736,10 @@ func (r *Neo4jEnterpriseClusterReconciler) scaleDownClientFor(ctx context.Contex
 }
 
 // provisionalDrainHoldNames returns the StatefulSet pod names of the servers a
-// scale-down will remove (ordinals [desired, current)). Used ONLY to seed the
-// draining annotation so the replica hold engages before the operator can reach
-// Neo4j; once SHOW SERVERS succeeds these are replaced by real serverIds.
+// scale-down will remove (ordinals [desired, current)), held by name
+// (ScaleDownHeldPodsAnnotation) so the replica hold engages before the
+// operator can reach Neo4j; once SHOW SERVERS names their servers, the drain
+// set holds them instead.
 func provisionalDrainHoldNames(clusterName string, current, desired int) []string {
 	var names []string
 	for ord := desired; ord < current; ord++ {
@@ -770,8 +782,10 @@ const (
 func (r *Neo4jEnterpriseClusterReconciler) setBackScaleDown(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, current int) error {
 	drained := drainServerIDsFromAnnotation(cluster)
 	if len(drained) == 0 && len(cordonedByDrain(cluster)) == 0 {
+		// No server named, none cordoned: the drain took nothing, and pods
+		// held by name are let go without asking Neo4j.
 		r.settleScaleDownCondition(ctx, cluster, scaleDownNotInProgressMessage)
-		return nil
+		return r.setDrainAnnotations(ctx, cluster, map[string]string{ScaleDownHeldPodsAnnotation: ""})
 	}
 	logger := log.FromContext(ctx)
 	nc, err := r.scaleDownClientFor(ctx, cluster)
@@ -1065,7 +1079,22 @@ func (r *Neo4jEnterpriseClusterReconciler) setDrainServers(ctx context.Context, 
 		// No drain holds an upgrade back any more.
 		r.deferredUpgradeTargets.Delete(drainDeferralKey(cluster))
 	}
-	return r.setScaleDownIDs(ctx, cluster, ScaleDownDrainingServersAnnotation, ids)
+	// The drain set names the servers now, or the drain ended: the pods held
+	// by name go in the same patch.
+	return r.setDrainAnnotations(ctx, cluster, map[string]string{
+		ScaleDownDrainingServersAnnotation: strings.Join(ids, ","),
+		ScaleDownHeldPodsAnnotation:        "",
+	})
+}
+
+// holdPods holds the replicas by the names of the pods a scale-down removes
+// (ScaleDownHeldPodsAnnotation), while the drain cannot name their servers;
+// the drain set holds no server meanwhile.
+func (r *Neo4jEnterpriseClusterReconciler) holdPods(ctx context.Context, cluster *neo4jv1beta1.Neo4jEnterpriseCluster, pods []string) error {
+	return r.setDrainAnnotations(ctx, cluster, map[string]string{
+		ScaleDownHeldPodsAnnotation:        strings.Join(pods, ","),
+		ScaleDownDrainingServersAnnotation: "",
+	})
 }
 
 // setScaleDownIDs sets (or removes, when ids is empty) one of the drain's id
