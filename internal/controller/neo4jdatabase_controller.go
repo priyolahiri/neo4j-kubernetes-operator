@@ -366,7 +366,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	r.hostAnswered(ctx, database)
 	r.reportDatabaseReady(ctx, database, observed)
 
-	logger.Info("Successfully reconciled Neo4jDatabase")
+	logger.V(1).Info("Successfully reconciled Neo4jDatabase")
 	return ctrl.Result{RequeueAfter: r.RequeueAfter}, nil
 }
 
