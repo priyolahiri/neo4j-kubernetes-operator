@@ -38,9 +38,9 @@ package main
 //
 // Three reasons have no exported constant because kubelet, not the API, owns
 // them: "CrashLoopBackOff", "ImagePullBackOff" and "OOMKilled". Those are
-// matched as literals, and the OOM check additionally matches exit code 137 so
-// that the single most common Neo4j Enterprise failure is not detected by a
-// string alone.
+// matched as literals. The OOM check does not also match exit code 137: that
+// is any SIGKILL, and a `kill -9` read as an OOM kill sent the user to raise
+// memory (isOOMKilled).
 //
 // Workloads are located through the operator's OWN exported selectors
 // (resources.ServerPodSelector and friends) rather than by rebuilding the
@@ -512,10 +512,9 @@ func diagnosePod(p *corev1.Pod) []symptom {
 			}
 		}
 
-		// OOMKilled is matched on the kubelet's reason string OR exit code 137
-		// because it is the single most common Neo4j Enterprise failure on an
-		// under-provisioned cluster, and neither signal is an API constant we
-		// can lean on alone.
+		// OOMKilled — the single most common Neo4j Enterprise failure on an
+		// under-provisioned cluster — is the kubelet's reason string alone:
+		// exit code 137 is any SIGKILL (isOOMKilled).
 		previousReported := false
 		switch last := cs.LastTerminationState.Terminated; {
 		case last != nil && isOOMKilled(last):
@@ -528,7 +527,7 @@ func diagnosePod(p *corev1.Pod) []symptom {
 			previousReported = true
 			cur := cs.State.Terminated
 			detail := fmt.Sprintf("its latest run exited %d (%s)", cur.ExitCode, cur.Reason)
-			if msg := strings.TrimSpace(cur.Message); msg != "" {
+			if msg := exitDetail(cur); msg != "" {
 				detail += ": " + msg
 			}
 			symptoms = append(symptoms, crashLoopSymptom(p, cs, detail))
@@ -538,7 +537,7 @@ func diagnosePod(p *corev1.Pod) []symptom {
 				mark:    markWarning,
 				subject: "container " + cs.Name + " in " + p.Name,
 				what:    fmt.Sprintf("previously exited %d (%s)", last.ExitCode, last.Reason),
-				detail:  strings.TrimSpace(last.Message),
+				detail:  exitDetail(last),
 				action:  "kubectl logs " + p.Name + " -c " + cs.Name + " --previous",
 			})
 		}
@@ -566,7 +565,7 @@ func diagnosePod(p *corev1.Pod) []symptom {
 					mark:    markProblem,
 					subject: "container " + cs.Name + " in " + p.Name,
 					what:    fmt.Sprintf("exited %d (%s)", t.ExitCode, t.Reason),
-					detail:  strings.TrimSpace(t.Message),
+					detail:  exitDetail(t),
 					action:  "kubectl logs " + p.Name + " -c " + cs.Name,
 				})
 			}
@@ -616,10 +615,27 @@ func imagePullAction(pod, reason string) string {
 		"target deployment's image."
 }
 
-// isOOMKilled matches the kubelet's reason string OR exit code 137 (SIGKILL):
-// either alone can be absent.
+// isOOMKilled matches the kubelet's reason string, and only that. Exit code
+// 137 is any SIGKILL — a `kill -9`, a runtime that gave up waiting — and the
+// kubelet says OOMKilled when the kernel's OOM killer sent it. Matched on the
+// code as well, one kill by hand was a ✗ "was OOMKilled (exit 137)" with advice
+// to raise memory, and exit 1 (#619 walk). A SIGKILL is a non-zero exit like
+// any other: a ⚠ for one run, a crash-loop when it repeats.
 func isOOMKilled(t *corev1.ContainerStateTerminated) bool {
-	return t.Reason == "OOMKilled" || t.ExitCode == 137
+	return t.Reason == "OOMKilled"
+}
+
+// exitDetail is what a finding about a run that exited non-zero says beyond
+// the exit: the container's message, or, for an exit 137 the kubelet did not
+// call OOMKilled, that it was a SIGKILL and not the OOM killer.
+func exitDetail(t *corev1.ContainerStateTerminated) string {
+	if msg := strings.TrimSpace(t.Message); msg != "" {
+		return msg
+	}
+	if t.ExitCode == 137 {
+		return "exit 137 is SIGKILL; the kubelet did not report OOMKilled, so it was not the OOM killer"
+	}
+	return ""
 }
 
 // isBackupPod reports whether a pod belongs to a Neo4jBackup Job, by the same

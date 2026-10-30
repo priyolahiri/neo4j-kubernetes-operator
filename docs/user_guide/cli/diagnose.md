@@ -29,7 +29,7 @@ For an archive to attach to an issue: kubectl neo4j support-bundle
 | Symptom | Where it comes from |
 |---|---|
 | Pod cannot be scheduled | `PodScheduled=False`, reason `Unschedulable` — the scheduler's own message |
-| Container OOMKilled | `lastState.terminated` (a container that restarted) or `state.terminated` (one that did not — see [below](#containers-that-finished-and-were-not-restarted)): reason `OOMKilled`, **or** exit code 137 |
+| Container OOMKilled | `lastState.terminated` (a container that restarted) or `state.terminated` (one that did not — see [below](#containers-that-finished-and-were-not-restarted)): reason `OOMKilled`. Exit code 137 alone is any SIGKILL (a `kill -9`, say), not an OOM kill: a ⚠ for the run it ended, the crash-loop finding when it repeats |
 | Container exited non-zero | `state.terminated` with a non-zero exit code and any reason but OOMKilled (typically `Error`), with its message. Exit 0 (`Completed`) is not a finding |
 | Image will not pull | waiting reason `ImagePullBackOff` / `ErrImagePull` / `InvalidImageName` |
 | Crash-looping | waiting reason `CrashLoopBackOff`, with the restart count; or, before the kubelet says so, a container restarted at least twice whose latest run has just died with a non-zero exit (`state.terminated`, kubectl shows `Error`). A single restart, or a container running again since, is a `⚠` for its previous run |

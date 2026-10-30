@@ -18,6 +18,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -74,6 +75,57 @@ func TestDiagnose_ACrashLoopBeforeCrashLoopBackOffIsAFailure(t *testing.T) {
 	assert.Contains(t, s.detail, "exited 1 (Error)")
 	assert.Contains(t, s.detail, "Unrecognized setting")
 	assert.Contains(t, s.action, "kubectl logs prod-server-0 -c neo4j --previous")
+}
+
+// The #619 walk: one `kill -9` of a standalone's server (exit 137, kubelet
+// reason Error) was a ✗ "was OOMKilled (exit 137)" with advice to raise
+// memory, and exit 1, because exit code 137 alone counted as an OOM kill. It
+// is any SIGKILL: a ⚠ for the one run, and the crash-loop when it repeats.
+func TestDiagnose_ASigkillIsNotAnOOMKill(t *testing.T) {
+	for _, reason := range []string{"Error", ""} {
+		t.Run("killed once, reason "+fmt.Sprintf("%q", reason), func(t *testing.T) {
+			symptoms, code := diagnoseOneServer(t, corev1.ContainerStatus{
+				RestartCount: 1,
+				Ready:        true,
+				State:        corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+				LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+					ExitCode: 137, Reason: reason,
+				}},
+			})
+			out := joinSymptoms(symptoms)
+			assert.Equal(t, exitOK, code, out)
+			require.Len(t, symptoms, 1, out)
+			assert.Equal(t, markWarning, symptoms[0].mark)
+			assert.Contains(t, symptoms[0].what, "previously exited 137")
+			assert.Contains(t, symptoms[0].detail, "SIGKILL")
+			assert.NotContains(t, out, "was OOMKilled")
+			assert.NotContains(t, out, "1.5Gi", "no advice to raise memory")
+		})
+	}
+
+	t.Run("killed again and again", func(t *testing.T) {
+		symptoms, code := diagnoseOneServer(t, corev1.ContainerStatus{
+			RestartCount:         2,
+			State:                corev1.ContainerState{Terminated: errorExit(137)},
+			LastTerminationState: corev1.ContainerState{Terminated: errorExit(137)},
+		})
+		out := joinSymptoms(symptoms)
+		assert.Equal(t, exitProblems, code, out)
+		require.Len(t, symptoms, 1, out)
+		assert.Equal(t, "crash-looping after 2 restart(s)", symptoms[0].what)
+		assert.NotContains(t, out, "was OOMKilled")
+	})
+
+	t.Run("the kubelet says OOMKilled", func(t *testing.T) {
+		symptoms, code := diagnoseOneServer(t, corev1.ContainerStatus{
+			RestartCount:         1,
+			Ready:                true,
+			State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+			LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{ExitCode: 137, Reason: "OOMKilled"}},
+		})
+		assert.Equal(t, exitProblems, code)
+		assert.Contains(t, joinSymptoms(symptoms), "was OOMKilled (exit 137)")
+	})
 }
 
 // What is not a crash-loop stays as it was: one restart (a server that stopped
