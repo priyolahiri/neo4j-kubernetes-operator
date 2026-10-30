@@ -234,7 +234,11 @@ func describeLeftovers(cluster *neo4jv1beta1.Neo4jEnterpriseCluster, left []remo
 		if l.pod != nil {
 			state := "is still running"
 			if l.pod.DeletionTimestamp != nil {
-				state = "has been terminating since " + l.pod.DeletionTimestamp.UTC().Format(time.RFC3339)
+				// A pod's deletionTimestamp is when its grace period ends —
+				// the delete's time plus terminationGracePeriodSeconds —
+				// not when the delete came (#619 walk: "terminating since"
+				// a time 30 s ahead).
+				state = "is being deleted, due to stop by " + l.pod.DeletionTimestamp.UTC().Format(time.RFC3339)
 			}
 			parts = append(parts, fmt.Sprintf("pod %s %s", l.pod.Name, state))
 		}

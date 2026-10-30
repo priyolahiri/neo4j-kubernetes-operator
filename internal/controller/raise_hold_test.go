@@ -208,10 +208,17 @@ func TestHoldRaise_WhatOutlastsTheGraceIsNamed(t *testing.T) {
 	cond := deferral(t, r)
 	require.NotNil(t, cond)
 	assert.Equal(t, ConditionReasonWaitsForRemovedServers, cond.Reason)
+	// The pod's deletionTimestamp is the end of its grace period, not when
+	// it began to terminate: the message gives it as the time it is due to
+	// stop by (#619 walk).
+	deleting := &corev1.Pod{}
+	require.NoError(t, r.Get(ctx, client.ObjectKeyFromObject(pod4), deleting))
+	require.NotNil(t, deleting.DeletionTimestamp)
+	assert.NotContains(t, cond.Message, "terminating since")
 	for _, want := range []string{
 		"what is left of the servers a scale-down removed has not gone in 2m0s",
 		"volume data-c-server-3 is being deleted, held by backup.example.com/protect",
-		"pod c-server-4 has been terminating since",
+		"pod c-server-4 is being deleted, due to stop by " + deleting.DeletionTimestamp.UTC().Format(time.RFC3339),
 		"release data-c-server-3 from backup.example.com/protect",
 		"kubectl delete pod -n default c-server-4 --grace-period=0 --force, if its node is gone",
 		"Or set spec.topology.servers back to 3",
