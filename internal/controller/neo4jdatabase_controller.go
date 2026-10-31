@@ -300,7 +300,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 	}
 
 	// Ensure database exists (with seed URI support)
-	logger.Info("Starting database creation/verification", "database", database.Spec.Name, "wait", database.Spec.Wait, "topology", database.Spec.Topology)
+	logger.V(1).Info("Starting database creation/verification", "database", database.Spec.Name, "wait", database.Spec.Wait, "topology", database.Spec.Topology)
 	dbCreateStart := time.Now()
 	observed, err := r.ensureDatabase(ctx, neo4jClient, database, databaseHostImageTag(cluster, standalone, isStandalone), isStandalone)
 	if err != nil {
@@ -321,7 +321,7 @@ func (r *Neo4jDatabaseReconciler) Reconcile(ctx context.Context, req ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	duration := time.Since(dbCreateStart)
-	logger.Info("Database creation/verification completed successfully", "database", database.Spec.Name, "duration", duration)
+	logger.V(1).Info("Database creation/verification completed successfully", "database", database.Spec.Name, "duration", duration)
 
 	// Import initial data if specified (skip if using seed URI since data comes from the seed)
 	if database.Spec.InitialData != nil && database.Spec.SeedURI == "" && database.Status.DataImported == nil {
@@ -696,7 +696,7 @@ func (r *Neo4jDatabaseReconciler) ensureDatabase(ctx context.Context, client dat
 			logger.Info("Database created successfully", "database", database.Spec.Name)
 		}
 	} else {
-		logger.Info("Database already exists", "database", database.Spec.Name)
+		logger.V(1).Info("Database already exists", "database", database.Spec.Name)
 	}
 
 	// Read the database's state and servers after creation or verification.
