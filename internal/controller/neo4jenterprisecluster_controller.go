@@ -1095,7 +1095,7 @@ func (r *Neo4jEnterpriseClusterReconciler) createOrUpdateResourceInternal(ctx co
 	}
 
 	logger := log.FromContext(ctx)
-	logger.Info("Starting CreateOrUpdate operation",
+	logger.V(1).Info("Starting CreateOrUpdate operation",
 		"resource", fmt.Sprintf("%T", obj),
 		"name", obj.GetName(),
 		"namespace", obj.GetNamespace())

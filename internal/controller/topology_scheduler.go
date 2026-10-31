@@ -64,7 +64,7 @@ func (ts *TopologyScheduler) CalculateTopologyPlacement(ctx context.Context, clu
 	logger := log.FromContext(ctx)
 
 	if cluster.Spec.Topology.Placement == nil {
-		logger.Info("No topology placement configuration specified, using default scheduling")
+		logger.V(1).Info("No topology placement configuration specified, using default scheduling")
 		placement := &TopologyPlacement{
 			UseTopologySpread:   false,
 			UseAntiAffinity:     false,
@@ -113,7 +113,7 @@ func (ts *TopologyScheduler) CalculateTopologyPlacement(ctx context.Context, clu
 			// degradation or emit the "best-effort zone spread" warning, which
 			// would be misleading when no zone constraints are produced.
 			if placement.UseTopologySpread || placement.UseAntiAffinity {
-				logger.Info("Availability-zone auto-discovery unavailable; applying best-effort zone spread via the topology key. This is expected in namespace-scoped installs (operatorMode=namespace) where the operator cannot read cluster-scoped nodes; set spec.topology.availabilityZones to enumerate zones explicitly.",
+				logger.V(1).Info("Availability-zone auto-discovery unavailable; applying best-effort zone spread via the topology key. This is expected in namespace-scoped installs (operatorMode=namespace) where the operator cannot read cluster-scoped nodes; set spec.topology.availabilityZones to enumerate zones explicitly.",
 					"error", err.Error())
 				placement.ZoneDiscoveryDegraded = true
 			}
@@ -149,7 +149,7 @@ func (ts *TopologyScheduler) ApplyTopologyConstraints(ctx context.Context, sts *
 	logger := log.FromContext(ctx)
 
 	if !placement.UseTopologySpread && !placement.UseAntiAffinity {
-		logger.Info("No topology constraints configured")
+		logger.V(1).Info("No topology constraints configured")
 		return nil
 	}
 
@@ -159,7 +159,7 @@ func (ts *TopologyScheduler) ApplyTopologyConstraints(ctx context.Context, sts *
 	if placement.UseTopologySpread {
 		tsc := ts.buildTopologySpreadConstraints(cluster, placement)
 		podTemplate.Spec.TopologySpreadConstraints = tsc
-		logger.Info("Applied topology spread constraints", "constraints", len(tsc))
+		logger.V(1).Info("Applied topology spread constraints", "constraints", len(tsc))
 	}
 
 	// Apply pod anti-affinity
@@ -173,7 +173,7 @@ func (ts *TopologyScheduler) ApplyTopologyConstraints(ctx context.Context, sts *
 
 		antiAffinity := ts.buildPodAntiAffinity(cluster, placement)
 		podTemplate.Spec.Affinity.PodAntiAffinity = antiAffinity
-		logger.Info("Applied pod anti-affinity constraints")
+		logger.V(1).Info("Applied pod anti-affinity constraints")
 	}
 
 	return nil
