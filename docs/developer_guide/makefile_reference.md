@@ -1024,7 +1024,7 @@ make catalog-push CATALOG_IMG=ghcr.io/my-org/catalog:v1.0
 
 #### `make ginkgo`
 **Description**: Download Ginkgo BDD testing framework
-**Version**: v2.32.1 (`GINKGO_VERSION`)
+**Version**: v2.34.0 (`GINKGO_VERSION`)
 **Location**: `bin/ginkgo`
 
 #### `make operator-sdk`
